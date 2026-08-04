@@ -1,0 +1,93 @@
+﻿@model LedgerVerificationResult
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8" />
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --border-color: #ddd;
+        }
+
+        body {
+            font-family: 'Arial', 'Microsoft JhengHei', sans-serif;
+            line-height: 1.5;
+            color: #333;
+        }
+
+        .report-header {
+            border-bottom: 2px solid var(--primary-color);
+            margin-bottom: 30px;
+        }
+
+        .meta-box {
+            background: #f4f7f9;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #27ae60;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            table-layout: fixed;
+        }
+
+        th, td {
+            border: 1px solid var(--border-color);
+            padding: 12px;
+            word-wrap: break-word;
+        }
+
+        th {
+            background: #f8f9fa;
+            width: 30%;
+            font-weight: bold;
+        }
+
+        .hash-code {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.9em;
+            background: #eee;
+            padding: 2px 4px;
+        }
+
+        .footer {
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            font-size: 0.8em;
+            color: #7f8c8d;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="report-header">
+        <h1>SQL Server Ledger 完整性稽核報告</h1>
+    </div>
+
+    <div class="meta-box">
+        <p><strong>驗證結果：</strong> @(Model.IsSuccess ? "成功 (SUCCESS)" : "失敗 (FAILED)")</p>
+        <p><strong>驗證時間：</strong> @Model.VerifiedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</p>
+        <p><strong>訊息摘要：</strong> @Model.VerificationMessage</p>
+    </div>
+
+    <h2>數位摘要詳情 (Digest Details)</h2>
+    <table>
+        @if (!string.IsNullOrEmpty(Model.ExtractedDigest))
+        {
+        var digest = System.Text.Json.JsonDocument.Parse(Model.ExtractedDigest);
+        <tr><th>資料庫名稱</th><td>@digest.RootElement.GetProperty("database_name").GetString()</td></tr>
+        <tr><th>區塊 ID</th><td>@digest.RootElement.GetProperty("block_id").GetInt32()</td></tr>
+        <tr><th>數位雜湊 (Hash)</th><td class="hash-code">@digest.RootElement.GetProperty("hash").GetString()</td></tr>
+        <tr><th>最後提交時間</th><td>@digest.RootElement.GetProperty("last_transaction_commit_time").GetString()</td></tr>
+        }
+    </table>
+
+    <div class="footer">
+        <p>本文件由系統自動產生，僅供內部審計比對使用。如發現雜湊值不符，請立即聯繫資安管理員。Page 1</p>
+    </div>
+</body>
+</html>

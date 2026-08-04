@@ -1,0 +1,48 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+	
+	<PropertyGroup>
+		<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+		<PackageId>SES.Modules.ORG</PackageId>
+		<Version>1.0.0</Version>
+		<Authors>Wayne</Authors>
+		<Company>SES</Company>
+		<Description>組織管理套件</Description>
+		<PublishRepositoryUrl>true</PublishRepositoryUrl>
+		<EmbedUntrackedSources>true</EmbedUntrackedSources>
+		<SignAssembly>True</SignAssembly>
+		<AssemblyOriginatorKeyFile>C:\專案\SES\src\MyModuleKey.snk</AssemblyOriginatorKeyFile>
+
+	</PropertyGroup>
+	<Target Name="PushToBaGet" AfterTargets="Pack" Condition="'$(Configuration)' == 'Release'">
+		<Exec Command="dotnet nuget push &quot;$(ProjectDir)bin\$(Configuration)\*.nupkg&quot; --source http://localhost:5000/v3/index.json --api-key TeamSecret2026_InitialAccess! --allow-insecure-connections --skip-duplicate" />
+	</Target>
+
+	<ItemGroup>
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+	</ItemGroup>
+	<ItemGroup>
+	  <PackageReference Include="MediatR" Version="12.0.1" />
+	  <PackageReference Include="SGSFramework.ModulePlugin" Version="1.0.0" />
+	</ItemGroup>
+	<ItemGroup>
+
+	  <ProjectReference Include="..\Module.ORG.Application\SGS.Modules.ORG.Application.csproj" />
+	  <ProjectReference Include="..\Module.ORG.Infrastructure\SGS.Modules.ORG.Infrastructure.csproj" />
+	</ItemGroup>
+	<!-- 加入「建置後事件」，確保每次編譯 SES.Modules.ORG 時，自動將主程式及所有相依的 DLL 複製到 API 主專案的執行目錄下。-->
+	<Target Name="CopyModuleDllToHost" AfterTargets="Build">
+		<ItemGroup>
+			<ModuleFiles Include="$(TargetDir)SGS.Modules.ORG*.dll;$(TargetDir)SGS.Modules.ORG*.pdb" />
+		</ItemGroup>
+		<Copy SourceFiles="@(ModuleFiles)" DestinationFolder="$(SolutionDir)Host\PhysLIMS.API\bin\$(Configuration)\net10.0\plugins\" SkipUnchangedFiles="true" />
+	</Target>
+	<Target Name="PostBuild" AfterTargets="PostBuildEvent">
+	  <Exec Command="powershell -Command &quot;&amp; { Set-AuthenticodeSignature -FilePath '$(TargetPath)' -Certificate (Get-ChildItem -Path Cert:\CurrentUser\My\DB22B4CE33AE64287F9392F3025EBCB7880BE213) -TimestampServer 'http://timestamp.digicert.com' }&quot;" />
+	</Target>
+</Project>

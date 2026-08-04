@@ -1,0 +1,27 @@
+<Solution>
+  <Folder Name="/Host/">
+    <Project Path="Host/PhysLIMS.API/PhysLIMS.API.csproj" />
+    <Project Path="Host/PhysLIMS.Controller/SGSFramework.ApiInfrastructure.csproj" />
+  </Folder>
+  <Folder Name="/Infrastructure/">
+    <Project Path="Infrastructure/Enterprise.HttpSdk/Enterprise.HttpSdk.csproj" />
+    <Project Path="Infrastructure/SGSFramework.AuditLog/SGSFramework.AuditLog.csproj" />
+    <Project Path="Infrastructure/SGSFramework.AuthTokenBucket/SGSFramework.AuthTokenBucket.csproj" />
+    <Project Path="Infrastructure/SGSFramework.CodeSecurity/SGSFramework.CodeSecurity.csproj" />
+    <Project Path="Infrastructure/SGSFramework.DataProtection/SGSFramework.DataProtection.csproj" />
+    <Project Path="Infrastructure/SGSFramework.Identity/SGSFramework.Identity.csproj" />
+    <Project Path="Infrastructure/SGSFramework.ModulePlugin/SGSFramework.ModulePlugin.csproj" />
+    <Project Path="Infrastructure/SGSFramework.Persistent/SGSFramework.Persistent.csproj" />
+    <Project Path="Infrastructure/SGSFramework.SystemLog/SGSFramework.SystemLog.csproj" />
+    <Project Path="Infrastructure/SGSFramework.VerifyLedger/SGSFramework.VerifyLedger.csproj" />
+  </Folder>
+  <Folder Name="/Modules/" />
+  <Folder Name="/Modules/ORG/">
+    <Project Path="Modules/ORG/Module.ORG.Application/SGS.Modules.ORG.Application.csproj" />
+    <Project Path="Modules/ORG/Module.ORG.Infrastructure/SGS.Modules.ORG.Infrastructure.csproj" />
+    <Project Path="Modules/ORG/Module.ORG/SGS.Modules.ORG.csproj" />
+  </Folder>
+  <Folder Name="/Shared/">
+    <Project Path="Shared/SGSFramework.Core/SGSFramework.Core.csproj" />
+  </Folder>
+</Solution>
