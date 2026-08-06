@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using System.ComponentModel;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -12,282 +14,354 @@ using SGSFramework.Core.Abstractions.Logings;
 using SGSFramework.Core.Abstractions.Menus;
 using SGSFramework.Core.Controllers.Base;
 using SGSFramework.Core.HttpAuditProviders;
-using System.ComponentModel;
-using System.Security.Claims;
 
-namespace SGSFramework.AuthTokenBucket.Controllers
+namespace SGSFramework.AuthTokenBucket.Controllers.v1;
+
+/// <summary>
+/// 身份驗證與 Token 管理控制器
+/// </summary>
+[ApiController]
+[Route("api/v1/auth")]
+[Produces("application/json")]
+[Menu("身份驗證", "fa-solid fa-user-lock", order: 1, parent: null)]
+[Description("提供帳密登入、Token 輪轉刷新、動態選單與實驗室上下文切換服務")]
+public sealed class AuthController : ApiControllerBase
 {
-    [ApiController]
-    [Route("api/[controller]")]
-    [Menu("身份驗證", "fa-solid fa-user-lock", order: 1, parent: null)]
-    [Description("身份驗證端點")]
-    public sealed class AuthController : ApiControllerBase
+    private readonly UserManager<IdentityUser> _userManager;
+    private readonly TokenManager _tokenManager;
+    private readonly ITokenStorageProvider _storageProvider;
+    private readonly IUserRefreshTokenRepository _tokenRepository;
+    private readonly TokenBucketEngine<IdentityUser> _tokenEngine;
+    private readonly AuthTokenBucketOptions _options;
+    private readonly ILogger<AuthController> _logger;
+    private readonly IAuditProvider _auditProvider;
+    private readonly ISecurityLogger _securityLogger;
+    private readonly IDynamicMenuService _menuService;
+    private readonly IUserRuntimeScopeService _runtimeScopeService;
+
+    public AuthController(
+        UserManager<IdentityUser> userManager,
+        TokenManager tokenManager,
+        ITokenStorageProvider storageProvider,
+        IUserRefreshTokenRepository tokenRepository,
+        TokenBucketEngine<IdentityUser> tokenEngine,
+        IOptions<AuthTokenBucketOptions> options,
+        ILogger<AuthController> logger,
+        IAuditProvider auditProvider,
+        ISecurityLogger securityLogger,
+        IDynamicMenuService menuService,
+        IUserRuntimeScopeService runtimeScopeService)
     {
-        private readonly UserManager<IdentityUser> _userManager;
-        private readonly TokenManager _tokenManager;
-        private readonly ITokenStorageProvider _storageProvider;
-        private readonly IUserRefreshTokenRepository _tokenRepository;
-        private readonly TokenBucketEngine<IdentityUser> _tokenEngine;
-        private readonly AuthTokenBucketOptions _options;
-        private readonly ILogger<AuthController> _logger;
-        private readonly IAuditProvider _auditProvider;
-        private readonly ISecurityLogger _securityLogger;
-        private readonly IDynamicMenuService _menuService;
-        private readonly IUserRuntimeScopeService _runtimeScopeService;
+        _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
+        _tokenManager = tokenManager ?? throw new ArgumentNullException(nameof(tokenManager));
+        _storageProvider = storageProvider ?? throw new ArgumentNullException(nameof(storageProvider));
+        _tokenRepository = tokenRepository ?? throw new ArgumentNullException(nameof(tokenRepository));
+        _tokenEngine = tokenEngine ?? throw new ArgumentNullException(nameof(tokenEngine));
+        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _auditProvider = auditProvider ?? throw new ArgumentNullException(nameof(auditProvider));
+        _securityLogger = securityLogger ?? throw new ArgumentNullException(nameof(securityLogger));
+        _menuService = menuService ?? throw new ArgumentNullException(nameof(menuService));
+        _runtimeScopeService = runtimeScopeService ?? throw new ArgumentNullException(nameof(runtimeScopeService));
+    }
 
-        public AuthController( 
-            UserManager<IdentityUser> userManager,
-            TokenManager tokenManager,
-            ITokenStorageProvider storageProvider,
-            IUserRefreshTokenRepository tokenRepository,
-            TokenBucketEngine<IdentityUser> tokenEngine,
-            IOptions<AuthTokenBucketOptions> options,
-            ILogger<AuthController> logger,
-            IAuditProvider auditProvider,
-            ISecurityLogger securityLogger,
-            IDynamicMenuService menuService
-            )     
+    /// <summary>
+    /// 標準帳密登入
+    /// </summary>
+    /// <param name="request">登入憑證資訊</param>
+    /// <param name="cancellationToken">異步取消權牌</param>
+    /// <returns>包含存取權牌、選單結構與權限集合之登入結果</returns>
+    [HttpPost("login")]
+    [Menu("帳密登入", "fa-solid fa-right-to-bracket", order: 1, parent: "身份驗證")]
+    [Description("標準帳密登入端點，整合大容量 Bitmask 權限與 TokenBucketEngine 基礎設施")]
+    [ProducesResponseType(typeof(LoginResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> LoginAsync(
+        [FromBody] LoginRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        try
         {
-            _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
-            _tokenManager = tokenManager ?? throw new ArgumentNullException(nameof(tokenManager));
-            _storageProvider = storageProvider ?? throw new ArgumentNullException(nameof(storageProvider));
-            _tokenRepository = tokenRepository ?? throw new ArgumentNullException(nameof(tokenRepository));
-            _tokenEngine = tokenEngine ?? throw new ArgumentNullException(nameof(tokenEngine));
-            _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));//一般Log
-            _auditProvider = auditProvider ?? throw new ArgumentNullException(nameof(auditProvider));
-            _securityLogger = securityLogger ?? throw new ArgumentNullException(nameof(securityLogger));//資安稽核Log
-            _menuService=menuService?? throw new ArgumentNullException(nameof(menuService));
-        }
-
-        /// <summary>
-        /// 標準帳密登入（全面整合大容量 Bitmask 權限與 TokenBucketEngine 基礎設施）
-        /// 使用者登入成功後，取得 JWT Token 同時回傳該使用者的動態階層選單
-        /// </summary>
-        [HttpPost("login")]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [Menu("帳密登入", "fa-solid fa-right-to-bracket", order: 1, parent: "身份驗證")]
-        [Description("標準帳密登入端點，整合大容量 Bitmask 權限與 TokenBucketEngine 基礎設施")]
-        public async Task<IActionResult> Login([FromBody] LoginRequest request)
-        {
-            ArgumentNullException.ThrowIfNull(request);
-
-            try
+            var user = await _userManager.FindByNameAsync(request.Email) ?? await _userManager.FindByEmailAsync(request.Email);
+            if (user == null || !await _userManager.CheckPasswordAsync(user, request.Password))
             {
-                var user = await _userManager.FindByNameAsync(request.Email) ?? await _userManager.FindByEmailAsync(request.Email);
-                if (user == null || !await _userManager.CheckPasswordAsync(user, request.Password))
+                _logger.LogWarning(
+                    "[Security-Event:{EventCode}] 登入失敗：帳號或密碼錯誤。帳號: {TargetUser}, 來源IP: {RemoteIp}",
+                    "SEC-401-Unauthorized",
+                    request.Email,
+                    HttpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown"
+                );
+
+                return Unauthorized(new ProblemDetails
                 {
-                    // 💡 優化後：採用強型別結構化日誌，並精準綁定識別碼與參數
-                    _logger.LogWarning(
-                        "[Security-Event:{EventCode}] 登入失敗：帳號或密碼錯誤。帳號: {TargetUser}, 來源IP: {RemoteIp}",
-                        "SEC-401-Unauthorized", // {EventCode}: 用於快速檢索與 SIEM 告警分流機制
-                        request.Email,          // {TargetUser}: 統一的資安追蹤標的欄位
-                        HttpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown" // {RemoteIp}: 補充關鍵審計上下文
-                    );
-
-                    return Unauthorized(new { message = "帳號或密碼錯誤。" });
-                }
-                
-                string deviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "UNKNOWN-DEVICE";
-                string deviceName = Request.Headers["User-Agent"].FirstOrDefault() ?? "Generic Browser";
-                string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
-
-                // 🚀 使用引擎統一簽發與分流（包含超過 64 位的大容量 Bitmask 權限包裝）
-                var tokenResult = await _tokenEngine.IssueInitialSessionAsync(user, deviceId, deviceName, clientIp);
-
-                _logger.LogInformation("使用者 {Email} 登入成功，裝置 ID: {DeviceId}", user.Email, deviceId);
-
-                // 1. 驗證帳密並取得使用者宣告與對應權限字串集合 (例如從 Claims 或使用者角色中提取)
-                var userPermissions = new List<string> { "System.Dashboard", "Module.Org.View" }; // 範例權限
-
-                // 2. 根據使用者權限透過 DynamicMenuService 組合動態選單
-                var menuTree = await _menuService.GetUserMenuAsync(userPermissions);
-
-                // 3. 回傳登入 Token 與前端渲染所需的選單結構
-                return Ok(new
-                {
-                    Menus = menuTree,
-                    TokenData = tokenResult,
-                    Message = "登入成功",
+                    Status = StatusCodes.Status401Unauthorized,
+                    Title = "身分驗證失敗",
+                    Detail = "帳號或密碼錯誤。",
+                    Instance = HttpContext.Request.Path
                 });
+            }
 
-            }
-            catch (Exception ex)
+            string deviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "UNKNOWN-DEVICE";
+            string deviceName = Request.Headers["User-Agent"].FirstOrDefault() ?? "Generic Browser";
+            string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+
+            var tokenResult = await _tokenEngine.IssueInitialSessionAsync(user, deviceId, deviceName, clientIp);
+
+            _logger.LogInformation("使用者 {Email} 登入成功，裝置 ID: {DeviceId}", user.Email, deviceId);
+
+            var userPermissions = new List<string> { "System.Dashboard", "Module.Org.View" };
+            var menuTree = await _menuService.GetUserMenuAsync(userPermissions);
+
+            return Ok(new LoginResponseDto
             {
-                _logger.LogError(ex, "標準帳密登入端點發生未預期核心異常。");
-                return StatusCode(StatusCodes.Status500InternalServerError, new { message = "伺服器內部錯誤", detail = ex.Message });
-            }
+                Menus = menuTree,
+                TokenData = tokenResult,
+                Message = "登入成功"
+            });
         }
-
-        /// <summary>
-        /// 雙向權限票據高併發輪轉刷新（對齊更新後的 TokenBucketEngine 參數規範）
-        /// </summary>
-        [HttpPost("refresh")]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [Menu("刷新 Token", "fa-solid fa-arrows-rotate", order: 2, parent: "身份驗證")]
-        [Description("雙向權限票據高併發輪轉刷新端點，對齊更新後的 TokenBucketEngine 參數規範")]
-        public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
+        catch (Exception ex)
         {
-            ArgumentNullException.ThrowIfNull(request);
-
-            try
+            _logger.LogError(ex, "標準帳密登入端點發生未預期核心異常。");
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
-                // 1. 解析過期的不安全記號以提取 User 身分
-                var principal = _tokenManager.GetPrincipalFromExpiredToken(request.AccessToken);
-                if (principal == null)
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
+    /// <summary>
+    /// 雙向權限票據高併發輪轉刷新
+    /// </summary>
+    /// <param name="request">刷新 Token 請求內容</param>
+    /// <param name="cancellationToken">異步取消權牌</param>
+    /// <returns>更新後之 Token 數據集</returns>
+    [HttpPost("refresh")]
+    [Menu("刷新 Token", "fa-solid fa-arrows-rotate", order: 2, parent: "身份驗證")]
+    [Description("雙向權限票據高併發輪轉刷新端點，對齊更新後的 TokenBucketEngine 參數規範")]
+    [ProducesResponseType(typeof(TokenResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> RefreshTokenAsync(
+        [FromBody] RefreshTokenRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        try
+        {
+            var principal = _tokenManager.GetPrincipalFromExpiredToken(request.AccessToken);
+            if (principal == null)
+            {
+                return BadRequest(new ProblemDetails
                 {
-                    return BadRequest(new { message = "無效的存取記號 (Invalid Access Token)。" });
-                }
-
-                string userId = principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
-                var user = await _userManager.FindByIdAsync(userId);
-                if (user == null)
-                {
-                    return Unauthorized(new { message = "使用者不存在或已被刪除。" });
-                }
-
-                string deviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "UNKNOWN-DEVICE";
-
-
-                // 2. 呼叫引擎執行核心雙向換票
-                var tokenResult = await _tokenEngine.RefreshSessionAsync(user, deviceId, request.RefreshToken);
-
-                return Ok(tokenResult);
+                    Status = StatusCodes.Status400BadRequest,
+                    Title = "請求票據無效",
+                    Detail = "無效的存取記號 (Invalid Access Token)。",
+                    Instance = HttpContext.Request.Path
+                });
             }
-            catch (Microsoft.IdentityModel.Tokens.SecurityTokenException ex) when (ex.Message == "TOKEN_REPLAY_ATTACK_DETECTED")
+
+            string userId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null)
             {
-                //_logger.LogCritical("偵測到 Token 重放攻擊熔斷！");
-                
-                // 結構化記錄安全稽核事件
-                _securityLogger.LogSecurity(
+                return Unauthorized(new ProblemDetails
+                {
+                    Status = StatusCodes.Status401Unauthorized,
+                    Title = "使用者無效",
+                    Detail = "使用者不存在或已被刪除。",
+                    Instance = HttpContext.Request.Path
+                });
+            }
+
+            string deviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "UNKNOWN-DEVICE";
+
+            var tokenResult = await _tokenEngine.RefreshSessionAsync(user, deviceId, request.RefreshToken);
+
+            return Ok(tokenResult);
+        }
+        catch (Microsoft.IdentityModel.Tokens.SecurityTokenException ex) when (ex.Message == "TOKEN_REPLAY_ATTACK_DETECTED")
+        {
+            _securityLogger.LogSecurity(
                 eventCode: "SEC-401-TOKEN_REPLAY_ATTACK_DETECTED",
                 eventCategory: "Auth.TokenRefresh",
                 userId: UserInfo.UserId ?? "Unknown",
                 clientIp: UserInfo.ClientIp ?? "0.0.0.0",
-                // 💡 建議：訊息範本中的具名參數，名稱儘量與傳入的變數名或後端資料庫欄位名「保持一致」
-                // 將 {TargetUserId} 改為 {UserId}，將 {RemoteIp} 改為 {ClientIp}，這樣在 ELK 或資料庫搜尋時欄位會更統一。
                 messageTemplate: "偵測到 Token 重放攻擊熔斷！用戶識別碼: {UserId}, 來源IP: {ClientIp}",
-                UserInfo.UserId ?? "Unknown", // 💡 確保傳入參數與上方 Null 檢查邏輯一致
+                UserInfo.UserId ?? "Unknown",
                 UserInfo.ClientIp ?? "0.0.0.0"
-                );
+            );
 
-                return StatusCode(StatusCodes.Status401Unauthorized, new { message = "憑證異常，檢測到潛在的重放安全威脅，已強制終止所有連線。" });
-            }
-            catch (Microsoft.IdentityModel.Tokens.SecurityTokenException ex) when (ex.Message == "ACCOUNT_FROZEN_OR_INVALID_SESSION")
+            return StatusCode(StatusCodes.Status401Unauthorized, new ProblemDetails
             {
+                Status = StatusCodes.Status401Unauthorized,
+                Title = "資安威脅熔斷",
+                Detail = "憑證異常，檢測到潛在的重放安全威脅，已強制終止所有連線。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+        catch (Microsoft.IdentityModel.Tokens.SecurityTokenException ex) when (ex.Message == "ACCOUNT_FROZEN_OR_INVALID_SESSION")
+        {
+            _securityLogger.LogSecurity(
+                eventCode: "SEC-401-INVALID-SESSION",
+                eventCategory: "Auth.TokenRefresh",
+                userId: UserInfo.UserId ?? "Unknown",
+                clientIp: UserInfo.ClientIp ?? "0.0.0.0",
+                messageTemplate: "帳號已凍結或工作階段無效。用戶識別碼: {UserId}, 來源IP: {ClientIp}",
+                UserInfo.UserId ?? "Unknown",
+                UserInfo.ClientIp ?? "0.0.0.0"
+            );
 
-                // 🟢 審計點：結構化記錄安全稽核事件，修正訊息範本（Message Template）命名並與後方參數完全對齊
-                _securityLogger.LogSecurity(
-                    eventCode: "SEC-401-INVALID-SESSION", // 💡 建議將 "SEC-425 Too Early" 規範化為相符的 401 狀態碼
-                    eventCategory: "Auth.TokenRefresh",
-                    userId: UserInfo.UserId ?? "Unknown",
-                    clientIp: UserInfo.ClientIp ?? "0.0.0.0",
-                    messageTemplate: "帳號已凍結或工作階段無效。用戶識別碼: {TargetUserId}, 來源IP: {RemoteIp}", // 💡 移除範本內的點號與表達式字串，改用強型別屬性名稱
-                    UserInfo.UserId,
-                    UserInfo.ClientIp
-                );
-
-            
-                return StatusCode(StatusCodes.Status401Unauthorized, new { message = "工作階段已失效或帳戶已被鎖定。" });
-            }
-            catch (Exception ex)
+            return StatusCode(StatusCodes.Status401Unauthorized, new ProblemDetails
             {
-                _logger.LogError(ex, "刷新 Token 時發生核心異常。");
-                return StatusCode(StatusCodes.Status500InternalServerError, new { message = "伺服器內部錯誤" });
-            }
+                Status = StatusCodes.Status401Unauthorized,
+                Title = "工作階段失效",
+                Detail = "工作階段已失效或帳戶已被鎖定。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "刷新 Token 時發生核心異常。");
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "刷新 Token 時發生核心異常。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
+    /// <summary>
+    /// 獲取線上即時活動用戶數觀測
+    /// </summary>
+    /// <param name="query">線上人數查詢過濾參數</param>
+    /// <param name="cancellationToken">異步取消權牌</param>
+    /// <returns>線上即時活動用戶統計資料</returns>
+    [HttpGet("online-count")]
+    [Menu("線上人數統計", "fa-solid fa-users", order: 3, parent: "身份驗證")]
+    [Description("獲取線上即時活動用戶數觀測端點，支援自訂觀測時間視窗")]
+    [ProducesResponseType(typeof(OnlineUserCountResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetOnlineUserCountAsync(
+        [FromQuery] OnlineUserCountQueryDto query,
+        CancellationToken cancellationToken = default)
+    {
+        int finalWindow = query.WindowMinutes ?? (_options.AccessTokenExpirationMinutes + 2);
+
+        if (finalWindow <= 0 || finalWindow > 1440)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "參數超出範圍",
+                Detail = "活動觀測時間視窗必須介於 1 到 1440 分鐘之間。",
+                Instance = HttpContext.Request.Path
+            });
         }
 
-        /// <summary>
-        /// 獲取線上即時活動用戶數觀測
-        /// </summary>
-        [HttpGet("online-count")]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [Menu("線上人數統計", "fa-solid fa-users", order: 3, parent: "身份驗證")]
-        [Description("獲取線上即時活動用戶數觀測端點，支援自訂觀測時間視窗")]
-        public async Task<IActionResult> GetOnlineUserCount([FromQuery] int? windowMinutes = null)
+        try
         {
-            int finalWindow = windowMinutes ?? (_options.AccessTokenExpirationMinutes + 2);
+            int activeUsers = await _tokenRepository.GetActiveOnlineUserCountAsync(finalWindow);
 
-            if (finalWindow <= 0 || finalWindow > 1440)
+            return Ok(new OnlineUserCountResponseDto
             {
-                return BadRequest(new { message = "活動觀測時間視窗必須介於 1 到 1440 分鐘之間。" });
-            }
+                ActiveOnlineUsers = activeUsers,
+                ObservationWindowMinutes = finalWindow,
+                IsUsingDefaultConfigWindow = !query.WindowMinutes.HasValue,
+                CalculatedAtUtc = DateTime.UtcNow
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "系統操作無效",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "獲取線上人數統計時發生未知錯誤。");
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "內部資料統計異常",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
 
-            try
-            {
-                int activeUsers = await _tokenRepository.GetActiveOnlineUserCountAsync(finalWindow);
+    /// <summary>
+    /// 切換作用中的實驗室上下文 (無感切換)
+    /// </summary>
+    /// <param name="request">目標實驗室切換請求</param>
+    /// <param name="cancellationToken">異步取消權牌</param>
+    /// <returns>切換後的新權限配置與選單結構</returns>
+    [HttpPost("switch-context")]
+    [Menu("切換實驗室", "fa-solid fa-exchange-alt", order: 4, parent: "身份驗證")]
+    [Description("高階主管切換作用中的實驗室上下文，支援無感切換")]
+    [ProducesResponseType(typeof(UserPermissionProfileDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> SwitchContextAsync(
+        [FromBody] SwitchLabRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
 
-                return Ok(new
-                {
-                    ActiveOnlineUsers = activeUsers,
-                    ObservationWindowMinutes = finalWindow,
-                    IsUsingDefaultConfigWindow = !windowMinutes.HasValue,
-                    CalculatedAtUtc = DateTime.UtcNow
-                });
-            }
-            catch (InvalidOperationException ex)
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized(new ProblemDetails
             {
-                return StatusCode(StatusCodes.Status500InternalServerError, new { message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "獲取線上人數統計時發生未知錯誤。");
-                return StatusCode(StatusCodes.Status500InternalServerError, new { message = "內部資料統計異常" });
-            }
+                Status = StatusCodes.Status401Unauthorized,
+                Title = "未授權存取",
+                Detail = "無法識別目前的登入使用者身分。",
+                Instance = HttpContext.Request.Path
+            });
         }
 
-        /// <summary>
-        /// 高階主管切換作用中的實驗室上下文 (無感切換核心 API)
-        /// </summary>
-        [HttpPost("switch-context")]
-        [ProducesResponseType(typeof(UserPermissionProfileDto), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [Menu("切換實驗室", "fa-solid fa-exchange-alt", order: 4, parent: "身份驗證")]
-        [Description("高階主管切換作用中的實驗室上下文，支援無感切換")]
-        public async Task<IActionResult> SwitchContext([FromBody] SwitchLabRequest request, CancellationToken cancellationToken)
+        try
         {
-            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userId)) return Unauthorized();
-
-            // 呼叫 Service 驗證主管是否管轄該 TargetLabId，並獲取該實驗室的權限遮罩與選單
             var newProfile = await _runtimeScopeService.SwitchLaboratoryAsync(userId, request.TargetLabId, cancellationToken);
 
             if (newProfile is null)
             {
-                return Forbid("您無權存取或切換至該實驗室");
+                return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
+                {
+                    Status = StatusCodes.Status403Forbidden,
+                    Title = "存取權限不足",
+                    Detail = "您無權存取或切換至該實驗室。",
+                    Instance = HttpContext.Request.Path
+                });
             }
 
             return Ok(newProfile);
         }
-    }
-
-
-    /// <summary>
-    /// 
-    /// </summary>
-    public sealed class RefreshTokenRequest
-    {
-        public string AccessToken { get; set; } = string.Empty;
-        public string RefreshToken { get; set; } = string.Empty;
-    }
-
-    public sealed class LoginRequest
-    {
-        public string Email { get; set; } = string.Empty;
-        public string Password { get; set; } = string.Empty;
-    }
-
-    public class SwitchLabRequest
-    {
-        public Guid TargetLabId { get; set; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "切換實驗室上下文時發生未預期異常。UserId: {UserId}, TargetLabId: {LabId}", userId, request.TargetLabId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "切換實驗室上下文失敗。",
+                Instance = HttpContext.Request.Path
+            });
+        }
     }
 }

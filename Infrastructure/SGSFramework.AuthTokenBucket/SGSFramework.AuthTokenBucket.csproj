@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
 	  <!-- 設定套件的資訊 -->
 	  <PackageId>SGSFramework.AuthTokenBucket</PackageId>
-	  <Version>1.0.0.0</Version>
+	  <Version>1.0.0.1</Version>
 	  <Authors>Wayne</Authors>
 	  <Company>SHANDA</Company>
 	  <Description>認證與動態限流元件</Description>
