@@ -2,10 +2,12 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Ledgers;
 using SGSFramework.VerifyLedger.Dtos;
 using SGSFramework.VerifyLedger.Reports;
 using SGSFramework.VerifyLedger.Services;
+using System.ComponentModel;
 using System.Reflection;
 using System.Text.Json;
 
@@ -16,6 +18,9 @@ namespace SGSFramework.VerifyLedger.Controllers
     /// </summary>
     [ApiController]
     [Route("api/ledger")]
+    [Menu("總帳驗證管理", "fa-solid fa-user-shield", order: 2, parent: null)]
+    [RequiresPermission("LEDGERVERIFICATION_READ")]
+    [Description("總帳驗證")]
     public class LedgerVerificationController : ControllerBase
     {
         private readonly IServiceProvider _serviceProvider;
@@ -37,6 +42,9 @@ namespace SGSFramework.VerifyLedger.Controllers
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        [Menu("帳本驗證", "fa-solid fa-user-shield", order: 2, parent: "總帳驗證管理")]
+        [RequiresPermission("LEDGERVERIFICATION_VERIFYLEDGER")]
+        [Description("帳本驗證")]
         public async Task<IActionResult> VerifyLedgerAsync(string contextName, string entityName)
         {
             if (string.IsNullOrWhiteSpace(contextName) || string.IsNullOrWhiteSpace(entityName))
@@ -119,6 +127,9 @@ namespace SGSFramework.VerifyLedger.Controllers
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        [Menu("帳本驗證報告", "fa-solid fa-user-shield", order: 2, parent: "總帳驗證管理")]
+        [RequiresPermission("LEDGERVERIFICATION_DOWNLOAD_REPORT")]
+        [Description("帳本驗證報告")]
         public async Task<IActionResult> DownloadReport(string contextName, string entityName)
         {
             if (string.IsNullOrWhiteSpace(contextName) || string.IsNullOrWhiteSpace(entityName))

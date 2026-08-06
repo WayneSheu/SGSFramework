@@ -15,8 +15,8 @@ namespace SGSFramework.ModulePlugin.Controllers.ModuleManagements
 {
     [ApiController]
     [Route("api/system/modules")]
-    [Menu("模組管理", "fa-solid fa-flask", order: 10, parent: "System")]
-    [RequiresPermission("SYS_MODULE_READ")]
+    [Menu("模組管理", "fa-solid fa-flask", order: 10, parent: null)]
+    [RequiresPermission("MODULEMANAGEMENT_READ")]
     [Description("商業模組維護")]
     [Order(10)]
     public class ModuleManagementController : ApiControllerBase
@@ -40,7 +40,7 @@ namespace SGSFramework.ModulePlugin.Controllers.ModuleManagements
         /// </summary>
         [HttpGet("details")]
         [Menu("查詢已載入模組詳情", "fa-solid fa-list-check", order: 1, parent: "模組管理")]
-        [RequiresPermission("SYS_MODULE_READ")]
+        [RequiresPermission("MODULEMANAGEMENT_GETACTIVEMODULESDETAILS")]
         [Order(1)]
         [Description("查詢目前所有已載入掛載的商務模組完整資訊")]
         [ProducesResponseType(StatusCodes.Status200OK)]
@@ -77,13 +77,13 @@ namespace SGSFramework.ModulePlugin.Controllers.ModuleManagements
         /// 上傳並儲存新的模組檔案（支援單一 DLL 或多檔案批次上傳，自動解除檔案鎖定、更新並同步註冊控制器元資料）
         /// </summary>
         [HttpPost("upload")]
-        [Menu("上傳模組", "fa-solid fa-upload", order: 3, parent: "模組管理")]
-        [RequiresPermission("SYS_MODULE_UPLOAD")]
-        [Order(4)]
-        [Description("上傳並儲存新的模組檔案")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        [Menu("上傳模組", "fa-solid fa-upload", order: 3, parent: "模組管理")]
+        [RequiresPermission("MODULEMANAGEMENT_UPLOADMODULE")]
+        [Order(4)]
+        [Description("上傳並儲存新的模組檔案")]
         public async Task<IActionResult> UploadModule([FromForm] List<IFormFile> files)
         {
             if (files == null || files.Count == 0)
@@ -192,12 +192,12 @@ namespace SGSFramework.ModulePlugin.Controllers.ModuleManagements
         /// 切換模組的啟用狀態
         /// </summary>
         [HttpPost("{moduleName}/toggle")]
-        [Menu("切換模組狀態", "fa-solid fa-toggle-on", order: 3, parent: "模組管理")]
-        [RequiresPermission("SYS_MODULE_TOGGLE")]
-        [Order(2)]
-        [Description("切換模組的啟用狀態")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [Menu("切換模組狀態", "fa-solid fa-toggle-on", order: 3, parent: "模組管理")]
+        [RequiresPermission("MODULEMANAGEMENT_TOGGLESTATUS")]
+        [Order(2)]
+        [Description("切換模組的啟用狀態")]
         public async Task<IActionResult> ToggleStatus(string moduleName, [FromBody] ToggleStatusRequest request)
         {
             var module = await _moduleRepo.GetModuleByNameAsync(moduleName);
@@ -232,12 +232,12 @@ namespace SGSFramework.ModulePlugin.Controllers.ModuleManagements
         /// 線上動態卸載並同步清除指定模組與其對應的控制器元資料
         /// </summary>
         [HttpDelete("{name}")]
-        [Menu("卸載模組", "fa-solid fa-trash", order: 4, parent: "模組管理")]
-        [RequiresPermission("SYS_MODULE_UNLOAD")]
-        [Order(3)]
-        [Description("線上動態卸載指定模組並同步清除資料庫中的控制器與模組元資料")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        [Menu("卸載模組", "fa-solid fa-trash", order: 4, parent: "模組管理")]
+        [RequiresPermission("MODULEMANAGEMENT_REMOVEMODULE")]
+        [Order(3)]
+        [Description("線上動態卸載指定模組並同步清除資料庫中的控制器與模組元資料")]
         public async Task<IActionResult> RemoveModule(string name)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(name);

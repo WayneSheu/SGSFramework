@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Text;
 
-namespace SGSFramework.ApiInfrastructure.Controllers.DiApis.DTOs
+namespace SGSFramework.DataProtection.DTOS
 {
     public record DecryptionRequest
     {

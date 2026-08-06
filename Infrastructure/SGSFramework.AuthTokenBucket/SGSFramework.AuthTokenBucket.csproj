@@ -34,11 +34,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.19.1" />
+    <PackageReference Include="SGSFramework.Core" Version="1.0.0.3" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.19.1" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\Shared\SGSFramework.Core\SGSFramework.Core.csproj" />
   </ItemGroup>
 
 </Project>

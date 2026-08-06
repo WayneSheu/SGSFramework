@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Text;
 
-namespace SGSFramework.ApiInfrastructure.Controllers.DiApis.DTOs
+namespace SGSFramework.DataProtection.DTOS
 {
     /// <summary>
     /// 加密請求模型，定義必要的業務屬性

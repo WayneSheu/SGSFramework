@@ -24,9 +24,8 @@
     <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
     <PackageReference Include="Scalar.AspNetCore" Version="2.16.17" />
     <PackageReference Include="SGSFramework.AuditLog" Version="1.0.0" />
-    <PackageReference Include="SGSFramework.ModulePlugin" Version="1.0.0.12" />
     <PackageReference Include="SGSFramework.Persistent" Version="1.0.0" />
-    <PackageReference Include="SGSFramework.SystemLog" Version="1.0.0.1" />
+    <PackageReference Include="SGSFramework.SystemLog" Version="1.0.0.3" />
   </ItemGroup>
 
   <ItemGroup>

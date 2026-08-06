@@ -12,14 +12,15 @@ using SGSFramework.Core.Abstractions.Logings;
 using SGSFramework.Core.Abstractions.Menus;
 using SGSFramework.Core.Controllers.Base;
 using SGSFramework.Core.HttpAuditProviders;
+using System.ComponentModel;
 using System.Security.Claims;
 
 namespace SGSFramework.AuthTokenBucket.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [ApiExplorerSettings(GroupName = "Auth")]
-    [Menu("身份驗證", "fa-solid fa-user-lock", order: 1, parent: "Auth")]
+    [Menu("身份驗證", "fa-solid fa-user-lock", order: 1, parent: null)]
+    [Description("身份驗證端點")]
     public sealed class AuthController : ApiControllerBase
     {
         private readonly UserManager<IdentityUser> _userManager;
@@ -67,6 +68,8 @@ namespace SGSFramework.AuthTokenBucket.Controllers
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        [Menu("帳密登入", "fa-solid fa-right-to-bracket", order: 1, parent: "身份驗證")]
+        [Description("標準帳密登入端點，整合大容量 Bitmask 權限與 TokenBucketEngine 基礎設施")]
         public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
             ArgumentNullException.ThrowIfNull(request);
@@ -110,12 +113,6 @@ namespace SGSFramework.AuthTokenBucket.Controllers
                     Message = "登入成功",
                 });
 
-
-                //return Ok(new
-                //{
-                //    Message = "登入成功",
-                //    TokenData = tokenResult
-                //});
             }
             catch (Exception ex)
             {
@@ -130,6 +127,10 @@ namespace SGSFramework.AuthTokenBucket.Controllers
         [HttpPost("refresh")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        [Menu("刷新 Token", "fa-solid fa-arrows-rotate", order: 2, parent: "身份驗證")]
+        [Description("雙向權限票據高併發輪轉刷新端點，對齊更新後的 TokenBucketEngine 參數規範")]
         public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
         {
             ArgumentNullException.ThrowIfNull(request);
@@ -208,6 +209,8 @@ namespace SGSFramework.AuthTokenBucket.Controllers
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        [Menu("線上人數統計", "fa-solid fa-users", order: 3, parent: "身份驗證")]
+        [Description("獲取線上即時活動用戶數觀測端點，支援自訂觀測時間視窗")]
         public async Task<IActionResult> GetOnlineUserCount([FromQuery] int? windowMinutes = null)
         {
             int finalWindow = windowMinutes ?? (_options.AccessTokenExpirationMinutes + 2);
@@ -245,6 +248,11 @@ namespace SGSFramework.AuthTokenBucket.Controllers
         /// </summary>
         [HttpPost("switch-context")]
         [ProducesResponseType(typeof(UserPermissionProfileDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        [Menu("切換實驗室", "fa-solid fa-exchange-alt", order: 4, parent: "身份驗證")]
+        [Description("高階主管切換作用中的實驗室上下文，支援無感切換")]
         public async Task<IActionResult> SwitchContext([FromBody] SwitchLabRequest request, CancellationToken cancellationToken)
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;

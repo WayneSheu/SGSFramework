@@ -3,23 +3,26 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using SGSFramework.AuthTokenBucket.Controllers.Base;
 using SGSFramework.AuthTokenBucket.Models;
 using SGSFramework.AuthTokenBucket.Servers;
-using SGSFramework.AuthTokenBucket.Controllers.Base;
-using SGSFramework.Core.Controllers.Base;
+using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Identities;
+using SGSFramework.Core.Controllers.Base;
 using System;
+using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace SGSFramework.ApiInfrastructure.Controllers
+namespace SGSFramework.Identity.Controllers
 {
     /// <summary>
-    /// 內部網路 Windows 網域無感單一登入端點（全面整合 TokenManager 與大容量 Bitmask 最終對齊版）
+    /// 內部網路 Windows 網域無感單一登入端點（全面整合 TokenManager 與大容量 Bitmask ）
     /// </summary>
     [ApiController]
     [Route("api/auth/sso/windows")]
-    [ApiExplorerSettings(GroupName = "Auth")]
+    [Menu("網域單一登入端點", "fa-solid fa-lock", order: 1, parent: null)]
+    [Description("內部網路 Windows 網域無感單一登入端點（全面整合 TokenManager 與大容量 Bitmask）")]
     public sealed class WindowsDomainAuthController : WindowsAuthController<IdentityUser>
     {
         private readonly TokenBucketEngine<IdentityUser> _tokenEngine;
@@ -39,6 +42,8 @@ namespace SGSFramework.ApiInfrastructure.Controllers
         /// </summary>
         [HttpGet("login")]
         [Authorize(AuthenticationSchemes = "Windows")]
+        [Menu("Windows 網域單一登入", "fa-solid fa-lock", order: 1, parent: "網域單一登入端點")]
+        [Description("內部網路 Windows 網域無感單一登入端點（全面整合 TokenManager 與大容量 Bitmask）")]
         public async Task<IActionResult> WindowsLogin()
         {
             try

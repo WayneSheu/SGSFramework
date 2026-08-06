@@ -13,7 +13,7 @@
 	  <PackageReadmeFile>README.md</PackageReadmeFile>
 	  <PublishRepositoryUrl>true</PublishRepositoryUrl>
 	  <EmbedUntrackedSources>true</EmbedUntrackedSources>
-	  <!-- 🚀關閉 OpenAPI Source Generator -->
+	  <!--關閉 OpenAPI Source Generator -->
 	<EnableOpenApiSourceGenerator>false</EnableOpenApiSourceGenerator>
 	<!-- 避免 Source Generator 為 XML 註解自動產生 Example 賦值碼 -->
 	<OpenApiGenerateDocuments>false</OpenApiGenerateDocuments>
@@ -34,8 +34,9 @@
 	  <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
 	  <PackageReference Include="SGSFramework.AuthTokenBucket" Version="1.0.0" />
 	  <PackageReference Include="SGSFramework.CodeSecurity" Version="1.0.0" />
-	  <PackageReference Include="SGSFramework.DataProtection" Version="1.0.0" />
-	  <PackageReference Include="SGSFramework.ModulePlugin" Version="1.0.0.12" />
-	  <PackageReference Include="SGSFramework.VerifyLedger" Version="1.0.0.1" />
+	  <PackageReference Include="SGSFramework.DataProtection" Version="1.0.0.2" />
+	  <PackageReference Include="SGSFramework.Identity" Version="1.0.0.3" />
+	  <PackageReference Include="SGSFramework.ModulePlugin" Version="1.0.0.13" />
+	  <PackageReference Include="SGSFramework.VerifyLedger" Version="1.0.0.2" />
 	</ItemGroup>
 </Project>

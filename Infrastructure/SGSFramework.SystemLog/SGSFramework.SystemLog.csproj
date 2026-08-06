@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
 	  <!-- 設定套件的資訊 -->
 	  <PackageId>SGSFramework.SystemLog</PackageId>
-	  <Version>1.0.0.1</Version>
+	  <Version>1.0.0.3</Version>
 	  <Authors>Wayne</Authors>
 	  <Company>SHANDA</Company>
 	  <Description>提供企業內部系統日誌套件。</Description>
@@ -17,13 +17,10 @@
 
   <ItemGroup>
     <Compile Remove="Abstractions\**" />
-    <Compile Remove="Controllers\**" />
     <Compile Remove="Enrichments\**" />
     <EmbeddedResource Remove="Abstractions\**" />
-    <EmbeddedResource Remove="Controllers\**" />
     <EmbeddedResource Remove="Enrichments\**" />
     <None Remove="Abstractions\**" />
-    <None Remove="Controllers\**" />
     <None Remove="Enrichments\**" />
   </ItemGroup>
 	<ItemGroup>
@@ -48,11 +45,7 @@
     <PackageReference Include="Serilog.Sinks.Async" Version="2.1.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageReference Include="Serilog.Sinks.MSSqlServer" Version="10.0.0" />
-  </ItemGroup>
-
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\Shared\SGSFramework.Core\SGSFramework.Core.csproj" />
+    <PackageReference Include="SGSFramework.Core" Version="1.0.0.3" />
   </ItemGroup>
 
 

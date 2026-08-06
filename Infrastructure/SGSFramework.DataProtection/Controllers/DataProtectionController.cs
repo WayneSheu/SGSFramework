@@ -1,19 +1,21 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
-using NetTopologySuite.Utilities;
-using SGSFramework.ApiInfrastructure.Controllers.DiApis.DTOs;
+using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.DataProtection.Abstractions;
-using System;
-using System.Collections.Generic;
+using SGSFramework.DataProtection.DTOS;
+using System.ComponentModel;
 using System.Security;
-using System.Text;
 
 
 namespace SGSFramework.ApiInfrastructure.Controllers.DiApis
 {
     [ApiController]
-    [Route("api/v1/[controller]")]
+    [ApiVersion("v1")]
+    [Route("api/system/DataProtectionC")]
+    [Menu("資料保護", "fa-solid fa-flask", order: 10, parent: null)]
+    [RequiresPermission("SYSTEM_DATAPROTECTION_READ")]
+    [Description("資料保護")]
     public class DataProtectionController : ControllerBase
     {
         private readonly IDiApi _diApi;
@@ -26,6 +28,9 @@ namespace SGSFramework.ApiInfrastructure.Controllers.DiApis
         }
 
         [HttpPost("encrypt")]
+        [Menu("資料加密", "fa-solid fa-flask", order: 10, parent: "資料保護")]
+        [RequiresPermission("SYSTEM_DATAPROTECTION_ENCRYPT")]
+        [Description("資料加密")]
         public async Task<IActionResult> Encrypt([FromBody] EncryptionRequest request)
         {
             // 1. 基本請求驗證 (由 Data Annotation 或 FluentValidation 處理)
@@ -53,6 +58,9 @@ namespace SGSFramework.ApiInfrastructure.Controllers.DiApis
         }
 
         [HttpPost("decrypt")]
+        [Menu("資料解密", "fa-solid fa-flask", order: 10, parent: "資料保護")]
+        [RequiresPermission("SYSTEM_DATAPROTECTION_DECRYPT")]
+        [Description("資料解密")]
         public async Task<IActionResult> Decrypt([FromBody] DecryptionRequest request)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);

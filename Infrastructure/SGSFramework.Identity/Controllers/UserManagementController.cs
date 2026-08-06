@@ -15,12 +15,11 @@ using System.Security.Claims;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace SGSFramework.ApiInfrastructure.Controllers
+namespace SGSFramework.Identity.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [ApiExplorerSettings(GroupName = "UserManagement")]
-    [Menu("使用者管理", "fa-solid fa-user-shield", order: 10, parent: "使用者管理")]
+    [Menu("使用者管理", "fa-solid fa-user-shield", order: 10, parent: null)]
     [RequiresPermission("SYSTEM.USERMANAGEMENT")]
     public sealed class UserManagementController : ApiControllerBase
     {
@@ -134,14 +133,14 @@ namespace SGSFramework.ApiInfrastructure.Controllers
         }
 
         /// <summary>
-        /// 3. 登入端點 (支援自訂帳號或 Email 雙軌識別 + 2FA 分流)
+        /// 登入端點 (支援自訂帳號或 Email 雙軌識別 + 2FA 分流)
         /// </summary>
         [HttpPost("login")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status423Locked)]
-        [Menu("登入", "fa-solid fa-user-shield", order: 3, parent: "使用者管理")]
-        [Description("登入")]
+        [Menu("一般帳號登入", "fa-solid fa-user-shield", order: 3, parent: "使用者管理")]
+        [Description("一般帳號登入")]
         public async Task<IActionResult> Login([FromBody] ManagementLoginRequest request)
         {
             ArgumentNullException.ThrowIfNull(request);

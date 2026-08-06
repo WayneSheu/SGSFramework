@@ -2,21 +2,17 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
-using SGSFramework.AuthTokenBucket.Models;
 using SGSFramework.AuthTokenBucket.Servers;
 using SGSFramework.Core.Abstractions.Attributes;
-using System;
-using System.Collections.Generic;
 using System.ComponentModel;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace SGSFramework.ApiInfrastructure.Controllers.Identities
+namespace SGSFramework.Identity.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
-    [ApiExplorerSettings(GroupName = "Auth")]
-    [Menu("身分安全管理", "fa-solid fa-user-shield", order: 2, parent: "系統管理")]
+    [Route("api/IdentitySecurity")]
+    [Menu("身份安全管理", "fa-solid fa-user-shield", order: 2, parent:null)]
+    [RequiresPermission("IDENTITY_SECURITY_MANAGEMENT")]
+    [Description("身份安全管理")]
     public sealed class IdentitySecurityController : ControllerBase
     {
         private readonly TokenBucketEngine<IdentityUser> _tokenEngine;
