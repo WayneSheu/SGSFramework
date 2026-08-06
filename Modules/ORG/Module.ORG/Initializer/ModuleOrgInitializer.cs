@@ -5,16 +5,18 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Serilog;
-using SGSFramework.AuditLog.Extensions;
-using SGSFramework.Core.Migrations;
-using SGSFramework.ModulePlugin.Abstractions;
-using SGSFramework.ModulePlugin.Systems.Controller.Providers;
-using SGS.Modules.ORG.Infrastructure;
-using SGS.Modules.ORG.Infrastructure.Dbcontexts;
-using SGS.Modules.ORG.Infrastructure.Extensions;
+using SGS.Modules.ORG.Application;
 using SGS.Modules.ORG.Application.Extensions;
 using SGS.Modules.ORG.Application.Services;
 using SGS.Modules.ORG.Extensions;
+using SGS.Modules.ORG.Infrastructure;
+using SGS.Modules.ORG.Infrastructure.Dbcontexts;
+using SGS.Modules.ORG.Infrastructure.Extensions;
+using SGSFramework.AuditLog.Extensions;
+using SGSFramework.Core.Abstractions.Adapters;
+using SGSFramework.Core.Migrations;
+using SGSFramework.ModulePlugin.Abstractions;
+using SGSFramework.ModulePlugin.Systems.Controller.Providers;
 using System.Collections.Concurrent;
 
 namespace SGS.Modules.ORG.Initializer;
@@ -111,6 +113,9 @@ public class ModuleOrgInitializer : IModuleInitializer
                     {
                         manager.FeatureProviders.Add(new InternalControllerFeatureProvider());
                     });
+            
+            // 覆蓋 Core 層層註冊的 NullOrganizationIntegrationService
+            services.AddScoped<IOrganizationIntegrationService, OrganizationIntegrationService>();
 
             return services;
         }

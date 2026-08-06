@@ -7,7 +7,7 @@
 
 	  <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
 	  <PackageId>SGSFramework.ModulePlugin</PackageId>
-	  <Version>1.0.0.16</Version>
+	  <Version>1.0.0.18</Version>
 	  <Authors>Wayne</Authors>
 	  <Company>SHANDA</Company>
 	  <Description>動態模組插件套件</Description>
@@ -34,7 +34,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="SGSFramework.AuthTokenBucket" Version="1.0.0.2" />
-    <PackageReference Include="SGSFramework.Core" Version="1.0.0.3" />
+    <PackageReference Include="SGSFramework.Core" Version="1.0.0.9" />
   </ItemGroup>
 	<Target Name="PushToBaGet" AfterTargets="Pack" Condition="'$(Configuration)' == 'Release'">
 		<Exec Command="dotnet nuget push &quot;$(ProjectDir)bin\$(Configuration)\*.nupkg&quot; --source http://localhost:5000/v3/index.json --api-key TeamSecret2026_InitialAccess! --allow-insecure-connections --skip-duplicate" />

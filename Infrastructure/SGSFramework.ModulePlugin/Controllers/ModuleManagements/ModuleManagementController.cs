@@ -1,14 +1,16 @@
-﻿using System.ComponentModel;
+﻿using System;
+using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
-using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Controllers.Base;
 using SGSFramework.ModulePlugin.Abstractions;
 using SGSFramework.ModulePlugin.DTOs;
-using SGSFramework.ModulePlugin.Systems.Module.Loaders;
 
 namespace SGSFramework.ModulePlugin.Controllers.v1;
 
@@ -24,18 +26,15 @@ namespace SGSFramework.ModulePlugin.Controllers.v1;
 [Order(10)]
 public class ModuleManagementController : ApiControllerBase
 {
-    private readonly IModuleRegistry _moduleRegistry;
-    private readonly IModuleRepository _moduleRepo;
-    private readonly IServiceProvider _serviceProvider;
+    private readonly IModuleManagementApplicationService _moduleAppService;
+    private readonly ILogger<ModuleManagementController> _logger;
 
     public ModuleManagementController(
-        IModuleRegistry moduleRegistry,
-        IModuleRepository moduleRepo,
-        IServiceProvider serviceProvider)
+        IModuleManagementApplicationService moduleAppService,
+        ILogger<ModuleManagementController> logger)
     {
-        _moduleRegistry = moduleRegistry ?? throw new ArgumentNullException(nameof(moduleRegistry));
-        _moduleRepo = moduleRepo ?? throw new ArgumentNullException(nameof(moduleRepo));
-        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+        _moduleAppService = moduleAppService ?? throw new ArgumentNullException(nameof(moduleAppService));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
@@ -43,7 +42,7 @@ public class ModuleManagementController : ApiControllerBase
     /// </summary>
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>模組詳細資訊列表</returns>
-    [HttpGet]
+    [HttpGet(Name = "GetActiveModulesDetails")]
     [Menu("查詢已載入模組詳情", "fa-solid fa-list-check", order: 1, parent: "商業模組管理")]
     [RequiresPermission("MODULEMANAGEMENT_GETACTIVEMODULESDETAILS")]
     [Order(1)]
@@ -54,26 +53,12 @@ public class ModuleManagementController : ApiControllerBase
     {
         try
         {
-            var loadedModuleNames = _moduleRegistry.GetLoadedModules()?.ToList() ?? new List<string>();
-            var allDbModules = await _moduleRepo.GetAllModulesAsync(cancellationToken);
-
-            var activeModuleDetails = allDbModules
-                .Where(m => loadedModuleNames.Contains(m.ModuleName, StringComparer.OrdinalIgnoreCase) || m.IsActive)
-                .Select(m => new ModuleDetailResponse
-                {
-                    ModuleName = m.ModuleName,
-                    Version = m.Version,
-                    AssemblyPath = m.AssemblyPath,
-                    IsActive = m.IsActive,
-                    LastLoadedAt = m.LastLoadedAt,
-                    Checksum = m.Checksum
-                })
-                .ToList();
-
-            return Ok(activeModuleDetails);
+            var result = await _moduleAppService.GetActiveModulesDetailsAsync(cancellationToken);
+            return Ok(result);
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "查詢已載入模組詳情時發生系統異常。 Path: {Path}", HttpContext.Request.Path);
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
                 Status = StatusCodes.Status500InternalServerError,
@@ -113,103 +98,38 @@ public class ModuleManagementController : ApiControllerBase
             });
         }
 
-        var pluginsDirectory = Path.Combine(AppContext.BaseDirectory, "plugins");
-        if (!Directory.Exists(pluginsDirectory))
-        {
-            Directory.CreateDirectory(pluginsDirectory);
-        }
-
-        var uploadedFilesResult = new List<UploadedFileInfoResponseDto>();
-        string? mainDllTempPath = null;
-        string? detectedModuleName = null;
-        string? detectedVersion = "1.0.0.0";
-
         try
         {
-            foreach (var file in files)
+            var response = await _moduleAppService.UploadModuleAsync(files, cancellationToken);
+
+            // 明確指定 RouteName 回傳 201 Created，確保 Location Header 成功計算並防止 Dynamic Controller 尋路例外
+            return CreatedAtRoute("GetActiveModulesDetails", null, response);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "上傳模組時參數無效。 Path: {Path}", HttpContext.Request.Path);
+            return BadRequest(new ProblemDetails
             {
-                if (file.Length == 0) continue;
-
-                var safeFileName = Path.GetFileName(file.FileName);
-                var filePath = Path.Combine(pluginsDirectory, safeFileName);
-
-                if (safeFileName.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) &&
-                    !safeFileName.Contains(".Application.dll", StringComparison.OrdinalIgnoreCase) &&
-                    !safeFileName.Contains(".Infrastructure.dll", StringComparison.OrdinalIgnoreCase))
-                {
-                    mainDllTempPath = Path.GetTempFileName();
-                    using (var stream = new FileStream(mainDllTempPath, FileMode.Create))
-                    {
-                        await file.CopyToAsync(stream, cancellationToken);
-                    }
-
-                    try
-                    {
-                        var assemblyName = AssemblyName.GetAssemblyName(mainDllTempPath);
-                        detectedModuleName = assemblyName.Name ?? Path.GetFileNameWithoutExtension(safeFileName);
-                        detectedVersion = assemblyName.Version?.ToString() ?? "1.0.0.0";
-                    }
-                    catch
-                    {
-                        detectedModuleName = Path.GetFileNameWithoutExtension(safeFileName);
-                    }
-                }
-
-                using (var stream = new FileStream(filePath, FileMode.Create))
-                {
-                    await file.CopyToAsync(stream, cancellationToken);
-                }
-
-                uploadedFilesResult.Add(new UploadedFileInfoResponseDto
-                {
-                    FileName = safeFileName,
-                    Size = file.Length
-                });
-            }
-
-            if (string.IsNullOrEmpty(detectedModuleName))
+                Status = StatusCodes.Status400BadRequest,
+                Title = "請求參數無效",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "上傳模組檔案格式或識別失敗。 Path: {Path}", HttpContext.Request.Path);
+            return BadRequest(new ProblemDetails
             {
-                return BadRequest(new ProblemDetails
-                {
-                    Status = StatusCodes.Status400BadRequest,
-                    Title = "檔案格式不正確",
-                    Detail = "無法識別上傳的主模組 DLL 檔案名稱。",
-                    Instance = HttpContext.Request.Path
-                });
-            }
-
-            try
-            {
-                _moduleRegistry.UnloadModule(detectedModuleName);
-            }
-            catch
-            {
-                // 吸納卸載舊模組時可能拋出的非關鍵例外
-            }
-
-            var mainDllFileName = $"{detectedModuleName}.dll";
-            var mainDllFullPath = Path.Combine(pluginsDirectory, mainDllFileName);
-
-            if (System.IO.File.Exists(mainDllFullPath))
-            {
-                var assembly = Assembly.LoadFrom(mainDllFullPath);
-                using var scope = _serviceProvider.CreateScope();
-                await ModuleLoaderExtensions.RegisterModuleToDbAsync(assembly, detectedModuleName, mainDllFullPath, scope.ServiceProvider);
-            }
-
-            var response = new ModuleUploadResponseDto
-            {
-                Success = true,
-                Message = $"模組 [{detectedModuleName}] 相關檔案上傳成功，已完成元資料與控制器同步。",
-                ModuleName = detectedModuleName,
-                Version = detectedVersion,
-                Files = uploadedFilesResult
-            };
-
-            return CreatedAtAction(nameof(GetActiveModulesDetailsAsync), new { moduleName = detectedModuleName }, response);
+                Status = StatusCodes.Status400BadRequest,
+                Title = "檔案格式不正確",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
+            });
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "上傳模組時發生系統異常。 Path: {Path}", HttpContext.Request.Path);
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
                 Status = StatusCodes.Status500InternalServerError,
@@ -217,13 +137,6 @@ public class ModuleManagementController : ApiControllerBase
                 Detail = $"上傳模組時發生系統異常：{ex.Message}",
                 Instance = HttpContext.Request.Path
             });
-        }
-        finally
-        {
-            if (!string.IsNullOrEmpty(mainDllTempPath) && System.IO.File.Exists(mainDllTempPath))
-            {
-                try { System.IO.File.Delete(mainDllTempPath); } catch { }
-            }
         }
     }
 
@@ -247,53 +160,55 @@ public class ModuleManagementController : ApiControllerBase
         [FromBody] ToggleStatusRequest request,
         CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(moduleName);
-        ArgumentNullException.ThrowIfNull(request);
-
-        var module = await _moduleRepo.GetModuleByNameAsync(moduleName, cancellationToken);
-
-        if (module == null)
+        if (string.IsNullOrWhiteSpace(moduleName) || request == null)
         {
-            return NotFound(new ProblemDetails
+            return BadRequest(new ProblemDetails
             {
-                Status = StatusCodes.Status404NotFound,
-                Title = "找不到資源",
-                Detail = $"無法啟用模組 [{moduleName}]：資料庫中找不到對應的模組元資料紀錄。",
+                Status = StatusCodes.Status400BadRequest,
+                Title = "請求參數無效",
+                Detail = "模組名稱與變更請求不可為空。",
                 Instance = HttpContext.Request.Path
             });
         }
 
-        if (request.IsActive)
+        try
         {
-            if (string.IsNullOrEmpty(module.AssemblyPath) || !System.IO.File.Exists(module.AssemblyPath))
-            {
-                var fallbackPath = Path.Combine(AppContext.BaseDirectory, "plugins", $"{moduleName}.dll");
-                if (System.IO.File.Exists(fallbackPath))
-                {
-                    module.AssemblyPath = fallbackPath;
-                    await _moduleRepo.UpsertAsync(module, cancellationToken);
-                }
-                else
-                {
-                    return BadRequest(new ProblemDetails
-                    {
-                        Status = StatusCodes.Status400BadRequest,
-                        Title = "啟用模組失敗",
-                        Detail = $"無法啟用模組 [{moduleName}]：找不到對應的 DLL 檔案（路徑：{module.AssemblyPath}）。",
-                        Instance = HttpContext.Request.Path
-                    });
-                }
-            }
+            var result = await _moduleAppService.ToggleModuleStatusAsync(moduleName, request.IsActive, cancellationToken);
+            return Ok(result);
         }
-
-        await _moduleRepo.ToggleModuleStatusAsync(moduleName, request.IsActive, cancellationToken);
-
-        return Ok(new ToggleStatusResponseDto
+        catch (KeyNotFoundException ex)
         {
-            Success = true,
-            ModuleName = moduleName,
-            IsActive = request.IsActive
-        });
+            _logger.LogWarning(ex, "切換模組狀態失敗，找不到對應模組 [{ModuleName}]。", moduleName);
+            return NotFound(new ProblemDetails
+            {
+                Status = StatusCodes.Status404NotFound,
+                Title = "找不到資源",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
+            });
+        }
+        catch (FileNotFoundException ex)
+        {
+            _logger.LogWarning(ex, "切換模組狀態失敗，找不到對應 DLL 檔案。");
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "啟用模組失敗",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "切換模組 [{ModuleName}] 狀態時發生異常。", moduleName);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "系統內部錯誤",
+                Detail = $"切換模組狀態時發生系統異常：{ex.Message}",
+                Instance = HttpContext.Request.Path
+            });
+        }
     }
 
     /// <summary>
@@ -311,17 +226,25 @@ public class ModuleManagementController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> RemoveModuleAsync(string moduleName, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(moduleName);
+        if (string.IsNullOrWhiteSpace(moduleName))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "請求參數無效",
+                Detail = "模組名稱不可為空。",
+                Instance = HttpContext.Request.Path
+            });
+        }
 
         try
         {
-            _moduleRegistry.UnloadModule(moduleName);
-            await _moduleRepo.RemoveModuleAsync(moduleName, cancellationToken);
-
+            await _moduleAppService.RemoveModuleAsync(moduleName, cancellationToken);
             return NoContent();
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "卸載模組 [{ModuleName}] 時發生系統異常。", moduleName);
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
                 Status = StatusCodes.Status500InternalServerError,

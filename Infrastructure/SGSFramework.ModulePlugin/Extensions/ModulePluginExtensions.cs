@@ -11,6 +11,7 @@ using Serilog;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Migrations;
 using SGSFramework.ModulePlugin.Abstractions;
+using SGSFramework.ModulePlugin.Services;
 using SGSFramework.ModulePlugin.Systems.Controller.Providers;
 using SGSFramework.ModulePlugin.Systems.Controller.Repositories;
 using SGSFramework.ModulePlugin.Systems.Controller.Services;
@@ -21,22 +22,32 @@ using SGSFramework.ModulePlugin.Systems.Module.Loaders;
 using SGSFramework.ModulePlugin.Systems.Module.Registries;
 using SGSFramework.ModulePlugin.Systems.Module.Repositories;
 using SGSFramework.ModulePlugin.Systems.Module.Services;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace SGSFramework.ModulePlugin.Extensions;
 
+/// <summary>
+/// 模組化插件系統 DI 服務註冊與應用程式啟動擴充
+/// </summary>
 public static class ModulePluginExtensions
 {
     /// <summary>
     /// 將模組化插件系統的核心服務與動態控制器倉儲註冊至 DI 容器（支援指定 DbContext）。
     /// </summary>
     /// <typeparam name="TDbContext">目標 EF Core DbContext 類型</typeparam>
+    /// <param name="services">DI 服務集合</param>
+    /// <param name="config">組態設定</param>
+    /// <returns>服務集合</returns>
     public static IServiceCollection AddModulePlugin<TDbContext>(this IServiceCollection services, IConfiguration config)
         where TDbContext : DbContext
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(config);
 
-        // 1. 模組註冊與註冊表服務
+        // 1. 模組註冊與註冊表服務 (Singleton)
         services.AddSingleton<ModuleRegistry>();
         services.AddSingleton<IModuleRegistry>(sp => sp.GetRequiredService<ModuleRegistry>());
         services.AddSingleton<ServiceRegistryMonitor>();
@@ -63,10 +74,13 @@ public static class ModulePluginExtensions
 
         services.AddScoped(typeof(IDynamicControllerRepository<>), typeof(DynamicControllerRepository<>));
 
-        // 4. 模組生命週期管理、熱加載與卸載服務
+        // 4. 模組生命週期管理、熱加載與應用層服務 (Scoped)
         services.AddScoped<ModuleLifecycleService>();
         services.AddScoped<IModuleAssemblyRegisterService, ModuleAssemblyRegisterService>();
         services.AddScoped<IModuleUnloader, ModuleUnloader>();
+
+        // 註冊模組管理應用層服務 (解決 ModuleManagementController DI 解析失敗的問題)
+        services.AddScoped<IModuleManagementApplicationService, ModuleManagementApplicationService>();
 
         // 5. 動態外掛模組與背景監控服務 (HostedServices)
         services.AddModularModules(config);
@@ -85,6 +99,9 @@ public static class ModulePluginExtensions
     /// <summary>
     /// 保留相容性之非泛型多載，適用於無 DbContext 依賴之基礎模組註冊。
     /// </summary>
+    /// <param name="services">DI 服務集合</param>
+    /// <param name="config">組態設定</param>
+    /// <returns>服務集合</returns>
     public static IServiceCollection AddModulePlugin(this IServiceCollection services, IConfiguration config)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -100,6 +117,10 @@ public static class ModulePluginExtensions
         services.AddScoped<ModuleLifecycleService>();
         services.AddScoped<IModuleAssemblyRegisterService, ModuleAssemblyRegisterService>();
         services.AddScoped<IModuleUnloader, ModuleUnloader>();
+
+        // 註冊模組管理應用層服務
+        services.AddScoped<IModuleManagementApplicationService, ModuleManagementApplicationService>();
+
         services.AddScoped(typeof(IDynamicControllerRepository<>), typeof(DynamicControllerRepository<>));
 
         services.AddModularModules(config);
@@ -115,6 +136,9 @@ public static class ModulePluginExtensions
     /// <summary>
     /// 註冊 Controller 掃描服務至 DI 容器
     /// </summary>
+    /// <typeparam name="TDbContext">目標 EF Core DbContext 類型</typeparam>
+    /// <param name="services">DI 服務集合</param>
+    /// <returns>服務集合</returns>
     public static IServiceCollection AddControllerScanner<TDbContext>(this IServiceCollection services)
         where TDbContext : DbContext
     {
@@ -126,6 +150,9 @@ public static class ModulePluginExtensions
     /// <summary>
     /// 系統啟動時執行自動掃描與註冊
     /// </summary>
+    /// <typeparam name="TDbContext">目標 EF Core DbContext 類型</typeparam>
+    /// <param name="host">應用程式 Host</param>
+    /// <param name="moduleAssemblyFilter">組件過濾邏輯</param>
     public static async Task UseControllerScanner<TDbContext>(this IHost host, Func<string, bool> moduleAssemblyFilter)
         where TDbContext : DbContext
     {
@@ -154,6 +181,8 @@ public static class ModulePluginExtensions
     /// <summary>
     /// 透過註冊模組、執行遷移和確保控制器一致性來初始化模組化系統。
     /// </summary>
+    /// <param name="host">應用程式 Host</param>
+    /// <returns>初始化後的 Host</returns>
     public static async Task<IHost> InitializeModularSystemAsync(this IHost host)
     {
         ArgumentNullException.ThrowIfNull(host);
@@ -239,6 +268,7 @@ public static class ModulePluginExtensions
     /// <summary>
     /// 確保檔案系統 (Plugins 目錄) 與 資料庫 (ControllerMetadata 表) 兩者狀態同步
     /// </summary>
+    /// <param name="serviceProvider">服務提供者範疇</param>
     public static async Task EnsureControllerConsistency(IServiceProvider serviceProvider)
     {
         ArgumentNullException.ThrowIfNull(serviceProvider);

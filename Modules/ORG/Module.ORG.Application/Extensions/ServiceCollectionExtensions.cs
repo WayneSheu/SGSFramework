@@ -27,13 +27,6 @@ namespace SGS.Modules.ORG.Application.Extensions
             services.AddTransient<
                 IRequestHandler<GetLaboratoriesQuery, List<LaboratoryDto>>,
                 GetLaboratoriesHandler>();
-            // 覆蓋 Core 層層註冊的 NullOrganizationIntegrationService
-            services.AddScoped<IOrganizationIntegrationService, OrganizationIntegrationService>();
-
-
-            // [修正] 移除危險的 services.BuildServiceProvider() 
-            // 若一定要註冊監控 Metadata，請改用 TryAdd 或透過具備 DI 支援的方式處理，
-            // 例如改用具名或直接由外部傳入實例，或者暫時註解掉這行測試看看。
 
             return services;
         }

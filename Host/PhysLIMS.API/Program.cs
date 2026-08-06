@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using PhysLIMS.API.Dbcontexts;
 using PhysLIMS.API.Extensions;
 using PhysLIMS.API.Helpers;
@@ -11,9 +12,11 @@ using SGSFramework.ApiInfrastructure.Filters;
 using SGSFramework.AuditLog.Extensions;
 using SGSFramework.AuthTokenBucket.Extensions;
 using SGSFramework.CodeSecurity.Extensions;
+using SGSFramework.Core.Abstractions.Adapters;
 using SGSFramework.Core.ApiDoc.Extensions;
 using SGSFramework.Core.Exceptions;
 using SGSFramework.Core.Extensions;
+using SGSFramework.Core.Services;
 using SGSFramework.Core.SSOs;
 using SGSFramework.ModulePlugin.Extensions;
 using SGSFramework.ModulePlugin.Systems.Controller.Providers;
@@ -31,8 +34,12 @@ try
 
     IConfiguration config = builder.Configuration;
 
+    // 在載入動態外掛前，先註冊預設降級服務
+    //builder.Services.TryAddScoped<IOrganizationIntegrationService, NullOrganizationIntegrationService>();
+
     //注入SGSFramework.Core 的服務 
     builder.AddSGSFrameworkCore();
+
 
     // 1. 註冊自訂 Scalar API 文件服務
     builder.Services.AddOpenApi("v1", options =>
