@@ -31,6 +31,9 @@ try
 
     IConfiguration config = builder.Configuration;
 
+    //注入SGSFramework.Core 的服務 
+    builder.AddSGSFrameworkCore();
+
     // 1. 註冊自訂 Scalar API 文件服務
     builder.Services.AddOpenApi("v1", options =>
     {

@@ -13,6 +13,7 @@ using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Logings;
 using SGSFramework.Core.Abstractions.Menus;
 using SGSFramework.Core.Controllers.Base;
+using SGSFramework.Core.DTOs;
 using SGSFramework.Core.HttpAuditProviders;
 
 namespace SGSFramework.AuthTokenBucket.Controllers.v1;

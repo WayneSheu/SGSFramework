@@ -2,8 +2,9 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace SGSFramework.AuthTokenBucket.DTOs
+namespace SGSFramework.Core.DTOs
 {
+
     /// <summary>
     /// 動態選單節點 DTO
     /// </summary>

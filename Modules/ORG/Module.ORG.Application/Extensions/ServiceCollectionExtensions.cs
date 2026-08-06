@@ -1,10 +1,11 @@
 ﻿using MediatR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using SGSFramework.ModulePlugin.Systems.Module;
 using SGS.Modules.ORG.Application.Features.Laboratories.Dtos;
 using SGS.Modules.ORG.Application.Features.Laboratories.Query;
 using SGS.Modules.ORG.Application.Services;
+using SGSFramework.Core.Abstractions.Adapters;
+using SGSFramework.ModulePlugin.Systems.Module;
 
 namespace SGS.Modules.ORG.Application.Extensions
 { 
@@ -26,6 +27,8 @@ namespace SGS.Modules.ORG.Application.Extensions
             services.AddTransient<
                 IRequestHandler<GetLaboratoriesQuery, List<LaboratoryDto>>,
                 GetLaboratoriesHandler>();
+            // 覆蓋 Core 層層註冊的 NullOrganizationIntegrationService
+            services.AddScoped<IOrganizationIntegrationService, OrganizationIntegrationService>();
 
 
             // [修正] 移除危險的 services.BuildServiceProvider() 

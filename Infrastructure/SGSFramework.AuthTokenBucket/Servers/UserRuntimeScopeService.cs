@@ -1,11 +1,25 @@
-﻿using Microsoft.Extensions.Caching.Memory;
+﻿using Azure.Core;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
-using SGSFramework.Core.Abstractions.Adapters;
+using Microsoft.JSInterop;
+using NetTopologySuite.Utilities;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.DTOs;
+using SGSFramework.Core.Abstractions.Adapters;
+using SGSFramework.Core.DTOs;
 
 namespace SGSFramework.AuthTokenBucket.Servers;
 
+/// <summary>
+/// 多租戶與動態實驗室（Lab/Department/Organization）架構下的核心執行期上下文服務。
+/// 其主要職責如下：
+/// 動態領域/實驗室切換(Runtime Laboratory Switching)：
+/// 高階主管或跨部門人員登入系統後，可於執行期無感切換其作用中的實驗室或營運組織（Lab Context）。
+/// 計算並載入新上下文權限 Profile：
+/// 切換時，該服務會重新計算使用者於該目標實驗室下的 大容量 Bitmask 權限遮罩、動態選單結構(Menu Tree) 與 資料過濾作用域(Data Scope)，並傳回 UserPermissionProfileDto。
+/// Session 級別的狀態持續性：
+/// 維護目前 HTTP Request / Session 作用域內的使用者上下文狀態，確保後續 API 存取與 EF Core 全域資料過濾器（Global Query Filters）能精準取得當前實驗室識別碼。
+/// </summary>
 public class UserRuntimeScopeService : IUserRuntimeScopeService
 {
     private readonly IOrganizationIntegrationService _orgIntegrationService;

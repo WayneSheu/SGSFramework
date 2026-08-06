@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace SGSFramework.AuthTokenBucket.DTOs
+namespace SGSFramework.Core.DTOs
 {
     /// <summary>
     /// 使用者可存取/巡檢之實驗室/組織節點 DTO
@@ -37,4 +37,6 @@ namespace SGSFramework.AuthTokenBucket.DTOs
         /// </summary>
         public bool IsPrimary { get; set; }
     }
+
+
 }

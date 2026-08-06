@@ -1,4 +1,5 @@
 ﻿using SGSFramework.AuthTokenBucket.DTOs;
+using SGSFramework.Core.DTOs;
 using System;
 using System.Collections.Generic;
 using System.Text;

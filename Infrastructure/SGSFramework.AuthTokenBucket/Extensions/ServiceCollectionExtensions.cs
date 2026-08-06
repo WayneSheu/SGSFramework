@@ -2,14 +2,11 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.Configurations;
 using SGSFramework.AuthTokenBucket.Repositories;
 using SGSFramework.AuthTokenBucket.Servers;
-using System;
-using System.Collections.Generic;
-using System.Text;
+using SGSFramework.Core.Abstractions.DbContexts;
 
 namespace SGSFramework.AuthTokenBucket.Extensions
 {
@@ -27,37 +24,23 @@ namespace SGSFramework.AuthTokenBucket.Extensions
             ArgumentNullException.ThrowIfNull(services);
             ArgumentNullException.ThrowIfNull(configureOptions);
 
-            //注入強型別組態配置
+            // 1. 注入強型別組態配置
             services.Configure(configureOptions);
 
-            //注入核心管理元件
+            // 2. 注入核心管理元件
             services.AddScoped<TokenManager>();
 
-            //將對應的強型別引擎綁定進 DI 容器，確保其在與 TDbContext 相同的 Scope 下被建構
+            // 3. 將對應的強型別引擎綁定進 DI 容器，確保其在與 TDbContext 相同的 Scope 下被建構
             services.AddScoped<TokenBucketEngine<TUser>>();
 
-            //將儲存層介面與泛型實作綁定
+            // 4. 將儲存層介面與泛型實作綁定
             services.AddScoped<ITokenStorageProvider, SqlTokenStorageProvider<TDbContext>>();
             services.AddScoped<IUserRefreshTokenRepository, UserRefreshTokenRepository<TDbContext>>();
+
+            // 5. 註冊使用者執行期上下文切換服務 (Scoped 級別，生命週期綁定至每個 Request Scope)
+            services.AddScoped<IUserRuntimeScopeService, UserRuntimeScopeService>();
 
             return services;
         }
     }
 }
-
-
-//主專案 Program.cs 流暢流暢導入範例
-//雙泛型擴充方法，完美對齊 DbContext 與 User 實體
-// PhysLIMSDBContext : BaseIdentityDbContext<IdentityUser,IdentityRole,string, PhysLIMSDBContext>, ILogDbContext, ITokenDbContext
-// C#
-//builder.Services.AddTokenBucketAuthentication<PhysLIMSDBContext, IdentityUser>(options =>
-//{
-//    options.SecretKey = builder.Configuration["Jwt:Secret"]!;
-//    options.Issuer = builder.Configuration["Jwt:Issuer"]!;
-//    options.Audience = builder.Configuration["Jwt:Audience"]!;
-//    options.MaxDeviceCount = 6;
-//    options.RefreshTokenExpirationDays = 7;
-//    options.RefreshTokenGracePeriodSeconds = 8;
-//});
-
-

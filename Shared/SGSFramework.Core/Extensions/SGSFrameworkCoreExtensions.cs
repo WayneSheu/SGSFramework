@@ -2,9 +2,12 @@
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using SGSFramework.Core.Abstractions.Adapters;
 using SGSFramework.Core.FileStorages;
 using SGSFramework.Core.Identiies.CurrentUser;
 using SGSFramework.Core.Identiies.Tenants;
+using SGSFramework.Core.Services;
 
 namespace SGSFramework.Core.Extensions
 {
@@ -46,22 +49,11 @@ namespace SGSFramework.Core.Extensions
             builder.Services.AddScoped(typeof(IFileStorageHelper<>), typeof(LocalFileStorageHelper<>));
             #endregion
 
-            #region 模組相關服務註冊
-            //// 顯式註冊，並確保實作與介面的一致性
-            //builder.Services.AddSingleton<ModuleRegistry>();
-            //// 註冊 IModuleRegistry 介面，並將其解析為 ModuleRegistry 實例
-            //builder.Services.AddSingleton<IModuleRegistry>(sp => sp.GetRequiredService<ModuleRegistry>());
-            //// 註冊魔`監控服務
-            //builder.Services.AddSingleton<ServiceRegistryMonitor>();
-            //// 註冊模組生命週期管理服務
-            //builder.Services.AddModularModules(builder.Configuration);
-            //// 註冊生命週期管理服務
-            //builder.Services.AddScoped<ModuleLifecycleService>();
-            //// 註冊背景監控服務 (BackgroundService 會自動由 Host 啟動)
-            //builder.Services.AddHostedService<ModuleMonitorService>();
-
-
-            #endregion
+            // 使用 TryAddScoped 註冊 Fallback 的 Null 服務
+            // 若 SGS.Modules.ORG 在後續階段有註冊真實實作，將會自動覆蓋此預設項目
+            builder.Services.TryAddScoped<IOrganizationIntegrationService, NullOrganizationIntegrationService>();
+           
+          
 
         }
     }

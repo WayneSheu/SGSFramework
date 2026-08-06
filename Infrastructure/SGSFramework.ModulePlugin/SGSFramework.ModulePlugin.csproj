@@ -33,7 +33,7 @@
     <Folder Include="Systems\Module\Extensions\" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="SGSFramework.AuthTokenBucket" Version="1.0.0" />
+    <PackageReference Include="SGSFramework.AuthTokenBucket" Version="1.0.0.2" />
     <PackageReference Include="SGSFramework.Core" Version="1.0.0.3" />
   </ItemGroup>
 	<Target Name="PushToBaGet" AfterTargets="Pack" Condition="'$(Configuration)' == 'Release'">
