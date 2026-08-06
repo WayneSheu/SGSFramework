@@ -6,6 +6,7 @@ using PhysLIMS.API.Helpers;
 using PhysLIMS.API.Models;
 using Scalar.AspNetCore;
 using Serilog;
+using SGSFramework.ApiInfrastructure.Extensions;
 using SGSFramework.ApiInfrastructure.Filters;
 using SGSFramework.AuditLog.Extensions;
 using SGSFramework.AuthTokenBucket.Extensions;

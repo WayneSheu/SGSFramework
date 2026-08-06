@@ -7,7 +7,7 @@
 
 	  <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
 	  <PackageId>SGSFramework.ModulePlugin</PackageId>
-	  <Version>1.0.0.13</Version>
+	  <Version>1.0.0.16</Version>
 	  <Authors>Wayne</Authors>
 	  <Company>SHANDA</Company>
 	  <Description>動態模組插件套件</Description>

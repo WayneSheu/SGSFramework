@@ -1,5 +1,4 @@
-﻿// Presentation / OpenAPI / DynamicControllerDocumentTransformer.cs
-using Microsoft.AspNetCore.OpenApi;
+﻿using Microsoft.AspNetCore.OpenApi;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi;
 using SGSFramework.ApiInfrastructure.Extensions;
@@ -10,10 +9,14 @@ using System.Text.Json.Nodes;
 
 namespace SGSFramework.ApiInfrastructure.Filters;
 
-public class DynamicControllerDocumentTransformer : IOpenApiDocumentTransformer
+/// <summary>
+///  OpenAPI 文件轉換器，用於根據動態控制器的元數據來調整 OpenAPI 文檔的結構和內容。
+/// </summary>
+public sealed class DynamicControllerDocumentTransformer : IOpenApiDocumentTransformer
 {
     private readonly IServiceProvider _serviceProvider;
-    private const string DefaultModuleName = "系統管理模組";
+    private const string DefaultModuleName = "SGSFramework.System";
+    private const string DefaultTagName = "通用服務";
 
     public DynamicControllerDocumentTransformer(IServiceProvider serviceProvider)
     {
@@ -35,92 +38,98 @@ public class DynamicControllerDocumentTransformer : IOpenApiDocumentTransformer
             var activeMeta = new List<ControllerMetadata>();
             if (controllerRepo != null)
             {
-                var metaDataList = await controllerRepo.GetActiveControllersAsync();
+                var metaDataList = await controllerRepo.GetActiveControllersAsync().ConfigureAwait(false);
                 activeMeta = (metaDataList ?? Enumerable.Empty<ControllerMetadata>())
                     .Where(m => m.IsActive)
                     .ToList();
             }
 
-            // 1. 建立多元比對字典 (針對 ControllerName, RouteTemplate, DisplayName 做特化)
-            var rawLookup = new Dictionary<string, (string TagName, string ModuleName)>(StringComparer.OrdinalIgnoreCase);
+            // 1. 建立雙軌檢索字典：全路徑字典 (Exact Route) 與 Action 字典 (Controller+Action)
+            var exactRouteLookup = new Dictionary<string, ControllerMetadata>(StringComparer.OrdinalIgnoreCase);
+            var actionLookup = new Dictionary<string, ControllerMetadata>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var meta in activeMeta)
             {
-                string moduleName = string.IsNullOrWhiteSpace(meta.ModuleName) ? DefaultModuleName : meta.ModuleName.Trim();
-                string targetTag = !string.IsNullOrWhiteSpace(meta.ParentMenuName) ? meta.ParentMenuName.Trim()
-                                 : !string.IsNullOrWhiteSpace(meta.DisplayName) ? meta.DisplayName.Trim()
-                                 : meta.ControllerName?.Trim() ?? "通用服務";
+                string cleanController = ExtractCleanControllerName(meta.ControllerName) ?? string.Empty;
 
-                if (!string.IsNullOrWhiteSpace(meta.ControllerName))
+                // A. 全路徑字典 (處理 [controller] 展開)
+                if (!string.IsNullOrWhiteSpace(meta.RouteTemplate))
                 {
-                    string rawCName = meta.ControllerName.Trim();
-                    rawLookup[rawCName] = (targetTag, moduleName);
-
-                    if (rawCName.EndsWith("Controller", StringComparison.OrdinalIgnoreCase))
+                    string expandedRoute = meta.RouteTemplate.Replace("[controller]", cleanController, StringComparison.OrdinalIgnoreCase);
+                    string normalizedRoute = NormalizePath(expandedRoute);
+                    if (!string.IsNullOrWhiteSpace(normalizedRoute))
                     {
-                        rawLookup[rawCName.Substring(0, rawCName.Length - 10)] = (targetTag, moduleName);
+                        exactRouteLookup[normalizedRoute] = meta;
                     }
                 }
 
-                if (!string.IsNullOrWhiteSpace(meta.RouteTemplate))
+                // B. Action 組合字典 (以 ControllerName.ActionName 作為備用精準匹配)
+                if (!string.IsNullOrWhiteSpace(cleanController) && !string.IsNullOrWhiteSpace(meta.ActionName))
                 {
-                    string cleanRoute = meta.RouteTemplate.Trim().TrimStart('/');
-                    rawLookup[cleanRoute] = (targetTag, moduleName);
+                    string actionKey = $"{cleanController}.{meta.ActionName}".ToLowerInvariant();
+                    actionLookup[actionKey] = meta;
                 }
             }
 
-            var sortedLookup = rawLookup.OrderByDescending(kv => kv.Key.Length).ToList();
-
-            // 2. 走訪所有 API Operations，綁定正確 Tag
             var moduleGroups = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 
+            // 2. 走訪 OpenAPI Paths，進行精準對映
             if (document.Paths != null)
             {
                 foreach (var (pathKey, pathObj) in document.Paths)
                 {
                     if (pathObj.Operations == null) continue;
 
-                    string cleanPath = pathKey.Trim().TrimStart('/');
+                    string cleanPath = NormalizePath(pathKey);
 
-                    foreach (var operation in pathObj.Operations.Values)
+                    foreach (var (httpMethod, operation) in pathObj.Operations)
                     {
-                        string? targetTag = null;
-                        string? targetModule = null;
+                        ControllerMetadata? matchedMeta = null;
 
-                        // A. 比對 DB 詮釋資料
-                        foreach (var kvp in sortedLookup)
+                        // 優先順序 1：精準 Route 匹配
+                        if (exactRouteLookup.TryGetValue(cleanPath, out var exactMatch))
                         {
-                            if (cleanPath.Contains(kvp.Key, StringComparison.OrdinalIgnoreCase))
+                            matchedMeta = exactMatch;
+                        }
+
+                        // 優先順序 2：若有 OperationId (格式通常為 Controller_Action)，嘗試以 Controller.Action 匹配
+                        if (matchedMeta == null && !string.IsNullOrWhiteSpace(operation.OperationId))
+                        {
+                            string keyFromOpId = operation.OperationId.Replace("_", ".").ToLowerInvariant();
+                            actionLookup.TryGetValue(keyFromOpId, out matchedMeta);
+                        }
+
+                        // 確定 Tag 與 Module 名稱
+                        string targetModule = DefaultModuleName;
+                        string targetTag = DefaultTagName;
+
+                        if (matchedMeta != null)
+                        {
+                            targetModule = string.IsNullOrWhiteSpace(matchedMeta.ModuleName) ? DefaultModuleName : matchedMeta.ModuleName.Trim();
+
+                            // 優先採用 ParentMenuName 做為左側階層 Tag
+                            targetTag = !string.IsNullOrWhiteSpace(matchedMeta.ParentMenuName)
+                                ? matchedMeta.ParentMenuName.Trim()
+                                : ExtractCleanControllerName(matchedMeta.ControllerName) ?? DefaultTagName;
+
+                            // 🎯 精準覆蓋 Endpoint 摘要名稱（修正所有子項目變成同一個名字的 BUG）
+                            if (!string.IsNullOrWhiteSpace(matchedMeta.DisplayName))
                             {
-                                targetTag = kvp.Value.TagName;
-                                targetModule = kvp.Value.ModuleName;
-                                break;
+                                operation.Summary = matchedMeta.DisplayName;
                             }
                         }
-
-                        // B. 硬性兜底 (針對 SGS.Modules.ORG 實驗室模組特化比對)
-                        if (targetTag == null && (cleanPath.Contains("laboratory", StringComparison.OrdinalIgnoreCase) || cleanPath.Contains("org", StringComparison.OrdinalIgnoreCase)))
+                        else
                         {
-                            targetTag = "實驗室管理";
-                            targetModule = "SGS.Modules.ORG";
+                            // 無法從 DB 找到對應 meta 時的預設處置
+                            var firstTag = operation.Tags?.FirstOrDefault()?.Name ?? DefaultTagName;
+                            targetTag = ExtractCleanControllerName(firstTag) ?? DefaultTagName;
                         }
 
-                        // C. 若都沒匹配到，沿用預設控制項 Tag
-                        if (string.IsNullOrWhiteSpace(targetTag))
-                        {
-                            var firstTag = operation.Tags?.FirstOrDefault()?.Name ?? "通用服務";
-                            targetTag = firstTag.EndsWith("Controller", StringComparison.OrdinalIgnoreCase)
-                                ? firstTag.Substring(0, firstTag.Length - 10)
-                                : firstTag;
-                        }
-
-                        if (string.IsNullOrWhiteSpace(targetModule)) targetModule = DefaultModuleName;
-
-                        // 正確寫入 OpenApiTagReference
+                        // 更新 Operation 的 Tag
                         operation.Tags?.Clear();
                         operation.Tags?.Add(new OpenApiTagReference(targetTag));
 
-                        // 收集模組與 Tag 的樹狀關係
+                        // 歸控至模組分組
                         if (!moduleGroups.TryGetValue(targetModule, out var tagSet))
                         {
                             tagSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -131,15 +140,11 @@ public class DynamicControllerDocumentTransformer : IOpenApiDocumentTransformer
                 }
             }
 
-            // 3. 補齊 DB 主選單中的所有外掛模組與 Tag 標籤關係（避免即使 Operations 尚未繫結也能正確列出）
+            // 3. 補齊選單樹中定義的所有 Tag
             foreach (var meta in activeMeta)
             {
                 string moduleName = string.IsNullOrWhiteSpace(meta.ModuleName) ? DefaultModuleName : meta.ModuleName.Trim();
-                string? targetTag = !string.IsNullOrWhiteSpace(meta.ParentMenuName) ? meta.ParentMenuName.Trim()
-                                  : !string.IsNullOrWhiteSpace(meta.DisplayName) ? meta.DisplayName.Trim()
-                                  : meta.ControllerName?.Trim();
-
-                if (string.IsNullOrWhiteSpace(moduleName) || string.IsNullOrWhiteSpace(targetTag)) continue;
+                string targetTag = !string.IsNullOrWhiteSpace(meta.ParentMenuName) ? meta.ParentMenuName.Trim() : DefaultTagName;
 
                 if (!moduleGroups.TryGetValue(moduleName, out var tagSet))
                 {
@@ -149,17 +154,15 @@ public class DynamicControllerDocumentTransformer : IOpenApiDocumentTransformer
                 tagSet.Add(targetTag);
             }
 
-            // 4. 重構 document.Tags 全域宣告，確保所有 Tag 均有實體 OpenApiTag
+            // 4. 重構全域 document.Tags 宣告
             document.Tags.Clear();
-
             foreach (var (moduleName, tagNames) in moduleGroups)
             {
                 foreach (var tagName in tagNames)
                 {
                     if (!document.Tags.Any(t => string.Equals(t.Name, tagName, StringComparison.OrdinalIgnoreCase)))
                     {
-                        var meta = activeMeta.FirstOrDefault(m => string.Equals(m.ParentMenuName, tagName, StringComparison.OrdinalIgnoreCase) ||
-                                                                  string.Equals(m.DisplayName, tagName, StringComparison.OrdinalIgnoreCase));
+                        var meta = activeMeta.FirstOrDefault(m => string.Equals(m.ParentMenuName, tagName, StringComparison.OrdinalIgnoreCase));
 
                         document.Tags.Add(new OpenApiTag
                         {
@@ -170,15 +173,11 @@ public class DynamicControllerDocumentTransformer : IOpenApiDocumentTransformer
                 }
             }
 
-            // 5. 輸出符合 Scalar 規範的 x-tagGroups 結構
+            // 5. 寫入 Scalar 專用 x-tagGroups 擴充欄位
             var tagGroupsData = new List<Dictionary<string, object>>();
-
             foreach (var (moduleName, tagNames) in moduleGroups)
             {
-                var validTags = tagNames
-                    .Where(t => !string.IsNullOrWhiteSpace(t))
-                    .ToList();
-
+                var validTags = tagNames.Where(t => !string.IsNullOrWhiteSpace(t)).ToList();
                 if (!validTags.Any()) continue;
 
                 tagGroupsData.Add(new Dictionary<string, object>
@@ -202,5 +201,29 @@ public class DynamicControllerDocumentTransformer : IOpenApiDocumentTransformer
         {
             Console.WriteLine($"[OpenAPI Transformer Error]: {ex.Message}");
         }
+    }
+
+    private static string NormalizePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return string.Empty;
+        return path.Trim().TrimStart('/').ToLowerInvariant();
+    }
+
+    private static string? ExtractCleanControllerName(string? rawName)
+    {
+        if (string.IsNullOrWhiteSpace(rawName)) return null;
+        var clean = rawName.Trim();
+
+        // 處理完整 TypeName (如 SGSFramework.Identity.Controllers.UserManagementController)
+        if (clean.Contains('.'))
+        {
+            clean = clean.Split('.').Last();
+        }
+
+        if (clean.EndsWith("Controller", StringComparison.OrdinalIgnoreCase))
+        {
+            return clean.Substring(0, clean.Length - 10);
+        }
+        return clean;
     }
 }
