@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
 	  <!-- 設定套件的資訊 -->
 	  <PackageId>SGSFramework.Identity</PackageId>
-	  <Version>1.0.0.4</Version>
+	  <Version>1.0.0.12</Version>
 	  <Authors>Wayne</Authors>
 	  <Company>SHANDA</Company>
 	  <Description>身分驗證、存取授權與工作階段管理元件</Description>
@@ -15,12 +15,21 @@
 	  <EmbedUntrackedSources>true</EmbedUntrackedSources>
 
   </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="Options\appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
 	<ItemGroup>
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
 	</ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.9" />
-    <PackageReference Include="SGSFramework.AuthTokenBucket" Version="1.0.0.2" />
+    <PackageReference Include="SGSFramework.AuthTokenBucket" Version="1.0.0.41" />
+    <PackageReference Include="SGSFramework.Core" Version="1.0.0.16" />
   </ItemGroup>
 	<ItemGroup>
 		<None Include="README.md" Pack="true" PackagePath="\" />

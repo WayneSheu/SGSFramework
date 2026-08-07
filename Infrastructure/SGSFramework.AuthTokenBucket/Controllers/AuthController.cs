@@ -10,6 +10,7 @@ using SGSFramework.AuthTokenBucket.Configurations;
 using SGSFramework.AuthTokenBucket.DTOs;
 using SGSFramework.AuthTokenBucket.Servers;
 using SGSFramework.Core.Abstractions.Attributes;
+using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Logings;
 using SGSFramework.Core.Abstractions.Menus;
 using SGSFramework.Core.Controllers.Base;
@@ -28,11 +29,11 @@ namespace SGSFramework.AuthTokenBucket.Controllers.v1;
 [Description("提供帳密登入、Token 輪轉刷新、動態選單與實驗室上下文切換服務")]
 public sealed class AuthController : ApiControllerBase
 {
-    private readonly UserManager<IdentityUser> _userManager;
+    private readonly UserManager<ApplicationUser> _userManager;
     private readonly TokenManager _tokenManager;
     private readonly ITokenStorageProvider _storageProvider;
     private readonly IUserRefreshTokenRepository _tokenRepository;
-    private readonly TokenBucketEngine<IdentityUser> _tokenEngine;
+    private readonly TokenBucketEngine<ApplicationUser> _tokenEngine; 
     private readonly AuthTokenBucketOptions _options;
     private readonly ILogger<AuthController> _logger;
     private readonly IAuditProvider _auditProvider;
@@ -41,11 +42,11 @@ public sealed class AuthController : ApiControllerBase
     private readonly IUserRuntimeScopeService _runtimeScopeService;
 
     public AuthController(
-        UserManager<IdentityUser> userManager,
+        UserManager<ApplicationUser> userManager,
         TokenManager tokenManager,
         ITokenStorageProvider storageProvider,
         IUserRefreshTokenRepository tokenRepository,
-        TokenBucketEngine<IdentityUser> tokenEngine,
+        TokenBucketEngine<ApplicationUser> tokenEngine,
         IOptions<AuthTokenBucketOptions> options,
         ILogger<AuthController> logger,
         IAuditProvider auditProvider,
@@ -86,7 +87,7 @@ public sealed class AuthController : ApiControllerBase
 
         try
         {
-            var user = await _userManager.FindByNameAsync(request.Email) ?? await _userManager.FindByEmailAsync(request.Email);
+            var user = await _userManager.FindByNameAsync(request.Email) ?? await _userManager.FindByEmailAsync(request.Email) ;
             if (user == null || !await _userManager.CheckPasswordAsync(user, request.Password))
             {
                 _logger.LogWarning(

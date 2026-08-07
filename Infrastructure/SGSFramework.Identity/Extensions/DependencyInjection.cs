@@ -1,8 +1,10 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using SGSFramework.Core.Abstractions.Entities.Base;
 using SGSFramework.Identity.Abstractions;
 using SGSFramework.Identity.Repositories;
+using SGSFramework.Identity.Services;
 
 namespace SGSFramework.Identity.Extensions
 {
@@ -36,8 +38,13 @@ namespace SGSFramework.Identity.Extensions
                 .AddEntityFrameworkStores<TContext>()
                 .AddDefaultTokenProviders();
 
-            // 2. 註冊泛型倉儲服務
+            // 註冊泛型倉儲服務
             services.AddScoped<IGenericIdentityRepository<TUser, TKey>, GenericIdentityRepository<TContext, TUser, TRole, TKey>>();
+
+            // 1. 註冊開放泛型 (可支援任何衍生自 IdentityRole<TKey> 的型別)
+            services.AddScoped(typeof(IRoleManagementService<,>), typeof(RoleManagementService<,>));
+            // 註冊泛型 IRoleManagementService<TRole, TKey>
+            services.AddScoped<IRoleManagementService<TRole, TKey>, RoleManagementService<TRole, TKey>>();
 
             return services;
         }

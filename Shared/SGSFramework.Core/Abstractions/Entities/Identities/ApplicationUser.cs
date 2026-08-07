@@ -1,14 +1,12 @@
 ﻿using Microsoft.AspNetCore.Identity;
-using System;
-using System.Collections.Generic;
-using System.Text;
+using SGSFramework.Core.Abstractions.Entities.Base;
 
-namespace SGSFramework.Identity.Entities
+namespace SGSFramework.Core.Abstractions.Entities.Identities
 {
     /// <summary>
     /// 擴充自訂的 Identity 使用者實體
     /// </summary>
-    public class ApplicationUser : IdentityUser<Guid>
+    public class ApplicationUser : IdentityUser<Guid>,IBaseUser
     {
         /// <summary>
         /// 使用者真實姓名

@@ -1,20 +1,21 @@
-﻿using Bogus;
+﻿// 檔案路徑: Infrastructure/SGSFramework.AuthTokenBucket/Servers/TokenBucketEngine.cs
+
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using SGSFramework.AuthTokenBucket.Abstractions;
+using SGSFramework.AuthTokenBucket.Configurations;
+using SGSFramework.AuthTokenBucket.Models;
+using SGSFramework.Core.Abstractions.Entities.Base;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Logings;
 using SGSFramework.Core.Abstractions.Models.Identities;
 using SGSFramework.Core.Helpers;
 using SGSFramework.Core.HttpAuditProviders;
-using SGSFramework.AuthTokenBucket.Abstractions;
-using SGSFramework.AuthTokenBucket.Configurations;
-using SGSFramework.AuthTokenBucket.Models;
 using System;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
-
 
 namespace SGSFramework.AuthTokenBucket.Servers
 {
@@ -22,19 +23,15 @@ namespace SGSFramework.AuthTokenBucket.Servers
     /// 安全防禦核心高併發水桶引擎
     /// </summary>
     /// <typeparam name="TUser">使用者實體類型</typeparam>
-    /// <summary>
-    /// 安全防禦核心高併發水桶引擎
-    /// </summary>
-    /// <typeparam name="TUser">使用者實體類型</typeparam>
-    public sealed class TokenBucketEngine<TUser> where TUser : IdentityUser
+    public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
     {
         private readonly ITokenStorageProvider _storageProvider;
         private readonly UserManager<TUser> _userManager;
         private readonly TokenManager _tokenManager;
         private readonly AuthTokenBucketOptions _options;
         private readonly ILogger<TokenBucketEngine<TUser>> _logger;
-        private readonly ISecurityLogger _securityLogger;       // ✅ 宣告內部資安日誌服務
-        private readonly IAuditProvider _auditProvider;   // ✅ 宣告內部稽核上下文提供者
+        private readonly ISecurityLogger _securityLogger;
+        private readonly IAuditProvider _auditProvider;
 
         public TokenBucketEngine(
             ITokenStorageProvider storageProvider,
@@ -42,8 +39,8 @@ namespace SGSFramework.AuthTokenBucket.Servers
             TokenManager tokenManager,
             IOptions<AuthTokenBucketOptions> options,
             ILogger<TokenBucketEngine<TUser>> logger,
-            ISecurityLogger securityLogger,               // ✅ 透過建構子注入
-            IAuditProvider auditProvider)                 // ✅ 透過建構子注入
+            ISecurityLogger securityLogger,
+            IAuditProvider auditProvider)
         {
             _storageProvider = storageProvider ?? throw new ArgumentNullException(nameof(storageProvider));
             _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
@@ -64,6 +61,7 @@ namespace SGSFramework.AuthTokenBucket.Servers
         {
             ArgumentNullException.ThrowIfNull(user);
 
+            string userIdString = user.Id.ToString(); // 轉為 string 供文字欄位與服務調用
             string rawRefreshToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
             string tokenHash = HashHelper.ComputeHash(rawRefreshToken);
             DateTime expiresAt = DateTime.UtcNow.AddDays(_options.RefreshTokenExpirationDays);
@@ -77,7 +75,7 @@ namespace SGSFramework.AuthTokenBucket.Servers
 
             var newSessionEntity = new UserRefreshToken
             {
-                UserId = user.Id,
+                UserId = userIdString, // ✅ 轉為 string
                 DeviceId = deviceId,
                 DeviceName = deviceName,
                 RefreshTokenHash = tokenHash,
@@ -90,7 +88,7 @@ namespace SGSFramework.AuthTokenBucket.Servers
             };
 
             await _storageProvider.SaveInitialSessionAsync(newSessionEntity);
-            await _storageProvider.EnforceMaxDeviceLimitAsync(user.Id, 5);
+            await _storageProvider.EnforceMaxDeviceLimitAsync(userIdString, 5); // ✅ 轉為 string
 
             return new TokenResult
             {
@@ -107,19 +105,20 @@ namespace SGSFramework.AuthTokenBucket.Servers
         {
             ArgumentNullException.ThrowIfNull(user);
 
+            string userIdString = user.Id.ToString(); // 轉為 string
             string oldHash = HashHelper.ComputeHash(oldRefreshToken);
             string newRawToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
             string newHash = HashHelper.ComputeHash(newRawToken);
             DateTime expiresAt = DateTime.UtcNow.AddDays(_options.RefreshTokenExpirationDays);
 
             var result = await _storageProvider.ValidateAndRotateTokenAsync(
-                user.Id, deviceId, oldHash, newHash, expiresAt, _options.RefreshTokenGracePeriodSeconds);
+                userIdString, deviceId, oldHash, newHash, expiresAt, _options.RefreshTokenGracePeriodSeconds); // ✅ 轉為 string
 
             if (result == null) throw new SecurityTokenException("ACCOUNT_FROZEN_OR_INVALID_SESSION");
 
             if (result.Status == RotationStatus.ReplayAttackDetected)
             {
-                _logger.LogCritical("[Security-Alert] 偵測到 Token 惡意重放！用戶: {UserId}", user.Id);
+                _logger.LogCritical("[Security-Alert] 偵測到 Token 惡意重放！用戶: {UserId}", userIdString);
                 throw new SecurityTokenException("TOKEN_REPLAY_ATTACK_DETECTED");
             }
 
@@ -129,15 +128,14 @@ namespace SGSFramework.AuthTokenBucket.Servers
 
             string newJwtAccessToken = await _tokenManager.GenerateAccessTokenAsync(user, permission.ToString(), deviceId);
 
-            // ✅ 修正點：安全寫入稽核點，修正參數對應，並由注入的 _auditProvider 實時提供當前請求 IP
             _securityLogger.LogSecurity(
                 eventCode: "SEC-200-TOKEN-REFRESH-SUCCESS",
                 eventCategory: "Auth.TokenRefresh",
-                userId: user.Id,
+                userId: userIdString, // ✅ 轉為 string
                 clientIp: _auditProvider.RemoteIp ?? "0.0.0.0",
                 messageTemplate: "權杖交換成功，新權杖ID: {NewTokenId}, 舊權杖ID: {OldTokenId}",
-                newRawToken,       // 精準對應 {NewTokenId}
-                oldRefreshToken    // 精準對應 {OldTokenId}
+                newRawToken,
+                oldRefreshToken
             );
 
             return new TokenResult

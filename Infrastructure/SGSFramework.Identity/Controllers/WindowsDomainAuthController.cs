@@ -23,14 +23,14 @@ namespace SGSFramework.Identity.Controllers
     [Route("api/auth/sso/windows")]
     [Menu("網域單一登入端點", "fa-solid fa-lock", order: 1, parent: null)]
     [Description("內部網路 Windows 網域無感單一登入端點（全面整合 TokenManager 與大容量 Bitmask）")]
-    public sealed class WindowsDomainAuthController : WindowsAuthController<IdentityUser>
+    public sealed class WindowsDomainAuthController : WindowsAuthController<ApplicationUser>
     {
-        private readonly TokenBucketEngine<IdentityUser> _tokenEngine;
-        private readonly UserManager<IdentityUser> _userManager;
+        private readonly TokenBucketEngine<ApplicationUser> _tokenEngine;
+        private readonly UserManager<ApplicationUser> _userManager;
 
         public WindowsDomainAuthController(
-            TokenBucketEngine<IdentityUser> tokenEngine,
-            UserManager<IdentityUser> userManager)
+            TokenBucketEngine<ApplicationUser> tokenEngine,
+            UserManager<ApplicationUser> userManager)
             : base(tokenEngine, userManager)
         {
             _tokenEngine = tokenEngine ?? throw new ArgumentNullException(nameof(tokenEngine));
@@ -65,7 +65,7 @@ namespace SGSFramework.Identity.Controllers
                 var user = await _userManager.FindByNameAsync(ssoUserName) ?? await _userManager.FindByNameAsync(domainAccount);
                 if (user == null)
                 {
-                    user = new IdentityUser
+                    user = new ApplicationUser
                     {
                         UserName = ssoUserName,
                         Email = $"{ssoUserName.ToLower()}@company.com",
@@ -88,7 +88,7 @@ namespace SGSFramework.Identity.Controllers
                 string deviceName = Request.Headers["User-Agent"].FirstOrDefault() ?? "Chrome on Windows (Scalar Client)";
                 string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
 
-                UserRefreshToken? existingSession = await _tokenEngine.GetActiveSessionAsync(user.Id, deviceId);
+                UserRefreshToken? existingSession = await _tokenEngine.GetActiveSessionAsync(user.Id.ToString(), deviceId);
                 TokenResult tokenResult;
 
                 if (existingSession != null)

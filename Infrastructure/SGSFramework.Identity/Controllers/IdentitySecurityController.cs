@@ -1,14 +1,15 @@
-﻿using System.ComponentModel;
-using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
-using SGSFramework.AuthTokenBucket.Servers;
+using SGSFramework.Identity.DTOs;
+using System.ComponentModel;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Controllers.Base;
-using SGSFramework.Identity.DTOs;
+using SGSFramework.AuthTokenBucket.Servers;
+using SGSFramework.Core.Abstractions.Entities.Identities;
 
-namespace SGSFramework.Identity.Controllers.v1;
+namespace SGSFramework.Identity.Controllers;
 
 /// <summary>
 /// 身份安全管理控制器
@@ -21,11 +22,11 @@ namespace SGSFramework.Identity.Controllers.v1;
 [Description("身份安全管理與緊急風險控制機制")]
 public sealed class IdentitySecurityController : ApiControllerBase
 {
-    private readonly TokenBucketEngine<IdentityUser> _tokenEngine;
+    private readonly TokenBucketEngine<ApplicationUser> _tokenEngine;
     private readonly ILogger<IdentitySecurityController> _logger;
 
     public IdentitySecurityController(
-        TokenBucketEngine<IdentityUser> tokenEngine,
+        TokenBucketEngine<ApplicationUser> tokenEngine,
         ILogger<IdentitySecurityController> logger)
     {
         _tokenEngine = tokenEngine ?? throw new ArgumentNullException(nameof(tokenEngine));

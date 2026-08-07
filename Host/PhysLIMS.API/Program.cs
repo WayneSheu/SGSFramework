@@ -1,32 +1,31 @@
+// ==========================================
+// 檔案路徑: PhysLIMS.API/Program.cs
+// ==========================================
+
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using PhysLIMS.API.Dbcontexts;
 using PhysLIMS.API.Extensions;
 using PhysLIMS.API.Helpers;
 using PhysLIMS.API.Models;
 using Scalar.AspNetCore;
 using Serilog;
-using SGSFramework.ApiInfrastructure.Extensions;
 using SGSFramework.ApiInfrastructure.Filters;
 using SGSFramework.AuditLog.Extensions;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.Extensions;
-using SGSFramework.AuthTokenBucket.Services;
 using SGSFramework.CodeSecurity.Extensions;
-using SGSFramework.Core.Abstractions.Adapters;
+using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.ApiDoc.Extensions;
 using SGSFramework.Core.Exceptions;
 using SGSFramework.Core.Extensions;
-using SGSFramework.Core.Services;
 using SGSFramework.Core.SSOs;
+using SGSFramework.Identity.Extensions;
 using SGSFramework.ModulePlugin.Extensions;
 using SGSFramework.ModulePlugin.Systems.Controller.Providers;
-using SGSFramework.Persistent.Extensions;
 using SGSFramework.SystemLog.Extensions;
 using SGSFramework.VerifyLedger.Extensions;
-using System.Reflection; // 確保載入 Reflection 命名空間
-
+using System.Reflection;
 try
 {
     var builder = WebApplication.CreateBuilder(args);
@@ -48,18 +47,30 @@ try
     });
     builder.Services.AddAPIDocServices();
 
-    // 2. 主專案資料庫上下文與 Identity 註冊
-    builder.Services.AddIdentityDbContextWithOptions<PhysLIMSDbContext, IdentityUser, IdentityRole, string>(
-        config,
-        schema: "dbo",
-        configureIdentity: options =>
-        {
-            options.Password.RequireDigit = true;
-            options.SignIn.RequireConfirmedAccount = false;
-        }
-    );
+    // 2. 主專案資料庫上下文註冊 (配置 SQL Server / Schema)
+    builder.Services.AddDbContext<PhysLIMSDbContext>(options =>
+    {
+        options.UseSqlServer(
+            config.GetValue<string>("PersistentOptions:DatabaseSettings:ConnectionString"),
+            sqlOptions => sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "dbo"));
+    });
 
-    // 3. 註冊 Controllers 與外掛模組核心 (Startup Phase)
+    // 3. 泛型 Identity 完整打包註冊
+    // 整合 AddGenericIdentityPackage 一步到位完成 IdentityCore, Roles, Stores, TokenProviders 
+    // 以及 IGenericIdentityRepository 與 IRoleManagementService 的 DI 註冊
+    // 將泛型參數改為: PhysLIMSDbContext, ApplicationUser, IdentityRole<Guid>, Guid
+    builder.Services.AddGenericIdentityPackage<PhysLIMSDbContext, ApplicationUser, IdentityRole<Guid>, Guid>(options =>
+    {
+        options.Password.RequireDigit = true;
+        options.Password.RequiredLength = 8;
+        options.Password.RequireNonAlphanumeric = true;
+        options.Password.RequireUppercase = true;
+        options.Password.RequireLowercase = true;
+        options.User.RequireUniqueEmail = true;
+        options.SignIn.RequireConfirmedAccount = false;
+    });
+
+    // 4. 註冊 Controllers 與外掛模組核心 (Startup Phase)
     var mvcBuilder = builder.Services.AddControllers();
 
     Log.Information("開始掃描並註冊既有動態外掛模組與 DI 服務 (Startup Phase)...");
@@ -75,11 +86,10 @@ try
         Log.Information(">>> [ApplicationParts] 目前完成註冊的 Application Parts 總數: {Count}", apm.ApplicationParts.Count);
     });
 
-    // 4. 注入 SGSFramework.Core 與審計基礎設施服務
-    builder.AddSGSFrameworkCore();
+    // 5. 審計基礎設施服務
     builder.Services.AddAuditLog(config);
 
-    // 5. CORS 設定
+    // 6. CORS 設定
     builder.Services.AddCors(options =>
     {
         options.AddPolicy("AllowAll", policy =>
@@ -90,15 +100,11 @@ try
         });
     });
 
-    // 6. 全域異常處理與 Identity 核心
+    // 7. 全域異常處理
     builder.Services.AddProblemDetails();
     builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
-    builder.Services.AddIdentityCore<IdentityUser>(options => { })
-                   .AddEntityFrameworkStores<PhysLIMSDbContext>();
-
-    // 7. Token Bucket 認證、動態 BitMask 權限掃描與 SSO
-    // 透過擴充篩選機制，確保主專案 Assembly 及其相關組件完整納入掃描
+    // 8. Token Bucket 認證、動態 BitMask 權限掃描與 SSO
     var scannedAssemblies = AppDomain.CurrentDomain.GetAssemblies()
         .Where(a => a.FullName != null &&
                    (a.FullName.StartsWith("SGS.") ||
@@ -107,7 +113,8 @@ try
         .Distinct()
         .ToArray();
 
-    builder.Services.AddTokenBucketAuthentication<PhysLIMSDbContext, IdentityUser>(options =>
+    //Token Bucket 認證（同步將使用者實體改為 ApplicationUser）
+    builder.Services.AddTokenBucketAuthentication<PhysLIMSDbContext, ApplicationUser>(options =>
     {
         options.SecretKey = config["Jwt:Secret"]
                         ?? throw new InvalidOperationException("核心資安配置錯誤：未在 appsettings.json 中找到 'Jwt:Secret' 設定項。");
@@ -118,6 +125,8 @@ try
         options.RefreshTokenGracePeriodSeconds = 8;
     },
     scannedAssemblies);
+
+
 
     builder.Services.AddSSOServices();
     builder.Services.AddAuthorization();
@@ -189,10 +198,10 @@ try
             });
         }
     }
-
     #endregion
 
-    // 8. 其他擴充服務
+    // 9. 註冊生產級 Admin 自動種子服務與其他擴充服務
+    builder.Services.AddProductionAdminSeeder(builder.Configuration);
     builder.Services.AddLedgerVerificationServices();
     builder.Services.AddCodeSecurity(config);
     builder.AddDIContainerValidation();
@@ -224,13 +233,12 @@ try
         }
     }
 
-    // Step 2. 初始化模組系統與動態控制器 (此時外掛模組的 Assemblies 才透過外掛機制載入完成)
+    // Step 2. 初始化模組系統與動態控制器
     Log.Information("開始初始化模組系統與動態控制器...");
     await app.InitializeModularSystemAsync();
-
     await app.UseDynamicControllersAsync();
 
-    // Step 3. 執行動態權限自動同步與 Seed（透過擴充方法或直接利用 Scope 寫入 DB）
+    // Step 3. 執行動態權限自動同步與 Seed
     using (var scope = app.Services.CreateScope())
     {
         Log.Information("開始同步與初始化動態 BitMask 權限資料...");

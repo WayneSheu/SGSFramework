@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace SGSFramework.Identity.Abstractions
+namespace SGSFramework.Core.Abstractions.Entities.Base
 {
     /// <summary>
     /// 定義擴充 Identity 使用者必須具備的自訂基礎欄位

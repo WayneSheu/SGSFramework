@@ -11,7 +11,7 @@ using SGSFramework.Core.Abstractions.Permissions;
 
 namespace PhysLIMS.API.Dbcontexts
 {
-    public class PhysLIMSDbContext : BaseIdentityDbContext<IdentityUser,IdentityRole,string, PhysLIMSDbContext>, ILogDbContext, ITokenDbContext
+    public class PhysLIMSDbContext : BaseIdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid, PhysLIMSDbContext>, ILogDbContext, ITokenDbContext
     {
         public PhysLIMSDbContext(DbContextOptions<PhysLIMSDbContext> options, ITenantService? tenantService = null)
             : base(options, tenantService)
@@ -44,6 +44,28 @@ namespace PhysLIMS.API.Dbcontexts
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder); // Identity 必須先呼叫 base
+
+            // 顯式宣告 IdentityUserToken<Guid> 的複合主鍵與欄位轉型
+            modelBuilder.Entity<IdentityUserToken<Guid>>(entity =>
+            {
+                entity.ToTable("AspNetUserTokens");
+
+                // 設定複合主鍵 (UserId, LoginProvider, Name)
+                entity.HasKey(t => new { t.UserId, t.LoginProvider, t.Name });
+
+                // 指定 UserId 屬性型態為 Guid/uniqueidentifier
+                entity.Property(t => t.UserId)
+                      .HasColumnType("uniqueidentifier")
+                      .IsRequired();
+
+                // 建立與 AspNetUsers 的外鍵關聯
+                entity.HasOne<ApplicationUser>()
+                      .WithMany()
+                      .HasForeignKey(ut => ut.UserId)
+                      .IsRequired()
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
+
 
             // 關鍵：這行會自動掃描同一個 Assembly 中所有實作 IEntityTypeConfiguration 的類別
             modelBuilder.ApplyConfigurationsFromAssembly(typeof(PhysLIMSDbContext).Assembly);

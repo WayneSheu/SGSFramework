@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using SGSFramework.Core.Abstractions.Entities.Base;
 using SGSFramework.Identity.Abstractions;
 using System;
 using System.Collections.Generic;

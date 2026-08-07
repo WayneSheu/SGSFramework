@@ -8,8 +8,13 @@
     using SGSFramework.Core.Abstractions.Attributes;
     using SGSFramework.Core.Abstractions.DbContexts;
     using SGSFramework.Core.Abstractions.Permissions;
+    using System;
+    using System.Collections.Generic;
     using System.ComponentModel;
+    using System.Linq;
     using System.Reflection;
+    using System.Threading;
+    using System.Threading.Tasks;
 
     /// <summary>
     /// PermissionSeedService 類別負責掃描應用程式中的控制器和方法，並將其所需的權限資訊同步到資料庫中。
@@ -29,30 +34,14 @@
             IEnumerable<Assembly> assembliesToScan,
             ILogger<PermissionSeedService<TDbContext>> logger)
         {
-            _dbContext = dbContext;
-            _permissionRegistry = permissionRegistry;
-            _assembliesToScan = assembliesToScan;
-            _logger = logger;
+            _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+            _permissionRegistry = permissionRegistry ?? throw new ArgumentNullException(nameof(permissionRegistry));
+            _assembliesToScan = assembliesToScan ?? Enumerable.Empty<Assembly>();
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         public async Task SeedAndSyncPermissionsAsync(CancellationToken cancellationToken = default)
         {
-            //若 DynamicPermissionRegistry 支援動態掃描，在 Seed 執行前重新向 Registry 補掃一遍所有載入的 Assemblies
-            if (_permissionRegistry is DynamicPermissionRegistry dynamicRegistry)
-            {
-                var allActiveAssemblies = AppDomain.CurrentDomain.GetAssemblies()
-                    .Where(a => a.FullName != null &&
-                               (a.FullName.StartsWith("SGSFramework") ||
-                                a.FullName.StartsWith("SGS.") ||
-                                a.FullName.StartsWith("PhysLIMS") ||
-                                a == Assembly.GetEntryAssembly()))
-                    .Distinct()
-                    .Union(_assembliesToScan)
-                    .ToArray();
-
-                dynamicRegistry.ScanAndRegisterAssemblies(allActiveAssemblies);
-            }
-
             var scannedMappings = _permissionRegistry.GetAllMappings();
             if (scannedMappings == null || scannedMappings.Count == 0)
             {
@@ -77,7 +66,7 @@
             foreach (var kvp in scannedMappings)
             {
                 string key = kvp.Key;
-                long registryBitMask = kvp.Value;
+                int bitPosition = kvp.Value; // 🔑 直接讀取 BitPosition 索引位置
 
                 var existing = dbPermissions.FirstOrDefault(p => string.Equals(p.PermissionKey, key, StringComparison.OrdinalIgnoreCase));
 
@@ -89,8 +78,6 @@
 
                 if (existing == null)
                 {
-                    int bitPosition = CalculateBitPosition(registryBitMask);
-
                     var newPermission = new Permission
                     {
                         PermissionKey = key,
@@ -103,11 +90,16 @@
 
                     _dbContext.Set<Permission>().Add(newPermission);
                     hasChanges = true;
-                    _logger.LogInformation("Auto-seeded new permission key: {Key} (Module: {Mod}, Controller: {Ctrl}, Action: {Act})", key, moduleName, controllerName, actionName);
+                    _logger.LogInformation("Auto-seeded new permission key: {Key} (BitPosition: {BitPos}, Module: {Mod}, Controller: {Ctrl}, Action: {Act})", key, bitPosition, moduleName, controllerName, actionName);
                 }
                 else
                 {
                     bool updated = false;
+                    if (existing.BitPosition != bitPosition)
+                    {
+                        existing.BitPosition = bitPosition;
+                        updated = true;
+                    }
                     if (string.IsNullOrEmpty(existing.ModuleName))
                     {
                         existing.ModuleName = moduleName;
@@ -200,15 +192,6 @@
             }
 
             return map;
-        }
-
-        private static int CalculateBitPosition(long mask)
-        {
-            for (int i = 0; i < 64; i++)
-            {
-                if ((1L << i) == mask) return i;
-            }
-            return 0;
         }
     }
 }

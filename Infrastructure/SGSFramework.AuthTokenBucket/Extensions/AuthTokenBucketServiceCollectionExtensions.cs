@@ -11,6 +11,8 @@
     using SGSFramework.AuthTokenBucket.Servers;
     using SGSFramework.AuthTokenBucket.Services;
     using SGSFramework.Core.Abstractions.DbContexts;
+    using SGSFramework.Core.Abstractions.Entities.Base;
+    using SGSFramework.Core.Abstractions.Entities.Identities;
     using SGSFramework.Core.Abstractions.Permissions;
     using System;
     using System.Linq;
@@ -18,12 +20,16 @@
 
     public static class AuthTokenBucketServiceCollectionExtensions
     {
-        public static IServiceCollection AddTokenBucketAuthentication<TDbContext, TUser>(
+        /// <summary>
+        /// 註冊 Token Bucket 身分驗證與動態權限服務 (預設主鍵為 Guid)
+        /// </summary>
+        public static IServiceCollection AddTokenBucketAuthentication<TDbContext, TUser, TRole>(
             this IServiceCollection services,
             Action<AuthTokenBucketOptions> configureOptions,
             params Assembly[] assembliesToScan)
             where TDbContext : DbContext, ITokenDbContext
-            where TUser : IdentityUser, new()
+            where TUser : ApplicationUser, new() // <-- 將原本的 IdentityUser<Guid>, IBaseUser 統一改為 ApplicationUser
+            where TRole : IdentityRole<Guid>, new()
         {
             ArgumentNullException.ThrowIfNull(services);
             ArgumentNullException.ThrowIfNull(configureOptions);
@@ -35,10 +41,9 @@
             services.AddScoped<IUserRefreshTokenRepository, UserRefreshTokenRepository<TDbContext>>();
             services.AddScoped<IUserRuntimeScopeService, UserRuntimeScopeService>();
 
-            // 註冊 IPermissionManagementService 的泛型實作，讓 PermissionController 能順利注入
-            services.AddScoped<IPermissionManagementService, PermissionManagementService<TDbContext>>();
+            services.AddScoped<IPermissionManagementService, PermissionManagementService<TDbContext, TRole, Guid>>();
 
-            // 1. 自動彙整全域 AppDomain 中的所有 SGSFramework、SGS 模組與 PhysLIMS 主專案 Assemblies
+            // 1. 自動彙整全域 AppDomain 中的所有 Assemblies
             var entryAssembly = Assembly.GetEntryAssembly();
             var fullAssembliesToScan = AppDomain.CurrentDomain.GetAssemblies()
                 .Where(a => a.FullName != null &&
@@ -50,13 +55,12 @@
                 .Distinct()
                 .ToArray();
 
-            // 2. 實作 DynamicPermissionRegistry 預先進行全組件掃描與 BitMask 分配
-            var registry = new DynamicPermissionRegistry(fullAssembliesToScan);
-
-            // 註冊單例 IPermissionRegistry
+            // 2. 實作 DynamicPermissionRegistry 預先進行全組件掃描 (修復 CS1729)
+            var registry = new DynamicPermissionRegistry();
+            registry.ScanAndRegisterAssemblies(fullAssembliesToScan);
             services.AddSingleton<IPermissionRegistry>(registry);
 
-            // 3. 註冊 IPermissionSeedService 並注入完整 Assembly 清單，確保 DB 同步時不遺漏 SGSFramework.System
+            // 3. 註冊 IPermissionSeedService
             services.AddScoped<IPermissionSeedService>(sp =>
                 new PermissionSeedService<TDbContext>(
                     sp.GetRequiredService<TDbContext>(),
@@ -67,19 +71,18 @@
 
             return services;
         }
-    }
 
-    public static class ApplicationBuilderExtensions
-    {
-        public static async Task<IApplicationBuilder> UsePermissionSeederAsync(this IApplicationBuilder app)
+        /// <summary>
+        /// 註冊 Token Bucket 身分驗證與動態權限服務 (預設 TRole 為 IdentityRole<Guid>)
+        /// </summary>
+        public static IServiceCollection AddTokenBucketAuthentication<TDbContext, TUser>(
+            this IServiceCollection services,
+            Action<AuthTokenBucketOptions> configureOptions,
+            params Assembly[] assembliesToScan)
+            where TDbContext : DbContext, ITokenDbContext
+           where TUser : ApplicationUser, new() // <-- 將原本的 IdentityUser<Guid>, IBaseUser 統一改為 ApplicationUser
         {
-            using var scope = app.ApplicationServices.CreateScope();
-            var seedService = scope.ServiceProvider.GetService<IPermissionSeedService>();
-            if (seedService != null)
-            {
-                await seedService.SeedAndSyncPermissionsAsync();
-            }
-            return app;
+            return services.AddTokenBucketAuthentication<TDbContext, TUser, IdentityRole<Guid>>(configureOptions, assembliesToScan);
         }
     }
 }

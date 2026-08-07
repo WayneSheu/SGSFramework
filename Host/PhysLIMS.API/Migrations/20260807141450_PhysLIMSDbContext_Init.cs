@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace PhysLIMS.API.Migrations
 {
     /// <inheritdoc />
-    public partial class PhysLIMSDb_Initial : Migration
+    public partial class PhysLIMSDbContext_Init : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -19,7 +19,7 @@ namespace PhysLIMS.API.Migrations
                 schema: "dbo",
                 columns: table => new
                 {
-                    Id = table.Column<string>(type: "nvarchar(450)", nullable: false),
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Name = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
                     NormalizedName = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
                     ConcurrencyStamp = table.Column<string>(type: "nvarchar(max)", nullable: true)
@@ -34,7 +34,10 @@ namespace PhysLIMS.API.Migrations
                 schema: "dbo",
                 columns: table => new
                 {
-                    Id = table.Column<string>(type: "nvarchar(450)", nullable: false),
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    FullName = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    LastLoginAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                     UserName = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
                     NormalizedUserName = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
                     Email = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
@@ -148,6 +151,25 @@ namespace PhysLIMS.API.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "Permissions",
+                schema: "dbo",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    PermissionKey = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    BitPosition = table.Column<int>(type: "int", nullable: false),
+                    ModuleName = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    ControllerName = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    ActionName = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    Description = table.Column<string>(type: "nvarchar(max)", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Permissions", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "RemediationTickets",
                 schema: "dbo",
                 columns: table => new
@@ -165,54 +187,60 @@ namespace PhysLIMS.API.Migrations
                     table.PrimaryKey("PK_RemediationTickets", x => x.TicketId);
                 });
 
-            migrationBuilder.Sql(@"
-                                CREATE TABLE [dbo].[SecurityLogs]
-                                (
-                                    [Id]            INT IDENTITY(1,1) NOT NULL,
-                                    [CorrelationId] NVARCHAR(450) NULL,
-                                    [Message]       NVARCHAR(MAX) NULL,
-                                    [Level]         NVARCHAR(MAX) NULL,
-                                    [Timestamp]     DATETIMEOFFSET NOT NULL,
-                                    [Exception]     NVARCHAR(MAX) NULL,
-                                    [Properties]    NVARCHAR(MAX) NULL,
-                                    [LogType]       NVARCHAR(MAX) NULL,
-                                    [EventCategory] NVARCHAR(MAX) NULL,
-                                    [UserId]        NVARCHAR(MAX) NULL,
-                                    [ClientIp]      NVARCHAR(MAX) NULL,
-                                    [AlertId]       NVARCHAR(MAX) NULL,
-                                    [Fingerprint]   NVARCHAR(MAX) NULL,
+            migrationBuilder.CreateTable(
+                name: "SecurityLogs",
+                schema: "dbo",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    CorrelationId = table.Column<string>(type: "nvarchar(450)", nullable: true),
+                    Message = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Level = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Timestamp = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    Exception = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Properties = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    LogType = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    EventCategory = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    UserId = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    ClientIp = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    AlertId = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Fingerprint = table.Column<string>(type: "nvarchar(max)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_SecurityLogs", x => x.Id);
+                });
 
-                                    CONSTRAINT [PK_SecurityLogs] PRIMARY KEY CLUSTERED ([Id] ASC)
-                                )
-                                WITH (LEDGER = ON (APPEND_ONLY = ON));
-                            ");
-
-            migrationBuilder.Sql(@"
-                                CREATE TABLE [dbo].[SystemLogs]
-                                (
-                                    [Id]            BIGINT IDENTITY(1,1) NOT NULL,
-                                    [TimeStamp]     DATETIME2 NOT NULL,
-                                    [Message]       NVARCHAR(MAX) NULL,
-                                    [Level]         NVARCHAR(128) NULL,
-                                    [Exception]     NVARCHAR(MAX) NULL,
-                                    [TenantId]      NVARCHAR(50) NULL,
-                                    [UserId]        NVARCHAR(50) NULL,
-                                    [ModuleName]    NVARCHAR(50) NULL,
-                                    [Operation]     NVARCHAR(MAX) NULL,
-                                    [CorrelationId] VARCHAR(50) NULL,
-                                    [IP]            VARCHAR(45) NULL,
-                                    [Url]           NVARCHAR(2083) NULL,
-                                    [Payload]       NVARCHAR(MAX) NULL,
-                                    [PrevHash]      NVARCHAR(64) NULL,
-                                    [CurrentHash]   NVARCHAR(64) NULL,
-                                    [CreatedAt]     DATETIME2 NOT NULL CONSTRAINT [DF_SystemLogs_CreatedAt] DEFAULT (SYSUTCDATETIME()),
-                                    [AlertId]       CHAR(32) NULL,
-                                    [Fingerprint]   CHAR(64) NULL,
-
-                                    CONSTRAINT [PK_SystemLogs] PRIMARY KEY CLUSTERED ([Id] ASC)
-                                )
-                                WITH (LEDGER = ON (APPEND_ONLY = ON));
-                            ");
+            migrationBuilder.CreateTable(
+                name: "SystemLogs",
+                schema: "dbo",
+                columns: table => new
+                {
+                    Id = table.Column<long>(type: "bigint", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    TimeStamp = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    Message = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Level = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
+                    Exception = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    TenantId = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    UserId = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    ModuleName = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    Operation = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    CorrelationId = table.Column<string>(type: "varchar(50)", unicode: false, maxLength: 50, nullable: true),
+                    IP = table.Column<string>(type: "varchar(45)", unicode: false, maxLength: 45, nullable: true),
+                    Url = table.Column<string>(type: "nvarchar(2083)", maxLength: 2083, nullable: true),
+                    Payload = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    PrevHash = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
+                    CurrentHash = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
+                    AlertId = table.Column<string>(type: "char(32)", nullable: true),
+                    Fingerprint = table.Column<string>(type: "char(64)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_SystemLogs", x => x.Id);
+                });
 
             migrationBuilder.CreateTable(
                 name: "UserRefreshTokens",
@@ -247,7 +275,7 @@ namespace PhysLIMS.API.Migrations
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    RoleId = table.Column<string>(type: "nvarchar(450)", nullable: false),
+                    RoleId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     ClaimType = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     ClaimValue = table.Column<string>(type: "nvarchar(max)", nullable: true)
                 },
@@ -270,7 +298,7 @@ namespace PhysLIMS.API.Migrations
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    UserId = table.Column<string>(type: "nvarchar(450)", nullable: false),
+                    UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     ClaimType = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     ClaimValue = table.Column<string>(type: "nvarchar(max)", nullable: true)
                 },
@@ -294,7 +322,7 @@ namespace PhysLIMS.API.Migrations
                     LoginProvider = table.Column<string>(type: "nvarchar(450)", nullable: false),
                     ProviderKey = table.Column<string>(type: "nvarchar(450)", nullable: false),
                     ProviderDisplayName = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    UserId = table.Column<string>(type: "nvarchar(450)", nullable: false)
+                    UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -313,8 +341,8 @@ namespace PhysLIMS.API.Migrations
                 schema: "dbo",
                 columns: table => new
                 {
-                    UserId = table.Column<string>(type: "nvarchar(450)", nullable: false),
-                    RoleId = table.Column<string>(type: "nvarchar(450)", nullable: false)
+                    UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    RoleId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -340,7 +368,7 @@ namespace PhysLIMS.API.Migrations
                 schema: "dbo",
                 columns: table => new
                 {
-                    UserId = table.Column<string>(type: "nvarchar(450)", nullable: false),
+                    UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     LoginProvider = table.Column<string>(type: "nvarchar(450)", nullable: false),
                     Name = table.Column<string>(type: "nvarchar(450)", nullable: false),
                     Value = table.Column<string>(type: "nvarchar(max)", nullable: true)
@@ -540,6 +568,10 @@ namespace PhysLIMS.API.Migrations
 
             migrationBuilder.DropTable(
                 name: "PermissionGrants",
+                schema: "dbo");
+
+            migrationBuilder.DropTable(
+                name: "Permissions",
                 schema: "dbo");
 
             migrationBuilder.DropTable(

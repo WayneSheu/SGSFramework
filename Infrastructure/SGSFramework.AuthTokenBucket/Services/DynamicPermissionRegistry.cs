@@ -1,22 +1,27 @@
-﻿namespace SGSFramework.AuthTokenBucket.Services
-{
-    using Microsoft.AspNetCore.Mvc;
-    using SGSFramework.AuthTokenBucket.Abstractions;
-    using SGSFramework.Core.Abstractions.Attributes;
-    using SGSFramework.Core.Abstractions.Permissions;
-    using System;
-    using System.Collections.Concurrent;
-    using System.Collections.Generic;
-    using System.Linq;
-    using System.Reflection;
+﻿// ==========================================
+// 檔案路徑: Infrastructure/SGSFramework.AuthTokenBucket/Services/DynamicPermissionRegistry.cs
+// ==========================================
 
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Linq;
+using System.Reflection;
+using Microsoft.AspNetCore.Mvc;
+using SGSFramework.Core.Abstractions.Attributes;
+using SGSFramework.Core.Abstractions.Permissions;
+
+namespace SGSFramework.AuthTokenBucket.Services
+{
     /// <summary>
-    /// 動態權限註冊表，實現 IPermissionRegistry 介面，用於管理權限代碼及其對應的位元遮罩值。
+    /// 執行階段動態權限註冊表實作 (Thread-Safe，支援組件自動掃描與 BitPosition 分配)
     /// </summary>
     public class DynamicPermissionRegistry : IPermissionRegistry
     {
-        private readonly ConcurrentDictionary<string, long> _registry = new(StringComparer.OrdinalIgnoreCase);
-        private long _counter = 0;
+        private readonly ConcurrentDictionary<string, Permission> _permissions = new(StringComparer.OrdinalIgnoreCase);
+        private int _currentBitIndex = 0;
+        private readonly object _syncRoot = new();
 
         public DynamicPermissionRegistry()
         {
@@ -24,15 +29,27 @@
 
         public DynamicPermissionRegistry(IEnumerable<Assembly> assembliesToScan)
         {
-            if (assembliesToScan == null) return;
-
-            ScanAndRegisterAssemblies(assembliesToScan);
+            if (assembliesToScan != null)
+            {
+                ScanAndRegisterAssemblies(assembliesToScan);
+            }
         }
 
+        /// <summary>
+        /// 掃描指定組件集合，自動擷取 RequiresPermission 特性並註冊至 PermissionRegistry (修復 CS1061)
+        /// </summary>
+        /// <param name="assemblies">要掃描的組件集合</param>
         public void ScanAndRegisterAssemblies(IEnumerable<Assembly> assemblies)
         {
+            if (assemblies == null) return;
+
             foreach (var assembly in assemblies)
             {
+                if (assembly == null) continue;
+
+                string assemblyName = assembly.GetName().Name ?? string.Empty;
+                string moduleName = string.IsNullOrEmpty(assemblyName) ? "SGSFramework.System" : assemblyName;
+
                 Type[] types;
                 try
                 {
@@ -48,41 +65,147 @@
 
                 foreach (var ctrlType in controllerTypes)
                 {
-                    // 1. 掃描 Controller 層級
+                    string ctrlName = ctrlType.Name;
+                    string ctrlDesc = ctrlType.GetCustomAttribute<DescriptionAttribute>()?.Description ?? string.Empty;
+
+                    // 掃描 Controller 層級權限
                     var ctrlPermAttr = ctrlType.GetCustomAttribute<RequiresPermissionAttribute>();
                     if (ctrlPermAttr != null && !string.IsNullOrEmpty(ctrlPermAttr.PermissionKey))
                     {
-                        GetOrCreateMask(ctrlPermAttr.PermissionKey);
+                        RegisterOrUpdatePermission(
+                            permissionKey: ctrlPermAttr.PermissionKey,
+                            moduleName: moduleName,
+                            controllerName: ctrlName,
+                            actionName: string.Empty,
+                            description: string.IsNullOrEmpty(ctrlDesc) ? ctrlPermAttr.PermissionKey : ctrlDesc
+                        );
                     }
 
-                    // 2. 掃描 Action 層級
+                    // 掃描 Action 方法層級權限
                     var methods = ctrlType.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
                     foreach (var method in methods)
                     {
                         var actionPermAttr = method.GetCustomAttribute<RequiresPermissionAttribute>();
                         if (actionPermAttr != null && !string.IsNullOrEmpty(actionPermAttr.PermissionKey))
                         {
-                            GetOrCreateMask(actionPermAttr.PermissionKey);
+                            string actionDesc = method.GetCustomAttribute<DescriptionAttribute>()?.Description ?? string.Empty;
+                            if (string.IsNullOrEmpty(actionDesc))
+                            {
+                                actionDesc = ctrlDesc;
+                            }
+
+                            RegisterOrUpdatePermission(
+                                permissionKey: actionPermAttr.PermissionKey,
+                                moduleName: moduleName,
+                                controllerName: ctrlName,
+                                actionName: method.Name,
+                                description: string.IsNullOrEmpty(actionDesc) ? actionPermAttr.PermissionKey : actionDesc
+                            );
                         }
                     }
                 }
             }
         }
 
-        public long GetOrCreateMask(string permissionCode)
+        public int GetOrCreateBitPosition(string permissionKey)
         {
-            return _registry.GetOrAdd(permissionCode, code =>
+            ArgumentException.ThrowIfNullOrWhiteSpace(permissionKey);
+
+            if (_permissions.TryGetValue(permissionKey, out var existing))
             {
-                if (_counter >= 63)
+                return existing.BitPosition;
+            }
+
+            lock (_syncRoot)
+            {
+                if (_permissions.TryGetValue(permissionKey, out existing))
                 {
-                    throw new InvalidOperationException($"Dynamic permission bits exceeded 64-bit limit when registering '{code}'.");
+                    return existing.BitPosition;
                 }
-                long assignedMask = 1L << (int)_counter;
-                Interlocked.Increment(ref _counter);
-                return assignedMask;
-            });
+
+                int newBitPosition = _currentBitIndex++;
+                var permission = new Permission
+                {
+                    Id = newBitPosition + 1,
+                    PermissionKey = permissionKey,
+                    BitPosition = newBitPosition,
+                    ModuleName = "SGSFramework.System",
+                    ControllerName = "Default",
+                    ActionName = "Default",
+                    Description = string.Empty
+                };
+
+                _permissions[permissionKey] = permission;
+                return newBitPosition;
+            }
         }
 
-        public IReadOnlyDictionary<string, long> GetAllMappings() => _registry;
+        public IReadOnlyCollection<Permission> GetAllPermissions()
+        {
+            return _permissions.Values.ToList().AsReadOnly();
+        }
+
+        public IReadOnlyDictionary<string, int> GetAllMappings()
+        {
+            return _permissions.ToDictionary(
+                kvp => kvp.Key,
+                kvp => kvp.Value.BitPosition,
+                StringComparer.OrdinalIgnoreCase);
+        }
+
+        public bool TryGetPermission(string permissionKey, out Permission? permission)
+        {
+            if (string.IsNullOrWhiteSpace(permissionKey))
+            {
+                permission = null;
+                return false;
+            }
+
+            return _permissions.TryGetValue(permissionKey, out permission);
+        }
+
+        public void Register(Permission permission)
+        {
+            ArgumentNullException.ThrowIfNull(permission);
+            ArgumentException.ThrowIfNullOrWhiteSpace(permission.PermissionKey);
+
+            lock (_syncRoot)
+            {
+                if (!_permissions.ContainsKey(permission.PermissionKey))
+                {
+                    permission.BitPosition = _currentBitIndex++;
+                }
+                _permissions[permission.PermissionKey] = permission;
+            }
+        }
+
+        private void RegisterOrUpdatePermission(string permissionKey, string moduleName, string controllerName, string actionName, string description)
+        {
+            lock (_syncRoot)
+            {
+                if (_permissions.TryGetValue(permissionKey, out var existing))
+                {
+                    if (string.IsNullOrEmpty(existing.ModuleName)) existing.ModuleName = moduleName;
+                    if (string.IsNullOrEmpty(existing.ControllerName)) existing.ControllerName = controllerName;
+                    if (string.IsNullOrEmpty(existing.ActionName)) existing.ActionName = actionName;
+                    if (string.IsNullOrEmpty(existing.Description)) existing.Description = description;
+                }
+                else
+                {
+                    int bitPos = _currentBitIndex++;
+                    var permission = new Permission
+                    {
+                        Id = bitPos + 1,
+                        PermissionKey = permissionKey,
+                        BitPosition = bitPos,
+                        ModuleName = moduleName,
+                        ControllerName = controllerName,
+                        ActionName = actionName,
+                        Description = description
+                    };
+                    _permissions[permissionKey] = permission;
+                }
+            }
+        }
     }
 }

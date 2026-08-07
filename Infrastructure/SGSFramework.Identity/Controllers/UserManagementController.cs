@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Models;
 using SGSFramework.AuthTokenBucket.Servers;
 using SGSFramework.Core.Abstractions.Attributes;
+using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Controllers.Base;
 using System;
 using System.ComponentModel;
@@ -23,15 +24,15 @@ namespace SGSFramework.Identity.Controllers
     [RequiresPermission("SYSTEM.USERMANAGEMENT")]
     public sealed class UserManagementController : ApiControllerBase
     {
-        private readonly UserManager<IdentityUser> _userManager;
-        private readonly SignInManager<IdentityUser> _signInManager;
-        private readonly TokenBucketEngine<IdentityUser> _tokenEngine;
+        private readonly UserManager<ApplicationUser> _userManager;
+        private readonly SignInManager<ApplicationUser> _signInManager;
+        private readonly TokenBucketEngine<ApplicationUser> _tokenEngine;
         private readonly ILogger<UserManagementController> _logger;
 
         public UserManagementController(
-            UserManager<IdentityUser> userManager,
-            SignInManager<IdentityUser> signInManager,
-            TokenBucketEngine<IdentityUser> tokenEngine,
+            UserManager<ApplicationUser> userManager,
+            SignInManager<ApplicationUser> signInManager,
+            TokenBucketEngine<ApplicationUser> tokenEngine,
             ILogger<UserManagementController> logger)
         {
             _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
@@ -67,7 +68,8 @@ namespace SGSFramework.Identity.Controllers
                     return BadRequest(new { message = "該電子郵件已被註冊。" });
                 }
 
-                var user = new IdentityUser
+                // 修正：實體化 ApplicationUser
+                var user = new ApplicationUser
                 {
                     UserName = request.Username,
                     Email = request.Email,
@@ -295,9 +297,9 @@ namespace SGSFramework.Identity.Controllers
                     return BadRequest(new { message = "密碼重設失敗，可能記號已失效或密碼強度不符。", errors = result.Errors.Select(e => e.Description) });
                 }
 
-                // 🚀 雙軌資安聯防：強制登出該用戶全網所有其餘工作階段
-                await _tokenEngine.EmergencyFreezeAsync(user.Id, "使用者透過忘記密碼功能完成密碼重設，全面肅清舊有憑證軌跡。");
-                await _tokenEngine.CompleteRemediationAsync(user.Id);
+                //雙軌資安聯防：強制登出該用戶全網所有其餘工作階段
+                await _tokenEngine.EmergencyFreezeAsync(user.Id.ToString(), "使用者透過忘記密碼功能完成密碼重設，全面肅清舊有憑證軌跡。");
+                await _tokenEngine.CompleteRemediationAsync(user.Id.ToString());
 
                 return Ok(new { message = "密碼重設成功，已強制終止其餘裝置連線，請使用新密碼重新登入。" });
             }
@@ -346,8 +348,8 @@ namespace SGSFramework.Identity.Controllers
                 }
 
                 // 🚀 核心資安聯防：變更密碼成功後，立即使外流的所有舊 JWT 與長效 Refresh Token 立即死掉，防禦 Session 劫持
-                await _tokenEngine.EmergencyFreezeAsync(user.Id, "使用者執行線上變更密碼，強制登出全網所有裝置工作階段。");
-                await _tokenEngine.CompleteRemediationAsync(user.Id);
+                await _tokenEngine.EmergencyFreezeAsync(user.Id.ToString(), "使用者執行線上變更密碼，強制登出全網所有裝置工作階段。");
+                await _tokenEngine.CompleteRemediationAsync(user.Id.ToString());
 
                 _logger.LogInformation("用戶 [{Username}] 已成功在線上變更密碼並肅清全網 Session。", user.UserName);
 

@@ -76,9 +76,6 @@ namespace SGSFramework.AuthTokenBucket.Controllers
         /// 更新指定角色的權限關聯
         /// </summary>
         [HttpPost("role/update")]
-        [Menu("更新角色權限", "fa-solid fa-lock", order: 20, parent: null)]
-        [RequiresPermission("SYSTEM_PERMISSION_UPDATE")]
-        [Description("更新指定角色的權限關聯")]
         public async Task<IActionResult> UpdateRolePermissions([FromBody] UpdateRolePermissionsRequest request, CancellationToken cancellationToken)
         {
             if (request == null || string.IsNullOrEmpty(request.RoleId))
@@ -86,20 +83,14 @@ namespace SGSFramework.AuthTokenBucket.Controllers
                 return BadRequest(new { message = "請求參數無效" });
             }
 
-            try
+            // 🔑 修正 CS0023：使用解構賦值 (Succeeded, Message) 取出 bool 變數再進行邏輯判斷
+            var (succeeded, message) = await _permissionService.UpdateRolePermissionsAsync(request, cancellationToken);
+            if (!succeeded)
             {
-                var success = await _permissionService.UpdateRolePermissionsAsync(request, cancellationToken);
-                if (!success)
-                {
-                    return NotFound(new { message = $"更新失敗，找不到指定 RoleId: {request.RoleId}" });
-                }
+                return BadRequest(new { message });
+            }
 
-                return Ok(new { message = "角色權限更新成功" });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "更新角色權限時發生內部錯誤", detail = ex.Message });
-            }
+            return Ok(new { message });
         }
     }
 }

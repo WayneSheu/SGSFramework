@@ -10,6 +10,7 @@ using System.Security.Principal;
 using System.Text;
 using SGSFramework.Core.Controllers.Base;
 using SGSFramework.AuthTokenBucket.Servers;
+using SGSFramework.Core.Abstractions.Entities.Identities;
 
 namespace SGSFramework.AuthTokenBucket.Controllers.Base
 {
@@ -20,7 +21,7 @@ namespace SGSFramework.AuthTokenBucket.Controllers.Base
     /// <typeparam name="TUser"></typeparam>
     [ApiController]
     [Route("api/auth/sso/windows")]
-    public abstract class WindowsAuthController<TUser> : ApiControllerBase where TUser : IdentityUser, new()
+    public abstract class WindowsAuthController<TUser> : ApiControllerBase where TUser :ApplicationUser, new()
     {
         private readonly TokenBucketEngine<TUser> _tokenEngine;
         private readonly UserManager<TUser> _userManager;

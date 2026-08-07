@@ -1,11 +1,8 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Identity.Abstractions;
 using SGSFramework.Identity.DbContexts;
-using SGSFramework.Identity.Entities;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace SGSFramework.Identity.Repositories
 {

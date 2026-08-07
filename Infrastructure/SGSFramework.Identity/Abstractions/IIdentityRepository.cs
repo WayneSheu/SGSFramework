@@ -1,7 +1,4 @@
-﻿using SGSFramework.Identity.Entities;
-using System;
-using System.Collections.Generic;
-using System.Text;
+﻿using SGSFramework.Core.Abstractions.Entities.Identities;
 
 namespace SGSFramework.Identity.Abstractions
 {

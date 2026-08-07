@@ -1,10 +1,7 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
-using SGSFramework.Identity.Entities;
-using System;
-using System.Collections.Generic;
-using System.Text;
+using SGSFramework.Core.Abstractions.Entities.Identities;
 
 namespace SGSFramework.Identity.DbContexts
 {
