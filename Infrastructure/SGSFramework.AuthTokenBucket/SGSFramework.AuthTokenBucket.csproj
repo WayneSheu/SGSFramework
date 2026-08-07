@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
 	  <!-- 設定套件的資訊 -->
 	  <PackageId>SGSFramework.AuthTokenBucket</PackageId>
-	  <Version>1.0.0.2</Version>
+	  <Version>1.0.0.35</Version>
 	  <Authors>Wayne</Authors>
 	  <Company>SHANDA</Company>
 	  <Description>認證與動態限流元件</Description>
@@ -34,7 +34,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.19.1" />
-    <PackageReference Include="SGSFramework.Core" Version="1.0.0.9" />
+    <PackageReference Include="SGSFramework.Core" Version="1.0.0.12" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.19.1" />
   </ItemGroup>
 

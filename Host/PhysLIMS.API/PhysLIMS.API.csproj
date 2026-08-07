@@ -24,12 +24,12 @@
     <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
     <PackageReference Include="Scalar.AspNetCore" Version="2.16.17" />
     <PackageReference Include="SGSFramework.AuditLog" Version="1.0.0" />
-    <PackageReference Include="SGSFramework.Core" Version="1.0.0.9" />
     <PackageReference Include="SGSFramework.Persistent" Version="1.0.0" />
     <PackageReference Include="SGSFramework.SystemLog" Version="1.0.0.3" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\Infrastructure\SGSFramework.AuthTokenBucket\SGSFramework.AuthTokenBucket.csproj" />
     <ProjectReference Include="..\PhysLIMS.Controller\SGSFramework.ApiInfrastructure.csproj" />
   </ItemGroup>
 

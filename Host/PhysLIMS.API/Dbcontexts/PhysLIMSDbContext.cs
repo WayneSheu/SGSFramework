@@ -7,6 +7,7 @@ using SGSFramework.Core.Abstractions.Entities.Modules;
 using SGSFramework.Core.Abstractions.Logings;
 using SGSFramework.Core.Identiies.Tenants;
 using SGSFramework.Persistent.Abstractions.Dbcontexts;
+using SGSFramework.Core.Abstractions.Permissions;
 
 namespace PhysLIMS.API.Dbcontexts
 {
@@ -36,6 +37,9 @@ namespace PhysLIMS.API.Dbcontexts
         public DbSet<PermissionGrant> PermissionGrants { get; set; } = null!;
 
         public DbSet<UserResourceGrant> UserResourceGrants { get; set; } = null!;
+
+        public DbSet<Permission> Permissions     { get; set; } = null!;
+
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

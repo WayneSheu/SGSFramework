@@ -10,7 +10,9 @@ using Serilog;
 using SGSFramework.ApiInfrastructure.Extensions;
 using SGSFramework.ApiInfrastructure.Filters;
 using SGSFramework.AuditLog.Extensions;
+using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.Extensions;
+using SGSFramework.AuthTokenBucket.Services;
 using SGSFramework.CodeSecurity.Extensions;
 using SGSFramework.Core.Abstractions.Adapters;
 using SGSFramework.Core.ApiDoc.Extensions;
@@ -23,6 +25,7 @@ using SGSFramework.ModulePlugin.Systems.Controller.Providers;
 using SGSFramework.Persistent.Extensions;
 using SGSFramework.SystemLog.Extensions;
 using SGSFramework.VerifyLedger.Extensions;
+using System.Reflection; // 確保載入 Reflection 命名空間
 
 try
 {
@@ -34,12 +37,8 @@ try
 
     IConfiguration config = builder.Configuration;
 
-    // 在載入動態外掛前，先註冊預設降級服務
-    //builder.Services.TryAddScoped<IOrganizationIntegrationService, NullOrganizationIntegrationService>();
-
-    //注入SGSFramework.Core 的服務 
+    // 注入 SGSFramework.Core 的服務 
     builder.AddSGSFrameworkCore();
-
 
     // 1. 註冊自訂 Scalar API 文件服務
     builder.Services.AddOpenApi("v1", options =>
@@ -98,7 +97,16 @@ try
     builder.Services.AddIdentityCore<IdentityUser>(options => { })
                    .AddEntityFrameworkStores<PhysLIMSDbContext>();
 
-    // 7. Token Bucket 認證與 SSO
+    // 7. Token Bucket 認證、動態 BitMask 權限掃描與 SSO
+    // 透過擴充篩選機制，確保主專案 Assembly 及其相關組件完整納入掃描
+    var scannedAssemblies = AppDomain.CurrentDomain.GetAssemblies()
+        .Where(a => a.FullName != null &&
+                   (a.FullName.StartsWith("SGS.") ||
+                    a.FullName.StartsWith("PhysLIMS") ||
+                    a == Assembly.GetEntryAssembly()))
+        .Distinct()
+        .ToArray();
+
     builder.Services.AddTokenBucketAuthentication<PhysLIMSDbContext, IdentityUser>(options =>
     {
         options.SecretKey = config["Jwt:Secret"]
@@ -108,7 +116,8 @@ try
         options.MaxDeviceCount = 6;
         options.RefreshTokenExpirationDays = 7;
         options.RefreshTokenGracePeriodSeconds = 8;
-    });
+    },
+    scannedAssemblies);
 
     builder.Services.AddSSOServices();
     builder.Services.AddAuthorization();
@@ -215,26 +224,34 @@ try
         }
     }
 
-    // Step 2. 初始化模組系統與動態控制器
+    // Step 2. 初始化模組系統與動態控制器 (此時外掛模組的 Assemblies 才透過外掛機制載入完成)
     Log.Information("開始初始化模組系統與動態控制器...");
     await app.InitializeModularSystemAsync();
 
     await app.UseDynamicControllersAsync();
 
-    // Step 3. 安全與授權管道
+    // Step 3. 執行動態權限自動同步與 Seed（透過擴充方法或直接利用 Scope 寫入 DB）
+    using (var scope = app.Services.CreateScope())
+    {
+        Log.Information("開始同步與初始化動態 BitMask 權限資料...");
+        var permissionSeeder = scope.ServiceProvider.GetRequiredService<IPermissionSeedService>();
+        await permissionSeeder.SeedAndSyncPermissionsAsync();
+    }
+
+    // Step 4. 安全與授權管道
     app.UseRouting();
     app.UseAuthentication();
     app.UseAuthorization();
 
-    // Step 4. 註冊 Controller 路由點
+    // Step 5. 註冊 Controller 路由點
     app.MapControllers();
 
-    // Step 5. 觸發 ActionDescriptor 變更通知，刷新 Dynamic Controller 路由
+    // Step 6. 觸發 ActionDescriptor 變更通知，刷新 Dynamic Controller 路由
     var changeProvider = app.Services.GetRequiredService<IDynamicActionDescriptorChangeProvider>();
     Log.Information("觸發 MVC ActionDescriptorCollection 變更通知，刷新 Dynamic Controller 路由...");
     changeProvider.NotifyChanges();
 
-    // Step 6. OpenAPI 與 Scalar 文件映射
+    // Step 7. OpenAPI 與 Scalar 文件映射
     app.MapOpenApi();
     app.MapScalarApiReference(options =>
     {

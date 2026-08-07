@@ -7,7 +7,7 @@
   
 	  <!-- 設定套件的資訊 -->
 	  <PackageId>SGSFramework.Core</PackageId>
-	  <Version>1.0.0.9</Version>
+	  <Version>1.0.0.12</Version>
 	  <Authors>Wayne</Authors>
 	  <Company>SHANDA</Company>
 	  <Description>企業內部共用類別庫</Description>
