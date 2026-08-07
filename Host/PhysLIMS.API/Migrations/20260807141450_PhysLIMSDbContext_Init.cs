@@ -187,60 +187,66 @@ namespace PhysLIMS.API.Migrations
                     table.PrimaryKey("PK_RemediationTickets", x => x.TicketId);
                 });
 
-            migrationBuilder.CreateTable(
-                name: "SecurityLogs",
-                schema: "dbo",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    CorrelationId = table.Column<string>(type: "nvarchar(450)", nullable: true),
-                    Message = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    Level = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    Timestamp = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
-                    Exception = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    Properties = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    LogType = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    EventCategory = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    UserId = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    ClientIp = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    AlertId = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    Fingerprint = table.Column<string>(type: "nvarchar(max)", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_SecurityLogs", x => x.Id);
-                });
 
-            migrationBuilder.CreateTable(
-                name: "SystemLogs",
-                schema: "dbo",
-                columns: table => new
-                {
-                    Id = table.Column<long>(type: "bigint", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    TimeStamp = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    Message = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    Level = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
-                    Exception = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    TenantId = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
-                    UserId = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
-                    ModuleName = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
-                    Operation = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    CorrelationId = table.Column<string>(type: "varchar(50)", unicode: false, maxLength: 50, nullable: true),
-                    IP = table.Column<string>(type: "varchar(45)", unicode: false, maxLength: 45, nullable: true),
-                    Url = table.Column<string>(type: "nvarchar(2083)", maxLength: 2083, nullable: true),
-                    Payload = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    PrevHash = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
-                    CurrentHash = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
-                    AlertId = table.Column<string>(type: "char(32)", nullable: true),
-                    Fingerprint = table.Column<string>(type: "char(64)", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_SystemLogs", x => x.Id);
-                });
+            migrationBuilder.Sql(@"
+-- 1. 建立 SecurityLogs (Append-Only Ledger Table)
+CREATE TABLE [dbo].[SecurityLogs] (
+    [Id] INT IDENTITY(1,1) NOT NULL,
+    [CorrelationId] NVARCHAR(450) NULL,
+    [Message] NVARCHAR(MAX) NULL,
+    [Level] NVARCHAR(MAX) NULL,
+    [Timestamp] DATETIMEOFFSET(7) NOT NULL,
+    [Exception] NVARCHAR(MAX) NULL,
+    [Properties] NVARCHAR(MAX) NULL,
+    [LogType] NVARCHAR(MAX) NULL,
+    [EventCategory] NVARCHAR(MAX) NULL,
+    [UserId] NVARCHAR(MAX) NULL,
+    [ClientIp] NVARCHAR(MAX) NULL,
+    [AlertId] NVARCHAR(MAX) NULL,
+    [Fingerprint] NVARCHAR(MAX) NULL,
+    CONSTRAINT [PK_SecurityLogs] PRIMARY KEY CLUSTERED ([Id] ASC)
+)
+WITH 
+(
+    LEDGER = ON 
+    (
+        APPEND_ONLY = ON
+    )
+);
+");
+
+            migrationBuilder.Sql(@"
+ -- 2. 建立 SystemLogs (Append-Only Ledger Table)
+CREATE TABLE [dbo].[SystemLogs] (
+    [Id] BIGINT IDENTITY(1,1) NOT NULL,
+    [TimeStamp] DATETIME2(7) NOT NULL,
+    [Message] NVARCHAR(MAX) NULL,
+    [Level] NVARCHAR(128) NULL,
+    [Exception] NVARCHAR(MAX) NULL,
+    [TenantId] NVARCHAR(50) NULL,
+    [UserId] NVARCHAR(50) NULL,
+    [ModuleName] NVARCHAR(50) NULL,
+    [Operation] NVARCHAR(MAX) NULL,
+    [CorrelationId] VARCHAR(50) NULL,
+    [IP] VARCHAR(45) NULL,
+    [Url] NVARCHAR(2083) NULL,
+    [Payload] NVARCHAR(MAX) NULL,
+    [PrevHash] NVARCHAR(64) NULL,
+    [CurrentHash] NVARCHAR(64) NULL,
+    [CreatedAt] DATETIME2(7) NOT NULL CONSTRAINT [DF_SystemLogs_CreatedAt] DEFAULT (SYSUTCDATETIME()),
+    [AlertId] CHAR(32) NULL,
+    [Fingerprint] CHAR(64) NULL,
+    CONSTRAINT [PK_SystemLogs] PRIMARY KEY CLUSTERED ([Id] ASC)
+)
+WITH 
+(
+    LEDGER = ON 
+    (
+        APPEND_ONLY = ON
+    )
+);
+
+");
 
             migrationBuilder.CreateTable(
                 name: "UserRefreshTokens",

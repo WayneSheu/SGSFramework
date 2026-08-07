@@ -32,11 +32,11 @@
 	  <PackageReference Include="Enterprise.HttpSdk" Version="1.0.0" />
 	  <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
 	  <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
-	  <PackageReference Include="SGSFramework.AuthTokenBucket" Version="1.0.0.41" />
+	  <PackageReference Include="SGSFramework.AuthTokenBucket" Version="1.0.0.42" />
 	  <PackageReference Include="SGSFramework.CodeSecurity" Version="1.0.0" />
 	  <PackageReference Include="SGSFramework.Core" Version="1.0.0.16" />
 	  <PackageReference Include="SGSFramework.DataProtection" Version="1.0.0.2" />
-	  <PackageReference Include="SGSFramework.Identity" Version="1.0.0.10" />
+	  <PackageReference Include="SGSFramework.Identity" Version="1.0.0.13" />
 	  <PackageReference Include="SGSFramework.ModulePlugin" Version="1.0.0.18" />
 	  <PackageReference Include="SGSFramework.VerifyLedger" Version="1.0.0.2" />
 	</ItemGroup>
