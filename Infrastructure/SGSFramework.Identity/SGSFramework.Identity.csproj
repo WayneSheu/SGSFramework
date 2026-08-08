@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
 	  <!-- 設定套件的資訊 -->
 	  <PackageId>SGSFramework.Identity</PackageId>
-	  <Version>1.0.0.13</Version>
+	  <Version>1.0.0.14</Version>
 	  <Authors>Wayne</Authors>
 	  <Company>SHANDA</Company>
 	  <Description>身分驗證、存取授權與工作階段管理元件</Description>

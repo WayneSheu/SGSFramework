@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SGSFramework.Core.Abstractions.Entities.Base;
+using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Identity.Abstractions;
 using SGSFramework.Identity.Repositories;
 using SGSFramework.Identity.Services;
@@ -25,13 +26,15 @@ namespace SGSFramework.Identity.Extensions
             where TKey : IEquatable<TKey>
         {
             // 1. 註冊 ASP.NET Core Identity 核心服務並關聯外部 DbContext
-            var identityBuilder = services.AddIdentityCore<TUser>(setupAction ?? (options =>
+            var identityBuilder = services.AddIdentityCore<ApplicationUser>(setupAction ?? (options =>
             {
                 // 預設安全設定
                 options.Password.RequireDigit = true;
                 options.Password.RequiredLength = 8;
                 options.User.RequireUniqueEmail = true;
-            }));
+            })).AddSignInManager<SignInManager<ApplicationUser>>();
+                ;
+       
 
             identityBuilder
                 .AddRoles<TRole>()

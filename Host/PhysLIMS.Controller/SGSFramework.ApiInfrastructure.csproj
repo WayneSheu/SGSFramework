@@ -29,15 +29,20 @@
 	</ItemGroup>
 	<ItemGroup>
 	  <PackageReference Include="Azure.Core" Version="1.50.0" />
-	  <PackageReference Include="Enterprise.HttpSdk" Version="1.0.0" />
 	  <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
 	  <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
-	  <PackageReference Include="SGSFramework.AuthTokenBucket" Version="1.0.0.42" />
-	  <PackageReference Include="SGSFramework.CodeSecurity" Version="1.0.0" />
-	  <PackageReference Include="SGSFramework.Core" Version="1.0.0.16" />
-	  <PackageReference Include="SGSFramework.DataProtection" Version="1.0.0.2" />
-	  <PackageReference Include="SGSFramework.Identity" Version="1.0.0.13" />
-	  <PackageReference Include="SGSFramework.ModulePlugin" Version="1.0.0.18" />
-	  <PackageReference Include="SGSFramework.VerifyLedger" Version="1.0.0.2" />
+	</ItemGroup>
+	<ItemGroup>
+	  <ProjectReference Include="..\..\Infrastructure\Enterprise.HttpSdk\Enterprise.HttpSdk.csproj" />
+	  <ProjectReference Include="..\..\Infrastructure\SGSFramework.AuditLog\SGSFramework.AuditLog.csproj" />
+	  <ProjectReference Include="..\..\Infrastructure\SGSFramework.AuthTokenBucket\SGSFramework.AuthTokenBucket.csproj" />
+	  <ProjectReference Include="..\..\Infrastructure\SGSFramework.CodeSecurity\SGSFramework.CodeSecurity.csproj" />
+	  <ProjectReference Include="..\..\Infrastructure\SGSFramework.DataProtection\SGSFramework.DataProtection.csproj" />
+	  <ProjectReference Include="..\..\Infrastructure\SGSFramework.Identity\SGSFramework.Identity.csproj" />
+	  <ProjectReference Include="..\..\Infrastructure\SGSFramework.ModulePlugin\SGSFramework.ModulePlugin.csproj" />
+	  <ProjectReference Include="..\..\Infrastructure\SGSFramework.Persistent\SGSFramework.Persistent.csproj" />
+	  <ProjectReference Include="..\..\Infrastructure\SGSFramework.SystemLog\SGSFramework.SystemLog.csproj" />
+	  <ProjectReference Include="..\..\Infrastructure\SGSFramework.VerifyLedger\SGSFramework.VerifyLedger.csproj" />
+	  <ProjectReference Include="..\..\Shared\SGSFramework.Core\SGSFramework.Core.csproj" />
 	</ItemGroup>
 </Project>
