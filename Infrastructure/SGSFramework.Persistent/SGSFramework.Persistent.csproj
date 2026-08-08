@@ -56,11 +56,11 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="SGSFramework.AuditLog" Version="1.0.0" />
-    <PackageReference Include="SGSFramework.Core" Version="1.0.0.16" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\Shared\SGSFramework.Core\SGSFramework.Core.csproj" />
+    <ProjectReference Include="..\SGSFramework.AuditLog\SGSFramework.AuditLog.csproj" />
     <ProjectReference Include="..\SGSFramework.SystemLog\SGSFramework.SystemLog.csproj" />
   </ItemGroup>
 </Project>

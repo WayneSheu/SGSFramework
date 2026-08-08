@@ -59,7 +59,7 @@ try
     // 整合 AddGenericIdentityPackage 一步到位完成 IdentityCore, Roles, Stores, TokenProviders 
     // 以及 IGenericIdentityRepository 與 IRoleManagementService 的 DI 註冊
     // 將泛型參數改為: PhysLIMSDbContext, ApplicationUser, IdentityRole<Guid>, Guid
-    builder.Services.AddGenericIdentityPackage<PhysLIMSDbContext, ApplicationUser, IdentityRole<Guid>, Guid>(options =>
+    builder.Services.AddGenericIdentityPackage<PhysLIMSDbContext, ApplicationUser, ApplicationRole, Guid>(options =>
     {
         options.Password.RequireDigit = true;
         options.Password.RequiredLength = 8;

@@ -11,7 +11,7 @@ using SGSFramework.Core.Abstractions.Permissions;
 
 namespace PhysLIMS.API.Dbcontexts
 {
-    public class PhysLIMSDbContext : BaseIdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid, PhysLIMSDbContext>, ILogDbContext, ITokenDbContext
+    public class PhysLIMSDbContext : BaseIdentityDbContext<ApplicationUser, ApplicationRole, Guid, PhysLIMSDbContext>, ILogDbContext, ITokenDbContext
     {
         public PhysLIMSDbContext(DbContextOptions<PhysLIMSDbContext> options, ITenantService? tenantService = null)
             : base(options, tenantService)

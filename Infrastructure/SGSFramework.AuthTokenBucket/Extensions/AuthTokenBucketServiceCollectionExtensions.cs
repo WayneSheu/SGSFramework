@@ -29,7 +29,7 @@
             params Assembly[] assembliesToScan)
             where TDbContext : DbContext, ITokenDbContext
             where TUser : ApplicationUser, new() // <-- 將原本的 IdentityUser<Guid>, IBaseUser 統一改為 ApplicationUser
-            where TRole : IdentityRole<Guid>, new()
+            where TRole : ApplicationRole, new()
         {
             ArgumentNullException.ThrowIfNull(services);
             ArgumentNullException.ThrowIfNull(configureOptions);
@@ -82,7 +82,7 @@
             where TDbContext : DbContext, ITokenDbContext
            where TUser : ApplicationUser, new() // <-- 將原本的 IdentityUser<Guid>, IBaseUser 統一改為 ApplicationUser
         {
-            return services.AddTokenBucketAuthentication<TDbContext, TUser, IdentityRole<Guid>>(configureOptions, assembliesToScan);
+            return services.AddTokenBucketAuthentication<TDbContext, TUser, ApplicationRole>(configureOptions, assembliesToScan);
         }
     }
 }

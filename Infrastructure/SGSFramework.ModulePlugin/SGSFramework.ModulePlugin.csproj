@@ -33,8 +33,8 @@
     <Folder Include="Systems\Module\Extensions\" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="SGSFramework.AuthTokenBucket" Version="1.0.0.2" />
-    <PackageReference Include="SGSFramework.Core" Version="1.0.0.9" />
+    <ProjectReference Include="..\..\Shared\SGSFramework.Core\SGSFramework.Core.csproj" />
+    <ProjectReference Include="..\SGSFramework.AuthTokenBucket\SGSFramework.AuthTokenBucket.csproj" />
   </ItemGroup>
 	<Target Name="PushToBaGet" AfterTargets="Pack" Condition="'$(Configuration)' == 'Release'">
 		<Exec Command="dotnet nuget push &quot;$(ProjectDir)bin\$(Configuration)\*.nupkg&quot; --source http://localhost:5000/v3/index.json --api-key TeamSecret2026_InitialAccess! --allow-insecure-connections --skip-duplicate" />

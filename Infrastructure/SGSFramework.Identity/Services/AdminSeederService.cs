@@ -1,26 +1,28 @@
-﻿using Microsoft.AspNetCore.Identity;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Claims;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Identity.Abstractions;
 using SGSFramework.Identity.Options;
-using System;
-using System.Collections.Generic;
-using System.Security.Claims;
-using System.Text;
 
 namespace SGSFramework.Identity.Services
 {
     public class AdminSeederService : IAdminSeederService
     {
         private readonly UserManager<ApplicationUser> _userManager;
-        private readonly RoleManager<IdentityRole<Guid>> _roleManager;
+        private readonly RoleManager<ApplicationRole> _roleManager;
         private readonly SeedAdminOptions _options;
         private readonly ILogger<AdminSeederService> _logger;
 
         public AdminSeederService(
             UserManager<ApplicationUser> userManager,
-            RoleManager<IdentityRole<Guid>> roleManager,
+            RoleManager<ApplicationRole> roleManager,
             IOptions<SeedAdminOptions> options,
             ILogger<AdminSeederService> logger)
         {
@@ -51,7 +53,11 @@ namespace SGSFramework.Identity.Services
                 var roleExists = await _roleManager.RoleExistsAsync(roleName);
                 if (!roleExists)
                 {
-                    var roleResult = await _roleManager.CreateAsync(new IdentityRole<Guid>(roleName));
+                    var roleResult = await _roleManager.CreateAsync(new ApplicationRole
+                    {
+                        Name = roleName
+                    });
+
                     if (!roleResult.Succeeded)
                     {
                         _logger.LogError("[SeedAdmin] 建立 SuperAdmin 角色失敗: {Errors}",
@@ -61,7 +67,7 @@ namespace SGSFramework.Identity.Services
                     _logger.LogInformation("[SeedAdmin] 成功建立核心角色: {RoleName}", roleName);
                 }
 
-                // 2. 檢查預設 Admin 使用者是否存在 (優先以 Username 查，再以 Email 查)
+                // 2. 檢查預設 Admin 使用者是否存在
                 var adminUser = await _userManager.FindByNameAsync(_options.Username)
                                 ?? await _userManager.FindByEmailAsync(_options.Email);
 
@@ -72,7 +78,7 @@ namespace SGSFramework.Identity.Services
                         UserName = _options.Username,
                         Email = _options.Email,
                         EmailConfirmed = true,
-                        LockoutEnabled = false // 避免預設 SuperAdmin 被暴力破解鎖定導致無人能救
+                        LockoutEnabled = false // 避免預設 SuperAdmin 被鎖定
                     };
 
                     var createResult = await _userManager.CreateAsync(adminUser, _options.Password);
@@ -101,7 +107,7 @@ namespace SGSFramework.Identity.Services
                     }
                 }
 
-                // 4. 賦予萬能超級權限特徵 (例如 Claims 或特定身份標記)
+                // 4. 賦予萬能超級權限特徵 (Claims)
                 var claims = await _userManager.GetClaimsAsync(adminUser);
                 if (!claims.Any(c => c.Type == "IsSuperAdmin" && c.Value == "true"))
                 {

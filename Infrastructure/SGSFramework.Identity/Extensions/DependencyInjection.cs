@@ -2,7 +2,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SGSFramework.Core.Abstractions.Entities.Base;
-using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Identity.Abstractions;
 using SGSFramework.Identity.Repositories;
 using SGSFramework.Identity.Services;
@@ -25,28 +24,29 @@ namespace SGSFramework.Identity.Extensions
             where TRole : IdentityRole<TKey>, new()
             where TKey : IEquatable<TKey>
         {
-            // 1. 註冊 ASP.NET Core Identity 核心服務並關聯外部 DbContext
-            var identityBuilder = services.AddIdentityCore<ApplicationUser>(setupAction ?? (options =>
+            // 1. 確保註冊 HttpContextAccessor (SignInManager 必備依賴)
+            services.AddHttpContextAccessor();
+
+            // 2. 使用傳入的泛型 TUser 初始化 Identity 核心，並鏈結正確的 TRole
+            services.AddIdentityCore<TUser>(setupAction ?? (options =>
             {
                 // 預設安全設定
                 options.Password.RequireDigit = true;
                 options.Password.RequiredLength = 8;
                 options.User.RequireUniqueEmail = true;
-            })).AddSignInManager<SignInManager<ApplicationUser>>();
-                ;
-       
+            }))
+            .AddRoles<TRole>() // 必須先指定 RoleType
+            .AddSignInManager<SignInManager<TUser>>()
+            .AddUserManager<UserManager<TUser>>()
+            .AddRoleManager<RoleManager<TRole>>() // 正確注入 RoleManager<TRole>
+            .AddEntityFrameworkStores<TContext>()
+            .AddDefaultTokenProviders();
 
-            identityBuilder
-                .AddRoles<TRole>()
-                .AddEntityFrameworkStores<TContext>()
-                .AddDefaultTokenProviders();
-
-            // 註冊泛型倉儲服務
+            // 3. 註冊泛型倉儲服務
             services.AddScoped<IGenericIdentityRepository<TUser, TKey>, GenericIdentityRepository<TContext, TUser, TRole, TKey>>();
 
-            // 1. 註冊開放泛型 (可支援任何衍生自 IdentityRole<TKey> 的型別)
+            // 4. 註冊角色管理服務 (開放泛型與具體泛型介面)
             services.AddScoped(typeof(IRoleManagementService<,>), typeof(RoleManagementService<,>));
-            // 註冊泛型 IRoleManagementService<TRole, TKey>
             services.AddScoped<IRoleManagementService<TRole, TKey>, RoleManagementService<TRole, TKey>>();
 
             return services;

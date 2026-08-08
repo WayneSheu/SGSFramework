@@ -31,10 +31,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Enterprise.HttpSdk" Version="1.0.0" />
     <PackageReference Include="FluentValidation" Version="12.1.1" />
-    <PackageReference Include="SGSFramework.Core" Version="1.0.0.9" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.10" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Shared\SGSFramework.Core\SGSFramework.Core.csproj" />
+    <ProjectReference Include="..\Enterprise.HttpSdk\Enterprise.HttpSdk.csproj" />
   </ItemGroup>
 
 </Project>
