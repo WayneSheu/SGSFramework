@@ -45,6 +45,7 @@ try
         options.ShouldInclude = (description) => true;
         options.AddDocumentTransformer<DynamicControllerDocumentTransformer>();
     });
+    // 註冊 Scalar API 文件服務
     builder.Services.AddAPIDocServices();
 
     // 2. 主專案資料庫上下文註冊 (配置 SQL Server / Schema)
