@@ -16,7 +16,7 @@ namespace SGS.Modules.ORG.Application.Extensions
             // 1. 註冊一般服務
             services.AddScoped<IOrganizationService, OrganizationService>();
 
-            var asm = typeof(GetLaboratoriesHandler).Assembly;
+            var asm = typeof(GetLaboratoriesQueryHandler).Assembly;
 
             // 2. 註冊 MediatR 核心服務（提供 IMediator 實例）
             services.AddMediatR(cfg => {
@@ -26,7 +26,7 @@ namespace SGS.Modules.ORG.Application.Extensions
             // 3. 防禦性手動註冊：確保特定 Handler 100% 寫入 DI 容器
             services.AddTransient<
                 IRequestHandler<GetLaboratoriesQuery, List<LaboratoryDto>>,
-                GetLaboratoriesHandler>();
+                GetLaboratoriesQueryHandler>();
 
             return services;
         }

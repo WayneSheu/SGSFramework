@@ -9,6 +9,8 @@ namespace SGSFramework.Core.Results
     /// <summary>
     /// Result 類別用於表示操作的結果狀態，包含成功與失敗兩種情況。
     /// 它提供了 IsSuccess 和 IsFailure 屬性來判斷操作是否成功，以及一個 Error 屬性來描述失敗的錯誤資訊。
+    /// Error 物件封裝模式，且靜態工廠方法是定義在 Result（非泛型基底類別）上，
+    /// 同時也提供了泛型 Result<TValue> 的隱式轉換糖 (Implicit Conversion)。
     /// </summary>
     public class Result
     {

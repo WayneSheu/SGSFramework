@@ -8,6 +8,7 @@ using SGSFramework.Core.Abstractions.Logings;
 using SGSFramework.Core.Identiies.Tenants;
 using SGSFramework.Persistent.Abstractions.Dbcontexts;
 using SGSFramework.Core.Abstractions.Permissions;
+using SGSFramework.Core.Abstractions.Permissions.Identities;
 
 namespace PhysLIMS.API.Dbcontexts
 {

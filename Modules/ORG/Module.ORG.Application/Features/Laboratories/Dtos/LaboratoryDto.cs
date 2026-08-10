@@ -7,19 +7,19 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Dtos
 {
     public class LaboratoryDto
     {
-        public int? Id { get; set; }           // 使用 int 確保索引效能
+        public int Id { get; set; }
+        public int? ParentId { get; set; }
+        public Guid? TenantLabId { get; set; }
+        public string Code { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string? Location { get; set; }
+        public string? Description { get; set; }
+        public string NodePath { get; set; } = string.Empty;
+        public int Level { get; set; }
 
-        public string? Code { get; set; } = null; // 實驗室編碼
-
-        public int? ParentId { get; set; }    // 維持 int 以便直接關聯
-
-        public string Name { get; set; }      // 節點名稱
-
-        public string? Description { get; set; } // 描述信息
-
-        
-        public string? NodePath { get; set; }  // 存儲路徑 (如 "/1/5/10/")
-
-        public int? Level { get; set; }// 樹狀層級
+        /// <summary>
+        /// 子組織/子實驗室節點清單
+        /// </summary>
+        public List<LaboratoryDto> Children { get; set; } = new List<LaboratoryDto>();
     }
 }

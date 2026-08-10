@@ -15,15 +15,18 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Command
     /// <summary>
     /// 新增實驗室
     /// </summary>`
-    public class AddLaboratoryCommand : IRequest<Result<LaboratoryDto>>
+    public record AddLaboratoryCommand : IRequest<Result<LaboratoryDto>>
     {
-        public int? ParentId { get; set; }
-        public string Code { get; set; }
+        public int? ParentId { get; init; }
+        public string Code { get; init; } = string.Empty;
+        public string Name { get; init; } = string.Empty;
+        public string? Location { get; init; }
+        public string? Description { get; init; }
 
-        public string Name { get; set; }    
-
-        public string? Description { get; set; }
-
+        /// <summary>
+        /// 可選：若前端未傳入，Command Handler 會根據 Parent 繼承或自動產生 UUIDv7
+        /// </summary>
+        public Guid? ExplicitTenantLabId { get; init; }
     }
 
 

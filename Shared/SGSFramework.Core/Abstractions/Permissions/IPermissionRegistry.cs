@@ -1,4 +1,5 @@
-﻿using System;
+﻿using SGSFramework.Core.Abstractions.Permissions.Identities;
+using System;
 using System.Collections.Generic;
 using System.Text;
 

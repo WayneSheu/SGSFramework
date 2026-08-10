@@ -23,6 +23,11 @@ namespace SGS.Modules.ORG.Application.Services
         Task<List<Organization>> GetOrganizationTreeAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// 依據 NodePath 前綴取得指定組織及其完整子樹
+        /// </summary>
+        Task<List<Organization>> GetSubtreeByNodePathAsync(string nodePath, CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// 獲取所有未軟刪除的組織節點 (提供跨模組適配器高效能查詢)
         /// </summary>
         Task<List<Organization>> GetAllActiveOrganizationsAsync(CancellationToken cancellationToken = default);
@@ -46,6 +51,5 @@ namespace SGS.Modules.ORG.Application.Services
         /// 刪除組織節點（包含子節點）
         /// </summary>
         Task DeleteOrganizationAsync(int nodeId, CancellationToken cancellationToken = default);
-    
     }
 }

@@ -73,6 +73,32 @@ namespace SGS.Modules.ORG.Controllers
             return Ok(laboratories);
         }
 
+        // 1. 取得單一實驗室基本資訊 (無下階層)
+        [HttpGet("GetLaboratory/{id:int}")]
+        [Menu("取得特定實驗室資訊", "fa-solid fa-flask-vial", order: 2, parent: "實驗室管理")]
+        [RequiresPermission("ORG_LAB_READ")]
+        [Order(2)]
+        [Description("依據 Id 取得單一實驗室基本資訊")]
+        public async Task<IActionResult> GetLaboratory([FromRoute] int id)
+        {
+            var query = new GetLaboratoryByIdQuery(id);
+            var result = await _mediator.Send(query);
+            return HandleResult(result);
+        }
+
+        // 2. 取得特定實驗室及其完整子樹結構 (包含下階層 Children)
+        [HttpGet("GetLaboratoryTree/{id:int}")]
+        [Menu("取得特定實驗室子樹", "fa-solid fa-sitemap", order: 3, parent: "實驗室管理")]
+        [RequiresPermission("ORG_LAB_READ")]
+        [Order(3)]
+        [Description("依據 Id 取得特定實驗室及其完整下階層樹狀結構")]
+        public async Task<IActionResult> GetLaboratoryTree([FromRoute] int id)
+        {
+            var query = new GetLaboratoryTreeByIdQuery(id);
+            var result = await _mediator.Send(query);
+            return HandleResult(result);
+        }
+
         // 
         [HttpPost("CreateLaboratory")]
         [Menu("新增實驗室", "fa-solid fa-list", order: 2, parent: "實驗室管理")] 

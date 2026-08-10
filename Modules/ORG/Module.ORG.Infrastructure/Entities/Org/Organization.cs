@@ -26,6 +26,11 @@ namespace SGS.Modules.ORG.Infrastructure.Entities.Org
 
         public string Name { get; set; }      // 節點名稱
 
+        /// <summary>
+        /// 跨模組多租戶繫結：若此組織節點為一個實體實驗室，可對應全系統統一的 LabId (Guid)
+        /// </summary>
+        public Guid? TenantLabId { get; set; }
+
         public string? Location  { get; set; } //所屬地區
 
         public string? Description { get; set; } // 節點描述
@@ -78,6 +83,10 @@ namespace SGS.Modules.ORG.Infrastructure.Entities.Org
             // 確保 NodePath 映射到 MSSQL 的 hierarchyid 欄位，並建立索引以達最佳搜尋效能
             builder.Property(x => x.NodePath)
                    .IsRequired();
+            // TenantLabId 建立索引，優化多租戶反查效能
+            builder.HasIndex(x => x.TenantLabId)
+                   .HasDatabaseName("IX_Organization_TenantLabId")
+                   .HasFilter("[TenantLabId] IS NOT NULL");
 
         }
     }

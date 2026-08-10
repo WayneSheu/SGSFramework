@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace PhysLIMS.API.Migrations
 {
     /// <inheritdoc />
-    public partial class PhysLIMSDbContext_Init : Migration
+    public partial class PhysLIMSDbContext_Initial : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -151,6 +151,21 @@ namespace PhysLIMS.API.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "PermissionGrants",
+                schema: "dbo",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    RoleId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    LabId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    PermissionVector = table.Column<byte[]>(type: "varbinary(max)", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_PermissionGrants", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Permissions",
                 schema: "dbo",
                 columns: table => new
@@ -186,7 +201,6 @@ namespace PhysLIMS.API.Migrations
                 {
                     table.PrimaryKey("PK_RemediationTickets", x => x.TicketId);
                 });
-
 
             migrationBuilder.Sql(@"
 -- 1. 建立 SecurityLogs (Append-Only Ledger Table)
@@ -247,6 +261,7 @@ WITH
 );
 
 ");
+
 
             migrationBuilder.CreateTable(
                 name: "UserRefreshTokens",
@@ -392,29 +407,6 @@ WITH
                 });
 
             migrationBuilder.CreateTable(
-                name: "PermissionGrants",
-                schema: "dbo",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    RoleId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    MenuItemId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    LabId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    PermissionType = table.Column<string>(type: "nvarchar(max)", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_PermissionGrants", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_PermissionGrants_MenuItems_MenuItemId",
-                        column: x => x.MenuItemId,
-                        principalSchema: "dbo",
-                        principalTable: "MenuItems",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "UserResourceGrants",
                 schema: "dbo",
                 columns: table => new
@@ -492,12 +484,6 @@ WITH
                 schema: "dbo",
                 table: "MenuItems",
                 column: "ParentId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_PermissionGrants_MenuItemId",
-                schema: "dbo",
-                table: "PermissionGrants",
-                column: "MenuItemId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_SecurityLogs_CorrelationId",

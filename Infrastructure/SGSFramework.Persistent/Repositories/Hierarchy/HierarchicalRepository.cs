@@ -60,27 +60,55 @@ namespace SGSFramework.Persistent.Repositories.Hierarchy
         /// <param name="ct">可用於取消非同步操作的 CancellationToken（選用）。</param>
         /// <returns>包含更新後 Id 與 NodePath 的已儲存實體。</returns>
 
-        public async Task<TEntity> AddNodeAsync(TEntity entity, int? parentId, CancellationToken ct = default)
-        {
-            // 1. 取得父節點路徑 (確保資料已從 DB 載入)
-            var parent = parentId.HasValue ? await _dbSet.FindAsync(new object[] { parentId }, ct) : null;
+        //public async Task<TEntity> AddNodeAsync(TEntity entity, int? parentId, CancellationToken ct = default)
+        //{
+        //    // 1. 取得父節點路徑 (確保資料已從 DB 載入)
+        //    var parent = parentId.HasValue ? await _dbSet.FindAsync(new object[] { parentId }, ct) : null;
 
-            // 2. 加入實體到 Context，此時狀態為 Added
+        //    // 2. 加入實體到 Context，此時狀態為 Added
+        //    entity.NodePath = entity.NodePath ?? string.Empty;
+        //    await _dbSet.AddAsync(entity, ct);
+
+        //    // 3. 在存檔前，先執行一次 SaveChanges 僅為了取得 Id (這是唯一一次無法避免的寫入)
+        //    // 但為了讓 AuditInterceptor 知道這是一個整體的「新增」操作，我們建議調整邏輯
+        //    await _context.SaveChangesAsync(ct);
+
+        //    // 4. 更新 NodePath
+        //    entity.NodePath = parent != null ? $"{parent.NodePath}{entity.Id}/" : $"/{entity.Id}/";
+
+        //    // 5. 若此時 Update 該實體，Interceptor 會視為 Modified
+        //    // 為了避免 Interceptor 混亂，請確保 Interceptor 支援忽略某些屬性的變更
+        //    await _context.SaveChangesAsync(ct);
+
+        //    return entity;
+        //}
+
+        /// <summary>
+        /// 新增階層節點 (傳入已載入的 Parent 實體以優化 DB 查詢)
+        /// </summary>
+        public async Task<TEntity> AddNodeAsync(TEntity entity, TEntity? parentNode, CancellationToken ct = default)
+        {
             entity.NodePath = entity.NodePath ?? string.Empty;
             await _dbSet.AddAsync(entity, ct);
 
-            // 3. 在存檔前，先執行一次 SaveChanges 僅為了取得 Id (這是唯一一次無法避免的寫入)
-            // 但為了讓 AuditInterceptor 知道這是一個整體的「新增」操作，我們建議調整邏輯
+            // 1. SaveChanges 取得自動遞增 Id
             await _context.SaveChangesAsync(ct);
 
-            // 4. 更新 NodePath
-            entity.NodePath = parent != null ? $"{parent.NodePath}{entity.Id}/" : $"/{entity.Id}/";
+            // 2. 更新 NodePath 與 Level
+            entity.NodePath = parentNode != null ? $"{parentNode.NodePath}{entity.Id}/" : $"/{entity.Id}/";
+            entity.Level = parentNode != null ? parentNode.Level + 1 : 0;
 
-            // 5. 若此時 Update 該實體，Interceptor 會視為 Modified
-            // 為了避免 Interceptor 混亂，請確保 Interceptor 支援忽略某些屬性的變更
             await _context.SaveChangesAsync(ct);
-
             return entity;
+        }
+
+        /// <summary>
+        /// 新增階層節點，根據 parentId 自動至 DB 尋找父節點
+        /// </summary>
+        public async Task<TEntity> AddNodeAsync(TEntity entity, int? parentId, CancellationToken ct = default)
+        {
+            var parent = parentId.HasValue ? await _dbSet.FindAsync(new object[] { parentId }, ct) : null;
+            return await AddNodeAsync(entity, parent, ct);
         }
 
         /// <summary>

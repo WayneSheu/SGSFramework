@@ -23,34 +23,6 @@ namespace PhysLIMS.API.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole<System.Guid>", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("ConcurrencyStamp")
-                        .IsConcurrencyToken()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Name")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<string>("NormalizedName")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("NormalizedName")
-                        .IsUnique()
-                        .HasDatabaseName("RoleNameIndex")
-                        .HasFilter("[NormalizedName] IS NOT NULL");
-
-                    b.ToTable("AspNetRoles", "dbo");
-                });
-
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
                 {
                     b.Property<int>("Id")
@@ -253,32 +225,6 @@ namespace PhysLIMS.API.Migrations
                     b.ToTable("MenuItems", "dbo");
                 });
 
-            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Controller.PermissionGrant", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("LabId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("MenuItemId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("PermissionType")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid>("RoleId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("MenuItemId");
-
-                    b.ToTable("PermissionGrants", "dbo");
-                });
-
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Controller.UserResourceGrant", b =>
                 {
                     b.Property<Guid>("Id")
@@ -316,6 +262,34 @@ namespace PhysLIMS.API.Migrations
                     b.HasIndex("MenuItemId");
 
                     b.ToTable("UserResourceGrants", "dbo");
+                });
+
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.ApplicationRole", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ConcurrencyStamp")
+                        .IsConcurrencyToken()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("NormalizedName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedName")
+                        .IsUnique()
+                        .HasDatabaseName("RoleNameIndex")
+                        .HasFilter("[NormalizedName] IS NOT NULL");
+
+                    b.ToTable("AspNetRoles", "dbo");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.ApplicationUser", b =>
@@ -710,7 +684,7 @@ namespace PhysLIMS.API.Migrations
                     b.ToTable("OutboxMessages", "dbo");
                 });
 
-            modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Permission", b =>
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Identities.Permission", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -746,9 +720,30 @@ namespace PhysLIMS.API.Migrations
                     b.ToTable("Permissions", "dbo");
                 });
 
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Identities.PermissionGrant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LabId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("PermissionVector")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("PermissionGrants", "dbo");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
                 {
-                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole<System.Guid>", null)
+                    b.HasOne("SGSFramework.Core.Abstractions.Entities.Identities.ApplicationRole", null)
                         .WithMany()
                         .HasForeignKey("RoleId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -775,7 +770,7 @@ namespace PhysLIMS.API.Migrations
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserRole<System.Guid>", b =>
                 {
-                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole<System.Guid>", null)
+                    b.HasOne("SGSFramework.Core.Abstractions.Entities.Identities.ApplicationRole", null)
                         .WithMany()
                         .HasForeignKey("RoleId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -804,17 +799,6 @@ namespace PhysLIMS.API.Migrations
                         .HasForeignKey("ParentId");
 
                     b.Navigation("Parent");
-                });
-
-            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Controller.PermissionGrant", b =>
-                {
-                    b.HasOne("SGSFramework.Core.Abstractions.Entities.Controller.MenuItem", "MenuItem")
-                        .WithMany()
-                        .HasForeignKey("MenuItemId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("MenuItem");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Controller.UserResourceGrant", b =>

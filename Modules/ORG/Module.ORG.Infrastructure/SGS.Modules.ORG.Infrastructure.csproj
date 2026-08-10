@@ -13,8 +13,8 @@
   </Target>
 
   <ItemGroup>
-    <PackageReference Include="SGSFramework.ModulePlugin" Version="1.0.0.18" />
-    <PackageReference Include="SGSFramework.Persistent" Version="1.0.0.1" />
+    <ProjectReference Include="..\..\..\Infrastructure\SGSFramework.ModulePlugin\SGSFramework.ModulePlugin.csproj" />
+    <ProjectReference Include="..\..\..\Infrastructure\SGSFramework.Persistent\SGSFramework.Persistent.csproj" />
   </ItemGroup>
 
 

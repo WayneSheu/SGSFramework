@@ -8,6 +8,7 @@
     using SGSFramework.Core.Abstractions.Attributes;
     using SGSFramework.Core.Abstractions.DbContexts;
     using SGSFramework.Core.Abstractions.Permissions;
+    using SGSFramework.Core.Abstractions.Permissions.Identities;
     using System;
     using System.Collections.Generic;
     using System.ComponentModel;
