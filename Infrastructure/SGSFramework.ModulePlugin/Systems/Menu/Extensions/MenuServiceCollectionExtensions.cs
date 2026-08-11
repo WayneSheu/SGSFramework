@@ -1,9 +1,10 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using SGSFramework.Core.Abstractions.Menus;
+using SGSFramework.ModulePlugin.Systems.Services;
+using SGSFramework.ModulePlugin.Systems.Strategies;
 using System;
 using System.Collections.Generic;
 using System.Text;
-using SGSFramework.Core.Abstractions.Menus;
-using SGSFramework.ModulePlugin.Systems.Services;
 
 namespace SGSFramework.ModulePlugin.Systems.Menu.Extensions
 {
@@ -14,7 +15,14 @@ namespace SGSFramework.ModulePlugin.Systems.Menu.Extensions
     {
         public static IServiceCollection AddDynamicMenu(this IServiceCollection services)
         {
+
+            // 註冊策略模式的各個策略實作
+            services.AddSingleton<IMenuBuildingStrategy, SinglePhaseMenuBuildingStrategy>();
+            services.AddSingleton<IMenuBuildingStrategy, TwoPhaseMenuBuildingStrategy>();
+
             services.AddScoped<IDynamicMenuService, DynamicMenuService>();
+
+
             return services;
         }
     }

@@ -38,6 +38,12 @@ namespace SGSFramework.Core.Abstractions.Menus
         /// 選單是否顯示 (IsDisplay)，用於控制選單的可見性
         /// </summary>
         public bool IsDisplay { get; set; }
+
+        /// <summary>
+        /// 第一階段擴充：當前頁面/功能所涵蓋的細粒度權限鍵值列表 (供前端 v-if 判斷按鈕)
+        /// </summary>
+        public List<string> ActionPermissions { get; set; } = new();
+
         /// <summary>
         /// 選單所需的權限 Key (PermissionKey)，用於控制選單的存取權限
         /// </summary>

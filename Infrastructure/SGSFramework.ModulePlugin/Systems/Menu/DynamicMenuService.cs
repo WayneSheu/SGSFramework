@@ -1,4 +1,8 @@
-﻿using Microsoft.Extensions.Logging;
+﻿// ============================================================================
+// Application / SGSFramework.ModulePlugin.Systems/Services/DynamicMenuService.cs
+// ============================================================================
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Abstractions.Menus;
 using SGSFramework.Core.Controllers.Services;
@@ -14,26 +18,27 @@ namespace SGSFramework.ModulePlugin.Systems.Services;
 public class DynamicMenuService : IDynamicMenuService
 {
     private readonly IDynamicControllerRepository<ControllerMetadata> _controllerRepo;
+    private readonly IReadOnlyDictionary<AuthorizationMode, IMenuBuildingStrategy> _strategies;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<DynamicMenuService> _logger;
-
-    private static readonly HashSet<string> CoreSystemModules = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "SGSFramework.System",
-        "SGSFramework.Identity",
-        "SGSFramework.AuthTokenBucket",
-        "SGSFramework.SystemLog"
-    };
 
     public DynamicMenuService(
         IDynamicControllerRepository<ControllerMetadata> controllerRepo,
+        IEnumerable<IMenuBuildingStrategy> strategies,
+        IConfiguration configuration,
         ILogger<DynamicMenuService> logger)
     {
         _controllerRepo = controllerRepo ?? throw new ArgumentNullException(nameof(controllerRepo));
+        ArgumentNullException.ThrowIfNull(strategies);
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+        // 透過 DI 注入所有策略實作，並轉換成 Dictionary 供動態查詢
+        _strategies = strategies.ToDictionary(s => s.Mode);
     }
 
     /// <summary>
-    /// 實作介面要求的 GetUserMenuAsync
+    /// 依據系統組態動態選擇授權策略（單階段 vs 二階段）並構建選單
     /// </summary>
     public async Task<IEnumerable<MenuSectionDto>> GetUserMenuAsync(IEnumerable<string> userPermissions)
     {
@@ -53,108 +58,29 @@ public class DynamicMenuService : IDynamicMenuService
                 .OrderBy(m => m.DisplayOrder)
                 .ToList();
 
-            var sections = new List<MenuSectionDto>();
-
-            // 1. Host 區塊
-            var hostMetas = authorizedMetas
-                .Where(m => string.IsNullOrEmpty(m.ModuleName) || IsCoreSystemModule(m.ModuleName))
-                .ToList();
-
-            if (hostMetas.Any())
+            // 從 appsettings.json 讀取授權模式，預設為 TwoPhase
+            var modeString = _configuration["AuthorizationSettings:Mode"];
+            if (!Enum.TryParse<AuthorizationMode>(modeString, ignoreCase: true, out var currentMode))
             {
-                sections.Add(new MenuSectionDto
-                {
-                    Name = "Host",
-                    Title = "主專案系統管理",
-                    Icon = "fa-solid fa-gears",
-                    Order = 1,
-                    Menus = BuildHierarchicalMenuTree(hostMetas, baseLevel: 1)
-                });
+                currentMode = AuthorizationMode.TwoPhase;
             }
 
-            // 2. Plugin 區塊
-            var pluginMetas = authorizedMetas
-                .Where(m => !string.IsNullOrEmpty(m.ModuleName) && !IsCoreSystemModule(m.ModuleName))
-                .ToList();
-
-            if (pluginMetas.Any())
+            // 策略模式選擇：動態匹配對應的策略實作
+            if (!_strategies.TryGetValue(currentMode, out var selectedStrategy))
             {
-                sections.Add(new MenuSectionDto
-                {
-                    Name = "Plugin",
-                    Title = "外掛擴充模組",
-                    Icon = "fa-solid fa-puzzle-piece",
-                    Order = 2,
-                    Menus = BuildHierarchicalMenuTree(pluginMetas, baseLevel: 1)
-                });
+                _logger.LogWarning("未找到模式 {Mode} 對應的選單策略，切換至預設 TwoPhase 策略。", currentMode);
+                selectedStrategy = _strategies[AuthorizationMode.TwoPhase];
             }
 
-            return sections;
+            _logger.LogInformation("當前選單構建使用策略：{StrategyType} (AuthorizationMode: {Mode})",
+                selectedStrategy.GetType().Name, currentMode);
+
+            return selectedStrategy.BuildMenuSections(authorizedMetas);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "根據權限生成 Section 區塊選單時發生異常。");
+            _logger.LogError(ex, "根據權限動態生成選單時發生異常。");
             return Enumerable.Empty<MenuSectionDto>();
         }
-    }
-
-    private List<MenuItemDto> BuildHierarchicalMenuTree(List<ControllerMetadata> metas, int baseLevel)
-    {
-        var result = new List<MenuItemDto>();
-
-        var groupedMetas = metas.GroupBy(m =>
-            !string.IsNullOrWhiteSpace(m.ParentMenuName) ? m.ParentMenuName :
-            !string.IsNullOrWhiteSpace(m.ModuleName) ? m.ModuleName : "通用功能");
-
-        int groupOrder = 1;
-
-        foreach (var group in groupedMetas)
-        {
-            var children = group.Select(m => new MenuItemDto
-            {
-                ModuleName = m.ModuleName ?? string.Empty,
-                Name = m.ActionName ?? m.ControllerName ?? string.Empty,
-                Title = m.DisplayName ?? string.Empty,
-                Path = NormalizeRoutePath(m.RouteTemplate),
-                Icon = m.Icon ?? "fa-solid fa-link",
-                Order = m.DisplayOrder,
-                Level = baseLevel + 1,
-                IsDisplay = true,
-                Children = new List<MenuItemDto>()
-            }).OrderBy(c => c.Order).ToList();
-
-            var parentNode = new MenuItemDto
-            {
-                ModuleName = group.FirstOrDefault()?.ModuleName ?? string.Empty,
-                Name = $"Group_{group.Key.Replace(" ", "_")}",
-                Title = ResolveDisplayName(group.Key),
-                Path = string.Empty,
-                Icon = children.FirstOrDefault()?.Icon ?? "fa-solid fa-folder",
-                Order = groupOrder++,
-                Level = baseLevel,
-                IsDisplay = true,
-                Children = children
-            };
-
-            result.Add(parentNode);
-        }
-
-        return result;
-    }
-
-    private static bool IsCoreSystemModule(string moduleName)
-    {
-        return CoreSystemModules.Contains(moduleName) || moduleName.StartsWith("SGSFramework.System", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string ResolveDisplayName(string key)
-    {
-        return key.Replace("SGSFramework.Plugin.", "").Replace("SGS.Modules.", "");
-    }
-
-    private static string NormalizeRoutePath(string? routeTemplate)
-    {
-        if (string.IsNullOrWhiteSpace(routeTemplate)) return string.Empty;
-        return routeTemplate.StartsWith('/') ? routeTemplate : $"/{routeTemplate}";
     }
 }
