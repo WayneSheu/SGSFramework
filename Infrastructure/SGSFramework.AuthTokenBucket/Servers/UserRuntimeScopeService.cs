@@ -1,42 +1,110 @@
-﻿using Azure.Core;
+﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
-using Microsoft.JSInterop;
-using NetTopologySuite.Utilities;
 using SGSFramework.AuthTokenBucket.Abstractions;
-using SGSFramework.AuthTokenBucket.DTOs;
 using SGSFramework.Core.Abstractions.Adapters;
+using SGSFramework.Core.Abstractions.Entities.Controller;
+using SGSFramework.Core.Abstractions.Entities.Identities;
+using SGSFramework.Core.Controllers.Services;
 using SGSFramework.Core.DTOs;
 
 namespace SGSFramework.AuthTokenBucket.Servers;
 
 /// <summary>
 /// 多租戶與動態實驗室（Lab/Department/Organization）架構下的核心執行期上下文服務。
-/// 其主要職責如下：
-/// 動態領域/實驗室切換(Runtime Laboratory Switching)：
-/// 高階主管或跨部門人員登入系統後，可於執行期無感切換其作用中的實驗室或營運組織（Lab Context）。
-/// 計算並載入新上下文權限 Profile：
-/// 切換時，該服務會重新計算使用者於該目標實驗室下的 大容量 Bitmask 權限遮罩、動態選單結構(Menu Tree) 與 資料過濾作用域(Data Scope)，並傳回 UserPermissionProfileDto。
-/// Session 級別的狀態持續性：
-/// 維護目前 HTTP Request / Session 作用域內的使用者上下文狀態，確保後續 API 存取與 EF Core 全域資料過濾器（Global Query Filters）能精準取得當前實驗室識別碼。
 /// </summary>
 public class UserRuntimeScopeService : IUserRuntimeScopeService
 {
     private readonly IOrganizationIntegrationService _orgIntegrationService;
     private readonly IMemoryCache _cache;
     private readonly ILogger<UserRuntimeScopeService> _logger;
+    private readonly UserManager<ApplicationUser> _userManager;
+    private readonly IDynamicControllerRepository<ControllerMetadata> _controllerRepo;
 
-    // 快取過期時間設定 (可依需求調整或改自 appsettings.json)
+    // 快取過期時間設定
     private static readonly TimeSpan CacheExpiration = TimeSpan.FromMinutes(15);
 
     public UserRuntimeScopeService(
         IOrganizationIntegrationService orgIntegrationService,
         IMemoryCache cache,
-        ILogger<UserRuntimeScopeService> logger)
+        ILogger<UserRuntimeScopeService> logger,
+        UserManager<ApplicationUser> userManager,
+        IDynamicControllerRepository<ControllerMetadata> controllerRepo)
     {
         _orgIntegrationService = orgIntegrationService ?? throw new ArgumentNullException(nameof(orgIntegrationService));
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
+        _controllerRepo = controllerRepo ?? throw new ArgumentNullException(nameof(controllerRepo));
+    }
+
+    /// <summary>
+    /// 獲取使用者在當前上下文/實驗室下持有的所有權限 Key 集合 (包含 sysadmin 特權過濾)
+    /// </summary>
+    public async Task<IEnumerable<string>> GetUserPermissionsAsync(
+        string userId,
+        Guid? activeLabId = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(userId);
+
+        try
+        {
+            // 1. 特權判斷：若使用者具備 sysadmin 角色，回傳全系統註冊之所有 PermissionKey
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user != null && await _userManager.IsInRoleAsync(user, "SuperAdmin"))
+            {
+                var allMetas = await _controllerRepo.GetAllActiveAsync();
+
+                var allPermissions = allMetas
+                    .Where(m => !string.IsNullOrEmpty(m.PermissionKey))
+                    .Select(m => m.PermissionKey!)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                //allPermissions.Add("System.Dashboard");
+                //allPermissions.Add("Module.Org.View");
+                allPermissions.Add("sysadmin");
+
+                return allPermissions;
+            }
+
+            // 2. 一般使用者：確定當前作用中的實驗室
+            if (!activeLabId.HasValue)
+            {
+                var accessibleLabs = await GetAccessibleLabsAsync(userId, cancellationToken);
+                var defaultLab = accessibleLabs.FirstOrDefault();
+                if (defaultLab == null)
+                {
+                    return Enumerable.Empty<string>();
+                }
+                activeLabId = defaultLab.LabId;
+            }
+
+            // 3. 讀取該實驗室下的 Bitmask 權限矩陣並轉譯為 Permission Key
+            var modulePermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId.Value, cancellationToken);
+            var permissionKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var (module, mask) in modulePermissions)
+            {
+                for (int bit = 0; bit < 64; bit++)
+                {
+                    if ((mask & (1L << bit)) != 0)
+                    {
+                        permissionKeys.Add($"{module}.Bit{bit}");
+                    }
+                }
+            }
+
+            //permissionKeys.Add("System.Dashboard");
+            //permissionKeys.Add("Module.Org.View");
+
+            return permissionKeys;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "獲取使用者權限清單時發生異常。UserId: {UserId}", userId);
+            return Enumerable.Empty<string>();
+        }
     }
 
     /// <summary>
@@ -60,7 +128,14 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
 
         try
         {
-            // 1. 跨模組驗證：確認使用者對該 ActiveLabId 具備合法權限 (樹狀 HierarchyId 範疇核對)
+            // 特權判斷：sysadmin 直通
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user != null && await _userManager.IsInRoleAsync(user, "sysadmin"))
+            {
+                return true;
+            }
+
+            // 1. 跨模組驗證：確認使用者對該 ActiveLabId 具備合法權限
             bool isLabScopeValid = await _orgIntegrationService.IsInUserScopeAsync(userId, activeLabId, cancellationToken);
             if (!isLabScopeValid)
             {
@@ -68,21 +143,17 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
                 return false;
             }
 
-            // 2. 獲取該使用者在該實驗室下的所有模組 Bitmask 矩陣 (搭配快取防禦，避免 DB 負載過高)
+            // 2. 獲取該使用者在該實驗室下的所有模組 Bitmask 矩陣
             var modulePermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId, cancellationToken);
 
             if (!modulePermissions.TryGetValue(module, out long bitmask))
             {
-                // 該模組未配置任何權限遮罩
                 return false;
             }
 
-            // 3. 執行高效能 64 位元 Bitmask 運算 (AND 位元交集)
-            // 1L << bitPosition 代表將 1 移位至指定 Bit 位元
+            // 3. 執行高效能 64 位元 Bitmask AND 運算
             long targetBit = 1L << bitPosition;
-            bool hasPermission = (bitmask & targetBit) != 0;
-
-            return hasPermission;
+            return (bitmask & targetBit) != 0;
         }
         catch (Exception ex)
         {
@@ -101,29 +172,43 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
     {
         ArgumentException.ThrowIfNullOrEmpty(userId);
 
-        var targetOrg = await _orgIntegrationService.GetOrganizationByIdAsync(targetLabId, cancellationToken);
-        if (targetOrg is null) return null;
-
-        bool hasAccess = await _orgIntegrationService.IsInUserScopeAsync(userId, targetLabId, cancellationToken);
-        if (!hasAccess) return null;
-
-        // 載入與計算 Bitmask
-        var modulePermissions = await GetCachedOrFetchPermissionsAsync(userId, targetLabId, cancellationToken);
-
-        // 生成動態 Menu
-        var dynamicMenus = await GenerateDynamicMenusAsync(modulePermissions, cancellationToken);
-
-        var accessibleLabs = await GetAccessibleLabsAsync(userId, cancellationToken);
-
-        return new UserPermissionProfileDto
+        try
         {
-            UserId = userId,
-            ActiveLabId = targetOrg.Id,
-            ActiveLabName = targetOrg.Name,
-            ModulePermissions = modulePermissions,
-            AccessibleLabs = accessibleLabs,
-            DynamicMenus = dynamicMenus
-        };
+            var targetOrg = await _orgIntegrationService.GetOrganizationByIdAsync(targetLabId, cancellationToken);
+            if (targetOrg is null) return null;
+
+            var user = await _userManager.FindByIdAsync(userId);
+            bool isSysAdmin = user != null && await _userManager.IsInRoleAsync(user, "sysadmin");
+
+            if (!isSysAdmin)
+            {
+                bool hasAccess = await _orgIntegrationService.IsInUserScopeAsync(userId, targetLabId, cancellationToken);
+                if (!hasAccess) return null;
+            }
+
+            // 載入與計算 Bitmask
+            var modulePermissions = await GetCachedOrFetchPermissionsAsync(userId, targetLabId, cancellationToken);
+
+            // 生成動態 Menu
+            var dynamicMenus = await GenerateDynamicMenusAsync(modulePermissions, cancellationToken);
+
+            var accessibleLabs = await GetAccessibleLabsAsync(userId, cancellationToken);
+
+            return new UserPermissionProfileDto
+            {
+                UserId = userId,
+                ActiveLabId = targetOrg.Id,
+                ActiveLabName = targetOrg.Name,
+                ModulePermissions = modulePermissions,
+                AccessibleLabs = accessibleLabs,
+                DynamicMenus = dynamicMenus
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "切換實驗室上下文時發生異常。UserId: {UserId}, TargetLabId: {TargetLabId}", userId, targetLabId);
+            return null;
+        }
     }
 
     /// <summary>
@@ -135,21 +220,29 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
     {
         ArgumentException.ThrowIfNullOrEmpty(userId);
 
-        var orgs = await _orgIntegrationService.GetUserAccessibleOrganizationsAsync(userId, cancellationToken);
-
-        return orgs.Select(x => new AccessibleLabDto
+        try
         {
-            LabId = x.Id,
-            LabName = x.Name,
-            Path = x.NodePathString,
-            HierarchyLevel = x.HierarchyLevel
-        }).ToList();
+            var orgs = await _orgIntegrationService.GetUserAccessibleOrganizationsAsync(userId, cancellationToken);
+
+            return orgs.Select(x => new AccessibleLabDto
+            {
+                LabId = x.Id,
+                LabName = x.Name,
+                Path = x.NodePathString,
+                HierarchyLevel = x.HierarchyLevel
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "獲取可存取實驗室清單時發生異常。UserId: {UserId}", userId);
+            return new List<AccessibleLabDto>();
+        }
     }
 
     #region Private Helper Methods
 
     /// <summary>
-    /// 快取優先獲取權限遮罩字典 (Redis 或 MemoryCache)
+    /// 快取優先獲取權限遮罩字典
     /// </summary>
     private async Task<Dictionary<string, long>> GetCachedOrFetchPermissionsAsync(
         string userId,
@@ -166,20 +259,18 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
     }
 
     /// <summary>
-    /// 從資料庫 (或權限總帳 Ledger 表) 讀取使用者在該實驗室的各模組 Bitmask 原始設定
+    /// 從資料庫 (或權限總帳 Ledger 表) 讀取使用者在該實驗室的各模組 Bitmask 設定
     /// </summary>
     private async Task<Dictionary<string, long>> FetchUserModulePermissionsFromDbAsync(
         string userId,
         Guid labId,
         CancellationToken cancellationToken)
     {
-        // 實務上請換成 EF Core 查詢 UserPermissions 表
-        // 範例回傳 mock 資料：
         return await Task.FromResult(new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
         {
-            { "ReportManagement", 15L },   // 二進位 0000 1111 (擁有 Bit 0, 1, 2, 3)
-            { "UserManagement", 3L },      // 二進位 0000 0011 (擁有 Bit 0, 1)
-            { "LabConfiguration", 1L }     // 二進位 0000 0001 (擁有 Bit 0)
+            { "ReportManagement", 15L },   // 二進位 0000 1111 (Bit 0, 1, 2, 3)
+            { "UserManagement", 3L },      // 二進位 0000 0011 (Bit 0, 1)
+            { "LabConfiguration", 1L }     // 二進位 0000 0001 (Bit 0)
         });
     }
 
@@ -190,7 +281,6 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
         Dictionary<string, long> bitmasks,
         CancellationToken cancellationToken)
     {
-        // 可根據傳入的 bitmasks 動態組裝，此處示範回傳基本選單結構
         var menus = new List<MenuNodeDto>();
 
         if (bitmasks.TryGetValue("ReportManagement", out long reportMask) && (reportMask & (1L << 0)) != 0)

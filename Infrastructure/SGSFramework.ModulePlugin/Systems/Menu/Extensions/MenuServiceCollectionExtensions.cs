@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using SGSFramework.Core.Abstractions.Menus;
+using SGSFramework.ModulePlugin.Systems.Services;
 
 namespace SGSFramework.ModulePlugin.Systems.Menu.Extensions
 {

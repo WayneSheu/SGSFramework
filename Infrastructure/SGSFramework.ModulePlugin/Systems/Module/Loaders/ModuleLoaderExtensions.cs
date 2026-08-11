@@ -11,6 +11,7 @@ using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Abstractions.Entities.Modules;
 using SGSFramework.Core.Abstractions.Logings;
+using SGSFramework.Core.Controllers.Services;
 using SGSFramework.Core.Migrations;
 using SGSFramework.Core.Security.Services;
 using SGSFramework.ModulePlugin.Abstractions;

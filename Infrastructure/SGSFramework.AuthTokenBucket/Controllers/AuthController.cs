@@ -113,8 +113,13 @@ public sealed class AuthController : ApiControllerBase
             var tokenResult = await _tokenEngine.IssueInitialSessionAsync(user, deviceId, deviceName, clientIp);
 
             _logger.LogInformation("使用者 {Email} 登入成功，裝置 ID: {DeviceId}", user.Email, deviceId);
+            
+            // 1. 從 UserRuntimeScopeService 取得實質權限清單
+            IEnumerable<string> userPermissions = await _runtimeScopeService.GetUserPermissionsAsync(
+                user.Id.ToString(),
+                cancellationToken: cancellationToken);
 
-            var userPermissions = new List<string> { "System.Dashboard", "Module.Org.View" };
+            // 2. 傳入權限集合，算出一套帶有 Level 與 IsDisplay 控制標記的階層選單
             var menuTree = await _menuService.GetUserMenuAsync(userPermissions);
 
             return Ok(new LoginResponseDto

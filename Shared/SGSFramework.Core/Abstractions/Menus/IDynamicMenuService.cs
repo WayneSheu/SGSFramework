@@ -10,6 +10,9 @@ namespace SGSFramework.Core.Abstractions.Menus
     /// </summary>
     public interface IDynamicMenuService
     {
-        Task<IEnumerable<MenuItemDto>> GetUserMenuAsync(IEnumerable<string> userPermissions);
+        /// <summary>
+        /// 依據使用者權限清單，取得包含 Host 與 Plugin 分區 (Sections) 的選單樹
+        /// </summary>
+        Task<IEnumerable<MenuSectionDto>> GetUserMenuAsync(IEnumerable<string> userPermissions);
     }
 }

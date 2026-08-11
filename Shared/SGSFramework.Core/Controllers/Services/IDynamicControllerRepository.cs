@@ -4,9 +4,8 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace SGSFramework.ModulePlugin.Systems.Controller.Repositories
-{
-
+namespace SGSFramework.Core.Controllers.Services
+{ 
     /// <summary>
     /// 動態控制器註冊倉儲介面
     /// </summary>
@@ -16,8 +15,6 @@ namespace SGSFramework.ModulePlugin.Systems.Controller.Repositories
         Task RegisterAsync(string moduleName, IEnumerable<T> controllers);
         Task UnregisterByModuleAsync(string moduleName);
         Task<IEnumerable<T>> GetActiveControllersAsync();
-
         Task<IEnumerable<T>> GetAllActiveAsync();
     }
-
 }

@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Controllers.Base;
+using SGSFramework.Core.Controllers.Services;
 using SGSFramework.ModulePlugin.Systems.Controller.Repositories;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;

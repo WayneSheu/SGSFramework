@@ -1,109 +1,160 @@
-﻿// File: src/Infrastructure/SES.ModulePlugin/Systems/Menu/Services/DynamicMenuService.cs
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Abstractions.Menus;
-using SGSFramework.ModulePlugin.DTOs;
+using SGSFramework.Core.Controllers.Services;
+using SGSFramework.Core.DTOs;
 using SGSFramework.ModulePlugin.Systems.Controller.Repositories;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace SGSFramework.ModulePlugin.Systems.Menu
+namespace SGSFramework.ModulePlugin.Systems.Services;
+
+public class DynamicMenuService : IDynamicMenuService
 {
-    public class DynamicMenuService : IDynamicMenuService
+    private readonly IDynamicControllerRepository<ControllerMetadata> _controllerRepo;
+    private readonly ILogger<DynamicMenuService> _logger;
+
+    private static readonly HashSet<string> CoreSystemModules = new(StringComparer.OrdinalIgnoreCase)
     {
-        private readonly IDynamicControllerRepository<ControllerMetadata> _controllerRepo;
-        private readonly ILogger<DynamicMenuService> _logger;
+        "SGSFramework.System",
+        "SGSFramework.Identity",
+        "SGSFramework.AuthTokenBucket",
+        "SGSFramework.SystemLog"
+    };
 
-        public DynamicMenuService(
-            IDynamicControllerRepository<ControllerMetadata> controllerRepo,
-            ILogger<DynamicMenuService> logger)
+    public DynamicMenuService(
+        IDynamicControllerRepository<ControllerMetadata> controllerRepo,
+        ILogger<DynamicMenuService> logger)
+    {
+        _controllerRepo = controllerRepo ?? throw new ArgumentNullException(nameof(controllerRepo));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// 實作介面要求的 GetUserMenuAsync
+    /// </summary>
+    public async Task<IEnumerable<MenuSectionDto>> GetUserMenuAsync(IEnumerable<string> userPermissions)
+    {
+        ArgumentNullException.ThrowIfNull(userPermissions);
+
+        try
         {
-            _controllerRepo = controllerRepo ?? throw new ArgumentNullException(nameof(controllerRepo));
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        }
+            var permissionsSet = new HashSet<string>(userPermissions, StringComparer.OrdinalIgnoreCase);
+            bool isSysAdmin = permissionsSet.Contains("sysadmin") || permissionsSet.Contains("*");
 
-        public async Task<IEnumerable<MenuItemDto>> GetUserMenuAsync(IEnumerable<string> userPermissions)
-        {
-            ArgumentNullException.ThrowIfNull(userPermissions);
+            var allMetas = await _controllerRepo.GetAllActiveAsync();
 
-            try
-            {
-                var permissionsSet = new HashSet<string>(userPermissions, StringComparer.OrdinalIgnoreCase);
-
-                // 取得目前系統中所有啟用中的控制器與動作項目
-                var allMetas = await _controllerRepo.GetAllActiveAsync();
-
-                // 過濾有效選單項目並依據使用者權限篩選 (若 PermissionKey 為空或使用者擁有該權限則保留)
-                var menuMetas = allMetas
-                    .Where(m => !string.IsNullOrEmpty(m.DisplayName)
-                    && (string.IsNullOrEmpty(m.PermissionKey) || permissionsSet.Contains(m.PermissionKey))
-                    )
-                    .DistinctBy(m => new { m.ControllerName, m.ActionName })
-                    .OrderBy(m => m.ModuleName ?? string.Empty)
-                    .ThenBy(m => m.DisplayOrder)
-                    .ToList();
-
-                // 轉換為扁平選單 DTO
-                var flatMenuItems = menuMetas.Select(m => new MenuItemDto
-                {
-                    Name = m.DisplayName!,
-                    Route = $"/{m.RouteTemplate.TrimStart('/')}",
-                    Icon = m.Icon ?? "bi-folder",
-                    Parent = m.ParentMenuName,
-                    Order = m.DisplayOrder
-                }).ToList();
-
-                // 自動補足所有作為 Parent 卻沒有對應實體項目的群組選單 (先轉為獨立 List 避免在列舉過程中修改集合)
-                var existingNames = new HashSet<string>(flatMenuItems.Select(m => m.Name), StringComparer.OrdinalIgnoreCase);
-                var missingParents = flatMenuItems
-                    .Where(m => !string.IsNullOrEmpty(m.Parent) && !existingNames.Contains(m.Parent))
-                    .Select(m => m.Parent!)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .Select(parentName => new MenuItemDto
-                    {
-                        Name = parentName,
-                        Route = string.Empty,
-                        Icon = "bi-folder",
-                        Parent = null,
-                        Order = 0
-                    })
-                    .ToList();
-
-                flatMenuItems.AddRange(missingParents);
-
-                // 組裝階層式選單 (Parent-Child)
-                var rootMenus = flatMenuItems
-                    .Where(m => string.IsNullOrEmpty(m.Parent))
-                    .OrderBy(m => m.Order)
-                    .ToList();
-
-                foreach (var root in rootMenus)
-                {
-                    LoadChildren(root, flatMenuItems);
-                }
-
-                return rootMenus;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, ">>> [DynamicMenu] 組合動態選單時發生異常。");
-                return Enumerable.Empty<MenuItemDto>();
-            }
-        }
-
-        private static void LoadChildren(MenuItemDto parent, List<MenuItemDto> allItems)
-        {
-            parent.Children = allItems
-                .Where(m => string.Equals(m.Parent, parent.Name, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(m => m.Order)
+            var authorizedMetas = allMetas
+                .Where(m => !string.IsNullOrEmpty(m.DisplayName) &&
+                           (isSysAdmin || string.IsNullOrEmpty(m.PermissionKey) || permissionsSet.Contains(m.PermissionKey)))
+                .DistinctBy(m => new { m.ControllerName, m.ActionName })
+                .OrderBy(m => m.DisplayOrder)
                 .ToList();
 
-            foreach (var child in parent.Children)
+            var sections = new List<MenuSectionDto>();
+
+            // 1. Host 區塊
+            var hostMetas = authorizedMetas
+                .Where(m => string.IsNullOrEmpty(m.ModuleName) || IsCoreSystemModule(m.ModuleName))
+                .ToList();
+
+            if (hostMetas.Any())
             {
-                LoadChildren(child, allItems);
+                sections.Add(new MenuSectionDto
+                {
+                    Name = "Host",
+                    Title = "主專案系統管理",
+                    Icon = "fa-solid fa-gears",
+                    Order = 1,
+                    Menus = BuildHierarchicalMenuTree(hostMetas, baseLevel: 1)
+                });
             }
+
+            // 2. Plugin 區塊
+            var pluginMetas = authorizedMetas
+                .Where(m => !string.IsNullOrEmpty(m.ModuleName) && !IsCoreSystemModule(m.ModuleName))
+                .ToList();
+
+            if (pluginMetas.Any())
+            {
+                sections.Add(new MenuSectionDto
+                {
+                    Name = "Plugin",
+                    Title = "外掛擴充模組",
+                    Icon = "fa-solid fa-puzzle-piece",
+                    Order = 2,
+                    Menus = BuildHierarchicalMenuTree(pluginMetas, baseLevel: 1)
+                });
+            }
+
+            return sections;
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "根據權限生成 Section 區塊選單時發生異常。");
+            return Enumerable.Empty<MenuSectionDto>();
+        }
+    }
+
+    private List<MenuItemDto> BuildHierarchicalMenuTree(List<ControllerMetadata> metas, int baseLevel)
+    {
+        var result = new List<MenuItemDto>();
+
+        var groupedMetas = metas.GroupBy(m =>
+            !string.IsNullOrWhiteSpace(m.ParentMenuName) ? m.ParentMenuName :
+            !string.IsNullOrWhiteSpace(m.ModuleName) ? m.ModuleName : "通用功能");
+
+        int groupOrder = 1;
+
+        foreach (var group in groupedMetas)
+        {
+            var children = group.Select(m => new MenuItemDto
+            {
+                ModuleName = m.ModuleName ?? string.Empty,
+                Name = m.ActionName ?? m.ControllerName ?? string.Empty,
+                Title = m.DisplayName ?? string.Empty,
+                Path = NormalizeRoutePath(m.RouteTemplate),
+                Icon = m.Icon ?? "fa-solid fa-link",
+                Order = m.DisplayOrder,
+                Level = baseLevel + 1,
+                IsDisplay = true,
+                Children = new List<MenuItemDto>()
+            }).OrderBy(c => c.Order).ToList();
+
+            var parentNode = new MenuItemDto
+            {
+                ModuleName = group.FirstOrDefault()?.ModuleName ?? string.Empty,
+                Name = $"Group_{group.Key.Replace(" ", "_")}",
+                Title = ResolveDisplayName(group.Key),
+                Path = string.Empty,
+                Icon = children.FirstOrDefault()?.Icon ?? "fa-solid fa-folder",
+                Order = groupOrder++,
+                Level = baseLevel,
+                IsDisplay = true,
+                Children = children
+            };
+
+            result.Add(parentNode);
+        }
+
+        return result;
+    }
+
+    private static bool IsCoreSystemModule(string moduleName)
+    {
+        return CoreSystemModules.Contains(moduleName) || moduleName.StartsWith("SGSFramework.System", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ResolveDisplayName(string key)
+    {
+        return key.Replace("SGSFramework.Plugin.", "").Replace("SGS.Modules.", "");
+    }
+
+    private static string NormalizeRoutePath(string? routeTemplate)
+    {
+        if (string.IsNullOrWhiteSpace(routeTemplate)) return string.Empty;
+        return routeTemplate.StartsWith('/') ? routeTemplate : $"/{routeTemplate}";
     }
 }

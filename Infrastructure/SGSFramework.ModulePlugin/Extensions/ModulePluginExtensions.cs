@@ -9,6 +9,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using SGSFramework.Core.Abstractions.Entities.Controller;
+using SGSFramework.Core.Controllers.Services;
 using SGSFramework.Core.Migrations;
 using SGSFramework.ModulePlugin.Abstractions;
 using SGSFramework.ModulePlugin.Services;

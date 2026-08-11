@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Serilog;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Controller;
+using SGSFramework.Core.Controllers.Services;
 using SGSFramework.ModulePlugin.Systems.Controller.Repositories;
 using SGSFramework.ModulePlugin.Systems.Module.Loaders;
 using System.ComponentModel;

@@ -12,6 +12,17 @@ namespace SGSFramework.AuthTokenBucket.Abstractions
     public interface IUserRuntimeScopeService
     {
         /// <summary>
+        /// 獲取使用者在當前上下文/實驗室下持有的所有權限 Key 集合 (用於動態選單與權限過濾)
+        /// </summary>
+        /// <param name="userId">使用者識別碼</param>
+        /// <param name="activeLabId">當前實驗室 Guid (可選)</param>
+        /// <param name="cancellationToken">取消權杖</param>
+        Task<IEnumerable<string>> GetUserPermissionsAsync(
+            string userId,
+            Guid? activeLabId = null,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// 無感切換實驗室上下文：驗證權限並回傳該實驗室的 Bitmask 權限與動態 Menu
         /// </summary>
         /// <param name="userId">使用者識別碼</param>
