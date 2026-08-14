@@ -9,7 +9,7 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
     /// 身分補償修復憑證實體
     /// 專門用於記錄因資安熔斷（Lockdown）後，允許用戶執行高風險密碼修復或身分重驗的臨時安全 Ticket。
     /// </summary>
-    [Table("RemediationTickets", Schema = "dbo")]
+    [Table("RemediationTickets")]
     public sealed class RemediationTicket
     {
         /// <summary>
@@ -65,7 +65,7 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
     {
         public void Configure(EntityTypeBuilder<RemediationTicket> builder)
         {
-            builder.ToTable("RemediationTickets", schema: "dbo");
+            builder.ToTable("RemediationTickets");
 
             builder.HasKey(x => x.TicketId);
             builder.Property(x => x.UserId).IsRequired().HasMaxLength(128);

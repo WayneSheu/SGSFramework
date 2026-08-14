@@ -46,6 +46,9 @@ namespace PhysLIMS.API.Dbcontexts
         {
             base.OnModelCreating(modelBuilder); // Identity 必須先呼叫 base
 
+            // 1. 全域將預設 Schema 由 "dbo" 覆蓋為 "core"
+            modelBuilder.HasDefaultSchema("core");
+
             // 顯式宣告 IdentityUserToken<Guid> 的複合主鍵與欄位轉型
             modelBuilder.Entity<IdentityUserToken<Guid>>(entity =>
             {
@@ -68,7 +71,7 @@ namespace PhysLIMS.API.Dbcontexts
             });
 
 
-            // 關鍵：這行會自動掃描同一個 Assembly 中所有實作 IEntityTypeConfiguration 的類別
+            //自動掃描同一個 Assembly 中所有實作 IEntityTypeConfiguration 的類別
             modelBuilder.ApplyConfigurationsFromAssembly(typeof(PhysLIMSDbContext).Assembly);
 
             // 或者手動指定（如果你把配置放在 SGSFramework.Core 或 Persistent）

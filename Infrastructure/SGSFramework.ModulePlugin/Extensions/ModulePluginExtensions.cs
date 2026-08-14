@@ -287,7 +287,7 @@ public static class ModulePluginExtensions
 
         var registeredPluginModules = allControllers
             .Select(x => x.ModuleName.ToLowerInvariant().Trim())
-            .Where(name => name.StartsWith("ses.modules."))
+            .Where(name => name.StartsWith("sgs.modules."))
             .Distinct();
 
         var deadModules = registeredPluginModules.Except(currentModules).ToList();

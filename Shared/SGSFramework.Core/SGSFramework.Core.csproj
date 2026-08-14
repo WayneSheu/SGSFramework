@@ -52,6 +52,7 @@
 	
   <ItemGroup>
     <Folder Include="Abstractions\Entities\Permissions\" />
+    <Folder Include="Scripts\" />
   </ItemGroup>
 
 </Project>

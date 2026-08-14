@@ -22,7 +22,7 @@ namespace SGSFramework.AuditLog.DTOs
         public AuditEntry(EntityEntry entry)
         {
             Entry = entry; // 暫時持有，用於 SavedChanges 階段補填 ID
-            Schema = entry.Metadata.GetSchema() ?? "dbo"; // 預設為 dbo
+            Schema = entry.Metadata.GetSchema() ?? "core"; // 預設為 core
             TableName = entry.Metadata.GetTableName();
             Timestamp = DateTime.UtcNow;
 

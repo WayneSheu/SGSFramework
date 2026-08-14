@@ -15,8 +15,6 @@ namespace SGS.Modules.ORG.Infrastructure.Entities.Org
     /// </summary>
     public class Organization :  IHierarchicalEntity, IAuditable,ILedgerEntity, ISoftDeletable
     {
-      
-
         public int Id { get; set; }           // 使用 int 確保索引效能
 
         public int? ParentId { get; set; }    // 維持 int 以便直接關聯
@@ -69,6 +67,9 @@ namespace SGS.Modules.ORG.Infrastructure.Entities.Org
     {
         public void Configure(EntityTypeBuilder<Organization> builder)
         {
+            //顯式將 Organization 鎖定在 "org" Schema 下
+            builder.ToTable("Organization", "org");
+
             builder.HasKey(x => x.Id);
             builder.HasIndex(x => x.Code).IsUnique();
             builder.Property(x => x.Id)

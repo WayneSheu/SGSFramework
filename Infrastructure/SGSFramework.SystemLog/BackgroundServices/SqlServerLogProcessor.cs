@@ -18,14 +18,14 @@ namespace SGSFramework.SystemLog.BackgroundServices
     {
         private readonly string _connectionString;
         private readonly string _fallbackPath;
-        private readonly string _tableName = "SystemLogs";
+        private readonly string _tableName = "core.SystemLogs";
 
         public SqlServerLogProcessor(IConfiguration config)
         {
             ArgumentNullException.ThrowIfNull(config);
 
-            _connectionString = config.GetValue<string>("PersistentOptions:DatabaseSettings:ConnectionString")
-                ?? throw new InvalidOperationException("找不到PersistentOptions:DatabaseSettings:ConnectionString連線字串。");
+            _connectionString = config.GetSection("PersistentSettings:ConnectionStrings")["DefaultConnection"]
+                ?? throw new InvalidOperationException("找不到PersistentSettings:ConnectionStrings:DefaultConnectio連線字串。");
 
             _fallbackPath = config["Logging:FallbackPath"] ?? @"C:\Logs\Fallback\";
             if (!Directory.Exists(_fallbackPath)) Directory.CreateDirectory(_fallbackPath);

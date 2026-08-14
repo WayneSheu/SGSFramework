@@ -67,7 +67,7 @@
             foreach (var kvp in scannedMappings)
             {
                 string key = kvp.Key;
-                int bitPosition = kvp.Value; // 🔑 直接讀取 BitPosition 索引位置
+                int bitPosition = kvp.Value; //直接讀取 BitPosition 索引位置
 
                 var existing = dbPermissions.FirstOrDefault(p => string.Equals(p.PermissionKey, key, StringComparison.OrdinalIgnoreCase));
 

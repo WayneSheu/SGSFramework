@@ -17,7 +17,7 @@ namespace PhysLIMS.API.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasDefaultSchema("dbo")
+                .HasDefaultSchema("core")
                 .HasAnnotation("ProductVersion", "10.0.10")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
@@ -44,7 +44,7 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasIndex("RoleId");
 
-                    b.ToTable("AspNetRoleClaims", "dbo");
+                    b.ToTable("AspNetRoleClaims", "core");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserClaim<System.Guid>", b =>
@@ -68,7 +68,7 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("AspNetUserClaims", "dbo");
+                    b.ToTable("AspNetUserClaims", "core");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserLogin<System.Guid>", b =>
@@ -89,7 +89,7 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("AspNetUserLogins", "dbo");
+                    b.ToTable("AspNetUserLogins", "core");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserRole<System.Guid>", b =>
@@ -104,7 +104,7 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasIndex("RoleId");
 
-                    b.ToTable("AspNetUserRoles", "dbo");
+                    b.ToTable("AspNetUserRoles", "core");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserToken<System.Guid>", b =>
@@ -123,7 +123,7 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasKey("UserId", "LoginProvider", "Name");
 
-                    b.ToTable("AspNetUserTokens", "dbo");
+                    b.ToTable("AspNetUserTokens", "core");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Controller.ControllerMetadata", b =>
@@ -184,7 +184,7 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("ControllerMetadata", "dbo");
+                    b.ToTable("ControllerMetadata", "core");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Controller.MenuItem", b =>
@@ -222,7 +222,7 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasIndex("ParentId");
 
-                    b.ToTable("MenuItems", "dbo");
+                    b.ToTable("MenuItems", "core");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Controller.UserResourceGrant", b =>
@@ -261,7 +261,7 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasIndex("MenuItemId");
 
-                    b.ToTable("UserResourceGrants", "dbo");
+                    b.ToTable("UserResourceGrants", "core");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.ApplicationRole", b =>
@@ -289,7 +289,7 @@ namespace PhysLIMS.API.Migrations
                         .HasDatabaseName("RoleNameIndex")
                         .HasFilter("[NormalizedName] IS NOT NULL");
 
-                    b.ToTable("AspNetRoles", "dbo");
+                    b.ToTable("AspNetRoles", "core");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.ApplicationUser", b =>
@@ -365,7 +365,7 @@ namespace PhysLIMS.API.Migrations
                         .HasDatabaseName("UserNameIndex")
                         .HasFilter("[NormalizedUserName] IS NOT NULL");
 
-                    b.ToTable("AspNetUsers", "dbo");
+                    b.ToTable("AspNetUsers", "core");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.RemediationTicket", b =>
@@ -399,7 +399,7 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasKey("TicketId");
 
-                    b.ToTable("RemediationTickets", "dbo");
+                    b.ToTable("RemediationTickets", "core");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.UserRefreshToken", b =>
@@ -499,7 +499,7 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("ModuleMetadatas", "dbo");
+                    b.ToTable("ModuleMetadatas", "core");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Logings.SecurityLog", b =>
@@ -550,7 +550,7 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasIndex("CorrelationId");
 
-                    b.ToTable("SecurityLogs", "dbo");
+                    b.ToTable("SecurityLogs", "core");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Logings.SystemLog", b =>
@@ -634,7 +634,7 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasIndex("TimeStamp");
 
-                    b.ToTable("SystemLogs", "dbo");
+                    b.ToTable("SystemLogs", "core");
 
                     b
                         .HasAnnotation("SqlServer:IsAppendOnly", true)
@@ -717,7 +717,7 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Permissions", "dbo");
+                    b.ToTable("Permissions", "core");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Identities.PermissionGrant", b =>
@@ -738,7 +738,7 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("PermissionGrants", "dbo");
+                    b.ToTable("PermissionGrants", "core");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>

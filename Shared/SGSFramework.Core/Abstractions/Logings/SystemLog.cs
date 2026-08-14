@@ -58,7 +58,7 @@ namespace SGSFramework.Core.Abstractions.Logings
         public void Configure(EntityTypeBuilder<SystemLog> builder)
         {
             // 1. 指定資料表名稱
-            builder.ToTable("SystemLogs", "dbo");
+            builder.ToTable("SystemLogs");
             // 啟用密碼學分類帳
             builder.HasAnnotation("SqlServer:IsLedger", true);
             // 鎖定僅限附加模式 (Append-Only)

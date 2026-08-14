@@ -33,7 +33,7 @@ namespace SGS.Modules.ORG.Infrastructure.Dbcontexts
             var optionsBuilder = new DbContextOptionsBuilder<ORGDbContext>();
 
             // 優先嘗試從配置檔獲取連線字串，否則使用預設開發連線字串
-            var connectionString = configuration.GetValue<string>("PersistentOptions:DatabaseSettings:ConnectionString");
+            var connectionString = configuration.GetSection("PersistentSettings:ConnectionStrings")["MigrationConnection"];
 
             optionsBuilder.UseSqlServer(connectionString, sql =>
             {

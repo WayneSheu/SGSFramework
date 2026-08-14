@@ -34,7 +34,8 @@ namespace SGSFramework.Core.Abstractions.Permissions.Identities
     {
         public void Configure(EntityTypeBuilder<Permission> builder)
         {
-            builder.ToTable("Auth_Permissions"); // 建議加上命名空間或模組前綴
+            builder.ToTable("Permissions", "core");
+        
 
             builder.HasKey(x => x.Id);
 

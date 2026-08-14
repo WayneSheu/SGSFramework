@@ -23,7 +23,7 @@ BEGIN
     DROP TABLE [dbo].[SecurityAuditLedger];
 END
 
-CREATE TABLE [dbo].[SecurityAuditLedger] (
+CREATE TABLE [core].[SecurityAuditLedger] (
     [Id] INT IDENTITY(1,1) NOT NULL,
     [Message] NVARCHAR(MAX) NULL,
     [Level] NVARCHAR(128) NULL,

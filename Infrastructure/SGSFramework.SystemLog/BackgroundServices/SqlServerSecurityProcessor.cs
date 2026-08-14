@@ -19,7 +19,7 @@ namespace SGSFramework.SystemLog.BackgroundServices
         public SqlServerSecurityProcessor(IConfiguration configuration)
         {
             ArgumentNullException.ThrowIfNull(configuration);
-            _connectionString = configuration.GetValue<string>("PersistentOptions:DatabaseSettings:ConnectionString")
+            _connectionString = configuration.GetSection("PersistentSettings:ConnectionStrings")["DefaultConnection"]
                 ?? throw new InvalidOperationException("DefaultConnection connection string is missing.");
         }
 
@@ -35,7 +35,7 @@ namespace SGSFramework.SystemLog.BackgroundServices
             try
             {
                 // 🟢 修正：完整對齊基底結構，加入實體欄位映射與新設查察欄位
-                var sql = @"INSERT INTO dbo.SecurityLogs 
+                var sql = @"INSERT INTO cro.SecurityLogs 
                         (TimeStamp, Message, Level, Exception, LogType, EventCategory, UserId, ClientIp, CorrelationId, AlertId, Fingerprint) 
                         VALUES 
                         (@TimeStamp, @Message, @Level, @Exception, @LogType, @EventCategory, @UserId, @ClientIp, @CorrelationId, @AlertId, @Fingerprint);";

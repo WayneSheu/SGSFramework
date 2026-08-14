@@ -1,9 +1,9 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Logging;
-using SGSFramework.Core.Migrations;
 using SGS.Modules.ORG.Infrastructure.Dbcontexts;
-using System.Reflection;
+using SGSFramework.Core.Migrations;
 
 namespace SGS.Modules.ORG.Infrastructure
 {
@@ -21,35 +21,43 @@ namespace SGS.Modules.ORG.Infrastructure
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
+        /// <summary>
+        /// 取得該模組目前所有已在本機組件中定義的 Migration 識別名稱清單
+        /// </summary>
         public IEnumerable<string> GetLocalMigrations()
         {
             try
             {
-                // 取得該模組 DbContext 內目前編譯的所有實體 Migration 檔案名稱
-                var migrations = _context.Database.GetMigrations();
-                return migrations ?? Enumerable.Empty<string>();
+                var migrationsAssembly = _context.GetService<IMigrationsAssembly>();
+                var localMigrations = migrationsAssembly.Migrations.Keys;
+                return localMigrations ?? Enumerable.Empty<string>();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "取得 Org 模組本機 Migration 檔案清單時發生錯誤。");
+                _logger.LogError(ex, "[ORG 模組] 取得本機 Migration 檔案清單時發生錯誤。");
                 return Enumerable.Empty<string>();
             }
         }
 
+        /// <summary>
+        /// 取得該模組已套用至資料庫的 Migration 識別名稱清單
+        /// </summary>
         public async Task<IEnumerable<string>> GetAppliedMigrationsAsync(CancellationToken cancellationToken = default)
         {
             try
             {
-                // 查詢資料庫 __EFMigrationsHistory 資料表中已套用的 Migration 紀錄
-                return await _context.Database.GetAppliedMigrationsAsync(cancellationToken);
+                return await _context.Database.GetAppliedMigrationsAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "取得 Org 模組已套用至資料庫的 Migration 清單時發生錯誤。");
+                _logger.LogError(ex, "[ORG 模組] 取得已套用至資料庫的 Migration 清單時發生錯誤。");
                 return Enumerable.Empty<string>();
             }
         }
 
+        /// <summary>
+        /// 取得該模組尚未套用至資料庫的 Migration 識別名稱清單（待處理項目）
+        /// </summary>
         public async Task<IEnumerable<string>> GetPendingMigrationsAsync(CancellationToken cancellationToken = default)
         {
             try
@@ -57,122 +65,120 @@ namespace SGS.Modules.ORG.Infrastructure
                 var connectionString = _context.Database.GetConnectionString();
                 if (string.IsNullOrEmpty(connectionString))
                 {
-                    _logger.LogError("嚴重錯誤：DbContext 連接字串為空！請檢查依賴註冊。");
+                    _logger.LogError("[ORG 模組] 嚴重錯誤：DbContext 連接字串為空！請檢查依賴註冊。");
                     throw new InvalidOperationException("資料庫連線資訊遺失。");
                 }
 
-                // 重新確認模型是否已載入，避免因動態載入導致模型資訊遺失
-                _context.Model.GetEntityTypes();
-                // 比較本機程式碼與資料庫紀錄，計算出尚未套用的 Migration 檔案
-                var pendingMigrations = await _context.Database.GetPendingMigrationsAsync(cancellationToken);
-                // 確保回傳值永遠不為 null，避免後續邏輯崩潰
+                var pendingMigrations = await _context.Database.GetPendingMigrationsAsync(cancellationToken).ConfigureAwait(false);
                 return pendingMigrations ?? Enumerable.Empty<string>();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "取得 Org 模組待處理的 Migration 清單時發生錯誤。");
-                //return Enumerable.Empty<string>();
-                throw; // 拋出異常，不要靜默失敗
+                _logger.LogError(ex, "[ORG 模組] 取得待處理的 Migration 清單時發生錯誤。");
+                throw;
             }
         }
 
+        /// <summary>
+        /// 執行該模組的資料庫遷移
+        /// </summary>
         public async Task MigrateAsync(CancellationToken cancellationToken = default)
         {
             try
             {
-                // 1. 強制設定歷史表所在位置 (這裡必須與 OnConfiguring 的設定完全一致)
-                // 雖然 ORGDbContext 有設定，但在動態載入環境，建議在遷移前再次確認
-                //_context.Database.SetCommandTimeout(120);
-                // 2. 這行代碼若失敗，代表 ORGDbContext 的配置未生效
-                //await _context.Database.MigrateAsync(cancellationToken);
-                _logger.LogInformation("開始套用模組資料庫遷移...");
-                // 確保 Schema 存在，這是執行遷移前的必要保障
-                await _context.Database.ExecuteSqlRawAsync("IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'org') EXEC('CREATE SCHEMA org')");
-                // 強制觸發模型建立，確保動態載入的類型已被加入到模型中
-                //_context.Model.GetEntityTypes();
+                _logger.LogInformation(">>> [ORG 模組] 開始初始化模組資料庫結構與 Schema...");
 
-                //驗證遷移檔案是否正確被掃描到
-                //VerifyMigrations();
-                // 2. 核心遷移邏輯，移除靜默失敗，加入明確的錯誤診斷
-                var pendingMigrations = await _context.Database.GetPendingMigrationsAsync(cancellationToken);
+                // 1. 保障 Schema 'org' 存在
+                await _context.Database.ExecuteSqlRawAsync(
+                    "IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'org') EXEC('CREATE SCHEMA org')",
+                    cancellationToken).ConfigureAwait(false);
+
+                // 2. 驗證 EF Core 是否正確識別 Assembly 內的 Migration 類別
+                var localMigrations = GetLocalMigrations().ToList();
+                _logger.LogInformation(">>> [ORG 模組 Migration 診斷] 本機組件內識別到 {Count} 個 Migration 檔案。", localMigrations.Count);
+
+                if (!localMigrations.Any())
+                {
+                    _logger.LogWarning(">>> [警告] EF Core IMigrationsAssembly 未掃描到任何 Migration！請確認 DbContextOptions 配置是否包含 .MigrationsAssembly()。");
+                }
+
+                // 3. 檢查待處理的 Migration
+                var pendingMigrations = (await GetPendingMigrationsAsync(cancellationToken).ConfigureAwait(false)).ToList();
+                var appliedMigrations = (await GetAppliedMigrationsAsync(cancellationToken).ConfigureAwait(false)).ToList();
+
+                _logger.LogInformation(">>> [ORG 模組 Migration 狀態] 已套用: {AppliedCount} 筆, 待套用: {PendingCount} 筆",
+                    appliedMigrations.Count, pendingMigrations.Count);
+
                 if (pendingMigrations.Any())
                 {
-                    _logger.LogInformation(">>> [遷移] 發現 {Count} 個待處理遷移...", pendingMigrations.Count());
-                    await _context.Database.MigrateAsync(cancellationToken);
+                    _logger.LogInformation(">>> [ORG 模組] 發現 {Count} 個待處理遷移，開始執行升級套用...", pendingMigrations.Count);
+                    foreach (var migrationName in pendingMigrations)
+                    {
+                        _logger.LogInformation(">>> [準備套用 Migration]: {MigrationId}", migrationName);
+                    }
+
+                    // 4. 執行真正的建表與資料庫異動
+                    await _context.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
+                    _logger.LogInformation(">>> [ORG 模組] 資料庫結構套用成功。");
                 }
                 else
                 {
-                    _logger.LogInformation(">>> [遷移] 資料庫結構已是最新的。");
+                    _logger.LogInformation(">>> [ORG 模組] 資料庫結構已是最新的，無需重複套用。");
                 }
-
-
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "模組資料庫遷移發生錯誤。");
-                throw;// 生產環境應拋出異常以阻止錯誤的系統狀態啟動
+                _logger.LogError(ex, "[ORG 模組] 資料庫遷移發生嚴重錯誤。");
+                throw;
             }
         }
 
         /// <summary>
-        /// 診斷模組的 Migration 狀態，列出所有已編譯的遷移檔案名稱
+        /// 執行診斷檢查，確認模組的遷移檔案與資料庫狀態是否一致，並列出任何不一致的項目
         /// </summary>
         public async Task DiagnosticMigrations()
         {
-            // 取得當前 DbContext 關聯的所有遷移資訊
-            var migrations = GetLocalMigrationsAlternative();//_context.Database.GetMigrations();
-
-            _logger.LogInformation(">>> [診斷] 掃描到總遷移數: {Count}", migrations.Count());
-
-            foreach (var migration in migrations)
+            try
             {
-                _logger.LogInformation(">>> [診斷] 發現遷移檔案: {Name}", migration);
+                var localMigrations = GetLocalMigrations().ToList();
+                var appliedMigrations = (await GetAppliedMigrationsAsync().ConfigureAwait(false)).ToList();
+                var pendingMigrations = (await GetPendingMigrationsAsync().ConfigureAwait(false)).ToList();
+
+                _logger.LogInformation("========== [ORG 模組 Migration 診斷報告] ==========");
+                _logger.LogInformation("1. 本機組件已編譯 Migration 總數: {Count}", localMigrations.Count);
+                foreach (var m in localMigrations)
+                {
+                    _logger.LogInformation("   - [Local] {MigrationId}", m);
+                }
+
+                _logger.LogInformation("2. 資料庫歷史紀錄 (__EFMigrationsHistory) 已套用總數: {Count}", appliedMigrations.Count);
+                foreach (var m in appliedMigrations)
+                {
+                    _logger.LogInformation("   - [Applied] {MigrationId}", m);
+                }
+
+                _logger.LogInformation("3. 尚未套用 (Pending) 總數: {Count}", pendingMigrations.Count);
+                foreach (var m in pendingMigrations)
+                {
+                    _logger.LogWarning("   - [Pending] {MigrationId}", m);
+                }
+
+                // 比對不一致狀態（例如 DB 有但本機找不到）
+                var missingInLocal = appliedMigrations.Except(localMigrations).ToList();
+                if (missingInLocal.Any())
+                {
+                    foreach (var missing in missingInLocal)
+                    {
+                        _logger.LogError("   - [不一致] 資料庫已記錄但本機 Assembly 遺失: {MigrationId}", missing);
+                    }
+                }
+
+                _logger.LogInformation("==================================================");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[ORG 模組] 執行 DiagnosticMigrations 診斷時發生例外異常。");
             }
         }
-
-        public IEnumerable<string> GetLocalMigrationsAlternative()
-        {
-            // 直接透過 typeof(ORGDbContext) 取得該模組的 Assembly
-            var assembly = typeof(ORGDbContext).Assembly;
-
-            // 使用上述的手動反射邏輯
-            var migrations = GetMigrationsManually(assembly);
-
-            _logger.LogInformation(">>> [手動掃描] 成功識別到 {Count} 個遷移檔案", migrations.Count());
-            return migrations;
-        }
-
-        /// <summary>
-        /// 手動掃描指定 Assembly 中的 Migration 類別，並返回其名稱列表
-        /// </summary>
-        /// <param name="migrationAssembly"></param>
-        /// <returns></returns>
-        public IEnumerable<string> GetMigrationsManually(Assembly migrationAssembly)
-        {
-            // 1. 取得 Assembly 中所有繼承自 Migration 的類別
-            var migrationTypes = migrationAssembly.GetTypes()
-                .Where(t => typeof(Migration).IsAssignableFrom(t) && !t.IsAbstract && !t.IsInterface);
-
-            // 2. 轉換為名稱 (EF Core 的遷移名稱格式: {Timestamp}_{Name})
-            return migrationTypes
-                .Select(t => t.Name)
-                .OrderBy(name => name);
-        }
-
-
-        public void VerifyMigrations()
-        {
-            var assembly = typeof(ORGDbContext).Assembly;
-            var migrations = _context.Database.GetMigrations();
-
-            _logger.LogInformation(">>> 診斷：DbContext Assembly 為 {Name}", assembly.FullName);
-            _logger.LogInformation(">>> 診斷：掃描到遷移數量: {Count}", migrations.Count());
-
-            if (!migrations.Any())
-            {
-                _logger.LogWarning(">>> 診斷：EF Core 未能掃描到任何 Migration 檔案，請檢查 MigrationsAssembly 配置是否指向了正確的 Assembly。");
-            }
-        }
-
     }
 }

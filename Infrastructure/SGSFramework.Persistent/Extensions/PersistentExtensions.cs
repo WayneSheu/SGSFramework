@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SGSFramework.AuditLog.Interceptors;
 using SGSFramework.Persistent.Abstractions.Dbcontexts;
+using SGSFramework.Persistent.Abstractions.ScriptRunners;
 using SGSFramework.Persistent.Configurations.Options;
 using SGSFramework.Persistent.Converters;
 using SGSFramework.Persistent.Extensions;
@@ -17,12 +18,14 @@ using SGSFramework.Persistent.Interceptors;
 using SGSFramework.Persistent.Repositories.Hierarchy;
 using SGSFramework.Persistent.Repositories.Traditionals;
 using SGSFramework.Persistent.Repositories.Vector;
+using SGSFramework.Persistent.ScriptRunners;
 using IdentityOptions = Microsoft.AspNetCore.Identity.IdentityOptions;
 
 namespace SGSFramework.Persistent.Extensions
 {
     public static class PersistentExtensions
     {
+       
 
         #region Dbcontext 註冊方法 for WebApi 
 
@@ -37,11 +40,14 @@ namespace SGSFramework.Persistent.Extensions
         public static IServiceCollection AddDbContextWithOptions<TContext>(
             this IServiceCollection services,
             IConfiguration configuration,
-            string schema = "dbo",
+            string schema = "core",
             Action<DbContextOptionsBuilder>? extraOptions = null)
             where TContext : DbContext
         {
             EnsureOptionsRegistered(services, configuration);
+
+            // 1. 註冊 DatabaseInitializer 服務
+            services.AddTransient<IDatabaseInitializer, DatabaseInitializer>();
 
             services.AddDbContext<TContext>((sp, options) =>
             {
@@ -89,7 +95,7 @@ namespace SGSFramework.Persistent.Extensions
         public static IServiceCollection AddIdentityDbContextWithOptions<TContext, TUser, TRole, TKey>(
             this IServiceCollection services,
             IConfiguration configuration,
-            string schema = "dbo",
+            string schema = "core",
             Action<IdentityOptions>? configureIdentity = null,
             Action<DbContextOptionsBuilder>? extraOptions = null)
             where TContext : BaseIdentityDbContext<TUser, TRole, TKey, TContext>
@@ -98,6 +104,9 @@ namespace SGSFramework.Persistent.Extensions
             where TKey : IEquatable<TKey>
         {
             EnsureOptionsRegistered(services, configuration);
+
+            // 1. 註冊 DatabaseInitializer 服務
+            services.AddTransient<IDatabaseInitializer, DatabaseInitializer>();
 
             // 1. 註冊 DbContext
             services.AddDbContext<TContext>((sp, options) =>
@@ -183,11 +192,14 @@ namespace SGSFramework.Persistent.Extensions
         public static IServiceCollection AddDbContextForBlazor<TContext>(
             this IServiceCollection services,
             IConfiguration configuration,
-            string schema = "dbo",
+            string schema = "core",
             Action<DbContextOptionsBuilder>? extraOptions = null)
             where TContext : DbContext
         {
             EnsureOptionsRegistered(services, configuration);
+
+            //註冊 DatabaseInitializer 服務
+            services.AddTransient<IDatabaseInitializer, DatabaseInitializer>();
 
             services.AddPooledDbContextFactory<TContext>((sp, options) =>
             {
@@ -244,7 +256,7 @@ namespace SGSFramework.Persistent.Extensions
         public static IServiceCollection AddIdentityDbContextForBlazor<TContext, TUser, TRole, TKey>(
             this IServiceCollection services,
             IConfiguration configuration,
-            string schema = "dbo",
+            string schema = "core",
             Action<IdentityOptions>? configureIdentity = null,
             Action<DbContextOptionsBuilder>? extraOptions = null)
             where TContext : BaseIdentityDbContext<TUser, TRole, TKey, TContext>
@@ -254,10 +266,15 @@ namespace SGSFramework.Persistent.Extensions
         {
             // 1. 確保 Options 已註冊
             EnsureOptionsRegistered(services, configuration);
+            // 1. 註冊 DatabaseInitializer 服務
+            services.AddTransient<IDatabaseInitializer, DatabaseInitializer>();
 
             // 2. 註冊 Pooled DbContext Factory
             services.AddPooledDbContextFactory<TContext>((sp, options) =>
             {
+                // 1. 註冊 DatabaseInitializer 服務
+                services.AddTransient<IDatabaseInitializer, DatabaseInitializer>();
+
                 var env = sp.GetRequiredService<IWebHostEnvironment>();
                 // 使用 Monitor 以支援單例工廠中的配置讀取
                 var settings = sp.GetRequiredService<IOptionsMonitor<PersistentOptions>>().CurrentValue.DatabaseSettings;

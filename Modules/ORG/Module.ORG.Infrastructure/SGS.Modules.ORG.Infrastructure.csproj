@@ -11,7 +11,7 @@
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
     <Exec Command="powershell -Command &quot;&amp; { Set-AuthenticodeSignature -FilePath '$(TargetPath)' -Certificate (Get-ChildItem -Path Cert:\CurrentUser\My\DB22B4CE33AE64287F9392F3025EBCB7880BE213) -TimestampServer 'http://timestamp.digicert.com' }&quot;" />
   </Target>
-
+	
   <ItemGroup>
     <ProjectReference Include="..\..\..\Infrastructure\SGSFramework.ModulePlugin\SGSFramework.ModulePlugin.csproj" />
     <ProjectReference Include="..\..\..\Infrastructure\SGSFramework.Persistent\SGSFramework.Persistent.csproj" />

@@ -26,11 +26,19 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\Modules\ORG\Module.ORG.Infrastructure\SGS.Modules.ORG.Infrastructure.csproj" />
     <ProjectReference Include="..\PhysLIMS.Controller\SGSFramework.ApiInfrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include="Data\Scripts\" />
     <Folder Include="logs\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\..\..\..\..\Users\user\Documents\SQL Server Management Studio 22\PhysLIMSDB_Init.sql" Link="Data\Scripts\PhysLIMSDB_Init.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

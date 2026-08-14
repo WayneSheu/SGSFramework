@@ -1,6 +1,8 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using SGS.Modules.ORG.Infrastructure.Entities.Org;
 using SGSFramework.AuditLog.Interceptors;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.AuditLogs;
@@ -53,10 +55,12 @@ namespace SGS.Modules.ORG.Infrastructure.Dbcontexts
 
         public DbSet<AuditLogEntity> AuditLogs { get; }
         public DbSet<OutboxMessage> OutboxMessages { get; set; }
+        public DbSet<Organization> Organizations { get; set; }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
             base.OnConfiguring(optionsBuilder);
+
             // 載入安全存取 Scope 的 AuditInterceptor
             optionsBuilder.AddInterceptors(_auditInterceptor);
 
@@ -88,14 +92,21 @@ namespace SGS.Modules.ORG.Infrastructure.Dbcontexts
             // base
             base.OnModelCreating(modelBuilder);
 
-            //設定此 DbContext 底下所有資料表的預設 Schema
+            // 1. 設定模組全域預設 Schema
             modelBuilder.HasDefaultSchema("org");
 
-            // 自動掃描同一個 Assembly 中所有實作 IEntityTypeConfiguration 的類別
+            // 2. 載入同 Assembly 中所有 IEntityTypeConfiguration
             modelBuilder.ApplyConfigurationsFromAssembly(typeof(ORGDbContext).Assembly);
-
-            //泛型配置 OutboxMessage 的實體類別
             modelBuilder.ApplyConfiguration(new OutboxMessageConfiguration());
+
+            // 3. 在 Configuration 載入後，重新強制確保共用 Entity 與專用 Entity 的映射 Schema 為 "org"
+            modelBuilder.Entity<AuditLogEntity>()
+                .ToTable("AuditLogs", "org");
+
+            modelBuilder.Entity<Organization>()
+                .ToTable("Organization", "org");
+
+
 
         }
     }

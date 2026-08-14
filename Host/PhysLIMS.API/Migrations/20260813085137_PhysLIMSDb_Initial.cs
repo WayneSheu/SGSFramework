@@ -6,17 +6,20 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace PhysLIMS.API.Migrations
 {
     /// <inheritdoc />
-    public partial class PhysLIMSDbContext_Initial : Migration
+    public partial class PhysLIMSDb_Initial : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.EnsureSchema(
+                name: "core");
+
+            migrationBuilder.EnsureSchema(
                 name: "dbo");
 
             migrationBuilder.CreateTable(
                 name: "AspNetRoles",
-                schema: "dbo",
+                schema: "core",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -31,7 +34,7 @@ namespace PhysLIMS.API.Migrations
 
             migrationBuilder.CreateTable(
                 name: "AspNetUsers",
-                schema: "dbo",
+                schema: "core",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -60,7 +63,7 @@ namespace PhysLIMS.API.Migrations
 
             migrationBuilder.CreateTable(
                 name: "ControllerMetadata",
-                schema: "dbo",
+                schema: "core",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -86,7 +89,7 @@ namespace PhysLIMS.API.Migrations
 
             migrationBuilder.CreateTable(
                 name: "MenuItems",
-                schema: "dbo",
+                schema: "core",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -105,14 +108,14 @@ namespace PhysLIMS.API.Migrations
                     table.ForeignKey(
                         name: "FK_MenuItems_MenuItems_ParentId",
                         column: x => x.ParentId,
-                        principalSchema: "dbo",
+                        principalSchema: "core",
                         principalTable: "MenuItems",
                         principalColumn: "Id");
                 });
 
             migrationBuilder.CreateTable(
                 name: "ModuleMetadatas",
-                schema: "dbo",
+                schema: "core",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -130,7 +133,7 @@ namespace PhysLIMS.API.Migrations
 
             migrationBuilder.CreateTable(
                 name: "OutboxMessages",
-                schema: "dbo",
+                schema: "core",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -152,7 +155,7 @@ namespace PhysLIMS.API.Migrations
 
             migrationBuilder.CreateTable(
                 name: "PermissionGrants",
-                schema: "dbo",
+                schema: "core",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -167,7 +170,7 @@ namespace PhysLIMS.API.Migrations
 
             migrationBuilder.CreateTable(
                 name: "Permissions",
-                schema: "dbo",
+                schema: "core",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
@@ -186,7 +189,7 @@ namespace PhysLIMS.API.Migrations
 
             migrationBuilder.CreateTable(
                 name: "RemediationTickets",
-                schema: "dbo",
+                schema: "core",
                 columns: table => new
                 {
                     TicketId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
@@ -202,70 +205,64 @@ namespace PhysLIMS.API.Migrations
                     table.PrimaryKey("PK_RemediationTickets", x => x.TicketId);
                 });
 
-            migrationBuilder.Sql(@"
--- 1. 建立 SecurityLogs (Append-Only Ledger Table)
-CREATE TABLE [dbo].[SecurityLogs] (
-    [Id] INT IDENTITY(1,1) NOT NULL,
-    [CorrelationId] NVARCHAR(450) NULL,
-    [Message] NVARCHAR(MAX) NULL,
-    [Level] NVARCHAR(MAX) NULL,
-    [Timestamp] DATETIMEOFFSET(7) NOT NULL,
-    [Exception] NVARCHAR(MAX) NULL,
-    [Properties] NVARCHAR(MAX) NULL,
-    [LogType] NVARCHAR(MAX) NULL,
-    [EventCategory] NVARCHAR(MAX) NULL,
-    [UserId] NVARCHAR(MAX) NULL,
-    [ClientIp] NVARCHAR(MAX) NULL,
-    [AlertId] NVARCHAR(MAX) NULL,
-    [Fingerprint] NVARCHAR(MAX) NULL,
-    CONSTRAINT [PK_SecurityLogs] PRIMARY KEY CLUSTERED ([Id] ASC)
-)
-WITH 
-(
-    LEDGER = ON 
-    (
-        APPEND_ONLY = ON
-    )
-);
-");
+            migrationBuilder.CreateTable(
+                name: "SecurityLogs",
+                schema: "core",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    CorrelationId = table.Column<string>(type: "nvarchar(450)", nullable: true),
+                    Message = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Level = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Timestamp = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    Exception = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Properties = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    LogType = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    EventCategory = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    UserId = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    ClientIp = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    AlertId = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Fingerprint = table.Column<string>(type: "nvarchar(max)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_SecurityLogs", x => x.Id);
+                });
 
-            migrationBuilder.Sql(@"
- -- 2. 建立 SystemLogs (Append-Only Ledger Table)
-CREATE TABLE [dbo].[SystemLogs] (
-    [Id] BIGINT IDENTITY(1,1) NOT NULL,
-    [TimeStamp] DATETIME2(7) NOT NULL,
-    [Message] NVARCHAR(MAX) NULL,
-    [Level] NVARCHAR(128) NULL,
-    [Exception] NVARCHAR(MAX) NULL,
-    [TenantId] NVARCHAR(50) NULL,
-    [UserId] NVARCHAR(50) NULL,
-    [ModuleName] NVARCHAR(50) NULL,
-    [Operation] NVARCHAR(MAX) NULL,
-    [CorrelationId] VARCHAR(50) NULL,
-    [IP] VARCHAR(45) NULL,
-    [Url] NVARCHAR(2083) NULL,
-    [Payload] NVARCHAR(MAX) NULL,
-    [PrevHash] NVARCHAR(64) NULL,
-    [CurrentHash] NVARCHAR(64) NULL,
-    [CreatedAt] DATETIME2(7) NOT NULL CONSTRAINT [DF_SystemLogs_CreatedAt] DEFAULT (SYSUTCDATETIME()),
-    [AlertId] CHAR(32) NULL,
-    [Fingerprint] CHAR(64) NULL,
-    CONSTRAINT [PK_SystemLogs] PRIMARY KEY CLUSTERED ([Id] ASC)
-)
-WITH 
-(
-    LEDGER = ON 
-    (
-        APPEND_ONLY = ON
-    )
-);
-
-");
-
+            migrationBuilder.CreateTable(
+                name: "SystemLogs",
+                schema: "core",
+                columns: table => new
+                {
+                    Id = table.Column<long>(type: "bigint", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    TimeStamp = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    Message = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Level = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
+                    Exception = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    TenantId = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    UserId = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    ModuleName = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    Operation = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    CorrelationId = table.Column<string>(type: "varchar(50)", unicode: false, maxLength: 50, nullable: true),
+                    IP = table.Column<string>(type: "varchar(45)", unicode: false, maxLength: 45, nullable: true),
+                    Url = table.Column<string>(type: "nvarchar(2083)", maxLength: 2083, nullable: true),
+                    Payload = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    PrevHash = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
+                    CurrentHash = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
+                    AlertId = table.Column<string>(type: "char(32)", nullable: true),
+                    Fingerprint = table.Column<string>(type: "char(64)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_SystemLogs", x => x.Id);
+                });
 
             migrationBuilder.CreateTable(
                 name: "UserRefreshTokens",
-                schema: "dbo",
+                schema: "core",
                 columns: table => new
                 {
                     Id = table.Column<long>(type: "bigint", nullable: false)
@@ -291,7 +288,7 @@ WITH
 
             migrationBuilder.CreateTable(
                 name: "AspNetRoleClaims",
-                schema: "dbo",
+                schema: "core",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
@@ -306,7 +303,7 @@ WITH
                     table.ForeignKey(
                         name: "FK_AspNetRoleClaims_AspNetRoles_RoleId",
                         column: x => x.RoleId,
-                        principalSchema: "dbo",
+                        principalSchema: "core",
                         principalTable: "AspNetRoles",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
@@ -314,7 +311,7 @@ WITH
 
             migrationBuilder.CreateTable(
                 name: "AspNetUserClaims",
-                schema: "dbo",
+                schema: "core",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
@@ -329,7 +326,7 @@ WITH
                     table.ForeignKey(
                         name: "FK_AspNetUserClaims_AspNetUsers_UserId",
                         column: x => x.UserId,
-                        principalSchema: "dbo",
+                        principalSchema: "core",
                         principalTable: "AspNetUsers",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
@@ -337,7 +334,7 @@ WITH
 
             migrationBuilder.CreateTable(
                 name: "AspNetUserLogins",
-                schema: "dbo",
+                schema: "core",
                 columns: table => new
                 {
                     LoginProvider = table.Column<string>(type: "nvarchar(450)", nullable: false),
@@ -351,7 +348,7 @@ WITH
                     table.ForeignKey(
                         name: "FK_AspNetUserLogins_AspNetUsers_UserId",
                         column: x => x.UserId,
-                        principalSchema: "dbo",
+                        principalSchema: "core",
                         principalTable: "AspNetUsers",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
@@ -359,7 +356,7 @@ WITH
 
             migrationBuilder.CreateTable(
                 name: "AspNetUserRoles",
-                schema: "dbo",
+                schema: "core",
                 columns: table => new
                 {
                     UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -371,14 +368,14 @@ WITH
                     table.ForeignKey(
                         name: "FK_AspNetUserRoles_AspNetRoles_RoleId",
                         column: x => x.RoleId,
-                        principalSchema: "dbo",
+                        principalSchema: "core",
                         principalTable: "AspNetRoles",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
                         name: "FK_AspNetUserRoles_AspNetUsers_UserId",
                         column: x => x.UserId,
-                        principalSchema: "dbo",
+                        principalSchema: "core",
                         principalTable: "AspNetUsers",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
@@ -386,7 +383,7 @@ WITH
 
             migrationBuilder.CreateTable(
                 name: "AspNetUserTokens",
-                schema: "dbo",
+                schema: "core",
                 columns: table => new
                 {
                     UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -400,7 +397,7 @@ WITH
                     table.ForeignKey(
                         name: "FK_AspNetUserTokens_AspNetUsers_UserId",
                         column: x => x.UserId,
-                        principalSchema: "dbo",
+                        principalSchema: "core",
                         principalTable: "AspNetUsers",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
@@ -408,7 +405,7 @@ WITH
 
             migrationBuilder.CreateTable(
                 name: "UserResourceGrants",
-                schema: "dbo",
+                schema: "core",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -427,7 +424,7 @@ WITH
                     table.ForeignKey(
                         name: "FK_UserResourceGrants_MenuItems_MenuItemId",
                         column: x => x.MenuItemId,
-                        principalSchema: "dbo",
+                        principalSchema: "core",
                         principalTable: "MenuItems",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
@@ -435,13 +432,13 @@ WITH
 
             migrationBuilder.CreateIndex(
                 name: "IX_AspNetRoleClaims_RoleId",
-                schema: "dbo",
+                schema: "core",
                 table: "AspNetRoleClaims",
                 column: "RoleId");
 
             migrationBuilder.CreateIndex(
                 name: "RoleNameIndex",
-                schema: "dbo",
+                schema: "core",
                 table: "AspNetRoles",
                 column: "NormalizedName",
                 unique: true,
@@ -449,31 +446,31 @@ WITH
 
             migrationBuilder.CreateIndex(
                 name: "IX_AspNetUserClaims_UserId",
-                schema: "dbo",
+                schema: "core",
                 table: "AspNetUserClaims",
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_AspNetUserLogins_UserId",
-                schema: "dbo",
+                schema: "core",
                 table: "AspNetUserLogins",
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_AspNetUserRoles_RoleId",
-                schema: "dbo",
+                schema: "core",
                 table: "AspNetUserRoles",
                 column: "RoleId");
 
             migrationBuilder.CreateIndex(
                 name: "EmailIndex",
-                schema: "dbo",
+                schema: "core",
                 table: "AspNetUsers",
                 column: "NormalizedEmail");
 
             migrationBuilder.CreateIndex(
                 name: "UserNameIndex",
-                schema: "dbo",
+                schema: "core",
                 table: "AspNetUsers",
                 column: "NormalizedUserName",
                 unique: true,
@@ -481,44 +478,44 @@ WITH
 
             migrationBuilder.CreateIndex(
                 name: "IX_MenuItems_ParentId",
-                schema: "dbo",
+                schema: "core",
                 table: "MenuItems",
                 column: "ParentId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_SecurityLogs_CorrelationId",
-                schema: "dbo",
+                schema: "core",
                 table: "SecurityLogs",
                 column: "CorrelationId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_SystemLogs_CorrelationId",
-                schema: "dbo",
+                schema: "core",
                 table: "SystemLogs",
                 column: "CorrelationId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_SystemLogs_TenantId",
-                schema: "dbo",
+                schema: "core",
                 table: "SystemLogs",
                 column: "TenantId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_SystemLogs_TimeStamp",
-                schema: "dbo",
+                schema: "core",
                 table: "SystemLogs",
                 column: "TimeStamp");
 
             migrationBuilder.CreateIndex(
                 name: "IX_UserRefreshTokens_UserId_DeviceId",
-                schema: "dbo",
+                schema: "core",
                 table: "UserRefreshTokens",
                 columns: new[] { "UserId", "DeviceId" },
                 unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_UserResourceGrants_MenuItemId",
-                schema: "dbo",
+                schema: "core",
                 table: "UserResourceGrants",
                 column: "MenuItemId");
         }
@@ -528,75 +525,75 @@ WITH
         {
             migrationBuilder.DropTable(
                 name: "AspNetRoleClaims",
-                schema: "dbo");
+                schema: "core");
 
             migrationBuilder.DropTable(
                 name: "AspNetUserClaims",
-                schema: "dbo");
+                schema: "core");
 
             migrationBuilder.DropTable(
                 name: "AspNetUserLogins",
-                schema: "dbo");
+                schema: "core");
 
             migrationBuilder.DropTable(
                 name: "AspNetUserRoles",
-                schema: "dbo");
+                schema: "core");
 
             migrationBuilder.DropTable(
                 name: "AspNetUserTokens",
-                schema: "dbo");
+                schema: "core");
 
             migrationBuilder.DropTable(
                 name: "ControllerMetadata",
-                schema: "dbo");
+                schema: "core");
 
             migrationBuilder.DropTable(
                 name: "ModuleMetadatas",
-                schema: "dbo");
+                schema: "core");
 
             migrationBuilder.DropTable(
                 name: "OutboxMessages",
-                schema: "dbo");
+                schema: "core");
 
             migrationBuilder.DropTable(
                 name: "PermissionGrants",
-                schema: "dbo");
+                schema: "core");
 
             migrationBuilder.DropTable(
                 name: "Permissions",
-                schema: "dbo");
+                schema: "core");
 
             migrationBuilder.DropTable(
                 name: "RemediationTickets",
-                schema: "dbo");
+                schema: "core");
 
             migrationBuilder.DropTable(
                 name: "SecurityLogs",
-                schema: "dbo");
+                schema: "core");
 
             migrationBuilder.DropTable(
                 name: "SystemLogs",
-                schema: "dbo");
+                schema: "core");
 
             migrationBuilder.DropTable(
                 name: "UserRefreshTokens",
-                schema: "dbo");
+                schema: "core");
 
             migrationBuilder.DropTable(
                 name: "UserResourceGrants",
-                schema: "dbo");
+                schema: "core");
 
             migrationBuilder.DropTable(
                 name: "AspNetRoles",
-                schema: "dbo");
+                schema: "core");
 
             migrationBuilder.DropTable(
                 name: "AspNetUsers",
-                schema: "dbo");
+                schema: "core");
 
             migrationBuilder.DropTable(
                 name: "MenuItems",
-                schema: "dbo");
+                schema: "core");
         }
     }
 }

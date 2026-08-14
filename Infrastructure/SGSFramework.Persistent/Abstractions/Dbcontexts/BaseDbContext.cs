@@ -30,7 +30,7 @@ namespace SGSFramework.Persistent.Abstractions.Dbcontexts
             var extension = options.FindExtension<ToolkitOptionsExtension>();
 
             // 取得 Schema 設定，若無則預設為 "dbo"
-            _schema = extension?.Schema ?? "dbo";
+            _schema = extension?.Schema ?? "core";
 
             // 取得目前租戶 ID (執行時由 DI 注入)
             _tenantId = tenantService?.GetTenantId();
@@ -126,7 +126,7 @@ namespace SGSFramework.Persistent.Abstractions.Dbcontexts
 
                 // 檢查是否已被 SystemLogConfiguration 明確標註為 dbo
                 var currentSchema = entityType.GetSchema();
-                if (currentSchema == "dbo") continue;
+                //if (currentSchema == "dbo") continue;
 
                 var tableName = entityType.GetTableName();
                 if (!string.IsNullOrEmpty(tableName))

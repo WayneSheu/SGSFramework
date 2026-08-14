@@ -52,7 +52,7 @@ namespace SGSFramework.Core.Abstractions.Entities.AuditLogs
             ArgumentNullException.ThrowIfNull(builder);
 
             // 1. 資料表與複合主鍵設定 (搭配 CreatedAt 支援分區與 Ledger 機制)
-            builder.ToTable("AuditLogs", "org");
+            builder.ToTable("AuditLogs");
             builder.HasKey(e => new { e.Id, e.CreatedAt });
 
             builder.Property(e => e.Id)
