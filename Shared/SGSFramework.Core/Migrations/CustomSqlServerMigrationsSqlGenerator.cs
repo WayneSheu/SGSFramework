@@ -9,6 +9,7 @@ using System.Linq;
 
 namespace SGSFramework.Core.Migrations;
 
+#pragma warning disable EF1001 // Internal EF Core API usage
 public class CustomSqlServerMigrationsSqlGenerator : SqlServerMigrationsSqlGenerator
 {
     public CustomSqlServerMigrationsSqlGenerator(
@@ -29,33 +30,34 @@ public class CustomSqlServerMigrationsSqlGenerator : SqlServerMigrationsSqlGener
 
         bool isLedger = false;
 
-        // 1. 檢查 Operation 層級 Annotation
-        if (operation["SqlServer:IsLedgerAppendOnly"] is bool opAnnotation && opAnnotation)
+        // 1. 先從 Operation 檢查，若無則直接從 Model 尋找實體的 Ledger 註解
+        if (operation.FindAnnotation("SqlServer:IsLedgerAppendOnly")?.Value is bool appendOnly && appendOnly)
         {
             isLedger = true;
         }
-        // 2. 若 Operation 未攜帶，回溯至 EF Model EntityType 進行比對
         else if (model != null)
         {
-            var entityType = model.GetEntityTypes()
-                .FirstOrDefault(e => string.Equals(e.GetTableName(), operation.Name, StringComparison.OrdinalIgnoreCase)
-                                  && string.Equals(e.GetSchema() ?? model.GetDefaultSchema(), operation.Schema, StringComparison.OrdinalIgnoreCase));
+            var defaultSchema = model.GetDefaultSchema();
+            var targetSchema = operation.Schema ?? defaultSchema;
+
+            var entityType = model.GetEntityTypes().FirstOrDefault(e =>
+                string.Equals(e.GetTableName(), operation.Name, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(e.GetSchema() ?? defaultSchema, targetSchema, StringComparison.OrdinalIgnoreCase));
 
             if (entityType != null)
             {
                 var annotation = entityType.FindAnnotation("SqlServer:IsLedgerAppendOnly");
-                if (annotation?.Value is bool modelAnnotation && modelAnnotation)
+                if (annotation?.Value is bool isAppendOnlyVal && isAppendOnlyVal)
                 {
                     isLedger = true;
                 }
             }
         }
 
+        // 2. 若為 Ledger Table 則拼接 SQL
         if (isLedger)
         {
-            // 產生標準 CREATE TABLE SQL，暫不終止語句 (不加分號)
             base.Generate(operation, model, builder, terminate: false);
-
             builder.AppendLine();
             builder.Append("WITH (LEDGER = ON (APPEND_ONLY = ON))");
 
@@ -71,3 +73,4 @@ public class CustomSqlServerMigrationsSqlGenerator : SqlServerMigrationsSqlGener
         }
     }
 }
+#pragma warning restore EF1001

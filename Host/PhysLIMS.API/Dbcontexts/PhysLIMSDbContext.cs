@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using SGS.Modules.ORG.Infrastructure.Configurations;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.Controller;
@@ -11,6 +12,7 @@ using SGSFramework.Core.Abstractions.Outbox;
 using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Abstractions.Permissions.Identities;
 using SGSFramework.Core.Identiies.Tenants;
+using SGSFramework.Core.Migrations;
 using SGSFramework.Infrastructure.Persistence.Configurations;
 using SGSFramework.Persistent.Abstractions.Dbcontexts;
 using System;
@@ -36,6 +38,14 @@ public class PhysLIMSDbContext : BaseIdentityDbContext<ApplicationUser, Applicat
     public DbSet<PermissionGrant> PermissionGrants { get; set; } = null!;
     public DbSet<UserResourceGrant> UserResourceGrants { get; set; } = null!;
     public DbSet<Permission> Permissions { get; set; } = null!;
+
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+
+        // 替換關聯式資料庫的 Annotation Provider
+        optionsBuilder.ReplaceService<IRelationalAnnotationProvider, CustomSqlServerAnnotationProvider>();
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

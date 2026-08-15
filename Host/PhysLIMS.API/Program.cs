@@ -4,7 +4,9 @@
 
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.Extensions.Options;
 using PhysLIMS.API.Dbcontexts;
 using PhysLIMS.API.Extensions;
 using PhysLIMS.API.Helpers;
@@ -68,9 +70,12 @@ try
         options.UseSqlServer(connectionString, sqlOptions =>
         {
             sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "core");
-        })
+        });
         // 2.1 註冊自訂的 SQL Server Migrations Generator
-        .ReplaceService<IMigrationsSqlGenerator, CustomSqlServerMigrationsSqlGenerator>()
+        // 替換MigrationsSqlGenerator
+        // 替換關聯式資料庫的 Annotation Provider
+        options.ReplaceService<IRelationalAnnotationProvider, CustomSqlServerAnnotationProvider>();
+        options.ReplaceService<IMigrationsSqlGenerator, CustomSqlServerMigrationsSqlGenerator>()
         .ConfigureWarnings(warnings =>
         // 壓制 PendingModelChangesWarning 警告
         warnings.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));

@@ -12,8 +12,8 @@ using PhysLIMS.API.Dbcontexts;
 namespace PhysLIMS.API.Migrations
 {
     [DbContext(typeof(PhysLIMSDbContext))]
-    [Migration("20260815092201_PhysLIMSDbContext_Initial")]
-    partial class PhysLIMSDbContext_Initial
+    [Migration("20260815105346_PhysLIMSDb_Initial")]
+    partial class PhysLIMSDb_Initial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
