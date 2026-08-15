@@ -1,7 +1,6 @@
-﻿using System;
-using System.Linq;
-using Microsoft.AspNetCore.Identity;
+﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using SGS.Modules.ORG.Infrastructure.Configurations;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Abstractions.Entities.Identities;
@@ -12,7 +11,10 @@ using SGSFramework.Core.Abstractions.Outbox;
 using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Abstractions.Permissions.Identities;
 using SGSFramework.Core.Identiies.Tenants;
+using SGSFramework.Infrastructure.Persistence.Configurations;
 using SGSFramework.Persistent.Abstractions.Dbcontexts;
+using System;
+using System.Linq;
 
 namespace PhysLIMS.API.Dbcontexts;
 
@@ -43,6 +45,9 @@ public class PhysLIMSDbContext : BaseIdentityDbContext<ApplicationUser, Applicat
 
         // 1. 全域指定預設 Schema 為 "core"
         modelBuilder.HasDefaultSchema("core");
+
+        // 2. 將原先的 OutboxMessageConfiguration 改為 CoreOutboxMessageConfiguration
+        modelBuilder.ApplyConfiguration(new CoreOutboxMessageConfiguration());
 
         // 2. 自動掃描同 Assembly 下的所有 IEntityTypeConfiguration
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(PhysLIMSDbContext).Assembly);

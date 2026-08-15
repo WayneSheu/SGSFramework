@@ -93,7 +93,7 @@ namespace SGSFramework.Persistent.Abstractions.Dbcontexts
             // 🚀 為 UserRefreshToken 建立高效複合索引，優化 MSSQL 2025 的 UPDLOCK 與悲觀鎖併發查詢
             modelBuilder.Entity<UserRefreshToken>(entity =>
             {
-                entity.ToTable("UserRefreshTokens", _schema);
+                entity.ToTable("UserRefreshTokens", "core");
                 entity.HasKey(e => e.Id);
                 entity.HasIndex(e => new { e.UserId, e.DeviceId }).IsUnique();
             });

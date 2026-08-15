@@ -63,10 +63,10 @@ namespace SGS.Modules.ORG.Infrastructure.Dbcontexts
         {
             base.OnConfiguring(optionsBuilder);
 
-            optionsBuilder.AddInterceptors(_auditInterceptor); 
+            optionsBuilder.AddInterceptors(_auditInterceptor);
 
-        // 核心關鍵：替換 EF Core 內部的 IMigrationsAssembly 為外掛強化版
-        optionsBuilder.ReplaceService<IMigrationsAssembly, PluginMigrationsAssembly>();
+            // 核心關鍵：替換 EF Core 內部的 IMigrationsAssembly 為外掛強化版
+            optionsBuilder.ReplaceService<IMigrationsAssembly, PluginMigrationsAssembly>();
 
             if (!optionsBuilder.IsConfigured)
         {
@@ -92,7 +92,7 @@ namespace SGS.Modules.ORG.Infrastructure.Dbcontexts
 
             // 2. 載入同 Assembly 中所有 IEntityTypeConfiguration
             modelBuilder.ApplyConfigurationsFromAssembly(typeof(ORGDbContext).Assembly);
-            modelBuilder.ApplyConfiguration(new OutboxMessageConfiguration());
+
 
             // 3. 在 Configuration 載入後，重新強制確保共用 Entity 與專用 Entity 的映射 Schema 為 "org"
             modelBuilder.Entity<AuditLogEntity>()

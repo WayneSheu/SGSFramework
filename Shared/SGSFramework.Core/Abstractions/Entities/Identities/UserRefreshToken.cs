@@ -9,7 +9,7 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
     /// <summary>
     /// 儲存使用者裝置安全 Session 與長效憑證的資料表實體 (相容性與資安一體化規格)
     /// </summary>
-    [Table("UserRefreshTokens")]
+    [Table("UserRefreshTokens", Schema = "core")]
     public sealed class UserRefreshToken
     {
         [Key]
@@ -119,7 +119,7 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
     {
         public void Configure(EntityTypeBuilder<UserRefreshToken> builder)
         {
-            builder.ToTable("UserRefreshTokens");
+            builder.ToTable("UserRefreshTokens","core");
             builder.HasKey(e => e.Id);
 
             builder.HasIndex(e => new { e.UserId, e.DeviceId })

@@ -12,7 +12,7 @@ using PhysLIMS.API.Dbcontexts;
 namespace PhysLIMS.API.Migrations
 {
     [DbContext(typeof(PhysLIMSDbContext))]
-    [Migration("20260815061427_PhysLIMSDbContext_Initial")]
+    [Migration("20260815092201_PhysLIMSDbContext_Initial")]
     partial class PhysLIMSDbContext_Initial
     {
         /// <inheritdoc />
@@ -469,7 +469,7 @@ namespace PhysLIMS.API.Migrations
                     b.HasIndex("UserId", "DeviceId")
                         .IsUnique();
 
-                    b.ToTable("UserRefreshTokens", "dbo");
+                    b.ToTable("UserRefreshTokens", "core");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Modules.ModuleMetadata", b =>
@@ -635,23 +635,30 @@ namespace PhysLIMS.API.Migrations
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Outbox.OutboxMessage", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("CausationId")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(200)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(200)");
 
                     b.Property<string>("Content")
                         .IsRequired()
+                        .IsUnicode(true)
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("CorrelationId")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)");
 
                     b.Property<bool>("IsDead")
-                        .HasColumnType("bit");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
 
                     b.Property<string>("LastError")
+                        .IsUnicode(true)
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime>("OccurredOnUtc")
@@ -661,18 +668,28 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<int>("RetryCount")
-                        .HasColumnType("int");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
 
                     b.Property<DateTime?>("ScheduledAtUtc")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("Type")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(500)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(500)");
 
                     b.HasKey("Id");
 
-                    b.ToTable("OutboxMessages", "dbo");
+                    b.HasIndex("CorrelationId")
+                        .HasDatabaseName("IX_core_OutboxMessages_CorrelationId");
+
+                    b.HasIndex("ProcessedOnUtc", "IsDead", "ScheduledAtUtc")
+                        .HasDatabaseName("IX_core_OutboxMessages_FetchPending");
+
+                    b.ToTable("OutboxMessages", "core");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Identities.Permission", b =>
