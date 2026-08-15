@@ -6,6 +6,7 @@ namespace SGSFramework.Core.Abstractions.Entities.Ledgers
 {
     /// <summary>
     /// 配合 MSSQL Ledger 實際產生的系統欄位名稱進行修正後的實體介面
+    /// 標記介面：用於標示該 Entity 映射至 MSSQL 原生 Append-Only Ledger 資料表
     /// </summary>
     public interface ILedgerEntity
     {

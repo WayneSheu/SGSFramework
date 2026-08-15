@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace PhysLIMS.API.Migrations
 {
     /// <inheritdoc />
-    public partial class PhysLIMSDb_Initial : Migration
+    public partial class PhysLIMSDbContext_Initial : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -133,7 +133,7 @@ namespace PhysLIMS.API.Migrations
 
             migrationBuilder.CreateTable(
                 name: "OutboxMessages",
-                schema: "core",
+                schema: "dbo",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -239,21 +239,21 @@ namespace PhysLIMS.API.Migrations
                         .Annotation("SqlServer:Identity", "1, 1"),
                     TimeStamp = table.Column<DateTime>(type: "datetime2", nullable: false),
                     Message = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    Level = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
+                    Level = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     Exception = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    TenantId = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
-                    UserId = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
-                    ModuleName = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    TenantId = table.Column<string>(type: "nvarchar(450)", nullable: true),
+                    UserId = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    ModuleName = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     Operation = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    CorrelationId = table.Column<string>(type: "varchar(50)", unicode: false, maxLength: 50, nullable: true),
-                    IP = table.Column<string>(type: "varchar(45)", unicode: false, maxLength: 45, nullable: true),
-                    Url = table.Column<string>(type: "nvarchar(2083)", maxLength: 2083, nullable: true),
+                    CorrelationId = table.Column<string>(type: "nvarchar(450)", nullable: true),
+                    IP = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Url = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     Payload = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     PrevHash = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
                     CurrentHash = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
-                    AlertId = table.Column<string>(type: "char(32)", nullable: true),
-                    Fingerprint = table.Column<string>(type: "char(64)", nullable: true)
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    AlertId = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Fingerprint = table.Column<string>(type: "nvarchar(max)", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -262,7 +262,7 @@ namespace PhysLIMS.API.Migrations
 
             migrationBuilder.CreateTable(
                 name: "UserRefreshTokens",
-                schema: "core",
+                schema: "dbo",
                 columns: table => new
                 {
                     Id = table.Column<long>(type: "bigint", nullable: false)
@@ -508,7 +508,7 @@ namespace PhysLIMS.API.Migrations
 
             migrationBuilder.CreateIndex(
                 name: "IX_UserRefreshTokens_UserId_DeviceId",
-                schema: "core",
+                schema: "dbo",
                 table: "UserRefreshTokens",
                 columns: new[] { "UserId", "DeviceId" },
                 unique: true);
@@ -553,7 +553,7 @@ namespace PhysLIMS.API.Migrations
 
             migrationBuilder.DropTable(
                 name: "OutboxMessages",
-                schema: "core");
+                schema: "dbo");
 
             migrationBuilder.DropTable(
                 name: "PermissionGrants",
@@ -577,7 +577,7 @@ namespace PhysLIMS.API.Migrations
 
             migrationBuilder.DropTable(
                 name: "UserRefreshTokens",
-                schema: "core");
+                schema: "dbo");
 
             migrationBuilder.DropTable(
                 name: "UserResourceGrants",

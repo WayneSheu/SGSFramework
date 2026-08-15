@@ -14,36 +14,69 @@ namespace SGS.Modules.ORG.Infrastructure.Migrations
             migrationBuilder.EnsureSchema(
                 name: "org");
 
-            migrationBuilder.CreateTable(
-                name: "AuditLogs",
-                schema: "org",
-                columns: table => new
-                {
-                    Id = table.Column<long>(type: "bigint", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    TraceId = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    UserId = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    RemoteIp = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
-                    Timestamp = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
-                    Schema = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    TableName = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    Action = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    KeyValues = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    OldValues = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    NewValues = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    ChangedColumns = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    PreviousHash = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    StoredHash = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    IsRepaired = table.Column<bool>(type: "bit", nullable: false),
-                    RepairedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
-                    GapReason = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    OriginalStoredHash = table.Column<string>(type: "nvarchar(max)", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_AuditLogs", x => x.Id);
-                });
+            migrationBuilder.Sql(@"
+            BEGIN TRANSACTION;
+
+            -- 1. 建立 Schema (若不存在)
+            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = N'org')
+            BEGIN
+                EXEC('CREATE SCHEMA [org] AUTHORIZATION [dbo];');
+            END
+
+            -- 2. 建立 Append-Only Ledger Table
+            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[org].[AuditLogs]') AND type IN (N'U'))
+            BEGIN
+                CREATE TABLE [org].[AuditLogs]
+                (
+                    [Id]                 BIGINT IDENTITY(1,1) NOT NULL,
+                    [TraceId]            CHAR(32)             NOT NULL,
+                    [UserId]             NVARCHAR(128)        NULL,
+                    [RemoteIp]           NVARCHAR(64)         NULL,
+                    [CreatedAt]           DATETIMEOFFSET(7)          NOT NULL CONSTRAINT [DF_AuditLogs_CreatedAt] DEFAULT (SYSUTCDATETIME()),
+                    [Timestamp]           DATETIMEOFFSET(7)          NOT NULL CONSTRAINT [DF_AuditLogs_Timestamp] DEFAULT (SYSUTCDATETIME()),
+                    [Schema]             NVARCHAR(64)         NULL,
+                    [TableName]          NVARCHAR(128)        NOT NULL,
+                    [Action]             NVARCHAR(50)         NOT NULL,
+                    [KeyValues]          NVARCHAR(MAX)        NULL,
+                    [OldValues]          NVARCHAR(MAX)        NULL,
+                    [NewValues]          NVARCHAR(MAX)        NULL,
+                    [ChangedColumns]     NVARCHAR(MAX)        NULL,
+                    [PreviousHash]       NVARCHAR(128)        NOT NULL,
+                    [StoredHash]         NVARCHAR(128)        NOT NULL,
+                    [IsRepaired]         BIT                  NOT NULL CONSTRAINT [DF_AuditLogs_IsRepaired] DEFAULT (0),
+                    [RepairedAt]         DATETIMEOFFSET(7)           NULL,
+                    [GapReason]          NVARCHAR(500)        NULL,
+                    [OriginalStoredHash] NVARCHAR(128)        NULL,
+
+                    -- 複合主鍵 (搭配 CreatedAt 以支援分區與系統時間區間查詢)
+                    CONSTRAINT [PK_AuditLogs] PRIMARY KEY CLUSTERED ([Id] ASC, [CreatedAt] ASC)
+                )
+                WITH
+                (
+                    -- 啟用 MSSQL Ledger 嚴格防篡改機制 (Append-Only 模式禁止 UPDATE/DELETE)
+                    LEDGER = ON (APPEND_ONLY = ON)
+                );
+            END
+
+            -- 3. 建立全鏈路追蹤涵蓋索引 (IX_AuditLog_TraceId_Covering)
+            IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = N'IX_AuditLog_TraceId_Covering' AND object_id = OBJECT_ID(N'[org].[AuditLogs]'))
+            BEGIN
+                CREATE NONCLUSTERED INDEX [IX_AuditLog_TraceId_Covering] 
+                ON [org].[AuditLogs] ([TraceId] ASC)
+                INCLUDE ([Action], [CreatedAt], [TableName]);
+            END
+
+            -- 4. 建立待修復自癒過濾索引 (IX_AuditLog_IsRepaired)
+            IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = N'IX_AuditLog_IsRepaired' AND object_id = OBJECT_ID(N'[org].[AuditLogs]'))
+            BEGIN
+                CREATE NONCLUSTERED INDEX [IX_AuditLog_IsRepaired] 
+                ON [org].[AuditLogs] ([IsRepaired] ASC)
+                INCLUDE ([TableName], [TraceId], [GapReason])
+                WHERE [IsRepaired] = 0;
+            END
+
+            COMMIT TRANSACTION;");
+
 
             migrationBuilder.CreateTable(
                 name: "Organization",

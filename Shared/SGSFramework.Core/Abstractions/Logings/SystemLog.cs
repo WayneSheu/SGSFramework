@@ -45,7 +45,7 @@ namespace SGSFramework.Core.Abstractions.Logings
         public string? CurrentHash { get; set; } = string.Empty;
 
         [Required]
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
         //告警
         public string? AlertId { get; set; }
@@ -85,10 +85,11 @@ namespace SGSFramework.Core.Abstractions.Logings
             .HasMaxLength(2083)
             .IsRequired(false) // 根據需求設定是否允許為 NULL
             .IsUnicode(true); // 使用 nvarchar
+
+            // 5. 時間與預設值配置
             builder.Property(e => e.CreatedAt)
-                    .HasColumnType("datetime2") // 建議使用精度更高的 datetime2
-                    .HasDefaultValueSql("SYSUTCDATETIME()") // 關鍵：讓 SQL Server 產生 UTC 時間
-                    .ValueGeneratedOnAdd(); // 告訴 EF Core 只有在新增時由資料庫產生
+                .HasDefaultValueSql("SYSUTCDATETIME()") // SQL Server 2025 自動產生 UTC 時間
+                .ValueGeneratedOnAdd();
 
             // 強型別欄位映射與長度約束
             builder.Property(e => e.AlertId)
@@ -103,6 +104,9 @@ namespace SGSFramework.Core.Abstractions.Logings
             //builder.HasIndex(e => e.TimeStamp);      // 時間查詢最頻繁
             //builder.HasIndex(e => e.TenantId);       // 多租戶過濾
             //builder.HasIndex(e => e.CorrelationId);  // 跨模組追蹤
+
+            // 宣告啟用 MSSQL 2025 Ledger Append-Only 特性
+            builder.HasAnnotation("SqlServer:IsLedgerAppendOnly", true);
 
         }
     }

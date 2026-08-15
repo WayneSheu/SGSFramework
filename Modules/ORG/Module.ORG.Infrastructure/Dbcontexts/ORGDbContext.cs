@@ -1,8 +1,10 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SGS.Modules.ORG.Infrastructure.Entities.Org;
+using SGS.Modules.ORG.Infrastructure.Migrations;
 using SGSFramework.AuditLog.Interceptors;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.AuditLogs;
@@ -61,30 +63,23 @@ namespace SGS.Modules.ORG.Infrastructure.Dbcontexts
         {
             base.OnConfiguring(optionsBuilder);
 
-            // 載入安全存取 Scope 的 AuditInterceptor
-            optionsBuilder.AddInterceptors(_auditInterceptor);
+            optionsBuilder.AddInterceptors(_auditInterceptor); 
 
-            // 如果尚未配置，則使用 SQL Server 並指定 MigrationsHistoryTable 的 schema 為 "org"
+        // 核心關鍵：替換 EF Core 內部的 IMigrationsAssembly 為外掛強化版
+        optionsBuilder.ReplaceService<IMigrationsAssembly, PluginMigrationsAssembly>();
+
             if (!optionsBuilder.IsConfigured)
-            {
-                // 忽略 EF Core 的 PendingModelChangesWarning 警告，避免在應用程式啟動時出現不必要的警告訊息
+        {
                 optionsBuilder.ConfigureWarnings(warnings =>
-                    warnings.Ignore(RelationalEventId.PendingModelChangesWarning));
+                    warnings.Ignore(RelationalEventId.PendingModelChangesWarning)); 
 
-                // 設定 MigrationsHistoryTable 的 schema 為 "org"
-                optionsBuilder.UseSqlServer( 
-                    sqlOptions =>
-                    {
-                        // 確保這裡的字串與組件名稱完全對應
-                        // 這裡的字串必須與組件名稱完全對應，否則會導致 MigrationsHistoryTable 無法正確建立
-                        // 明確指向 Assembly 對象，而非僅字串名稱
-                        sqlOptions.MigrationsAssembly(typeof(ORGDbContext).Assembly.FullName);
-                        sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "org");
-                    }
-                );
-            }
-
+            optionsBuilder.UseSqlServer(sqlOptions =>
+            {
+            sqlOptions.MigrationsAssembly(typeof(ORGDbContext).Assembly.FullName); 
+                sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "org"); 
+            });
         }
+    }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

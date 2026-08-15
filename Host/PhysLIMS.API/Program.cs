@@ -4,6 +4,7 @@
 
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Migrations;
 using PhysLIMS.API.Dbcontexts;
 using PhysLIMS.API.Extensions;
 using PhysLIMS.API.Helpers;
@@ -19,6 +20,7 @@ using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.ApiDoc.Extensions;
 using SGSFramework.Core.Exceptions;
 using SGSFramework.Core.Extensions;
+using SGSFramework.Core.Migrations;
 using SGSFramework.Core.SSOs;
 using SGSFramework.Identity.Extensions;
 using SGSFramework.ModulePlugin.Extensions;
@@ -63,9 +65,16 @@ try
             throw new InvalidOperationException("未找到 PhysLIMSDbContext 專用的 DefaultConnection 連線字串設定。");
         }
 
-        options.UseSqlServer(
-            connectionString,
-            sqlOptions => sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "core_"));
+        options.UseSqlServer(connectionString, sqlOptions =>
+        {
+            sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "core");
+        })
+        // 2.1 註冊自訂的 SQL Server Migrations Generator
+        .ReplaceService<IMigrationsSqlGenerator, CustomSqlServerMigrationsSqlGenerator>()
+        .ConfigureWarnings(warnings =>
+        // 壓制 PendingModelChangesWarning 警告
+        warnings.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
+
     });
 
     // 3. 泛型 Identity 完整打包註冊

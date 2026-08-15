@@ -12,8 +12,8 @@ using PhysLIMS.API.Dbcontexts;
 namespace PhysLIMS.API.Migrations
 {
     [DbContext(typeof(PhysLIMSDbContext))]
-    [Migration("20260813085137_PhysLIMSDb_Initial")]
-    partial class PhysLIMSDb_Initial
+    [Migration("20260815061427_PhysLIMSDbContext_Initial")]
+    partial class PhysLIMSDbContext_Initial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -554,6 +554,8 @@ namespace PhysLIMS.API.Migrations
                     b.HasIndex("CorrelationId");
 
                     b.ToTable("SecurityLogs", "core");
+
+                    b.HasAnnotation("SqlServer:IsLedgerAppendOnly", true);
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Logings.SystemLog", b =>
@@ -565,17 +567,13 @@ namespace PhysLIMS.API.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
                     b.Property<string>("AlertId")
-                        .HasColumnType("char(32)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("CorrelationId")
-                        .HasMaxLength(50)
-                        .IsUnicode(false)
-                        .HasColumnType("varchar(50)");
+                        .HasColumnType("nvarchar(450)");
 
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("SYSUTCDATETIME()");
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CurrentHash")
                         .HasMaxLength(64)
@@ -585,23 +583,19 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Fingerprint")
-                        .HasColumnType("char(64)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("IP")
-                        .HasMaxLength(45)
-                        .IsUnicode(false)
-                        .HasColumnType("varchar(45)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Level")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Message")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("ModuleName")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Operation")
                         .HasColumnType("nvarchar(max)");
@@ -614,20 +608,16 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("TenantId")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<DateTime>("TimeStamp")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("Url")
-                        .HasMaxLength(2083)
-                        .IsUnicode(true)
-                        .HasColumnType("nvarchar(2083)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("UserId")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
 
@@ -639,9 +629,7 @@ namespace PhysLIMS.API.Migrations
 
                     b.ToTable("SystemLogs", "core");
 
-                    b
-                        .HasAnnotation("SqlServer:IsAppendOnly", true)
-                        .HasAnnotation("SqlServer:IsLedger", true);
+                    b.HasAnnotation("SqlServer:IsLedgerAppendOnly", true);
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Outbox.OutboxMessage", b =>

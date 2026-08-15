@@ -32,7 +32,7 @@ namespace SGSFramework.Core.Abstractions.Entities.Controller
         public void Configure(EntityTypeBuilder<UserResourceGrant> builder)
         {
             
-            builder.ToTable("UserResourceGrants");
+            builder.ToTable("UserResourceGrants", "core");
 
             builder.HasKey(x => x.Id);
 

@@ -161,7 +161,8 @@ namespace SGSFramework.Core.Abstractions.Logings
                 .HasColumnType("char(64)")
                 .IsRequired(false);
 
-
+            // 宣告啟用 MSSQL 2025 Ledger Append-Only 特性
+            builder.HasAnnotation("SqlServer:IsLedgerAppendOnly", true);
 
         }
     }

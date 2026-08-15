@@ -1,81 +1,77 @@
-﻿using Microsoft.AspNetCore.Identity;
+﻿using System;
+using System.Linq;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Abstractions.Entities.Identities;
+using SGSFramework.Core.Abstractions.Entities.Ledgers;
 using SGSFramework.Core.Abstractions.Entities.Modules;
 using SGSFramework.Core.Abstractions.Logings;
-using SGSFramework.Core.Identiies.Tenants;
-using SGSFramework.Persistent.Abstractions.Dbcontexts;
+using SGSFramework.Core.Abstractions.Outbox;
 using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Abstractions.Permissions.Identities;
+using SGSFramework.Core.Identiies.Tenants;
+using SGSFramework.Persistent.Abstractions.Dbcontexts;
 
-namespace PhysLIMS.API.Dbcontexts
+namespace PhysLIMS.API.Dbcontexts;
+
+public class PhysLIMSDbContext : BaseIdentityDbContext<ApplicationUser, ApplicationRole, Guid, PhysLIMSDbContext>, ILogDbContext, ITokenDbContext
 {
-    public class PhysLIMSDbContext : BaseIdentityDbContext<ApplicationUser, ApplicationRole, Guid, PhysLIMSDbContext>, ILogDbContext, ITokenDbContext
+    public PhysLIMSDbContext(DbContextOptions<PhysLIMSDbContext> options, ITenantService? tenantService = null)
+        : base(options, tenantService)
     {
-        public PhysLIMSDbContext(DbContextOptions<PhysLIMSDbContext> options, ITenantService? tenantService = null)
-            : base(options, tenantService)
-        {
+    }
 
+    public DbSet<OutboxMessage> OutboxMessages { get; set; } = null!;
+    public DbSet<SystemLog> SystemLogs { get; set; } = null!;
+    public DbSet<SecurityLog> SecurityLogs { get; set; } = null!;
+    public DbSet<UserRefreshToken> UserRefreshTokens { get; set; } = null!;
+    public DbSet<RemediationTicket> RemediationTickets { get; set; } = null!;
+    public DbSet<ModuleMetadata> ModuleMetadatas { get; set; } = null!;
+    public DbSet<ControllerMetadata> ControllerMetadata { get; set; } = null!;
+    public DbSet<MenuItem> MenuItems { get; set; } = null!;
+    public DbSet<PermissionGrant> PermissionGrants { get; set; } = null!;
+    public DbSet<UserResourceGrant> UserResourceGrants { get; set; } = null!;
+    public DbSet<Permission> Permissions { get; set; } = null!;
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        ArgumentNullException.ThrowIfNull(modelBuilder);
+
+        base.OnModelCreating(modelBuilder);
+
+        // 1. 全域指定預設 Schema 為 "core"
+        modelBuilder.HasDefaultSchema("core");
+
+        // 2. 自動掃描同 Assembly 下的所有 IEntityTypeConfiguration
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(PhysLIMSDbContext).Assembly);
+
+        // 3. 針對所有實作 ILedgerEntity 的實體自動附加 MSSQL Ledger 標註
+        var ledgerEntityTypes = modelBuilder.Model.GetEntityTypes()
+            .Where(t => typeof(ILedgerEntity).IsAssignableFrom(t.ClrType) && !t.ClrType.IsInterface)
+            .ToList();
+
+        foreach (var entityType in ledgerEntityTypes)
+        {
+            entityType.AddAnnotation("SqlServer:IsLedgerAppendOnly", true);
         }
 
-
-        public DbSet<SGSFramework.Core.Abstractions.Logings.SystemLog> SystemLogs { get; set; }
-
-        public DbSet<SGSFramework.Core.Abstractions.Logings.SecurityLog> SecurityLogs { get; set; }
-
-        public DbSet<UserRefreshToken> UserRefreshTokens { get; set; }
-
-        public DbSet<RemediationTicket> RemediationTickets { get; set; } = null!;
-
-        public DbSet<ModuleMetadata> ModuleMetadatas { get; set; } = null!;
-
-        public DbSet<ControllerMetadata> ControllerMetadata { get; set; }
-
-        public DbSet<MenuItem> MenuItems { get; set; }=null!;
-
-        public DbSet<PermissionGrant> PermissionGrants { get; set; } = null!;
-
-        public DbSet<UserResourceGrant> UserResourceGrants { get; set; } = null!;
-
-        public DbSet<Permission> Permissions     { get; set; } = null!;
-
-
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        // 4. Identity 相關實體 Schema 顯式對齊 "core"
+        modelBuilder.Entity<IdentityUserToken<Guid>>(entity =>
         {
-            base.OnModelCreating(modelBuilder); // Identity 必須先呼叫 base
+            entity.ToTable("AspNetUserTokens", "core");
+            entity.HasKey(t => new { t.UserId, t.LoginProvider, t.Name });
 
-            // 1. 全域將預設 Schema 由 "dbo" 覆蓋為 "core"
-            modelBuilder.HasDefaultSchema("core");
+            entity.Property(t => t.UserId)
+                  .HasColumnType("uniqueidentifier")
+                  .IsRequired();
 
-            // 顯式宣告 IdentityUserToken<Guid> 的複合主鍵與欄位轉型
-            modelBuilder.Entity<IdentityUserToken<Guid>>(entity =>
-            {
-                entity.ToTable("AspNetUserTokens");
-
-                // 設定複合主鍵 (UserId, LoginProvider, Name)
-                entity.HasKey(t => new { t.UserId, t.LoginProvider, t.Name });
-
-                // 指定 UserId 屬性型態為 Guid/uniqueidentifier
-                entity.Property(t => t.UserId)
-                      .HasColumnType("uniqueidentifier")
-                      .IsRequired();
-
-                // 建立與 AspNetUsers 的外鍵關聯
-                entity.HasOne<ApplicationUser>()
-                      .WithMany()
-                      .HasForeignKey(ut => ut.UserId)
-                      .IsRequired()
-                      .OnDelete(DeleteBehavior.Cascade);
-            });
-
-
-            //自動掃描同一個 Assembly 中所有實作 IEntityTypeConfiguration 的類別
-            modelBuilder.ApplyConfigurationsFromAssembly(typeof(PhysLIMSDbContext).Assembly);
-
-            // 或者手動指定（如果你把配置放在 SGSFramework.Core 或 Persistent）
-            modelBuilder.ApplyConfiguration(new SystemLogConfiguration());
-        }
+            entity.HasOne<ApplicationUser>()
+                  .WithMany()
+                  .HasForeignKey(ut => ut.UserId)
+                  .IsRequired()
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
     }
 }

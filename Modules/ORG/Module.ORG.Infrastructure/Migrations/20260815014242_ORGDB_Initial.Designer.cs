@@ -12,7 +12,7 @@ using SGS.Modules.ORG.Infrastructure.Dbcontexts;
 namespace SGS.Modules.ORG.Infrastructure.Migrations
 {
     [DbContext(typeof(ORGDbContext))]
-    [Migration("20260814073149_ORGDB_Initial")]
+    [Migration("20260815014242_ORGDB_Initial")]
     partial class ORGDB_Initial
     {
         /// <inheritdoc />

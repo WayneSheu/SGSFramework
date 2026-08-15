@@ -16,6 +16,15 @@
     <ProjectReference Include="..\..\..\Infrastructure\SGSFramework.ModulePlugin\SGSFramework.ModulePlugin.csproj" />
     <ProjectReference Include="..\..\..\Infrastructure\SGSFramework.Persistent\SGSFramework.Persistent.csproj" />
   </ItemGroup>
+	
+  <ItemGroup>
+    <Compile Update="Migrations\20260815014242_ORGDB_Initial.cs">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Compile>
+    <Compile Update="Migrations\ORGDbContextModelSnapshot.cs">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Compile>
+  </ItemGroup>
 
 
 
