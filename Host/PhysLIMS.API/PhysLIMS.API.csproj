@@ -4,6 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+	<VersionPrefix>2026.08.15.1920</VersionPrefix>
   </PropertyGroup>
 
   <ItemGroup>
