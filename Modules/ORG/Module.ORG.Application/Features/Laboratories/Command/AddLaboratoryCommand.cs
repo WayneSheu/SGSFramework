@@ -6,7 +6,7 @@ using SGSFramework.Core.Errors;
 using SGSFramework.Core.Results;
 using SGS.Modules.ORG.Infrastructure.Entities.Org;
 using SGS.Modules.ORG.Application.Features.Laboratories.Dtos;
-using SGS.Modules.ORG.Application.Services;
+using SGS.Modules.ORG.Application.Abstractions;
 
 
 namespace SGS.Modules.ORG.Application.Features.Laboratories.Command

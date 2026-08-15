@@ -1,8 +1,8 @@
 ﻿using MediatR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using SGS.Modules.ORG.Application.Abstractions;
 using SGS.Modules.ORG.Application.Features.Laboratories.Dtos;
-using SGS.Modules.ORG.Application.Services;
 using SGS.Modules.ORG.Infrastructure.Entities.Org;
 
 

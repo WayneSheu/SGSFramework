@@ -8,10 +8,12 @@
     <AssemblyOriginatorKeyFile>C:\專案\SES\src\MyModuleKey.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="MediatR" Version="12.0.1" />
-  </ItemGroup>
 
+	<ItemGroup>
+		<!-- 將 MediatR 標記為 PrivateAssets="All" 或 ExcludeAssets="runtime" 避免輸出至 plugins 目錄 -->
+		<PackageReference Include="MediatR" Version="12.0.1" PrivateAssets="All" />
+	</ItemGroup>
+	
   <ItemGroup>
 
     <ProjectReference Include="..\Module.ORG.Infrastructure\SGS.Modules.ORG.Infrastructure.csproj" />

@@ -5,15 +5,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using SGS.Modules.ORG.Application.Services;
+using SGS.Modules.ORG.Application.Abstractions;
 using SGS.Modules.ORG.Infrastructure.Dbcontexts;
 using SGS.Modules.ORG.Infrastructure.Entities.Org;
 using SGSFramework.Core.Abstractions.Adapters;
 using SGSFramework.Core.DTOs;
 using SGSFramework.Core.Helpers;
 using SGSFramework.Persistent.Repositories.Hierarchy;
-using UserPermissionProfileDto = SGSFramework.Core.DTOs.UserPermissionProfileDto;
-
 
 namespace SGS.Modules.ORG.Application;
 
@@ -43,8 +41,6 @@ public class OrganizationIntegrationService : IOrganizationIntegrationService
     /// <summary>
     /// 獲取單一組織節點資訊 (提供跨模組 DTO)
     /// </summary>
-    /// <param name="orgId">內部 int ID 對映之 Deterministic Guid</param>
-    /// <param name="cancellationToken">取消權杖</param>
     public async Task<OrganizationInfoContract?> GetOrganizationByIdAsync(
         Guid orgId,
         CancellationToken cancellationToken = default)
@@ -77,9 +73,6 @@ public class OrganizationIntegrationService : IOrganizationIntegrationService
     /// <summary>
     /// 驗證目標組織 (targetOrgId) 是否在使用者 (userId) 的管轄/存取組織階層範疇內
     /// </summary>
-    /// <param name="userId">使用者識別碼</param>
-    /// <param name="targetOrgId">跨模組 Guid 格式的目標組織 ID</param>
-    /// <param name="cancellationToken">取消權杖</param>
     public async Task<bool> IsInUserScopeAsync(
         string userId,
         Guid targetOrgId,
@@ -121,10 +114,8 @@ public class OrganizationIntegrationService : IOrganizationIntegrationService
     }
 
     /// <summary>
-    /// 獲取使用者有權存取的所有組織節點清單 (下推至資料庫端執行過濾，防止記憶體載入過大)
+    /// 獲取使用者有權存取的所有組織節點清單 (下推至資料庫端執行過濾)
     /// </summary>
-    /// <param name="userId">使用者識別碼</param>
-    /// <param name="cancellationToken">取消權杖</param>
     public async Task<List<OrganizationInfoContract>> GetUserAccessibleOrganizationsAsync(
         string userId,
         CancellationToken cancellationToken = default)
@@ -137,24 +128,21 @@ public class OrganizationIntegrationService : IOrganizationIntegrationService
         try
         {
             List<string> userScopeNodePaths = await GetUserAssignedScopeNodePathsAsync(userId, cancellationToken);
-            if (userScopeNodePaths == null || userScopeNodePaths.Count == 0)
+            if (userScopeNodePaths is null || userScopeNodePaths.Count == 0)
             {
                 return new List<OrganizationInfoContract>();
             }
 
-            // 構建動態 LINQ Expressions 下推至 DB (使用 EF.Functions.Like 解析 NodePath 前綴)
             var query = _dbContext.Set<Organization>()
                 .AsNoTracking()
                 .Where(x => !x.IsDeleted);
 
-            // 過濾 Valid Scope Paths
             var validPaths = userScopeNodePaths.Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
             if (!validPaths.Any())
             {
                 return new List<OrganizationInfoContract>();
             }
 
-            // 將 SQL Like 條件組合 (x.NodePath LIKE 'scopePath%') 下推至 MSSQL
             var accessibleEntities = await query
                 .Where(node => validPaths.Any(path => EF.Functions.Like(node.NodePath, path + "%")))
                 .ToListAsync(cancellationToken);
@@ -176,9 +164,6 @@ public class OrganizationIntegrationService : IOrganizationIntegrationService
     /// <summary>
     /// 獲取使用者在指定實驗室的權限設定檔
     /// </summary>
-    /// <param name="userId">使用者識別碼</param>
-    /// <param name="targetLabId">目標實驗室識別碼</param>
-    /// <param name="cancellationToken">取消權杖</param>
     public async Task<UserPermissionProfileDto?> GetUserLabProfileAsync(
         string userId,
         Guid targetLabId,
@@ -213,8 +198,6 @@ public class OrganizationIntegrationService : IOrganizationIntegrationService
                 HierarchyLevel = x.HierarchyLevel
             }).ToList();
 
-            // 讀取使用者在該實驗室下的 Bitmask 模組權限
-            // 注意：若單一模組權限點 > 64 個，後續請由單一 long 擴充為 long[] / BitArray 分頁儲存
             var modulePermissions = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
             {
                 { "ReportManagement", 15L },
@@ -241,14 +224,10 @@ public class OrganizationIntegrationService : IOrganizationIntegrationService
 
     #region Private Helpers
 
-    /// <summary>
-    /// 查詢使用者被直接授權或管轄的組織 NodePath 列表
-    /// </summary>
     private async Task<List<string>> GetUserAssignedScopeNodePathsAsync(
         string userId,
         CancellationToken cancellationToken)
     {
-        // 實務上在此處查詢 UserOrganizationScopes 關聯表或 User 權限設定
         return await Task.FromResult(new List<string> { "/1/", "/1/5/" });
     }
 

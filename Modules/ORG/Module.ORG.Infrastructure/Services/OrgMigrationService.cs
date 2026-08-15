@@ -6,7 +6,7 @@ using SGS.Modules.ORG.Infrastructure.Dbcontexts;
 using SGSFramework.Core.Migrations;
 using System.Reflection;
 
-namespace SGS.Modules.ORG.Infrastructure;
+namespace SGS.Modules.ORG.Infrastructure.Services;
 
 /// <summary>
 /// Org 模組專屬的資料庫遷移服務，採用穩健的手動 DDL 執行模式支援動態 ALC 環境

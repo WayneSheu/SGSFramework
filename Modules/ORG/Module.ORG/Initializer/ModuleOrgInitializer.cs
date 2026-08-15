@@ -1,21 +1,18 @@
-﻿using MediatR;
+﻿using System;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Serilog;
-using SGS.Modules.ORG.Application;
-using SGS.Modules.ORG.Application.Services;
-using SGS.Modules.ORG.Infrastructure;
+using SGS.Modules.ORG.Application.Abstractions;
+using SGS.Modules.ORG.Application.Extensions;
 using SGS.Modules.ORG.Infrastructure.Dbcontexts;
-using SGS.Modules.ORG.Infrastructure.Entities.Org;
-using SGSFramework.AuditLog.Extensions;
+using SGS.Modules.ORG.Infrastructure.Extensions;
 using SGSFramework.Core.Abstractions.Adapters;
 using SGSFramework.Core.Controllers.Providers;
 using SGSFramework.Core.Migrations;
 using SGSFramework.ModulePlugin.Abstractions;
-using SGSFramework.Persistent.Repositories.Hierarchy;
 
 namespace SGS.Modules.ORG.Initializer;
 
@@ -32,8 +29,9 @@ public sealed class ModuleOrgInitializer : IModuleInitializer
     private readonly Type[] _requiredServices =
     [
         typeof(ORGDbContext),
-        typeof(IMediator),
+        typeof(MediatR.IMediator),
         typeof(IOrganizationService),
+        typeof(IOrganizationIntegrationService),
         typeof(IMigrationService)
     ];
 
@@ -79,42 +77,13 @@ public sealed class ModuleOrgInitializer : IModuleInitializer
         {
             Log.Information(">>> 正在註冊模組: {ModuleName} 的依賴項目", ModuleName);
 
-            // 1. 補齊 MediatR 模組管線註冊 (確保 IMediator 服務可用)
-            services.AddMediatR(cfg =>
-            {
-                cfg.RegisterServicesFromAssembly(typeof(ModuleOrgInitializer).Assembly);
-                cfg.RegisterServicesFromAssembly(typeof(ORGDbContext).Assembly);
-            });
+            // 1. 呼叫 Application 層 DI 擴充 (包含 OrganizationIntegrationService 與 MediatR Handlers 掃描)
+            services.AddModuleOrgApplication(configuration);
 
-            // 2. 註冊 Hierarchy Repository
-            services.TryAddScoped(
-                typeof(IHierarchicalRepository<ORGDbContext, Organization>),
-                typeof(HierarchicalRepository<ORGDbContext, Organization>));
+            // 2. 呼叫 Infrastructure 層 DI 擴充 (包含 ORGDbContext 與 Migration Services)
+            services.AddModuleOrgInfrastructure(configuration);
 
-            // 3. 註冊 Organization 業務介面與實作
-            services.TryAddScoped<IOrganizationService, OrganizationService>();
-            services.TryAddScoped<OrganizationService>();
-            services.AddScoped<IOrganizationIntegrationService, OrganizationIntegrationService>();
-
-            // 4. 註冊資料庫與指定正確 Migration Assembly (指向 Infrastructure 層)
-            services.AddModuleDatabaseWithAudit<ORGDbContext>(
-                configuration,
-                "PersistentSettings:ConnectionStrings",
-                "org",
-                dbContextOptionsBuilder =>
-                {
-                    var infrastructureAssembly = typeof(ORGDbContext).Assembly;
-                    dbContextOptionsBuilder.UseSqlServer(sqlOptions =>
-                    {
-                        sqlOptions.MigrationsAssembly(infrastructureAssembly.FullName);
-                        sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "org");
-                    });
-                });
-
-            // 5. 註冊基礎設施與遷移服務
-            services.AddScoped<IMigrationService, OrgMigrationService>();
-
-            // 6. 配置 MVC Controller 掃描提供者
+            // 3. 配置 Dynamic Controller 特性提供者
             services.AddControllers()
                     .ConfigureApplicationPartManager(manager =>
                     {

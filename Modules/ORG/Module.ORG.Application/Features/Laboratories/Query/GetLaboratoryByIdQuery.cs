@@ -1,6 +1,6 @@
 ﻿using MediatR;
+using SGS.Modules.ORG.Application.Abstractions;
 using SGS.Modules.ORG.Application.Features.Laboratories.Dtos;
-using SGS.Modules.ORG.Application.Services;
 using SGSFramework.Core.Errors;
 using SGSFramework.Core.Results;
 using System;

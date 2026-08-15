@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using SGS.Modules.ORG.Application.Abstractions;
 using SGS.Modules.ORG.Infrastructure.Dbcontexts;
 using SGS.Modules.ORG.Infrastructure.Entities.Org;
 using SGSFramework.Persistent.Repositories.Hierarchy;
