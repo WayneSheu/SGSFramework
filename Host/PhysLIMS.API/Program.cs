@@ -13,6 +13,7 @@ using PhysLIMS.API.Helpers;
 using PhysLIMS.API.Models;
 using Scalar.AspNetCore;
 using Serilog;
+using SGSFramework.ApiInfrastructure.Bootstrappers;
 using SGSFramework.ApiInfrastructure.Filters;
 using SGSFramework.AuditLog.Extensions;
 using SGSFramework.AuthTokenBucket.Abstractions;
@@ -238,6 +239,23 @@ try
     // -------------------------------------------------------------
     var app = builder.Build();
 
+    // 取得全域 Logger 供 Bootstrap Task 使用
+    var loggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
+    var bootstrapLogger = loggerFactory.CreateLogger("IisBootstrapExecution");
+
+    // 執行 IIS 環境變數自動化配置工作
+    try
+    {
+        bootstrapLogger.LogInformation(">>> 執行前置檢查：IIS 應用程式集區環境變數配置...");
+        IisBootstrapTask.Execute(builder.Configuration, bootstrapLogger);
+    }
+    catch (Exception ex)
+    {
+        bootstrapLogger.LogCritical(ex, ">>> IIS 應用程式集區環境變數配置失敗，請確認執行帳號是否具備 Windows 系統管理員權限。");
+        throw;
+    }
+
+
     // ==========================================
     // 中間件管道配置 (Configure HTTP Pipeline)
     // ==========================================
@@ -245,69 +263,72 @@ try
     app.UseCors("AllowAll");
     app.UseHttpsRedirection();
 
-    // 僅於開發環境/部署自動化階段執行 DB 結構初始化與更新
-    if (app.Environment.IsDevelopment())
+    // 結合環境判斷或組態開關 (預設正式環境若需要自動遷移可開啟)
+    var autoMigrate = config.GetValue<bool>("Database:AutoMigrate", true);
+    if (app.Environment.IsDevelopment() || autoMigrate)
     {
-        using (var scope = app.Services.CreateScope())
-        {
-            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-           
-            // 1. 執行 Bootstrapping (建立 DB、app_sgs_user、deploy_sgs_user)
-            try
-            {
-                logger.LogInformation("Step 1: 開始執行 Bootstrapping 腳本 (使用 Windows/Master 權限)...");
-                var initializer = scope.ServiceProvider.GetRequiredService<IDatabaseInitializer>();
-                await initializer.InitializeDatabaseAsync();
-                logger.LogInformation("Bootstrapping 腳本執行完成。");
-            }
-            catch (Exception ex)
-            {
-                logger.LogCritical(ex, "Bootstrapping 失敗，終止啟動。");
-                throw;
-            }
 
-            // 2. 取得 DDL 專用連線字串 (deploy_sgs_user)
-            var migrationConnectionString = config.GetSection("PersistentSettings:ConnectionStrings")["MigrationConnection"];
-            if (string.IsNullOrWhiteSpace(migrationConnectionString))
+            using (var scope = app.Services.CreateScope())
             {
-                throw new InvalidOperationException("未配置 PersistentSettings:ConnectionStrings:MigrationConnection 設定。");
-            }
+                var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
-            // 3. 執行主專案 EF Core Migration
-            try
-            {
-                logger.LogInformation("Step 2: 開始執行主專案 DB Migration (使用 deploy_sgs_user)...");
-                var mainDbContextOptions = new DbContextOptionsBuilder<PhysLIMSDbContext>()
-                    .UseSqlServer(migrationConnectionString, sqlOptions => sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "core"))
-                    .Options;
+                // 1. 執行 Bootstrapping (建立 DB、app_sgs_user、deploy_sgs_user)
+                try
+                {
+                    logger.LogInformation("Step 1: 開始執行 Bootstrapping 腳本 (使用 Windows/Master 權限)...");
+                    var initializer = scope.ServiceProvider.GetRequiredService<IDatabaseInitializer>();
+                    await initializer.InitializeDatabaseAsync();
+                    logger.LogInformation("Bootstrapping 腳本執行完成。");
+                }
+                catch (Exception ex)
+                {
+                    logger.LogCritical(ex, "Bootstrapping 失敗，終止啟動。");
+                    throw;
+                }
 
-                await using var mainDbContext = new PhysLIMSDbContext(mainDbContextOptions);
-                await mainDbContext.Database.MigrateAsync();
-                logger.LogInformation("主專案 DB Migration 完成。");
-            }
-            catch (Exception ex)
-            {
-                logger.LogCritical(ex, "主專案 DB Migration 失敗。");
-                throw;
-            }
+                // 2. 取得 DDL 專用連線字串 (deploy_sgs_user)
+                var migrationConnectionString = config.GetSection("PersistentSettings:ConnectionStrings")["MigrationConnection"];
+                if (string.IsNullOrWhiteSpace(migrationConnectionString))
+                {
+                    throw new InvalidOperationException("未配置 PersistentSettings:ConnectionStrings:MigrationConnection 設定。");
+                }
 
-            // 4. 執行部署後 Plugin Modules DB Migration
-            try
-            {
-                logger.LogInformation("Step 3: 開始掃描並執行部署後 Plugin Modules DB Migration...");
-                //var pluginMigrationRunner = scope.ServiceProvider.GetRequiredService<IPluginMigrationRunner>();
-                //await pluginMigrationRunner.ExecutePluginMigrationsAsync(migrationConnectionString);
-                
-                await app.InitializeModularSystemAsync();
-                
-                logger.LogInformation("所有 Plugin Modules DB Migration 執行完畢。");
+                // 3. 執行主專案 EF Core Migration
+                try
+                {
+                    logger.LogInformation("Step 2: 開始執行主專案 DB Migration (使用 deploy_sgs_user)...");
+                    var mainDbContextOptions = new DbContextOptionsBuilder<PhysLIMSDbContext>()
+                        .UseSqlServer(migrationConnectionString, sqlOptions => sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "core"))
+                        .Options;
+
+                    await using var mainDbContext = new PhysLIMSDbContext(mainDbContextOptions);
+                    await mainDbContext.Database.MigrateAsync();
+                    logger.LogInformation("主專案 DB Migration 完成。");
+                }
+                catch (Exception ex)
+                {
+                    logger.LogCritical(ex, "主專案 DB Migration 失敗。");
+                    throw;
+                }
+
+                // 4. 執行部署後 Plugin Modules DB Migration
+                try
+                {
+                    logger.LogInformation("Step 3: 開始掃描並執行部署後 Plugin Modules DB Migration...");
+                    //var pluginMigrationRunner = scope.ServiceProvider.GetRequiredService<IPluginMigrationRunner>();
+                    //await pluginMigrationRunner.ExecutePluginMigrationsAsync(migrationConnectionString);
+
+                    await app.InitializeModularSystemAsync();
+
+                    logger.LogInformation("所有 Plugin Modules DB Migration 執行完畢。");
+                }
+                catch (Exception ex)
+                {
+                    logger.LogCritical(ex, "Plugin Modules DB Migration 失敗。");
+                    throw;
+                }
             }
-            catch (Exception ex)
-            {
-                logger.LogCritical(ex, "Plugin Modules DB Migration 失敗。");
-                throw;
-            }
-        }
+        
     }
 
 

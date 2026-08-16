@@ -31,6 +31,7 @@
 	  <PackageReference Include="Azure.Core" Version="1.50.0" />
 	  <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
 	  <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
+	  <PackageReference Include="Microsoft.Web.Administration" Version="11.1.0" />
 	</ItemGroup>
 	<ItemGroup>
 	  <ProjectReference Include="..\..\Infrastructure\Enterprise.HttpSdk\Enterprise.HttpSdk.csproj" />
