@@ -12,6 +12,15 @@ namespace SGSFramework.AuthTokenBucket.Abstractions
     public interface IUserRuntimeScopeService
     {
         /// <summary>
+        /// 初始化使用者運行時範疇：登入時呼叫，回傳預設實驗室的權限配置與環境參數
+        /// </summary>
+        Task<UserPermissionProfileDto> InitializeUserScopeAsync(
+            string userId,
+            string? requestedLabId = null,
+            CancellationToken cancellationToken = default);
+
+
+        /// <summary>
         /// 獲取使用者在當前上下文/實驗室下持有的所有權限 Key 集合 (用於動態選單與權限過濾)
         /// </summary>
         /// <param name="userId">使用者識別碼</param>

@@ -21,7 +21,7 @@ namespace SGSFramework.Identity.Controllers
     /// </summary>
     [ApiController]
     [Route("api/auth/sso/windows")]
-    [Menu("網域單一登入端點", "fa-solid fa-lock", order: 1, parent: null)]
+    [Menu("", "fa-solid fa-lock", order: 1, parent: null)]
     [Description("內部網路 Windows 網域無感單一登入端點（全面整合 TokenManager 與大容量 Bitmask）")]
     public sealed class WindowsDomainAuthController : WindowsAuthController<ApplicationUser>
     {

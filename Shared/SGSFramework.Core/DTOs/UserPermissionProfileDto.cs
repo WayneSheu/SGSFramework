@@ -1,47 +1,44 @@
-﻿using System;
+﻿using SGSFramework.Core.Abstractions.Menus;
+using System;
 using System.Collections.Generic;
 
 namespace SGSFramework.Core.DTOs;
 
+
 /// <summary>
-/// 執行期使用者跨領域/實驗室權限與選單 Profile DTO
+/// 使用者執行期權限配置傳輸物件 (DTO)
+/// 用於封裝使用者在特定實驗室上下文中的完整權限與選單狀態
 /// </summary>
-public sealed record UserPermissionProfileDto
+public sealed class UserPermissionProfileDto
 {
     /// <summary>
     /// 使用者識別碼
     /// </summary>
-    public string UserId { get; init; } = string.Empty;
+    public required string UserId { get; init; }
 
     /// <summary>
-    /// 當前作用中的實驗室/組織識別碼
+    /// 當前作用中的實驗室識別碼 (LabId)
     /// </summary>
-    public Guid ActiveLabId { get; init; }
+    public required Guid LabId { get; init; }
 
     /// <summary>
-    /// 當前作用中的實驗室/組織名稱
+    /// 當前作用中的實驗室名稱
     /// </summary>
-    public string ActiveLabName { get; init; } = string.Empty;
+    public string LabName { get; init; } = string.Empty;
 
     /// <summary>
-    /// 各模組的 Bitmask 權限矩陣 (Key: 模組名稱, Value: 64 位元權限遮罩)
+    /// 該實驗室環境下所擁有的扁平化權限鍵值集合 (供前端比對按鈕級別權限)
     /// </summary>
-    public Dictionary<string, long> ModulePermissions { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    public IEnumerable<string> Permissions { get; init; } = Array.Empty<string>();
 
     /// <summary>
-    /// 使用者具備存取權限的實驗室清單
+    /// 依據該實驗室權限過濾後生成的動態選單樹
+    /// </summary>
+    public IEnumerable<MenuSectionDto> Menus { get; init; } = Array.Empty<MenuSectionDto>();
+
+    /// <summary>
+    /// 可存取的實驗室清單
     /// </summary>
     public List<AccessibleLabDto> AccessibleLabs { get; init; } = new();
-
-    /// <summary>
-    /// 依據權限動態產生的選單樹狀結構
-    /// </summary>
-    public List<MenuNodeDto> DynamicMenus { get; init; } = new();
-
-    /// <summary>
-    /// 角色清單
-    /// </summary>
-    public IReadOnlyList<string> Roles { get; init; } = Array.Empty<string>();
-
 
 }

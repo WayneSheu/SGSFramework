@@ -15,6 +15,9 @@ using System.Threading.Tasks;
 
 namespace SGSFramework.ModulePlugin.Systems.Services;
 
+/// <summary>
+/// 動態選單服務，依據使用者權限與系統組態生成對應的選單樹
+/// </summary>
 public class DynamicMenuService : IDynamicMenuService
 {
     private readonly IDynamicControllerRepository<ControllerMetadata> _controllerRepo;

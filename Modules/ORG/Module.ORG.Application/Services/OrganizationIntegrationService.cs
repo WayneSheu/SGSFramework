@@ -12,6 +12,7 @@ using SGSFramework.Core.Abstractions.Adapters;
 using SGSFramework.Core.DTOs;
 using SGSFramework.Core.Helpers;
 using SGSFramework.Persistent.Repositories.Hierarchy;
+using SGSFramework.AuthTokenBucket.DTOs; // 確保引用對應的 DTO 命名空間
 
 namespace SGS.Modules.ORG.Application;
 
@@ -162,7 +163,7 @@ public class OrganizationIntegrationService : IOrganizationIntegrationService
     }
 
     /// <summary>
-    /// 獲取使用者在指定實驗室的權限設定檔
+    /// 獲取使用者在指定實驗室的權限設定檔 (已對齊 UserPermissionProfileDto 規範)
     /// </summary>
     public async Task<UserPermissionProfileDto?> GetUserLabProfileAsync(
         string userId,
@@ -189,30 +190,13 @@ public class OrganizationIntegrationService : IOrganizationIntegrationService
                 return null;
             }
 
-            var accessibleOrgs = await GetUserAccessibleOrganizationsAsync(userId, cancellationToken);
-            var accessibleLabs = accessibleOrgs.Select(x => new AccessibleLabDto
-            {
-                LabId = x.Id,
-                LabName = x.Name,
-                Path = x.NodePathString,
-                HierarchyLevel = x.HierarchyLevel
-            }).ToList();
-
-            var modulePermissions = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
-            {
-                { "ReportManagement", 15L },
-                { "UserManagement", 3L },
-                { "LabConfiguration", 1L }
-            };
-
             return new UserPermissionProfileDto
             {
                 UserId = userId,
-                ActiveLabId = targetOrg.Id,
-                ActiveLabName = targetOrg.Name,
-                ModulePermissions = modulePermissions,
-                AccessibleLabs = accessibleLabs,
-                DynamicMenus = new List<MenuNodeDto>()
+                LabId = targetOrg.Id,
+                LabName = targetOrg.Name,
+                Permissions = Array.Empty<string>(),
+                Menus = Array.Empty<SGSFramework.Core.Abstractions.Menus.MenuSectionDto>()
             };
         }
         catch (Exception ex)

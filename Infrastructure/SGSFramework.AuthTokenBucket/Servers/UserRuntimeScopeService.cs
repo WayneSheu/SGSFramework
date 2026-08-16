@@ -5,6 +5,7 @@ using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.Core.Abstractions.Adapters;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Abstractions.Entities.Identities;
+using SGSFramework.Core.Abstractions.Menus;
 using SGSFramework.Core.Controllers.Services;
 using SGSFramework.Core.DTOs;
 
@@ -20,7 +21,7 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
     private readonly ILogger<UserRuntimeScopeService> _logger;
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IDynamicControllerRepository<ControllerMetadata> _controllerRepo;
-
+    private readonly IDynamicMenuService _menuService;
     // 快取過期時間設定
     private static readonly TimeSpan CacheExpiration = TimeSpan.FromMinutes(15);
 
@@ -29,14 +30,50 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
         IMemoryCache cache,
         ILogger<UserRuntimeScopeService> logger,
         UserManager<ApplicationUser> userManager,
-        IDynamicControllerRepository<ControllerMetadata> controllerRepo)
+        IDynamicControllerRepository<ControllerMetadata> controllerRepo,
+        IDynamicMenuService menuService
+        )
     {
         _orgIntegrationService = orgIntegrationService ?? throw new ArgumentNullException(nameof(orgIntegrationService));
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
         _controllerRepo = controllerRepo ?? throw new ArgumentNullException(nameof(controllerRepo));
+        _menuService = menuService ?? throw new ArgumentNullException(nameof(menuService));
     }
+
+    /// <summary>
+    /// 初始化使用者的執行期上下文，包含可存取的實驗室、權限清單與動態選單。
+    /// </summary>
+    public async Task<UserPermissionProfileDto> InitializeUserScopeAsync(
+    string userId,
+    string? requestedLabId,
+    CancellationToken cancellationToken)
+    {
+        // 1. 取得使用者有權存取的所有實驗室
+        var accessibleLabs = await GetAccessibleLabsAsync(userId, cancellationToken);
+
+        // 2. 判斷目標 LabId 是否有效 (若為空則取第一筆或預設)
+        var targetLab = accessibleLabs.FirstOrDefault(l => l.LabId.ToString() == requestedLabId)
+                     ?? accessibleLabs.FirstOrDefault();
+
+        if (targetLab == null) throw new UnauthorizedAccessException("無權存取任何實驗室。");
+
+        // 3. 獲取該 Lab 的權限與選單資訊
+        var permissions = await GetUserPermissionsAsync(userId, targetLab.LabId, cancellationToken);
+        var menuTree = await _menuService.GetUserMenuAsync(permissions);
+
+        // 4. 回傳封裝後的 Profile
+        return new UserPermissionProfileDto
+        {
+            UserId = userId,
+            LabId = targetLab.LabId,
+            LabName = targetLab.LabName,
+            Menus = menuTree,
+            Permissions = permissions
+        };
+    }
+
 
     /// <summary>
     /// 獲取使用者在當前上下文/實驗室下持有的所有權限 Key 集合 (包含 sysadmin 特權過濾)
@@ -61,8 +98,6 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
                     .Select(m => m.PermissionKey!)
                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-                //allPermissions.Add("System.Dashboard");
-                //allPermissions.Add("Module.Org.View");
                 allPermissions.Add("sysadmin");
 
                 return allPermissions;
@@ -80,23 +115,31 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
                 activeLabId = defaultLab.LabId;
             }
 
-            // 3. 讀取該實驗室下的 Bitmask 權限矩陣並轉譯為 Permission Key
-            var modulePermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId.Value, cancellationToken);
+            // 3. 讀取該實驗室下的權限 Key 集合 (此處回傳的是 IEnumerable<string>，內含 "Module:Mask" 或對應格式)
+            var userPermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId.Value, cancellationToken);
             var permissionKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var (module, mask) in modulePermissions)
+            foreach (var permString in userPermissions)
             {
-                for (int bit = 0; bit < 64; bit++)
+                // 解析 "Module:Mask" 格式
+                var parts = permString.Split(':');
+                if (parts.Length >= 2 && long.TryParse(parts[1], out long mask))
                 {
-                    if ((mask & (1L << bit)) != 0)
+                    string module = parts[0];
+                    for (int bit = 0; bit < 64; bit++)
                     {
-                        permissionKeys.Add($"{module}.Bit{bit}");
+                        if ((mask & (1L << bit)) != 0)
+                        {
+                            permissionKeys.Add($"{module}.Bit{bit}");
+                        }
                     }
                 }
+                else
+                {
+                    // 若本身就是純 Permission Key 字串則直接加入
+                    permissionKeys.Add(permString);
+                }
             }
-
-            //permissionKeys.Add("System.Dashboard");
-            //permissionKeys.Add("Module.Org.View");
 
             return permissionKeys;
         }
@@ -143,15 +186,25 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
                 return false;
             }
 
-            // 2. 獲取該使用者在該實驗室下的所有模組 Bitmask 矩陣
-            var modulePermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId, cancellationToken);
+            // 2. 獲取該使用者在該實驗室下的所有權限集合
+            var userPermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId, cancellationToken);
 
-            if (!modulePermissions.TryGetValue(module, out long bitmask))
+            // 3. 找出該模組對應的權限字串 (格式預設為 "ModuleName:BitmaskValue")
+            var modulePermissionString = userPermissions.FirstOrDefault(p => p.StartsWith($"{module}:", StringComparison.OrdinalIgnoreCase));
+
+            if (string.IsNullOrEmpty(modulePermissionString))
             {
                 return false;
             }
 
-            // 3. 執行高效能 64 位元 Bitmask AND 運算
+            // 4. 解析 Bitmask 字串
+            var parts = modulePermissionString.Split(':');
+            if (parts.Length < 2 || !long.TryParse(parts[1], out long bitmask))
+            {
+                return false;
+            }
+
+            // 5. 執行高效能 64 位元 Bitmask AND 運算
             long targetBit = 1L << bitPosition;
             return (bitmask & targetBit) != 0;
         }
@@ -174,46 +227,53 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
 
         try
         {
-            var targetOrg = await _orgIntegrationService.GetOrganizationByIdAsync(targetLabId, cancellationToken);
+            var orgTask = _orgIntegrationService.GetOrganizationByIdAsync(targetLabId, cancellationToken);
+            var labsTask = GetAccessibleLabsAsync(userId, cancellationToken);
+
+            await Task.WhenAll(orgTask, labsTask);
+
+            var targetOrg = await orgTask;
             if (targetOrg is null) return null;
 
-            var user = await _userManager.FindByIdAsync(userId);
-            bool isSysAdmin = user != null && await _userManager.IsInRoleAsync(user, "sysadmin");
-
-            if (!isSysAdmin)
+            if (!await IsAuthorizedToLabAsync(userId, targetLabId, cancellationToken))
             {
-                bool hasAccess = await _orgIntegrationService.IsInUserScopeAsync(userId, targetLabId, cancellationToken);
-                if (!hasAccess) return null;
+                _logger.LogWarning("使用者 {UserId} 嘗試存取未授權實驗室 {TargetLabId}", userId, targetLabId);
+                return null;
             }
 
-            // 載入與計算 Bitmask
-            var modulePermissions = await GetCachedOrFetchPermissionsAsync(userId, targetLabId, cancellationToken);
-
-            // 生成動態 Menu
-            var dynamicMenus = await GenerateDynamicMenusAsync(modulePermissions, cancellationToken);
-
-            var accessibleLabs = await GetAccessibleLabsAsync(userId, cancellationToken);
+            var permissions = await GetCachedOrFetchPermissionsAsync(userId, targetLabId, cancellationToken);
+            var menus = await _menuService.GetUserMenuAsync(permissions);
 
             return new UserPermissionProfileDto
             {
                 UserId = userId,
-                ActiveLabId = targetOrg.Id,
-                ActiveLabName = targetOrg.Name,
-                ModulePermissions = modulePermissions,
-                AccessibleLabs = accessibleLabs,
-                DynamicMenus = dynamicMenus
+                LabId = targetOrg.Id,
+                LabName = targetOrg.Name,
+                Permissions = permissions,
+                Menus = menus
             };
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "切換實驗室上下文時發生異常。UserId: {UserId}, TargetLabId: {TargetLabId}", userId, targetLabId);
+            _logger.LogError(ex, "切換實驗室上下文失敗。UserId: {UserId}, TargetLabId: {TargetLabId}", userId, targetLabId);
             return null;
         }
     }
 
+    private async Task<bool> IsAuthorizedToLabAsync(string userId, Guid labId, CancellationToken ct)
+    {
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user != null && await _userManager.IsInRoleAsync(user, "sysadmin")) return true;
+
+        return await _orgIntegrationService.IsInUserScopeAsync(userId, labId, ct);
+    }
+
     /// <summary>
-    /// 獲取使用者可存取的所有實驗室清單
+    /// 獲取使用者可存取的實驗室清單
     /// </summary>
+    /// <param name="userId"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
     public async Task<List<AccessibleLabDto>> GetAccessibleLabsAsync(
         string userId,
         CancellationToken cancellationToken = default)
@@ -242,25 +302,27 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
     #region Private Helper Methods
 
     /// <summary>
-    /// 快取優先獲取權限遮罩字典
+    /// 快取優先獲取權限 Key 集合
     /// </summary>
-    private async Task<Dictionary<string, long>> GetCachedOrFetchPermissionsAsync(
+    private async Task<IEnumerable<string>> GetCachedOrFetchPermissionsAsync(
         string userId,
         Guid labId,
         CancellationToken cancellationToken)
     {
         string cacheKey = $"perm_scope:{userId}:{labId}";
 
-        return await _cache.GetOrCreateAsync(cacheKey, async entry =>
+        var permissions = await _cache.GetOrCreateAsync(cacheKey, async entry =>
         {
             entry.AbsoluteExpirationRelativeToNow = CacheExpiration;
-            return await FetchUserModulePermissionsFromDbAsync(userId, labId, cancellationToken);
-        }) ?? new Dictionary<string, long>();
+
+            var permissionDict = await FetchUserModulePermissionsFromDbAsync(userId, labId, cancellationToken);
+
+            return permissionDict.Select(p => $"{p.Key}:{p.Value}").ToList();
+        });
+
+        return permissions ?? Enumerable.Empty<string>();
     }
 
-    /// <summary>
-    /// 從資料庫 (或權限總帳 Ledger 表) 讀取使用者在該實驗室的各模組 Bitmask 設定
-    /// </summary>
     private async Task<Dictionary<string, long>> FetchUserModulePermissionsFromDbAsync(
         string userId,
         Guid labId,
@@ -268,32 +330,10 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
     {
         return await Task.FromResult(new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
         {
-            { "ReportManagement", 15L },   // 二進位 0000 1111 (Bit 0, 1, 2, 3)
-            { "UserManagement", 3L },      // 二進位 0000 0011 (Bit 0, 1)
-            { "LabConfiguration", 1L }     // 二進位 0000 0001 (Bit 0)
+            { "ReportManagement", 15L },
+            { "UserManagement", 3L },
+            { "LabConfiguration", 1L }
         });
-    }
-
-    /// <summary>
-    /// 依據模組 Bitmask 遮罩過濾出的動態選單樹
-    /// </summary>
-    private async Task<List<MenuNodeDto>> GenerateDynamicMenusAsync(
-        Dictionary<string, long> bitmasks,
-        CancellationToken cancellationToken)
-    {
-        var menus = new List<MenuNodeDto>();
-
-        if (bitmasks.TryGetValue("ReportManagement", out long reportMask) && (reportMask & (1L << 0)) != 0)
-        {
-            menus.Add(new MenuNodeDto
-            {
-                Code = "ReportList",
-                Name = "報告清單",
-                Path = "/reports/list"
-            });
-        }
-
-        return await Task.FromResult(menus);
     }
 
     #endregion
