@@ -167,13 +167,13 @@ try
         {
             options.DefaultAuthenticateScheme = "Windows";
             options.DefaultChallengeScheme = "Windows";
-        })
-        .AddScheme<FakeWindowsAuthOptions, FakeWindowsAuthHandler>("Windows", options =>
-        {
-            options.DefaultDomain = "CORP";
-            options.DefaultUserName = "wayne";
-            options.DefaultRole = "Domain Admins";
         });
+        //.AddScheme<FakeWindowsAuthOptions, FakeWindowsAuthHandler>("Windows", options =>
+        //{
+        //    options.DefaultDomain = "CORP";
+        //    options.DefaultUserName = "wayne";
+        //    options.DefaultRole = "Domain Admins";
+        //});
     }
     else
     {

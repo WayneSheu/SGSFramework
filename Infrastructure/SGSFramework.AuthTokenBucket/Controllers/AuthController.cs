@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -503,6 +504,10 @@ public sealed class AuthController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> LogoutAsync(CancellationToken cancellationToken = default)
     {
+        // 直接從 HttpContext 延伸方法取得原始的 Access Token
+        string? rawToken = await HttpContext.GetTokenAsync("access_token");
+
+        // 1. 從 ClaimsPrincipal 取得當前使用者識別碼
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(userId))
         {
