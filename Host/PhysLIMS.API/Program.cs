@@ -3,9 +3,11 @@
 // ==========================================
 
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.SqlServer.Infrastructure.Internal;
 using Microsoft.Extensions.Options;
 using PhysLIMS.API.Dbcontexts;
 using PhysLIMS.API.Extensions;
@@ -286,33 +288,71 @@ try
                     throw;
                 }
 
-                // 2. 取得 DDL 專用連線字串 (deploy_sgs_user)
-                var migrationConnectionString = config.GetSection("PersistentSettings:ConnectionStrings")["MigrationConnection"];
+            // 2. 執行主專案 EF Core Migration
+            string migrationConnectionString = string.Empty;
+            try
+            {
+                // 取得 DDL 專用連線字串 (deploy_sgs_user)
+                migrationConnectionString = config.GetSection("PersistentSettings:ConnectionStrings")["MigrationConnection"];
                 if (string.IsNullOrWhiteSpace(migrationConnectionString))
                 {
                     throw new InvalidOperationException("未配置 PersistentSettings:ConnectionStrings:MigrationConnection 設定。");
                 }
+                logger.LogInformation("Step 2: 開始執行主專案 DB Migration (使用 deploy_sgs_user)...");
 
-                // 3. 執行主專案 EF Core Migration
-                try
-                {
-                    logger.LogInformation("Step 2: 開始執行主專案 DB Migration (使用 deploy_sgs_user)...");
-                    var mainDbContextOptions = new DbContextOptionsBuilder<PhysLIMSDbContext>()
-                        .UseSqlServer(migrationConnectionString, sqlOptions => sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "core"))
-                        .Options;
+                // 建立選項並加入執行策略 (Execution Strategy) 以應對暫時性網路中斷
+                var mainDbContextOptions = new DbContextOptionsBuilder<PhysLIMSDbContext>()
+                    .UseSqlServer(migrationConnectionString, sqlOptions =>
+                    {
+                        sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "core");
+                        // 加入防禦性重試機制(Retry Pattern)以應對短暫網路抖動
+                        sqlOptions.EnableRetryOnFailure(
+                            maxRetryCount: 3,
+                            maxRetryDelay: TimeSpan.FromSeconds(5),
+                            errorNumbersToAdd: null);
+                    })
+                    .Options;
 
-                    await using var mainDbContext = new PhysLIMSDbContext(mainDbContextOptions);
-                    await mainDbContext.Database.MigrateAsync();
-                    logger.LogInformation("主專案 DB Migration 完成。");
-                }
-                catch (Exception ex)
-                {
-                    logger.LogCritical(ex, "主專案 DB Migration 失敗。");
-                    throw;
-                }
+                await using var mainDbContext = new PhysLIMSDbContext(mainDbContextOptions);
 
-                // 4. 執行部署後 Plugin Modules DB Migration
-                try
+                // 增加連線前置診斷：嘗試開啟連線以驗證伺服器可達性
+                var connection = mainDbContext.Database.GetDbConnection();
+                logger.LogInformation("正在測試資料庫連線: {ConnectionString}",
+                    System.Text.RegularExpressions.Regex.Replace(migrationConnectionString, @"Password=([^;]+)", "Password=*****"));
+
+                await connection.OpenAsync();
+                await connection.CloseAsync();
+
+                // 執行遷移
+                await mainDbContext.Database.MigrateAsync();
+                logger.LogInformation("主專案 DB Migration 完成。");
+            }
+            //catch (SqlException sqlEx)
+            //{
+            //    // 提供更精確的錯誤訊息幫助排除 Error 26
+            //    logger.LogCritical(sqlEx, "資料庫連線失敗 [ErrorCode: {ErrorCode}]。請檢查：\n1. 伺服器名稱/IP: {Server}\n2. SQL Server 服務是否執行\n3. 該機器是否能 Ping 通資料庫伺服器\n4. 防火牆是否開放 Port 1433",
+            //        sqlEx.ErrorCode, mainDbContextOptions.Extensions.OfType<SqlServerOptionsExtension>().FirstOrDefault()?.ConnectionString);
+            //    throw;
+            //}
+            catch (Microsoft.Data.SqlClient.SqlException sqlEx)
+            {
+                // 安全遮蔽連線字串中的密碼供日誌安全審計
+                var maskedConnStr = System.Text.RegularExpressions.Regex.Replace(migrationConnectionString, @"Password=([^;]+)", "Password=*****");
+
+                logger.LogCritical(sqlEx,
+                    "主專案 DB Migration 失敗 [SqlException Number: {Number}, ErrorCode: {ErrorCode}]。\n" +
+                    "請確認：\n1. 連線字串格式是否為 Server=IP\\SQL2025,1433\n2. 目標連線字串: {ConnStr}\n3. SQL Server 遠端連線與服務狀態是否正常。",
+                    sqlEx.Number, sqlEx.ErrorCode, maskedConnStr);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger.LogCritical(ex, "主專案 DB Migration 發生未預期的嚴重錯誤。");
+                throw;
+            }
+
+            // 4. 執行部署後 Plugin Modules DB Migration
+            try
                 {
                     logger.LogInformation("Step 3: 開始掃描並執行部署後 Plugin Modules DB Migration...");
                     //var pluginMigrationRunner = scope.ServiceProvider.GetRequiredService<IPluginMigrationRunner>();

@@ -15,7 +15,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Enterprise.HttpSdk" Version="1.0.0" />
     <PackageReference Include="MediatR" Version="12.0.1" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
@@ -27,6 +26,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\Infrastructure\Enterprise.HttpSdk\Enterprise.HttpSdk.csproj" />
+    <ProjectReference Include="..\..\Infrastructure\SGSFramework.ModulePlugin\SGSFramework.ModulePlugin.csproj" />
     <ProjectReference Include="..\..\Modules\ORG\Module.ORG.Infrastructure\SGS.Modules.ORG.Infrastructure.csproj" />
     <ProjectReference Include="..\PhysLIMS.Controller\SGSFramework.ApiInfrastructure.csproj" />
   </ItemGroup>

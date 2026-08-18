@@ -41,9 +41,9 @@ namespace SGSFramework.Core.Abstractions.DbContexts
 
         private string GetApiProjectPath()
         {
-            string? path = Environment.GetEnvironmentVariable("SES_API_PATH");
+            string? path = Environment.GetEnvironmentVariable("SGS_API_PATH");
             if (string.IsNullOrWhiteSpace(path))
-                path = Path.Combine(Directory.GetCurrentDirectory(), "../../../../API/SES.API");
+                path = Path.Combine(Directory.GetCurrentDirectory(), "../../../../API/SGS.API");
 
             if (!Directory.Exists(path))
                 throw new DirectoryNotFoundException($"找不到 API 專案目錄: {Path.GetFullPath(path)}");

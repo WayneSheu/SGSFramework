@@ -32,7 +32,7 @@ namespace SGSFramework.Core.CQRS.Extensions
         }
 
 
-        public static IServiceCollection AddSESCQRS(this IServiceCollection services, params Assembly[] applicationAssemblies)
+        public static IServiceCollection AddSGSCQRS(this IServiceCollection services, params Assembly[] applicationAssemblies)
         {
             services.AddMediatR(cfg =>
             {

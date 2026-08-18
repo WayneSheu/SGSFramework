@@ -99,10 +99,10 @@ public sealed class ModuleAssemblyLoadContext : AssemblyLoadContext
         if (name.StartsWith("System.", StringComparison.OrdinalIgnoreCase) ||
             name.StartsWith("Microsoft.", StringComparison.OrdinalIgnoreCase) ||
             name.StartsWith("MediatR", StringComparison.OrdinalIgnoreCase) ||
-            name.StartsWith("SES.Core", StringComparison.OrdinalIgnoreCase) ||
-            name.StartsWith("SES.Modules.", StringComparison.OrdinalIgnoreCase) || // <--- 新增：保護所有 SES 模組組件
-            name.EndsWith(".Application", StringComparison.OrdinalIgnoreCase) ||    // <--- 新增：保護 Application 層
-            name.EndsWith(".Abstractions", StringComparison.OrdinalIgnoreCase) ||   // <--- 新增：保護 抽象介面層
+            name.StartsWith("SGS.Core", StringComparison.OrdinalIgnoreCase) ||
+            name.StartsWith("SGSFramework.", StringComparison.OrdinalIgnoreCase) || // <--- 納入 SGSFramework 核心與持久化共用組件
+            name.EndsWith(".Application", StringComparison.OrdinalIgnoreCase) ||    // <---保護 Application 層
+            name.EndsWith(".Abstractions", StringComparison.OrdinalIgnoreCase) ||   // <---保護 抽象介面層
             name.EndsWith(".Contracts", StringComparison.OrdinalIgnoreCase))
         {
             return true;

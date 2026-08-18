@@ -24,9 +24,18 @@ public static class ServiceCollectionExtensions
         try
         {
             // 1. 註冊階層式 Hierarchy Repository
-            services.TryAddScoped(
-                typeof(IHierarchicalRepository<ORGDbContext, Organization>),
-                typeof(HierarchicalRepository<ORGDbContext, Organization>));
+            //services.TryAddScoped(
+            //    typeof(IHierarchicalRepository<ORGDbContext, Organization>),
+            //    typeof(HierarchicalRepository<ORGDbContext, Organization>));
+
+            // 將 TryAddScoped 改為明確的 AddScoped，確保泛型倉儲介面強制寫入 DI 容器
+            //services.AddScoped(
+            //    typeof(IHierarchicalRepository<ORGDbContext, Organization>),
+            //    typeof(HierarchicalRepository<ORGDbContext, Organization>));
+
+            // [修正] 必須全面採用開放泛型（Open Generics）註冊階層式倉儲，使 DI 容器能夠在執行期依據不同實體動態解析對應的 IHierarchicalRepository
+            services.AddScoped(typeof(IHierarchicalRepository<,>), typeof(HierarchicalRepository<,>));
+
 
             // 2. 配置持久化資料庫與 Schema 自動化
             services.AddModuleDatabaseWithAudit<ORGDbContext>(

@@ -33,7 +33,7 @@ public static class DynamicControllerLoaderExtensions
             string moduleName = assembly.GetName().Name ?? "Unknown";
 
             // 嚴格過濾：若該 Assembly 不在合法載入清單中，直接略過，絕不寫入 ControllerMetadata
-            if (!loadedModuleNames.Contains(moduleName) && !moduleName.Equals("PhysLIMS.Controller", StringComparison.OrdinalIgnoreCase) && !moduleName.Equals("SES.API", StringComparison.OrdinalIgnoreCase))
+            if (!loadedModuleNames.Contains(moduleName) && !moduleName.Equals("PhysLIMS.Controller", StringComparison.OrdinalIgnoreCase) && !moduleName.Equals("SGS.API", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
