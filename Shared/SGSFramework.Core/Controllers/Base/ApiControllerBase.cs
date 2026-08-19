@@ -37,7 +37,7 @@ namespace SGSFramework.Core.Controllers.Base
             ClientIp: ResolveClientIp()
         );
 
-        // 💡 衍生屬性直接穿透至快取好的 UserInfo，維持外部呼叫端代碼的相容性與極致效能
+        //衍生屬性直接穿透至快取好的 UserInfo，維持外部呼叫端代碼的相容性與極致效能
         protected string CurrentUserId => UserInfo.UserId;
         protected string CurrentUsername => UserInfo.Username;
         protected string CurrentDeviceId => UserInfo.DeviceId;

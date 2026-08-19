@@ -1,187 +1,240 @@
 ﻿using MediatR;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
-using SGSFramework.Core.Abstractions.Attributes;
-using SGSFramework.Core.Controllers.Base;
 using SGS.Modules.ORG.Application.Features.Laboratories.Command;
 using SGS.Modules.ORG.Application.Features.Laboratories.Dtos;
 using SGS.Modules.ORG.Application.Features.Laboratories.Query;
-
-
-
-
-
-//using SES.Controller.Base;
+using SGS.Modules.ORG.Controllers.Requests;
+using SGSFramework.Core.Abstractions.Attributes;
+using SGSFramework.Core.Controllers.Base;
+using SGSFramework.Core.Results;
 using System.ComponentModel;
 
+namespace SGS.Modules.ORG.Controllers;
 
-namespace SGS.Modules.ORG.Controllers
+/// <summary>
+/// 實驗室維護控制器
+/// </summary>
+[ApiController]
+[ApiVersion("v1")]
+[Route("api/org/laboratories")]
+[Menu("實驗室管理", "fa-solid fa-flask", order: 10, parent: "")]
+[RequiresPermission("ORG_LAB_READ")]
+[Description("實驗室維護")]
+public class LaboratoryController : ApiControllerBase
 {
+    private readonly ILogger<LaboratoryController> _logger;
+    private readonly IMediator _mediator;
+
+    public LaboratoryController(ILogger<LaboratoryController> logger, IMediator mediator)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
+    }
 
     /// <summary>
-    /// 實驗室維護
+    /// 取得實驗室清單
     /// </summary>
-    [ApiController]
-    [ApiVersion("v1")]
-    [Route("api/org/laboratorys")]
-    [Menu("實驗室管理", "fa-solid fa-flask", order: 10, parent: "組織管理")]
+    [HttpGet]
+    [Menu("取得實驗室清單", "fa-solid fa-list", order: 1, parent: "實驗室管理")]
     [RequiresPermission("ORG_LAB_READ")]
-    [Description("實驗室維護")]
-    public class LaboratoryController : ApiControllerBase
+    [Order(1)]
+    [Description("取得實驗室清單")]
+    public async Task<IActionResult> GetLaboratories(CancellationToken cancellationToken)
     {
-    
-        private ILogger<LaboratoryController> _logger;
-        private IMediator _mediator;
-    
-        public LaboratoryController(ILogger<LaboratoryController> logger, IMediator mediator)
+        try
         {
-            _logger = logger ?? throw new ArgumentNullException();
-            _mediator = mediator ?? throw new ArgumentNullException();
-
-        }
-
-
-        // 取得實驗室列表
-        [HttpGet("GetLaboratoies")]
-        [Menu("取得實驗室清單", "fa-solid fa-list", order: 1, parent: "實驗室管理")] 
-        [RequiresPermission("ORG_LAB_READ")]//定義方法層級權限
-        [Order(1)]                          // Action 排序
-        [Description("取得實驗室清單")]       // Action 描述
-        public async Task<IActionResult> GetLaboratoies()
-        {
-            //var query = new GetLaboratoriesQuery();  
-            //var laboraties = await _mediator.Send(query);
-
-            // _logger.LogInformation("Retrieved {Count} laboratories.", laboraties);
-            // return Ok(laboraties);
-
             var query = new GetLaboratoriesQuery();
-
-            // 1. 取得 Controller 視角下的 Expected Handler Type
-            var expectedType = typeof(IRequestHandler<GetLaboratoriesQuery, List<LaboratoryDto>>);
-
-            // 2. 測試直接從 HttpContext.RequestServices 解析
-            var handler = HttpContext.RequestServices.GetService(expectedType);
-
-            _logger.LogInformation("=== MediatR 診斷資訊 ===");
-            _logger.LogInformation("Expected Type: {Type}", expectedType.AssemblyQualifiedName);
-            _logger.LogInformation("Query Assembly Path: {Path}", query.GetType().Assembly.Location);
-            _logger.LogInformation("Handler Resolved Success: {Success}", handler != null);
-            _logger.LogInformation("========================");
-
-            var laboratories = await _mediator.Send(query);
-            return Ok(laboratories);
-        }
-
-        // 1. 取得單一實驗室基本資訊 (無下階層)
-        [HttpGet("GetLaboratory/{id:int}")]
-        [Menu("取得特定實驗室資訊", "fa-solid fa-flask-vial", order: 2, parent: "實驗室管理")]
-        [RequiresPermission("ORG_LAB_READ")]
-        [Order(2)]
-        [Description("依據 Id 取得單一實驗室基本資訊")]
-        public async Task<IActionResult> GetLaboratory([FromRoute] int id)
-        {
-            var query = new GetLaboratoryByIdQuery(id);
-            var result = await _mediator.Send(query);
+            var result = await _mediator.Send(query, cancellationToken);
             return HandleResult(result);
         }
-
-        // 2. 取得特定實驗室及其完整子樹結構 (包含下階層 Children)
-        [HttpGet("GetLaboratoryTree/{id:int}")]
-        [Menu("取得特定實驗室子樹", "fa-solid fa-sitemap", order: 3, parent: "實驗室管理")]
-        [RequiresPermission("ORG_LAB_READ")]
-        [Order(3)]
-        [Description("依據 Id 取得特定實驗室及其完整下階層樹狀結構")]
-        public async Task<IActionResult> GetLaboratoryTree([FromRoute] int id)
+        catch (Exception ex)
         {
-            var query = new GetLaboratoryTreeByIdQuery(id);
-            var result = await _mediator.Send(query);
+            _logger.LogError(ex, "Unexpected error occurred in GetLaboratories.");
+            return StatusCode(500, "An internal server error occurred.");
+        }
+    }
+
+    /// <summary>
+    /// 依據 Id 取得單一實驗室基本資訊
+    /// </summary>
+    [HttpGet("{id:int}")]
+    [Menu("取得特定實驗室資訊", "fa-solid fa-flask-vial", order: 2, parent: "實驗室管理")]
+    [RequiresPermission("ORG_LAB_READ")]
+    [Order(2)]
+    [Description("依據 Id 取得單一實驗室基本資訊")]
+    public async Task<IActionResult> GetLaboratory([FromRoute] int id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var query = new GetLaboratoryQuery(id);
+            var result = await _mediator.Send(query, cancellationToken);
             return HandleResult(result);
         }
-
-        // 
-        [HttpPost("CreateLaboratory")]
-        [Menu("新增實驗室", "fa-solid fa-list", order: 2, parent: "實驗室管理")] 
-        [RequiresPermission("ORG_LAB_CREATE")]
-        [Order(2)]                          // Action 排序
-        [Description("新增實驗室")]
-        public async Task<IActionResult> CreateLaboratory(AddLaboratoryCommand  command)
+        catch (Exception ex)
         {
-          
-            var result = await _mediator.Send(command);
-            if(result.IsSuccess)
-            {
-                var lab = result.Value;
-                //return CreatedAtAction("GetLaboratory", new { id = lab.Id }, lab);
-                // 使用 @ 來解構並序列化物件
-                _logger.LogInformation("新增實驗室:{@lab}成功.",lab);
-                //return Ok(result);
-                return HandleResult(result);
-            }
-            else
-            {
-                _logger.LogError(@"新增實驗室失敗. 錯誤: {ErrorMessage}", result.Error);
-                return BadRequest();
-            }
+            _logger.LogError(ex, "Error retrieving laboratory ID: {Id}", id);
+            return StatusCode(500, "An internal server error occurred.");
         }
+    }
 
-        [HttpPatch("PathLaboratory")]
-        [Menu("更新實驗室", "fa-solid fa-list", order: 3, parent: "實驗室管理")]
-        [RequiresPermission("ORG_LAB_PATCH")]                         
-        [Description("部分更新（Patch）實驗室")]
-        public async Task<IActionResult> PathLaboratory(PathLaboratoryCommand command)
+    /// <summary>
+    /// 依據 Id 取得特定實驗室及其完整下階層樹狀結構
+    /// </summary>
+    [HttpGet("{id:int}/tree")]
+    [Menu("取得特定實驗室子樹", "fa-solid fa-sitemap", order: 3, parent: "實驗室管理")]
+    [RequiresPermission("ORG_LAB_READ")]
+    [Order(3)]
+    [Description("依據 Id 取得特定實驗室及其完整下階層樹狀結構")]
+    public async Task<IActionResult> GetLaboratoryTree([FromRoute] int id, CancellationToken cancellationToken)
+    {
+        try
         {
+            var query = new GetLaboratoryTreeQuery(id);
+            var result = await _mediator.Send(query, cancellationToken);
+            return HandleResult(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving laboratory tree for ID: {Id}", id);
+            return StatusCode(500, "An internal server error occurred.");
+        }
+    }
 
-            var result = await _mediator.Send(command);
+    /// <summary>
+    /// 新增實驗室
+    /// </summary>
+    [HttpPost]
+    [Menu("新增實驗室", "fa-solid fa-plus", order: 4, parent: "實驗室管理")]
+    [RequiresPermission("ORG_LAB_CREATE")]
+    [Order(4)]
+    [Description("新增實驗室")]
+    public async Task<IActionResult> CreateLaboratory([FromBody] AddLaboratoryCommand command, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(command, nameof(command));
+
+        try
+        {
+            var result = await _mediator.Send(command, cancellationToken);
             if (result.IsSuccess)
             {
-                _logger.LogInformation("Path 實驗室:{@lab}成功.", result.Value);
+                _logger.LogInformation("新增實驗室成功: {@Lab}", result.Value);
             }
             else
             {
-                _logger.LogError(@"Path 實驗室失敗. 錯誤: {ErrorMessage}", result.Error);
+                _logger.LogError("新增實驗室失敗: {Error}", result.Error);
             }
             return HandleResult(result);
         }
-
-        
-        [HttpPut("EditLaboratory")]
-        [Menu("編輯實驗室", "fa-solid fa-list", order: 4, parent: "實驗室管理")]
-        [RequiresPermission("ORG_LAB_PUT")]                       
-        [Description("完整編輯（Put）實驗室")]
-        public async Task<IActionResult> EditLaboratory(EditLaboratoryCommand command)
+        catch (Exception ex)
         {
-            var result = await _mediator.Send(command);
-            if (result.IsSuccess)
-            {
-                var lab = result.Value;
-                _logger.LogInformation("編輯實驗室:{@lab}成功.", lab);
-            }
-            else
-            {
-                _logger.LogError(@"編輯實驗室失敗. 錯誤: {ErrorMessage}", result.Error);
-            }
-            return HandleResult(result);
+            _logger.LogError(ex, "Error executing CreateLaboratory.");
+            return StatusCode(500, "An internal server error occurred.");
         }
+    }
 
-        [HttpDelete("DeleteLaboratory")]
-        [Menu("刪除實驗室", "fa-solid fa-list", order: 5, parent: "實驗室管理")]
-        [RequiresPermission("ORG_LAB_DELETE")]                        
-        [Description("刪除實驗室")]
-        public async Task<IActionResult> DeleteLaboratory(DeleteLaboratoryCommand command)
+    
+
+    /// <summary>
+    /// 編輯實驗室
+    /// </summary>
+    [HttpPut("{id:int}")]
+    [Menu("編輯實驗室", "fa-solid fa-pen-to-square", order: 6, parent: "實驗室管理")]
+    [RequiresPermission("ORG_LAB_PUT")]
+    [Order(6)]
+    [Description("完整編輯（Put）實驗室")]
+    public async Task<IActionResult> EditLaboratory([FromRoute] int id, [FromBody] EditLaboratoryCommand command, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(command, nameof(command));
+
+        if (id != command.Id)
         {
-
-            var result = await _mediator.Send(command);
-            if (result.IsSuccess) { 
-               _logger.LogInformation("Delete laboratory with ID: {Id} successfully.", command.Id);
-            }
-            else
-            {
-                _logger.LogError(@"Delete laboratory with ID: {Id} failed. Error: {ErrorMessage}", command.Id, result.Error);
-            }
-
-            return HandleResult(result);
+            return BadRequest("Route ID does not match Payload ID.");
         }
 
+        try
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            if (!result.IsSuccess)
+            {
+                _logger.LogError("Edit 實驗室失敗: {Error}", result.Error);
+            }
+            return HandleResult(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error executing EditLaboratory for ID: {Id}", id);
+            return StatusCode(500, "An internal server error occurred.");
+        }
+    }
+
+    /// <summary>
+    /// 搬移組織/實驗室樹狀節點（及其完整子樹）
+    /// </summary>
+    /// <param name="id">要搬移的目標節點識別碼</param>
+    /// <param name="command">包含新父節點資訊的請求 body</param>
+    /// <param name="cancellationToken">取消權牌</param>
+    /// <returns>搬移後最新的節點資料</returns>
+    [HttpPut("{id:int}/move")]
+    [ProducesResponseType(typeof(Result<LaboratoryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(Result<LaboratoryDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(Result<LaboratoryDto>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(Result<LaboratoryDto>), StatusCodes.Status500InternalServerError)]
+    [Menu("搬移實驗室節點", "fa-solid fa-arrows-up-down-left-right", order: 5, parent: "實驗室管理")]
+    public async Task<IActionResult> MoveOrganizationNode(
+        [FromRoute] int id,
+        [FromBody] MoveLaboratoryRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (id <= 0)
+        {
+            return BadRequest(Result.Failure<LaboratoryDto>(
+                SGSFramework.Core.Errors.Error.Validation("ORG_INVALID_ID", "節點識別碼必須大於 0。")
+            ));
+        }
+
+        var command = new MoveLaboratoryCommand(id, request.NewParentId);
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return result.Error.Code switch
+            {
+                "Laboratory.NodeNotFound" or "Laboratory.ParentNotFound" => NotFound(result),
+                "Laboratory.InvalidMove" or "Laboratory.CircularDependency" or "Laboratory.MoveValidationFailed" => BadRequest(result),
+                _ => StatusCode(StatusCodes.Status500InternalServerError, result)
+            };
+        }
+
+        return Ok(result);
+    }
+
+
+    /// <summary>
+    /// 刪除實驗室
+    /// </summary>
+    [HttpDelete("{id:int}")]
+    [Menu("刪除實驗室", "fa-solid fa-trash", order: 7, parent: "實驗室管理")]
+    [RequiresPermission("ORG_LAB_DELETE")]
+    [Order(7)]
+    [Description("刪除實驗室")]
+    public async Task<IActionResult> DeleteLaboratory([FromRoute] int id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var command = new DeleteLaboratoryCommand(id);
+            var result = await _mediator.Send(command, cancellationToken);
+            if (!result.IsSuccess)
+            {
+                _logger.LogError("Delete 實驗室失敗, ID: {Id}, Error: {Error}", id, result.Error);
+            }
+            return HandleResult(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error executing DeleteLaboratory for ID: {Id}", id);
+            return StatusCode(500, "An internal server error occurred.");
+        }
     }
 }

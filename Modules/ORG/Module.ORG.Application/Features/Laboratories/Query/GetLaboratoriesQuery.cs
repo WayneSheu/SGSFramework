@@ -4,69 +4,60 @@ using Microsoft.Extensions.Logging;
 using SGS.Modules.ORG.Application.Abstractions;
 using SGS.Modules.ORG.Application.Features.Laboratories.Dtos;
 using SGS.Modules.ORG.Infrastructure.Entities.Org;
-
+using SGS.Modules.ORG.Infrastructure.Repositories;
+using SGSFramework.Core.Results;
+using SGSFramework.Core.Errors;
 
 namespace SGS.Modules.ORG.Application.Features.Laboratories.Query
 {
 
     /// <summary>
-    /// 
-    /// </summary>`
-    public class GetLaboratoriesQuery: IRequest<List<LaboratoryDto>>
+    /// 取得所有實驗室清單的查詢
+    /// </summary>
+    public sealed record GetLaboratoriesQuery : IRequest<Result<List<LaboratoryDto>>>;
+
+
+    public sealed class GetLaboratoriesQueryHandler : IRequestHandler<GetLaboratoriesQuery, Result<List<LaboratoryDto>>>
     {
-        
+        private readonly ILaboratoryRepository _repository;
+        private readonly ILogger<GetLaboratoriesQueryHandler> _logger;
 
-    }
-
-    public class GetLaboratoriesQueryHandler : IRequestHandler<GetLaboratoriesQuery, List<LaboratoryDto>>
-    {
-        private readonly IOrganizationService _orgService;
-
-        public GetLaboratoriesQueryHandler(IOrganizationService orgService)
+        public GetLaboratoriesQueryHandler(
+            ILaboratoryRepository repository,
+            ILogger<GetLaboratoriesQueryHandler> logger)
         {
-            _orgService = orgService ?? throw new ArgumentNullException(nameof(orgService));
+            _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        public async Task<List<LaboratoryDto>> Handle(GetLaboratoriesQuery request, CancellationToken cancellationToken)
+        public async Task<Result<List<LaboratoryDto>>> Handle(GetLaboratoriesQuery request, CancellationToken cancellationToken)
         {
-            // 🔑 1. 取得所有未刪除的組織資料 (不能只呼叫 GetRoots()，否則子節點不會被載入)
-            List<Organization> allActiveOrgs = await _orgService.GetAllActiveOrganizationsAsync(cancellationToken);
+            ArgumentNullException.ThrowIfNull(request, nameof(request));
 
-            if (allActiveOrgs == null || !allActiveOrgs.Any())
+            try
             {
-                return new List<LaboratoryDto>();
-            }
+                var laboratories = await _repository.GetAllAsync(cancellationToken);
 
-            // 🔑 2. 將全量資料組裝為階層樹狀結構 (Tree Structure)
-            List<LaboratoryDto> tree = BuildTree(allActiveOrgs, parentId: null);
-
-            return tree;
-        }
-
-        /// <summary>
-        /// 高效能記憶體內樹狀結構組裝演算法
-        /// </summary>
-        private static List<LaboratoryDto> BuildTree(List<Organization> nodes, int? parentId)
-        {
-            return nodes
-                .Where(n => n.ParentId == parentId)
-                .Select(n => new LaboratoryDto
+                var dtos = laboratories.Select(lab => new LaboratoryDto
                 {
-                    Id = n.Id,
-                    ParentId = n.ParentId,
-                    TenantLabId = n.TenantLabId,
-                    Code = n.Code,
-                    Name = n.Name,
-                    Location = n.Location,
-                    Description = n.Description,
-                    NodePath = n.NodePath,
-                    Level = n.Level,
-                    // 🔑 遞迴搜尋以自身 Id 為 ParentId 的子節點
-                    Children = BuildTree(nodes, n.Id)
-                })
-                .ToList();
+                    Id = lab.Id,
+                    Name = lab.Name,
+                    Code = lab.Code,
+                    ParentId = lab.ParentId
+                    //IsActive = lab.IsActive
+                }).ToList();
+
+                _logger.LogInformation("Retrieved {Count} laboratories successfully.", dtos.Count);
+                return Result<List<LaboratoryDto>>.Success(dtos);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while fetching all laboratories.");
+                return Result.Failure<List<LaboratoryDto>>(
+                         Error.Failure("Laboratory.RetrieveFailed", $"Failed to retrieve laboratories: {ex.Message}"));
+             
+            }
         }
     }
-
 
 }

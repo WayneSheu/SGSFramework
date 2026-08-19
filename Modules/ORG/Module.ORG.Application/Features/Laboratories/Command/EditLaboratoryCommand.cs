@@ -2,96 +2,113 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using SGS.Modules.ORG.Application.Abstractions;
+using SGS.Modules.ORG.Application.Features.Laboratories.Dtos;
+using SGS.Modules.ORG.Infrastructure.Entities.Org;
 using SGSFramework.Core.Errors;
 using SGSFramework.Core.Results;
-using SGS.Modules.ORG.Infrastructure.Entities.Org;
-using SGS.Modules.ORG.Application.Features.Laboratories.Dtos;
-using SGS.Modules.ORG.Application.Abstractions;
+using System.ComponentModel.DataAnnotations;
 
 
 namespace SGS.Modules.ORG.Application.Features.Laboratories.Command
 {
+    /// <summary>
+    /// 編輯實驗室/組織名稱與描述指令
+    /// </summary>
+    public sealed record EditLaboratoryCommand(
+
+        int Id,
+
+        [Required(ErrorMessage = "實驗室名稱為必填欄位。")]
+        [StringLength(50, ErrorMessage = "實驗室名稱長度不能超過 50 個字元。")]
+        string Name,
+
+        [StringLength(200, ErrorMessage = "描述說明長度不能超過 200 個字元。")]
+        string? Description = null,
+
+        [StringLength(100, ErrorMessage = "位置長度不能超過 100 個字元。")]
+        string? Location = null
+
+    ) : IRequest<Result<LaboratoryDto>>;
+
+
+
 
     /// <summary>
-    /// 編輯實驗室
+    /// 編輯實驗室/組織指令處理器
     /// </summary>
-    public class EditLaboratoryCommand : IRequest<Result<LaboratoryDto>>
+    public sealed class EditLaboratoryCommandHandler : IRequestHandler<EditLaboratoryCommand, Result<LaboratoryDto>>
     {
-        public int Id { get; set; }
-        public string Name { get; set; }    
-    }
-
-
-
-
-    /// <summary>
-    ///
-    /// </summary>
-    public class EditLaboratoryHandler : IRequestHandler<EditLaboratoryCommand, Result<LaboratoryDto>>
-    {
-
-        private readonly IConfiguration _config;
-        private readonly ILogger<EditLaboratoryHandler> _logger;
         private readonly IOrganizationService _organizationService;
+        private readonly ILogger<EditLaboratoryCommandHandler> _logger;
 
-
-        public EditLaboratoryHandler(IConfiguration config, ILogger<EditLaboratoryHandler> logger, IOrganizationService organizationService)
+        public EditLaboratoryCommandHandler(
+            IOrganizationService organizationService,
+            ILogger<EditLaboratoryCommandHandler> logger)
         {
-            _config = config;
-            _logger = logger;
-            _organizationService=organizationService;
-
+            _organizationService = organizationService ?? throw new ArgumentNullException(nameof(organizationService));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-
-        public async Task<Result<LaboratoryDto>> Handle(EditLaboratoryCommand command, CancellationToken cancellationToken)
+        public async Task<Result<LaboratoryDto>> Handle(EditLaboratoryCommand request, CancellationToken cancellationToken)
         {
+            ArgumentNullException.ThrowIfNull(request, nameof(request));
+
             try
             {
-                // 1. 業務邏輯驗證
-                var ordLab = await _organizationService.GetOrganizationByIdAsync(command.Id);
-                if (ordLab == null)
+                // 1. 業務邏輯驗證：確認目標實體是否存在
+                var entity = await _organizationService
+                    .GetOrganizationByIdAsync(request.Id, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (entity is null)
                 {
-                    return Error.NotFound("Laboratory.NotFound", $"找不到ID為 {command.Id} 的實驗室。");
+                    _logger.LogWarning("嘗試編輯不存在的實驗室，ID: {Id}", request.Id);
+                    return Error.NotFound("Laboratory.NotFound", $"找不到 ID 為 {request.Id} 的實驗室。");
                 }
 
+                // 2. 進行部分欄位更新 (避免使用物件初始化語法破壞封裝與 Domain 狀態)
+                // 若 Organization 有提供專屬領域更新方法，應優先使用該方法
+                var patchedOrg = await _organizationService
+                    .PatchOrganizationTreeAsync(entity, cancellationToken)
+                    .ConfigureAwait(false);
 
-                if (string.IsNullOrWhiteSpace(command.Name))
+                if (patchedOrg is null)
                 {
-                    return Error.Validation("Laboratory.InvalidName", "實驗室名稱為必填欄位。");
+                    return Error.Failure("Laboratory.UpdateFailed", $"編輯實驗室 {request.Name} 失敗。");
                 }
 
-                var pathorg = new Organization
-               {
-                   Id = command.Id,
-                   Name = command.Name
-               };
-
-                var  org =await _organizationService.EditOrganizationAsync(pathorg);
-
-                if (org != null)
+                // 3. 投射為 DTO
+                var dto = new LaboratoryDto
                 {
-                    var dto= new LaboratoryDto
-                    {
-                        Id  = org.Id,
-                        Name = org.Name,
-                        ParentId = org.ParentId,
-                        NodePath = org.NodePath,
-                        Level = org.Level
-                    };
+                    Id = patchedOrg.Id,
+                    ParentId = patchedOrg.ParentId,
+                    TenantLabId = patchedOrg.TenantLabId,
+                    Code = patchedOrg.Code,
+                    Name = patchedOrg.Name,
+                    Location = patchedOrg.Location,
+                    Description = patchedOrg.Description,
+                    NodePath = patchedOrg.NodePath,
+                    Level = patchedOrg.Level
+                };
 
-                    return Result<LaboratoryDto>.Success(dto);
-                }
-                else
-                {
-                    throw new InvalidOperationException($"編輯實驗室 {command.Name} 失敗，但未拋出例外。");
-                }
+                _logger.LogInformation("成功編輯 ID 為 {Id} 的實驗室名稱為 {Name}。", patchedOrg.Id, patchedOrg.Name);
+
+                // 4. 利用 Result<T> 隱式轉換糖直接回傳 DTO
+                return dto;
+            }
+            catch (ArgumentException ex)
+            {
+                return Error.Validation("Laboratory.ValidationFailed", ex.Message);
             }
             catch (Exception ex)
             {
-                // 非預期系統崩潰，不在此處包成 Result，直接丟出讓基礎設施層的全域異常 Middleware 處理
-                throw new InvalidOperationException($"編輯實驗室 {command.Name} 時發生未預期系統錯誤。", ex);
+                _logger.LogError(ex, "編輯 ID 為 {Id} 的實驗室時發生未預期系統錯誤。", request.Id);
+
+                // 5. 將例外統一封裝為 Result.Failure 回傳，遵循專案 Result Pattern 標準
+                return Error.Failure("Laboratory.EditFailed", $"編輯實驗室 {request.Name} 時發生系統錯誤: {ex.Message}");
             }
-        }  
+        }
     }
+
 }

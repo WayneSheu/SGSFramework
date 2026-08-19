@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SGS.Modules.ORG.Infrastructure.Dbcontexts;
 
@@ -11,9 +12,11 @@ using SGS.Modules.ORG.Infrastructure.Dbcontexts;
 namespace SGS.Modules.ORG.Infrastructure.Migrations
 {
     [DbContext(typeof(ORGDbContext))]
-    partial class ORGDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260819092125_ORGDB_Initial")]
+    partial class ORGDB_Initial
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -69,7 +72,7 @@ namespace SGS.Modules.ORG.Infrastructure.Migrations
 
                     b.Property<string>("NodePath")
                         .IsRequired()
-                        .HasColumnType("nvarchar(450)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int?>("ParentId")
                         .HasColumnType("int");
@@ -90,13 +93,16 @@ namespace SGS.Modules.ORG.Infrastructure.Migrations
 
                     b.HasIndex("IsDeleted");
 
-                    b.HasIndex("NodePath");
+                    b.HasIndex("ParentId");
 
                     b.HasIndex("TenantLabId")
                         .HasDatabaseName("IX_Organization_TenantLabId")
                         .HasFilter("[TenantLabId] IS NOT NULL");
 
-                    b.ToTable("Organization", "org");
+                    b.ToTable("Organization", "org", t =>
+                        {
+                            t.HasCheckConstraint("CK_Organization_TenantLabId_Level1Only", "([Level] = 1 AND [TenantLabId] IS NOT NULL) OR ([Level] <> 1 AND [TenantLabId] IS NULL) OR ([TenantLabId] IS NULL)");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.AuditLogs.AuditLogEntity", b =>
@@ -174,25 +180,30 @@ namespace SGS.Modules.ORG.Infrastructure.Migrations
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Outbox.OutboxMessage", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("CausationId")
                         .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(200)");
 
                     b.Property<string>("Content")
                         .IsRequired()
+                        .IsUnicode(true)
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("CorrelationId")
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)");
 
                     b.Property<bool>("IsDead")
-                        .HasColumnType("bit");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
 
                     b.Property<string>("LastError")
+                        .IsUnicode(true)
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime>("OccurredOnUtc")
@@ -202,7 +213,9 @@ namespace SGS.Modules.ORG.Infrastructure.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<int>("RetryCount")
-                        .HasColumnType("int");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
 
                     b.Property<DateTime?>("ScheduledAtUtc")
                         .HasColumnType("datetime2");
@@ -210,16 +223,33 @@ namespace SGS.Modules.ORG.Infrastructure.Migrations
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(500)");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CorrelationId");
+                    b.HasIndex("CorrelationId")
+                        .HasDatabaseName("IX_org_OutboxMessages_CorrelationId");
 
                     b.HasIndex("ProcessedOnUtc", "IsDead", "ScheduledAtUtc")
-                        .HasDatabaseName("IX_OutboxMessages_FetchPending");
+                        .HasDatabaseName("IX_org_OutboxMessages_FetchPending");
 
                     b.ToTable("OutboxMessages", "org");
+                });
+
+            modelBuilder.Entity("SGS.Modules.ORG.Infrastructure.Entities.Org.Organization", b =>
+                {
+                    b.HasOne("SGS.Modules.ORG.Infrastructure.Entities.Org.Organization", "Parent")
+                        .WithMany("Children")
+                        .HasForeignKey("ParentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Parent");
+                });
+
+            modelBuilder.Entity("SGS.Modules.ORG.Infrastructure.Entities.Org.Organization", b =>
+                {
+                    b.Navigation("Children");
                 });
 #pragma warning restore 612, 618
         }

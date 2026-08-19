@@ -15,67 +15,67 @@ namespace SGS.Modules.ORG.Infrastructure.Migrations
                 name: "org");
 
             migrationBuilder.Sql(@"
-            BEGIN TRANSACTION;
+ BEGIN TRANSACTION;
 
-            -- 1. 建立 Schema (若不存在)
-            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = N'org')
-            BEGIN
-                EXEC('CREATE SCHEMA [org] AUTHORIZATION [dbo];');
-            END
+ -- 1. 建立 Schema (若不存在)
+ IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = N'org')
+ BEGIN
+     EXEC('CREATE SCHEMA [org] AUTHORIZATION [dbo];');
+ END
 
-            -- 2. 建立 Append-Only Ledger Table
-            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[org].[AuditLogs]') AND type IN (N'U'))
-            BEGIN
-                CREATE TABLE [org].[AuditLogs]
-                (
-                    [Id]                 BIGINT IDENTITY(1,1) NOT NULL,
-                    [TraceId]            CHAR(32)             NOT NULL,
-                    [UserId]             NVARCHAR(128)        NULL,
-                    [RemoteIp]           NVARCHAR(64)         NULL,
-                    [CreatedAt]           DATETIMEOFFSET(7)          NOT NULL CONSTRAINT [DF_AuditLogs_CreatedAt] DEFAULT (SYSUTCDATETIME()),
-                    [Timestamp]           DATETIMEOFFSET(7)          NOT NULL CONSTRAINT [DF_AuditLogs_Timestamp] DEFAULT (SYSUTCDATETIME()),
-                    [Schema]             NVARCHAR(64)         NULL,
-                    [TableName]          NVARCHAR(128)        NOT NULL,
-                    [Action]             NVARCHAR(50)         NOT NULL,
-                    [KeyValues]          NVARCHAR(MAX)        NULL,
-                    [OldValues]          NVARCHAR(MAX)        NULL,
-                    [NewValues]          NVARCHAR(MAX)        NULL,
-                    [ChangedColumns]     NVARCHAR(MAX)        NULL,
-                    [PreviousHash]       NVARCHAR(128)        NOT NULL,
-                    [StoredHash]         NVARCHAR(128)        NOT NULL,
-                    [IsRepaired]         BIT                  NOT NULL CONSTRAINT [DF_AuditLogs_IsRepaired] DEFAULT (0),
-                    [RepairedAt]         DATETIMEOFFSET(7)           NULL,
-                    [GapReason]          NVARCHAR(500)        NULL,
-                    [OriginalStoredHash] NVARCHAR(128)        NULL,
+ -- 2. 建立 Append-Only Ledger Table
+ IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[org].[AuditLogs]') AND type IN (N'U'))
+ BEGIN
+     CREATE TABLE [org].[AuditLogs]
+     (
+         [Id]                 BIGINT IDENTITY(1,1) NOT NULL,
+         [TraceId]            CHAR(32)             NOT NULL,
+         [UserId]             NVARCHAR(128)        NULL,
+         [RemoteIp]           NVARCHAR(64)         NULL,
+         [CreatedAt]           DATETIMEOFFSET(7)          NOT NULL CONSTRAINT [DF_AuditLogs_CreatedAt] DEFAULT (SYSUTCDATETIME()),
+         [Timestamp]           DATETIMEOFFSET(7)          NOT NULL CONSTRAINT [DF_AuditLogs_Timestamp] DEFAULT (SYSUTCDATETIME()),
+         [Schema]             NVARCHAR(64)         NULL,
+         [TableName]          NVARCHAR(128)        NOT NULL,
+         [Action]             NVARCHAR(50)         NOT NULL,
+         [KeyValues]          NVARCHAR(MAX)        NULL,
+         [OldValues]          NVARCHAR(MAX)        NULL,
+         [NewValues]          NVARCHAR(MAX)        NULL,
+         [ChangedColumns]     NVARCHAR(MAX)        NULL,
+         [PreviousHash]       NVARCHAR(128)        NOT NULL,
+         [StoredHash]         NVARCHAR(128)        NOT NULL,
+         [IsRepaired]         BIT                  NOT NULL CONSTRAINT [DF_AuditLogs_IsRepaired] DEFAULT (0),
+         [RepairedAt]         DATETIMEOFFSET(7)           NULL,
+         [GapReason]          NVARCHAR(500)        NULL,
+         [OriginalStoredHash] NVARCHAR(128)        NULL,
 
-                    -- 複合主鍵 (搭配 CreatedAt 以支援分區與系統時間區間查詢)
-                    CONSTRAINT [PK_AuditLogs] PRIMARY KEY CLUSTERED ([Id] ASC, [CreatedAt] ASC)
-                )
-                WITH
-                (
-                    -- 啟用 MSSQL Ledger 嚴格防篡改機制 (Append-Only 模式禁止 UPDATE/DELETE)
-                    LEDGER = ON (APPEND_ONLY = ON)
-                );
-            END
+         -- 複合主鍵 (搭配 CreatedAt 以支援分區與系統時間區間查詢)
+         CONSTRAINT [PK_AuditLogs] PRIMARY KEY CLUSTERED ([Id] ASC, [CreatedAt] ASC)
+     )
+     WITH
+     (
+         -- 啟用 MSSQL Ledger 嚴格防篡改機制 (Append-Only 模式禁止 UPDATE/DELETE)
+         LEDGER = ON (APPEND_ONLY = ON)
+     );
+ END
 
-            -- 3. 建立全鏈路追蹤涵蓋索引 (IX_AuditLog_TraceId_Covering)
-            IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = N'IX_AuditLog_TraceId_Covering' AND object_id = OBJECT_ID(N'[org].[AuditLogs]'))
-            BEGIN
-                CREATE NONCLUSTERED INDEX [IX_AuditLog_TraceId_Covering] 
-                ON [org].[AuditLogs] ([TraceId] ASC)
-                INCLUDE ([Action], [CreatedAt], [TableName]);
-            END
+ -- 3. 建立全鏈路追蹤涵蓋索引 (IX_AuditLog_TraceId_Covering)
+ IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = N'IX_AuditLog_TraceId_Covering' AND object_id = OBJECT_ID(N'[org].[AuditLogs]'))
+ BEGIN
+     CREATE NONCLUSTERED INDEX [IX_AuditLog_TraceId_Covering] 
+     ON [org].[AuditLogs] ([TraceId] ASC)
+     INCLUDE ([Action], [CreatedAt], [TableName]);
+ END
 
-            -- 4. 建立待修復自癒過濾索引 (IX_AuditLog_IsRepaired)
-            IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = N'IX_AuditLog_IsRepaired' AND object_id = OBJECT_ID(N'[org].[AuditLogs]'))
-            BEGIN
-                CREATE NONCLUSTERED INDEX [IX_AuditLog_IsRepaired] 
-                ON [org].[AuditLogs] ([IsRepaired] ASC)
-                INCLUDE ([TableName], [TraceId], [GapReason])
-                WHERE [IsRepaired] = 0;
-            END
+ -- 4. 建立待修復自癒過濾索引 (IX_AuditLog_IsRepaired)
+ IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = N'IX_AuditLog_IsRepaired' AND object_id = OBJECT_ID(N'[org].[AuditLogs]'))
+ BEGIN
+     CREATE NONCLUSTERED INDEX [IX_AuditLog_IsRepaired] 
+     ON [org].[AuditLogs] ([IsRepaired] ASC)
+     INCLUDE ([TableName], [TraceId], [GapReason])
+     WHERE [IsRepaired] = 0;
+ END
 
-            COMMIT TRANSACTION;");
+ COMMIT TRANSACTION;");
 
 
             migrationBuilder.CreateTable(
@@ -91,7 +91,7 @@ namespace SGS.Modules.ORG.Infrastructure.Migrations
                     TenantLabId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     Location = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     Description = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
-                    NodePath = table.Column<string>(type: "nvarchar(450)", nullable: false),
+                    NodePath = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     Level = table.Column<int>(type: "int", nullable: false),
                     CreatedBy = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     CreatedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
@@ -104,6 +104,14 @@ namespace SGS.Modules.ORG.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Organization", x => x.Id);
+                    table.CheckConstraint("CK_Organization_TenantLabId_Level1Only", "([Level] = 1 AND [TenantLabId] IS NOT NULL) OR ([Level] <> 1 AND [TenantLabId] IS NULL) OR ([TenantLabId] IS NULL)");
+                    table.ForeignKey(
+                        name: "FK_Organization_Organization_ParentId",
+                        column: x => x.ParentId,
+                        principalSchema: "org",
+                        principalTable: "Organization",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -112,15 +120,15 @@ namespace SGS.Modules.ORG.Infrastructure.Migrations
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    CorrelationId = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
-                    CausationId = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
-                    Type = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: false),
+                    CorrelationId = table.Column<string>(type: "varchar(100)", unicode: false, maxLength: 100, nullable: true),
+                    CausationId = table.Column<string>(type: "varchar(200)", unicode: false, maxLength: 200, nullable: true),
+                    Type = table.Column<string>(type: "varchar(500)", unicode: false, maxLength: 500, nullable: false),
                     Content = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     OccurredOnUtc = table.Column<DateTime>(type: "datetime2", nullable: false),
                     ProcessedOnUtc = table.Column<DateTime>(type: "datetime2", nullable: true),
                     ScheduledAtUtc = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    RetryCount = table.Column<int>(type: "int", nullable: false),
-                    IsDead = table.Column<bool>(type: "bit", nullable: false),
+                    RetryCount = table.Column<int>(type: "int", nullable: false, defaultValue: 0),
+                    IsDead = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
                     LastError = table.Column<string>(type: "nvarchar(max)", nullable: true)
                 },
                 constraints: table =>
@@ -142,10 +150,10 @@ namespace SGS.Modules.ORG.Infrastructure.Migrations
                 column: "IsDeleted");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Organization_NodePath",
+                name: "IX_Organization_ParentId",
                 schema: "org",
                 table: "Organization",
-                column: "NodePath");
+                column: "ParentId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Organization_TenantLabId",
@@ -155,13 +163,13 @@ namespace SGS.Modules.ORG.Infrastructure.Migrations
                 filter: "[TenantLabId] IS NOT NULL");
 
             migrationBuilder.CreateIndex(
-                name: "IX_OutboxMessages_CorrelationId",
+                name: "IX_org_OutboxMessages_CorrelationId",
                 schema: "org",
                 table: "OutboxMessages",
                 column: "CorrelationId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_OutboxMessages_FetchPending",
+                name: "IX_org_OutboxMessages_FetchPending",
                 schema: "org",
                 table: "OutboxMessages",
                 columns: new[] { "ProcessedOnUtc", "IsDead", "ScheduledAtUtc" });

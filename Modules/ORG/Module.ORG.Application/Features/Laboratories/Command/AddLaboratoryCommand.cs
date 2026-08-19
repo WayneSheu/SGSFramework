@@ -2,11 +2,14 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using SGS.Modules.ORG.Application.Abstractions;
+using SGS.Modules.ORG.Application.Features.Laboratories.Dtos;
+using SGS.Modules.ORG.Infrastructure.Entities.Org;
+using SGS.Modules.ORG.Infrastructure.Repositories;
+using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Errors;
 using SGSFramework.Core.Results;
-using SGS.Modules.ORG.Infrastructure.Entities.Org;
-using SGS.Modules.ORG.Application.Features.Laboratories.Dtos;
-using SGS.Modules.ORG.Application.Abstractions;
+using System.ComponentModel.DataAnnotations;
 
 
 namespace SGS.Modules.ORG.Application.Features.Laboratories.Command
@@ -15,91 +18,106 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Command
     /// <summary>
     /// 新增實驗室
     /// </summary>`
-    public record AddLaboratoryCommand : IRequest<Result<LaboratoryDto>>
-    {
-        public int? ParentId { get; init; }
-        public string Code { get; init; } = string.Empty;
-        public string Name { get; init; } = string.Empty;
-        public string? Location { get; init; }
-        public string? Description { get; init; }
+    /// <summary>
+    /// 新增實驗室/組織節點指令
+    /// </summary>
+    public sealed record AddLaboratoryCommand(
 
-        /// <summary>
-        /// 可選：若前端未傳入，Command Handler 會根據 Parent 繼承或自動產生 UUIDv7
-        /// </summary>
-        public Guid? ExplicitTenantLabId { get; init; }
-    }
+        [Required(ErrorMessage = "組織代碼為必填項目。")]
+        [StringLength(20, ErrorMessage = "組織代碼長度不能超過 20 個字元。")]
+        string Code,
 
+        [Required(ErrorMessage = "組織名稱為必填項目。")]
+        [StringLength(50, ErrorMessage = "組織名稱長度不能超過 50 個字元。")]
+        string Name,
 
+        int? ParentId = null,
 
+        [StringLength(100, ErrorMessage = "位置長度不能超過 100 個字元。")]
+        string ? Location = null,
+
+        [StringLength(200, ErrorMessage = "描述說明長度不能超過 200 個字元。")]
+    string? Description = null
+
+    ) : IRequest<Result<LaboratoryDto>>;
 
     /// <summary>
-    ///
+    /// 
     /// </summary>
-    public class AddLaboratoryHandler : IRequestHandler<AddLaboratoryCommand, Result<LaboratoryDto>>
+    public sealed class AddLaboratoryCommandHandler : IRequestHandler<AddLaboratoryCommand, Result<LaboratoryDto>>
     {
+        private readonly IOrganizationService _orgService;
 
-        private readonly IConfiguration _config;
-        private readonly ILogger<AddLaboratoryHandler> _logger;
-        private readonly IOrganizationService _organizationService;
-
-
-        public AddLaboratoryHandler(IConfiguration config, ILogger<AddLaboratoryHandler> logger, IOrganizationService organizationService)
+        public AddLaboratoryCommandHandler(IOrganizationService orgService)
         {
-            _config = config;
-            _logger = logger;
-            _organizationService=organizationService;
-
+            _orgService = orgService ?? throw new ArgumentNullException(nameof(orgService));
         }
 
-
-        public async Task<Result<LaboratoryDto>> Handle(AddLaboratoryCommand command, CancellationToken cancellationToken)
+        public async Task<Result<LaboratoryDto>> Handle(AddLaboratoryCommand request, CancellationToken cancellationToken)
         {
+            ArgumentNullException.ThrowIfNull(request, nameof(request));
+
             try
             {
+                int level = 1;
+                Guid? tenantLabId = null;
 
-                // 1. 業務邏輯驗證
-                if (string.IsNullOrWhiteSpace(command.Name))
+                // 1. 若有 ParentId，向 Service / Repository 取得父節點資訊以推算 Level 與 TenantLabId 繼承
+                if (request.ParentId.HasValue && request.ParentId.Value > 0)
                 {
-                    return Error.Validation("Laboratory.InvalidName", "實驗室名稱為必填欄位。"); 
-                }
-
-
-                var org = new Organization
-                {
-                    ParentId = command.ParentId,
-                    Code = command.Code,
-                    Name = command.Name,
-                    Description = command.Description
-                };
-
-               var  neworg =await _organizationService.CreateOrganizationAsync(org);
-
-                if (neworg != null)
-                {
-                    // 2. 成功建立實驗室，回傳 DTO
-                    var dto= new LaboratoryDto
+                    var parentEntity = await _orgService.GetOrganizationByIdAsync(request.ParentId.Value, cancellationToken).ConfigureAwait(false);
+                    if (parentEntity is null)
                     {
-                        Id = neworg.Id,
-                        Code = neworg.Code,
-                        Name = neworg.Name,
-                        Description = neworg.Description,
-                        ParentId = neworg.ParentId,
-                        NodePath = neworg.NodePath,
-                        Level = neworg.Level
-                    };
+                        return Error.NotFound("ORG_PARENT_NOT_FOUND", $"找不到指定的父級組織 (ID: {request.ParentId.Value})。");
+                    }
 
-                    return Result.Success(dto);
+                    level = parentEntity.Level + 1;
+                    tenantLabId = parentEntity.TenantLabId; // 繼承父節點租戶 ID
                 }
                 else
                 {
-                    throw new InvalidOperationException($"建立實驗室 {command.Name} 失敗，但未拋出例外。");
+                    // Level = 1 頂層實體實驗室，自動給予全新 UUIDv7 租戶識別碼
+                    tenantLabId = Guid.CreateVersion7();
                 }
+
+                // 2. 正確帶入計算後的 level 參數實例化 Organization 領域實體
+                var entity = new Organization(
+                    name: request.Name,
+                    code: request.Code,
+                    level: level,
+                    parentId: request.ParentId,
+                    tenantLabId: tenantLabId,
+                    location: request.Location,
+                    description: request.Description
+                );
+
+                // 3. 呼叫 Application Service 執行持久化與樹狀物化路徑 (NodePath) 運算
+                var createdEntity = await _orgService.CreateOrganizationAsync(entity, cancellationToken).ConfigureAwait(false);
+
+                var dto = new LaboratoryDto
+                {
+                    Id = createdEntity.Id,
+                    ParentId = createdEntity.ParentId,
+                    TenantLabId = createdEntity.TenantLabId,
+                    Code = createdEntity.Code,
+                    Name = createdEntity.Name,
+                    Location = createdEntity.Location,
+                    Description = createdEntity.Description,
+                    NodePath = createdEntity.NodePath,
+                    Level = createdEntity.Level
+                };
+
+                return dto;
+            }
+            catch (ArgumentException ex)
+            {
+                return Error.Validation("ORG_VALIDATION_FAILED", ex.Message);
             }
             catch (Exception ex)
             {
-                // 非預期系統崩潰，不在此處包成 Result，直接丟出讓基礎設施層的全域異常 Middleware 處理
-                throw new InvalidOperationException($"建立實驗室 {command.Name} 時發生未預期系統錯誤。", ex);
+                return Error.Failure("ORG_CREATE_FAILED", $"新增實驗室時發生系統錯誤: {ex.Message}");
             }
-        }  
+        }
     }
+
 }
