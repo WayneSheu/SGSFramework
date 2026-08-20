@@ -1,16 +1,19 @@
-﻿using Microsoft.EntityFrameworkCore;
-using SGS.Modules.ORG.Application.Abstractions;
-using SGS.Modules.ORG.Infrastructure.Dbcontexts;
-using SGS.Modules.ORG.Infrastructure.Entities.Org;
-using SGSFramework.Persistent.Repositories.Hierarchy;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using SGS.Modules.ORG.Application.Abstractions;
+using SGS.Modules.ORG.Infrastructure.Dbcontexts;
+using SGS.Modules.ORG.Infrastructure.Entities.Org;
+using SGSFramework.Persistent.Repositories.Hierarchy;
 
 namespace SGS.Modules.ORG.Application.Services;
 
+/// <summary>
+/// 組織/實驗室層級服務實作 (Clean Architecture - Application Layer)
+/// </summary>
 public class OrganizationService : IOrganizationService
 {
     private readonly IHierarchicalRepository<ORGDbContext, Organization> _orgRepo;
@@ -21,42 +24,36 @@ public class OrganizationService : IOrganizationService
     }
 
     /// <summary>
-    /// 新增組織節點 (含 TenantLabId 繼承邏輯與 UUIDv7 生成)
+    /// 新增組織節點 (已重構：完全委由 Command / Entity 決定 TenantLabId，徹底移除多餘與反射 SetTenantLabId)
     /// </summary>
     public async Task<Organization> CreateOrganizationAsync(Organization org, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(org);
 
-        if (string.IsNullOrWhiteSpace(org.Name))
+        try
         {
-            throw new ArgumentException("組織名稱不可為空。", nameof(org));
-        }
+            if (string.IsNullOrWhiteSpace(org.Name))
+            {
+                throw new ArgumentException("組織名稱不可為空。", nameof(org.Name));
+            }
 
-        // 🔑 處理 TenantLabId 多租戶隔離邏輯
-        if (org.ParentId.HasValue && org.ParentId.Value > 0)
-        {
-            var parentNode = await _orgRepo.GetByIdAsync(org.ParentId.Value, cancellationToken);
-            if (parentNode != null)
+            // 驗證父節點是否存在
+            if (org.ParentId.HasValue && org.ParentId.Value > 0)
             {
-                // 若父節點已有 TenantLabId，則直接繼承；否則嘗試使用當前設定或產生全新 UUIDv7
-                var targetTenantLabId = parentNode.TenantLabId ?? org.TenantLabId ?? Guid.CreateVersion7();
-                SetTenantLabId(org, targetTenantLabId);
+                var parentNode = await _orgRepo.GetByIdAsync(org.ParentId.Value, cancellationToken).ConfigureAwait(false);
+                if (parentNode is null)
+                {
+                    throw new KeyNotFoundException($"找不到指定的父級組織 (ParentId: {org.ParentId.Value})");
+                }
             }
-            else
-            {
-                throw new KeyNotFoundException($"找不到指定的父級組織 (ParentId: {org.ParentId})");
-            }
-        }
-        else
-        {
-            // 頂層區域節點，若無指定則自動給予 UUIDv7
-            if (!org.TenantLabId.HasValue || org.TenantLabId == Guid.Empty)
-            {
-                SetTenantLabId(org, Guid.CreateVersion7());
-            }
-        }
 
-        return await _orgRepo.AddNodeAsync(org, org.ParentId, cancellationToken);
+            // 🔑 專用階層 Repository (AddNodeAsync) 會自動持久化實體、計算與寫入物化路徑 (NodePath)
+            return await _orgRepo.AddNodeAsync(org, org.ParentId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            throw;
+        }
     }
 
     /// <summary>
@@ -64,9 +61,16 @@ public class OrganizationService : IOrganizationService
     /// </summary>
     public async Task<Organization?> GetOrganizationByIdAsync(int id, CancellationToken cancellationToken = default)
     {
-        var entity = await _orgRepo.GetByIdAsync(id, cancellationToken);
-        if (entity != null && entity.IsDeleted) return null;
-        return entity;
+        try
+        {
+            var entity = await _orgRepo.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
+            if (entity is not null && entity.IsDeleted) return null;
+            return entity;
+        }
+        catch (Exception)
+        {
+            throw;
+        }
     }
 
     /// <summary>
@@ -74,10 +78,18 @@ public class OrganizationService : IOrganizationService
     /// </summary>
     public async Task<List<Organization>> GetOrganizationTreeAsync(CancellationToken cancellationToken = default)
     {
-        return await _orgRepo.GetRoots()
-            .AsNoTracking()
-            .Where(x => !x.IsDeleted)
-            .ToListAsync(cancellationToken);
+        try
+        {
+            return await _orgRepo.GetRoots()
+                .AsNoTracking()
+                .Where(x => !x.IsDeleted)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            throw;
+        }
     }
 
     /// <summary>
@@ -85,13 +97,21 @@ public class OrganizationService : IOrganizationService
     /// </summary>
     public async Task<List<Organization>> GetSubtreeByNodePathAsync(string nodePath, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(nodePath)) return new List<Organization>();
+        try
+        {
+            if (string.IsNullOrWhiteSpace(nodePath)) return new List<Organization>();
 
-        return await _orgRepo.GetDescendants(nodePath)
-            .AsNoTracking()
-            .Where(x => !x.IsDeleted)
-            .OrderBy(x => x.Level)
-            .ToListAsync(cancellationToken);
+            return await _orgRepo.GetDescendants(nodePath)
+                .AsNoTracking()
+                .Where(x => !x.IsDeleted)
+                .OrderBy(x => x.Level)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            throw;
+        }
     }
 
     /// <summary>
@@ -99,11 +119,19 @@ public class OrganizationService : IOrganizationService
     /// </summary>
     public async Task<List<Organization>> GetAllActiveOrganizationsAsync(CancellationToken cancellationToken = default)
     {
-        return await _orgRepo.GetDescendants("/")
-            .AsNoTracking()
-            .Where(x => !x.IsDeleted)
-            .OrderBy(x => x.Level)
-            .ToListAsync(cancellationToken);
+        try
+        {
+            return await _orgRepo.GetDescendants("/")
+                .AsNoTracking()
+                .Where(x => !x.IsDeleted)
+                .OrderBy(x => x.Level)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            throw;
+        }
     }
 
     /// <summary>
@@ -112,7 +140,15 @@ public class OrganizationService : IOrganizationService
     public async Task<Organization> EditOrganizationAsync(Organization org, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(org);
-        return await _orgRepo.EditNodeAsync(org, cancellationToken);
+
+        try
+        {
+            return await _orgRepo.EditNodeAsync(org, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            throw;
+        }
     }
 
     /// <summary>
@@ -121,39 +157,54 @@ public class OrganizationService : IOrganizationService
     public async Task<Organization> PatchOrganizationTreeAsync(Organization org, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(org);
-        return await _orgRepo.PatchNodeAsync(org, cancellationToken);
+
+        try
+        {
+            return await _orgRepo.PatchNodeAsync(org, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            throw;
+        }
     }
 
     /// <summary>
-    /// 移動部門子樹（搬移後同步重新演算 TenantLabId 繼承）
+    /// 移動部門子樹（搬移後同步重新演算 TenantLabId 繼承，已移除所有反射）
     /// </summary>
     public async Task MoveOrganizationAsync(int nodeId, int newParentId, CancellationToken cancellationToken = default)
     {
-        // 1. 執行物理物化路徑與層級移動
-        var success = await _orgRepo.MoveSubtreeAsync(nodeId, newParentId > 0 ? newParentId : null, cancellationToken);
-        if (!success) return;
-
-        // 2. 移動完成後，若目標 Parent 具備 TenantLabId，則同步重置子樹 TenantLabId
-        if (newParentId > 0)
+        try
         {
-            var newParentNode = await _orgRepo.GetByIdAsync(newParentId, cancellationToken);
-            if (newParentNode?.TenantLabId != null)
+            // 1. 執行物理物化路徑與層級移動
+            var success = await _orgRepo.MoveSubtreeAsync(nodeId, newParentId > 0 ? newParentId : null, cancellationToken).ConfigureAwait(false);
+            if (!success) return;
+
+            // 2. 移動完成後，若目標 Parent 具備 TenantLabId，則同步重置子樹 TenantLabId
+            if (newParentId > 0)
             {
-                var movedNode = await _orgRepo.GetByIdAsync(nodeId, cancellationToken);
-                if (movedNode != null)
+                var newParentNode = await _orgRepo.GetByIdAsync(newParentId, cancellationToken).ConfigureAwait(false);
+                if (newParentNode?.TenantLabId != null)
                 {
-                    // 重置目標節點與所有子孫節點之 TenantLabId
-                    SetTenantLabId(movedNode, newParentNode.TenantLabId.Value);
-
-                    var descendants = await _orgRepo.GetDescendants(movedNode.NodePath).ToListAsync(cancellationToken);
-                    foreach (var desc in descendants)
+                    var movedNode = await _orgRepo.GetByIdAsync(nodeId, cancellationToken).ConfigureAwait(false);
+                    if (movedNode != null)
                     {
-                        SetTenantLabId(desc, newParentNode.TenantLabId.Value);
-                    }
+                        // 🔑 直接使用強型別 Domain 方法更新，傳入目標 Level
+                        movedNode.SetTenantLabId(newParentNode.TenantLabId.Value, movedNode.Level);
 
-                    await _orgRepo.SaveChangesAsync(cancellationToken);
+                        var descendants = await _orgRepo.GetDescendants(movedNode.NodePath).ToListAsync(cancellationToken).ConfigureAwait(false);
+                        foreach (var desc in descendants)
+                        {
+                            desc.SetTenantLabId(newParentNode.TenantLabId.Value, desc.Level);
+                        }
+
+                        await _orgRepo.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    }
                 }
             }
+        }
+        catch (Exception)
+        {
+            throw;
         }
     }
 
@@ -162,27 +213,13 @@ public class OrganizationService : IOrganizationService
     /// </summary>
     public async Task DeleteOrganizationAsync(int nodeId, CancellationToken cancellationToken = default)
     {
-        await _orgRepo.DeleteNodeWithChildrenAsync(nodeId, cancellationToken);
-    }
-
-    /// <summary>
-    /// 輔助方法：統一給予 TenantLabId（若實體有專屬方法優先呼叫，否則支援多種 Set 方式）
-    /// </summary>
-    private static void SetTenantLabId(Organization org, Guid tenantLabId)
-    {
-        // 如果 Organization 類別內有封裝業務 Setter 方法 (如 UpdateTenantLabId) 應優先使用
-        var method = typeof(Organization).GetMethod("SetTenantLabId")
-                     ?? typeof(Organization).GetMethod("UpdateTenantLabId");
-
-        if (method != null)
+        try
         {
-            method.Invoke(org, new object[] { tenantLabId });
+            await _orgRepo.DeleteNodeWithChildrenAsync(nodeId, cancellationToken).ConfigureAwait(false);
         }
-        else
+        catch (Exception)
         {
-            // 透過反射強行設定私有 setter 欄位，解決 CS0272
-            var prop = typeof(Organization).GetProperty(nameof(Organization.TenantLabId));
-            prop?.SetValue(org, tenantLabId);
+            throw;
         }
     }
 }

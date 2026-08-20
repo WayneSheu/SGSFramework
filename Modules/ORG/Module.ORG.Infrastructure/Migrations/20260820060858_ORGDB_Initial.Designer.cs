@@ -12,7 +12,7 @@ using SGS.Modules.ORG.Infrastructure.Dbcontexts;
 namespace SGS.Modules.ORG.Infrastructure.Migrations
 {
     [DbContext(typeof(ORGDbContext))]
-    [Migration("20260819092125_ORGDB_Initial")]
+    [Migration("20260820060858_ORGDB_Initial")]
     partial class ORGDB_Initial
     {
         /// <inheritdoc />
@@ -60,7 +60,9 @@ namespace SGS.Modules.ORG.Infrastructure.Migrations
                         .HasColumnType("bit");
 
                     b.Property<int>("Level")
-                        .HasColumnType("int");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
 
                     b.Property<string>("Location")
                         .HasColumnType("nvarchar(max)");
@@ -101,7 +103,7 @@ namespace SGS.Modules.ORG.Infrastructure.Migrations
 
                     b.ToTable("Organization", "org", t =>
                         {
-                            t.HasCheckConstraint("CK_Organization_TenantLabId_Level1Only", "([Level] = 1 AND [TenantLabId] IS NOT NULL) OR ([Level] <> 1 AND [TenantLabId] IS NULL) OR ([TenantLabId] IS NULL)");
+                            t.HasCheckConstraint("CK_Organization_TenantLabId_Level2Only", "([TenantLabId] IS NULL) OR ([Level] = 2)");
                         });
                 });
 

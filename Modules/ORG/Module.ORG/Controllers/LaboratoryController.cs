@@ -19,7 +19,7 @@ namespace SGS.Modules.ORG.Controllers;
 [ApiController]
 [ApiVersion("v1")]
 [Route("api/org/laboratories")]
-[Menu("實驗室管理", "fa-solid fa-flask", order: 10, parent: "")]
+[Menu("實驗室管理", "fa-solid fa-flask", order: 10, parent: null)]
 [RequiresPermission("ORG_LAB_READ")]
 [Description("實驗室維護")]
 public class LaboratoryController : ApiControllerBase

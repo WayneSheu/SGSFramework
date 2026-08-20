@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SGSFramework.Core.Abstractions.Adapters;
 using SGSFramework.Core.FileStorages;
+using SGSFramework.Core.Generators;
 using SGSFramework.Core.Identiies.CurrentUser;
 using SGSFramework.Core.Identiies.Tenants;
 using SGSFramework.Core.Services;
@@ -18,6 +19,10 @@ namespace SGSFramework.Core.Extensions
         // 注入 SGSFramework.Core 的服務 
         public static void AddSGSFrameworkCore(this WebApplicationBuilder builder)
         {
+
+            ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+
+            builder.Services.AddSingleton<IGuidGenerator, SystemGuidGenerator>();
 
             // MemoryCache
             builder.Services.AddMemoryCache(); // 務必加入此行
@@ -52,8 +57,8 @@ namespace SGSFramework.Core.Extensions
             // 使用 TryAddScoped 註冊 Fallback 的 Null 服務
             // 若 SGS.Modules.ORG 在後續階段有註冊真實實作，將會自動覆蓋此預設項目
             builder.Services.TryAddScoped<IOrganizationIntegrationService, NullOrganizationIntegrationService>();
-           
-          
+
+
 
         }
     }
