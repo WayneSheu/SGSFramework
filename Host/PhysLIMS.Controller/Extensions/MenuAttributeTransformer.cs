@@ -1,71 +1,84 @@
-﻿using Microsoft.AspNetCore.Mvc.Controllers;
+﻿namespace SGSFramework.ApiInfrastructure.Transformers;
+
+using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.OpenApi;
+using SGSFramework.ApiInfrastructure.Extensions;
 using SGSFramework.Core.Abstractions.Attributes;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Text.Json.Nodes;
-
-namespace SGSFramework.ApiInfrastructure.Extensions;
+using System.Threading;
+using System.Threading.Tasks;
 
 /// <summary>
-/// 結合 [MenuAttribute] 與 OpenApiJsonNodeExtension 的 OpenApi 轉譯處理器
+/// Operation 層級轉換器。直接讀取 ModuleAttribute、ControllerTitleAttribute 與 FunctionAttribute 重構三層選單。
 /// </summary>
-public class MenuAttributeTransformer : IOpenApiOperationTransformer
+public sealed class MenuAttributeTransformer : IOpenApiOperationTransformer
 {
-    public Task TransformAsync(OpenApiOperation operation, OpenApiOperationTransformerContext context, CancellationToken cancellationToken)
+    private const string FallbackModuleName = "通用模組";
+    private const string FallbackControllerName = "一般功能";
+
+    public Task TransformAsync(
+        OpenApiOperation operation,
+        OpenApiOperationTransformerContext context,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(operation);
         ArgumentNullException.ThrowIfNull(context);
 
-        if (context.Description.ActionDescriptor is not ControllerActionDescriptor actionDescriptor)
+        try
         {
-            return Task.CompletedTask;
-        }
+            var endpointMetadata = context.Description.ActionDescriptor.EndpointMetadata;
+            var cad = context.Description.ActionDescriptor as ControllerActionDescriptor;
 
-        // 1. 讀取 Action 與 Controller 的 [Menu] 屬性
-        var actionMenuAttr = actionDescriptor.MethodInfo.GetCustomAttribute<MenuAttribute>();
-        var controllerMenuAttr = actionDescriptor.ControllerTypeInfo.GetCustomAttribute<MenuAttribute>();
+            // 1. 第三層 (Action) -> 解析 [Function] 之 Title 或 FunctionName[cite: 8]
+            var functionAttr = endpointMetadata.OfType<FunctionAttribute>().FirstOrDefault();
+            string displayName = functionAttr?.Title ?? functionAttr?.FunctionName ?? cad?.ActionName ?? operation.Summary ?? "未命名操作";
+            operation.Summary = displayName;
 
-        // 2. 處理 Controller 層級 (對應 OpenAPI Tag / Scalar 大分類)
-        if (controllerMenuAttr != null && controllerMenuAttr.IsVisible)
-        {
-            string tagName = !string.IsNullOrWhiteSpace(controllerMenuAttr.Parent)
-                ? $"{controllerMenuAttr.Parent} > {controllerMenuAttr.Name}"
-                : controllerMenuAttr.Name;
+            // 2. 第二層 (Controller) -> 解析 [ControllerTitle] 之 Title[cite: 7]
+            var controllerTitleAttr = endpointMetadata.OfType<ControllerTitleAttribute>().FirstOrDefault();
+            string controllerTitle = controllerTitleAttr?.Title ?? ResolveCleanControllerName(cad?.ControllerName);
 
-            if (string.IsNullOrWhiteSpace(tagName))
-            {
-                tagName = actionDescriptor.ControllerName;
-            }
-
-            // 關鍵修正 1：使用 HashSet<OpenApiTagReference> 初始化 Tags，相容 .NET 10 OpenAPI 引擎
             operation.Tags ??= new HashSet<OpenApiTagReference>();
             operation.Tags.Clear();
+            operation.Tags.Add(new OpenApiTagReference(controllerTitle));
 
-            // 正確寫入 TagReference
-            operation.Tags.Add(new OpenApiTagReference(tagName));
-        }
+            // 3. 第一層 (Section) -> 依序從 Method -> Class -> Assembly 尋找 [Module] 之 Title/ModuleName[cite: 6]
+            var moduleAttr = endpointMetadata.OfType<ModuleAttribute>().FirstOrDefault()
+                ?? cad?.ControllerTypeInfo.GetCustomAttribute<ModuleAttribute>()
+                ?? cad?.ControllerTypeInfo.Assembly.GetCustomAttribute<ModuleAttribute>();
 
-        // 3. 處理 Action 層級 (對應 OpenAPI Operation Summary)
-        if (actionMenuAttr != null && actionMenuAttr.IsVisible)
-        {
-            operation.Summary = actionMenuAttr.Name;
+            string moduleTitle = moduleAttr?.Title ?? moduleAttr?.ModuleName ?? ResolveModuleByNamespace(cad?.ControllerTypeInfo.Namespace);
 
-            // 4. 寫入客製化 x-menu 擴充屬性至 OpenAPI Spec
-            var menuJsonNode = new JsonObject
-            {
-                ["name"] = actionMenuAttr.Name,
-                ["icon"] = actionMenuAttr.Icon ?? "fa-solid fa-link",
-                ["order"] = actionMenuAttr.Order,
-                ["parent"] = actionMenuAttr.Parent ?? controllerMenuAttr?.Name,
-                ["isVisible"] = actionMenuAttr.IsVisible
-            };
-
-            // 關鍵修正 2：初始化 Extensions 字典，防止存取時報出 NullReferenceException
+            // 將第一層資訊寫入 Operation Extension 供 DocumentFilter 彙整 x-tagGroups[cite: 6]
             operation.Extensions ??= new Dictionary<string, IOpenApiExtension>();
-            operation.Extensions["x-menu"] = new OpenApiJsonNodeExtension(menuJsonNode);
+            operation.Extensions["x-module-title"] = new OpenApiJsonNodeExtension(JsonValue.Create(moduleTitle));
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException("執行 MenuAttributeTransformer 轉譯時發生錯誤。", ex);
         }
 
         return Task.CompletedTask;
+    }
+
+    private static string ResolveCleanControllerName(string? rawName)
+    {
+        if (string.IsNullOrWhiteSpace(rawName)) return FallbackControllerName;
+        return rawName.EndsWith("Controller", StringComparison.OrdinalIgnoreCase)
+            ? rawName[..^10]
+            : rawName;
+    }
+
+    private static string ResolveModuleByNamespace(string? ns)
+    {
+        if (string.IsNullOrWhiteSpace(ns)) return FallbackModuleName;
+        if (ns.Contains("Identity", StringComparison.OrdinalIgnoreCase) || ns.Contains("Auth", StringComparison.OrdinalIgnoreCase)) return "身分安全與權限";
+        if (ns.Contains("System", StringComparison.OrdinalIgnoreCase) || ns.Contains("ApiInfrastructure", StringComparison.OrdinalIgnoreCase)) return "系統管理";
+        return FallbackModuleName;
     }
 }

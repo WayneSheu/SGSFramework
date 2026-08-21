@@ -17,7 +17,7 @@ using System;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 
-namespace SGSFramework.AuthTokenBucket.Servers
+namespace SGSFramework.AuthTokenBucket.Services
 {
     /// <summary>
     /// 安全防禦核心高併發水桶引擎

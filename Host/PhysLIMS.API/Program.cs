@@ -1,5 +1,5 @@
 // ==========================================
-// 檔案路徑: PhysLIMS.API/Program.cs
+// 檔案路徑: src/SGSFramework/Host/PhysLIMS.API/Program.cs
 // ==========================================
 
 using Microsoft.AspNetCore.Identity;
@@ -18,6 +18,7 @@ using Serilog;
 using SGSFramework.ApiInfrastructure.Bootstrappers;
 using SGSFramework.ApiInfrastructure.Extensions;
 using SGSFramework.ApiInfrastructure.Filters;
+using SGSFramework.ApiInfrastructure.Transformers;
 using SGSFramework.AuditLog.Extensions;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.Extensions;
@@ -36,6 +37,8 @@ using SGSFramework.Persistent.ScriptRunners;
 using SGSFramework.SystemLog.Extensions;
 using SGSFramework.VerifyLedger.Extensions;
 using System.Reflection;
+using System.Text.RegularExpressions;
+
 try
 {
     var builder = WebApplication.CreateBuilder(args);
@@ -49,29 +52,21 @@ try
     // 注入 SGSFramework.Core 的服務 
     builder.AddSGSFrameworkCore();
 
-    // 1. 註冊自訂 Scalar API 文件服務
-    // 註冊 OpenAPI 服務並掛載 Menu 與 Document 雙重轉換器
+    // 1. 註冊 OpenAPI 與 Scalar API 文件服務
     builder.Services.AddOpenApi("v1", options =>
     {
         options.ShouldInclude = (description) => true;
-
-        // A. 註冊 Operation 層級 Transformer：解析 [Menu] 特性，寫入 x-menu metadata 與 Summary (優先執行)
         options.AddOperationTransformer<MenuAttributeTransformer>();
-
-        // B. 註冊 Document 層級 Transformer：整理全域 Tags、x-tagGroups 選單樹狀分組與 DB 權限對映
-        options.AddDocumentTransformer<DynamicControllerDocumentTransformer>();
+        options.AddDocumentTransformer<DynamicControllerDocumentFilter>();
     });
 
-    // 註冊 Scalar API 文件服務
     builder.Services.AddAPIDocServices();
 
-    // 2. 主專案資料庫上下文註冊 (配置 SQL Server / Schema)
-    //註冊 DatabaseInitializer 服務
+    // 2. 主專案資料庫上下文註冊
     builder.Services.AddTransient<IDatabaseInitializer, DatabaseInitializer>();
 
     builder.Services.AddDbContext<PhysLIMSDbContext>(options =>
     {
-        //
         var connectionString = config.GetSection("PersistentSettings:ConnectionStrings")["DefaultConnection"];
         if (string.IsNullOrWhiteSpace(connectionString))
         {
@@ -82,21 +77,14 @@ try
         {
             sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "core");
         });
-        // 2.1 註冊自訂的 SQL Server Migrations Generator
-        // 替換MigrationsSqlGenerator
-        // 替換關聯式資料庫的 Annotation Provider
+
         options.ReplaceService<IRelationalAnnotationProvider, CustomSqlServerAnnotationProvider>();
         options.ReplaceService<IMigrationsSqlGenerator, CustomSqlServerMigrationsSqlGenerator>()
-        .ConfigureWarnings(warnings =>
-        // 壓制 PendingModelChangesWarning 警告
-        warnings.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
-
+               .ConfigureWarnings(warnings =>
+                   warnings.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
     });
 
     // 3. 泛型 Identity 完整打包註冊
-    // 整合 AddGenericIdentityPackage 一步到位完成 IdentityCore, Roles, Stores, TokenProviders 
-    // 以及 IGenericIdentityRepository 與 IRoleManagementService 的 DI 註冊
-    // 將泛型參數改為: PhysLIMSDbContext, ApplicationUser, IdentityRole<Guid>, Guid
     builder.Services.AddGenericIdentityPackage<PhysLIMSDbContext, ApplicationUser, ApplicationRole, Guid>(options =>
     {
         options.Password.RequireDigit = true;
@@ -108,15 +96,12 @@ try
         options.SignIn.RequireConfirmedAccount = false;
     });
 
-    // 4. 註冊 Controllers 與外掛模組核心 (Startup Phase)
+    // 4. 註冊 Controllers 與外掛模組核心
     var mvcBuilder = builder.Services.AddControllers();
 
     Log.Information("開始掃描並註冊既有動態外掛模組與 DI 服務 (Startup Phase)...");
 
-    // 一鍵封裝註冊模組外掛系統、倉儲、ChangeProvider 與 BackgroundServices
     builder.Services.AddModulePlugin<PhysLIMSDbContext>(config);
-
-    // 註冊 Controller 掃描器服務
     builder.Services.AddControllerScanner<PhysLIMSDbContext>();
 
     mvcBuilder.ConfigureApplicationPartManager(apm =>
@@ -151,7 +136,6 @@ try
         .Distinct()
         .ToArray();
 
-    //Token Bucket 認證（同步將使用者實體改為 ApplicationUser）
     builder.Services.AddTokenBucketAuthentication<PhysLIMSDbContext, ApplicationUser>(options =>
     {
         options.SecretKey = config["Jwt:Secret"]
@@ -164,13 +148,10 @@ try
     },
     scannedAssemblies);
 
-
-
     builder.Services.AddSSOServices();
     builder.Services.AddAuthorization();
 
     #region 身分驗證配置 (Presentation / Host Layer)
-
     if (builder.Environment.IsDevelopment())
     {
         builder.Services.AddAuthentication(options =>
@@ -178,12 +159,6 @@ try
             options.DefaultAuthenticateScheme = "Windows";
             options.DefaultChallengeScheme = "Windows";
         });
-        //.AddScheme<FakeWindowsAuthOptions, FakeWindowsAuthHandler>("Windows", options =>
-        //{
-        //    options.DefaultDomain = "CORP";
-        //    options.DefaultUserName = "wayne";
-        //    options.DefaultRole = "Domain Admins";
-        //});
     }
     else
     {
@@ -193,7 +168,6 @@ try
         if (isIISHosted)
         {
             Log.Information("偵測到 IIS 託管環境，整合 IIS Native Windows Authentication。");
-
             RemoveNegotiateServices(builder.Services);
 
             builder.Services.AddAuthentication(options =>
@@ -244,16 +218,11 @@ try
     builder.Services.AddCodeSecurity(config);
     builder.AddDIContainerValidation();
 
-    // -------------------------------------------------------------
-    // 建立 WebApplication (此後 ServiceCollection 鎖定為 Read-Only)
-    // -------------------------------------------------------------
     var app = builder.Build();
 
-    // 取得全域 Logger 供 Bootstrap Task 使用
     var loggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
     var bootstrapLogger = loggerFactory.CreateLogger("IisBootstrapExecution");
 
-    // 執行 IIS 環境變數自動化配置工作
     try
     {
         bootstrapLogger.LogInformation(">>> 執行前置檢查：IIS 應用程式集區環境變數配置...");
@@ -261,148 +230,116 @@ try
     }
     catch (Exception ex)
     {
-        bootstrapLogger.LogCritical(ex, ">>> IIS 應用程式集區環境變數配置失敗，請確認執行帳號是否具備 Windows 系統管理員權限。");
+        bootstrapLogger.LogCritical(ex, ">>> IIS 應用程式集區環境變數配置失敗。");
         throw;
     }
 
-
-    // ==========================================
-    // 中間件管道配置 (Configure HTTP Pipeline)
-    // ==========================================
+    // 中間件管道配置
     app.UseExceptionHandler();
     app.UseCors("AllowAll");
-    app.UseHttpsRedirection();
 
-    // 結合環境判斷或組態開關 (預設正式環境若需要自動遷移可開啟)
+    if (!app.Environment.IsDevelopment())
+    {
+        app.UseHttpsRedirection();
+    }
+    else
+    {
+        app.UseDeveloperExceptionPage();
+    }
+
+    // DB Bootstrapping & EF Core Migration
     var autoMigrate = config.GetValue<bool>("Database:AutoMigrate", true);
     if (app.Environment.IsDevelopment() || autoMigrate)
     {
+        using var scope = app.Services.CreateScope();
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
-            using (var scope = app.Services.CreateScope())
+        try
+        {
+            logger.LogInformation("Step 1: 開始執行 Bootstrapping 腳本 (使用 Windows/Master 權限)...");
+            var initializer = scope.ServiceProvider.GetRequiredService<IDatabaseInitializer>();
+            await initializer.InitializeDatabaseAsync().ConfigureAwait(false);
+            logger.LogInformation("Bootstrapping 腳本執行完成。");
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex, "Bootstrapping 失敗，終止啟動。");
+            throw;
+        }
+
+        string migrationConnectionString = string.Empty;
+        try
+        {
+            migrationConnectionString = config.GetSection("PersistentSettings:ConnectionStrings")["MigrationConnection"]!;
+            if (string.IsNullOrWhiteSpace(migrationConnectionString))
             {
-                var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-
-                // 1. 執行 Bootstrapping (建立 DB、app_sgs_user、deploy_sgs_user)
-                try
-                {
-                    logger.LogInformation("Step 1: 開始執行 Bootstrapping 腳本 (使用 Windows/Master 權限)...");
-                    var initializer = scope.ServiceProvider.GetRequiredService<IDatabaseInitializer>();
-                    await initializer.InitializeDatabaseAsync();
-                    logger.LogInformation("Bootstrapping 腳本執行完成。");
-                }
-                catch (Exception ex)
-                {
-                    logger.LogCritical(ex, "Bootstrapping 失敗，終止啟動。");
-                    throw;
-                }
-
-            // 2. 執行主專案 EF Core Migration
-            string migrationConnectionString = string.Empty;
-            try
-            {
-                // 取得 DDL 專用連線字串 (deploy_sgs_user)
-                migrationConnectionString = config.GetSection("PersistentSettings:ConnectionStrings")["MigrationConnection"];
-                if (string.IsNullOrWhiteSpace(migrationConnectionString))
-                {
-                    throw new InvalidOperationException("未配置 PersistentSettings:ConnectionStrings:MigrationConnection 設定。");
-                }
-                logger.LogInformation("Step 2: 開始執行主專案 DB Migration (使用 deploy_sgs_user)...");
-
-                // 建立選項並加入執行策略 (Execution Strategy) 以應對暫時性網路中斷
-                var mainDbContextOptions = new DbContextOptionsBuilder<PhysLIMSDbContext>()
-                    .UseSqlServer(migrationConnectionString, sqlOptions =>
-                    {
-                        sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "core");
-                        // 加入防禦性重試機制(Retry Pattern)以應對短暫網路抖動
-                        sqlOptions.EnableRetryOnFailure(
-                            maxRetryCount: 3,
-                            maxRetryDelay: TimeSpan.FromSeconds(5),
-                            errorNumbersToAdd: null);
-                    })
-                    .Options;
-
-                await using var mainDbContext = new PhysLIMSDbContext(mainDbContextOptions);
-
-                // 增加連線前置診斷：嘗試開啟連線以驗證伺服器可達性
-                var connection = mainDbContext.Database.GetDbConnection();
-                logger.LogInformation("正在測試資料庫連線: {ConnectionString}",
-                    System.Text.RegularExpressions.Regex.Replace(migrationConnectionString, @"Password=([^;]+)", "Password=*****"));
-
-                await connection.OpenAsync();
-                await connection.CloseAsync();
-
-                // 執行遷移
-                await mainDbContext.Database.MigrateAsync();
-                logger.LogInformation("主專案 DB Migration 完成。");
+                throw new InvalidOperationException("未配置 MigrationConnection。");
             }
-            catch (Microsoft.Data.SqlClient.SqlException sqlEx)
-            {
-                // 安全遮蔽連線字串中的密碼供日誌安全審計
-                var maskedConnStr = System.Text.RegularExpressions.Regex.Replace(migrationConnectionString, @"Password=([^;]+)", "Password=*****");
+            logger.LogInformation("Step 2: 開始執行主專案 DB Migration...");
 
-                logger.LogCritical(sqlEx,
-                    "主專案 DB Migration 失敗 [SqlException Number: {Number}, ErrorCode: {ErrorCode}]。\n" +
-                    "請確認：\n1. 連線字串格式是否為 Server=IP\\SQL2025,1433\n2. 目標連線字串: {ConnStr}\n3. SQL Server 遠端連線與服務狀態是否正常。",
-                    sqlEx.Number, sqlEx.ErrorCode, maskedConnStr);
-                throw;
-            }
-            catch (Exception ex)
-            {
-                logger.LogCritical(ex, "主專案 DB Migration 發生未預期的嚴重錯誤。");
-                throw;
-            }
-
-            // 4. 執行部署後 Plugin Modules DB Migration
-            try
+            var mainDbContextOptions = new DbContextOptionsBuilder<PhysLIMSDbContext>()
+                .UseSqlServer(migrationConnectionString, sqlOptions =>
                 {
-                    logger.LogInformation("Step 3: 開始掃描並執行部署後 Plugin Modules DB Migration...");
-                    //var pluginMigrationRunner = scope.ServiceProvider.GetRequiredService<IPluginMigrationRunner>();
-                    //await pluginMigrationRunner.ExecutePluginMigrationsAsync(migrationConnectionString);
+                    sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "core");
+                    sqlOptions.EnableRetryOnFailure(
+                        maxRetryCount: 3,
+                        maxRetryDelay: TimeSpan.FromSeconds(5),
+                        errorNumbersToAdd: null);
+                })
+                .Options;
 
-                    await app.InitializeModularSystemAsync();
+            await using var mainDbContext = new PhysLIMSDbContext(mainDbContextOptions);
+            var connection = mainDbContext.Database.GetDbConnection();
+            await connection.OpenAsync().ConfigureAwait(false);
+            await connection.CloseAsync().ConfigureAwait(false);
 
-                    logger.LogInformation("所有 Plugin Modules DB Migration 執行完畢。");
-                }
-                catch (Exception ex)
-                {
-                    logger.LogCritical(ex, "Plugin Modules DB Migration 失敗。");
-                    throw;
-                }
-            }
-        
+            await mainDbContext.Database.MigrateAsync().ConfigureAwait(false);
+            logger.LogInformation("主專案 DB Migration 完成。");
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex, "主專案 DB Migration 發生未預期的嚴重錯誤。");
+            throw;
+        }
     }
 
-
-
-    // Step 2. 初始化模組系統與動態控制器
+    // 初始化動態控制器與外掛模組
     Log.Information("開始初始化模組系統與動態控制器...");
-    await app.InitializeModularSystemAsync();
-    await app.UseDynamicControllersAsync();
+    await app.InitializeModularSystemAsync().ConfigureAwait(false);
+    await app.UseDynamicControllersAsync().ConfigureAwait(false);
 
-    // Step 3. 執行動態權限自動同步與 Seed
     using (var scope = app.Services.CreateScope())
     {
         Log.Information("開始同步與初始化動態 BitMask 權限資料...");
         var permissionSeeder = scope.ServiceProvider.GetRequiredService<IPermissionSeedService>();
-        await permissionSeeder.SeedAndSyncPermissionsAsync();
+        await permissionSeeder.SeedAndSyncPermissionsAsync().ConfigureAwait(false);
     }
 
-    // Step 4. 安全與授權管道
     app.UseRouting();
     app.UseAuthentication();
     app.UseAuthorization();
 
-    // Step 5. 註冊 Controller 路由點
     app.MapControllers();
 
-    // Step 6. 觸發 ActionDescriptor 變更通知，刷新 Dynamic Controller 路由
     var changeProvider = app.Services.GetRequiredService<IDynamicActionDescriptorChangeProvider>();
     Log.Information("觸發 MVC ActionDescriptorCollection 變更通知，刷新 Dynamic Controller 路由...");
     changeProvider.NotifyChanges();
 
-    // Step 7. OpenAPI 與 Scalar 文件映射
+    //  攔截 OpenAPI 請求，強制破除前端快取 (避免 Skeleton Loader 讀取舊檔案卡死)
+    app.Use(async (context, next) =>
+    {
+        if (context.Request.Path.StartsWithSegments("/openapi", StringComparison.OrdinalIgnoreCase))
+        {
+            context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+            context.Response.Headers.Pragma = "no-cache";
+            context.Response.Headers.Expires = "0";
+        }
+        await next();
+    });
+
+    // 註冊 OpenAPI endpoints 與 Scalar 介面
     app.MapOpenApi();
-    // 4. 配置 Scalar API 文件 UI 中介軟體
+
     if (app.Environment.IsDevelopment())
     {
         app.MapScalarApiReference(options =>
@@ -420,7 +357,7 @@ try
         await Task.CompletedTask;
     });
 
-    await app.RunAsync();
+    await app.RunAsync().ConfigureAwait(false);
 }
 catch (Exception ex)
 {

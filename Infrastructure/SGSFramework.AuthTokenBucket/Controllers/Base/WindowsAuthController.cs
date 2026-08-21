@@ -9,8 +9,8 @@ using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
 using SGSFramework.Core.Controllers.Base;
-using SGSFramework.AuthTokenBucket.Servers;
 using SGSFramework.Core.Abstractions.Entities.Identities;
+using SGSFramework.AuthTokenBucket.Services;
 
 namespace SGSFramework.AuthTokenBucket.Controllers.Base
 {

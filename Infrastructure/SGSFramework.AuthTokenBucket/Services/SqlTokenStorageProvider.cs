@@ -11,7 +11,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace SGSFramework.AuthTokenBucket.Servers
+namespace SGSFramework.AuthTokenBucket.Services
 {
     /// <summary>
     /// SQL-based implementation of the token storage provider. This class is responsible for managing user refresh tokens in a SQL database. It provides methods to add, update, and retrieve tokens based on user ID and device ID. The class uses Entity Framework Core for database operations.

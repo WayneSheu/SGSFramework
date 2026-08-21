@@ -6,7 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace SGSFramework.AuthTokenBucket.Servers
+namespace SGSFramework.AuthTokenBucket.Services
 {
     /// <summary>
     /// 帳號補償修復管理器

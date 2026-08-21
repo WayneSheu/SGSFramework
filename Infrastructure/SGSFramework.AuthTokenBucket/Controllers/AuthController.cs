@@ -1,4 +1,10 @@
-﻿using Microsoft.AspNetCore.Authentication;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Claims;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
@@ -9,7 +15,7 @@ using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.Configurations;
 using SGSFramework.AuthTokenBucket.DTOs;
 using SGSFramework.AuthTokenBucket.Models;
-using SGSFramework.AuthTokenBucket.Servers;
+using SGSFramework.AuthTokenBucket.Services;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Logings;
@@ -17,8 +23,6 @@ using SGSFramework.Core.Abstractions.Menus;
 using SGSFramework.Core.Controllers.Base;
 using SGSFramework.Core.DTOs;
 using SGSFramework.Core.HttpAuditProviders;
-using System.ComponentModel;
-using System.Security.Claims;
 
 namespace SGSFramework.AuthTokenBucket.Controllers.v1;
 
@@ -28,47 +32,31 @@ namespace SGSFramework.AuthTokenBucket.Controllers.v1;
 [ApiController]
 [Route("api/v1/auth")]
 [Produces("application/json")]
-[Menu("身份驗證", "fa-solid fa-user-lock", order: 1, parent: null)]
-[Description("提供帳密登入、Token 輪轉刷新、動態選單與實驗室上下文切換服務")]
-public sealed class AuthController : ApiControllerBase
+[ControllerTitle("身份驗證", Icon = "fa-solid fa-user-lock", Order = 10, Description = "提供帳密登入、AD SSO 登入、Token 輪轉刷新、動態選單與實驗室上下文切換服務")]
+public sealed class AuthController(
+    UserManager<ApplicationUser> userManager,
+    TokenManager tokenManager,
+    ITokenStorageProvider storageProvider,
+    IUserRefreshTokenRepository tokenRepository,
+    TokenBucketEngine<ApplicationUser> tokenEngine,
+    IOptions<AuthTokenBucketOptions> options,
+    ILogger<AuthController> logger,
+    IAuditProvider auditProvider,
+    ISecurityLogger securityLogger,
+    IDynamicMenuService menuService,
+    IUserRuntimeScopeService runtimeScopeService) : ApiControllerBase
 {
-    private readonly UserManager<ApplicationUser> _userManager;
-    private readonly TokenManager _tokenManager;
-    private readonly ITokenStorageProvider _storageProvider;
-    private readonly IUserRefreshTokenRepository _tokenRepository;
-    private readonly TokenBucketEngine<ApplicationUser> _tokenEngine; 
-    private readonly AuthTokenBucketOptions _options;
-    private readonly ILogger<AuthController> _logger;
-    private readonly IAuditProvider _auditProvider;
-    private readonly ISecurityLogger _securityLogger;
-    private readonly IDynamicMenuService _menuService;
-    private readonly IUserRuntimeScopeService _runtimeScopeService;
-
-    public AuthController(
-        UserManager<ApplicationUser> userManager,
-        TokenManager tokenManager,
-        ITokenStorageProvider storageProvider,
-        IUserRefreshTokenRepository tokenRepository,
-        TokenBucketEngine<ApplicationUser> tokenEngine,
-        IOptions<AuthTokenBucketOptions> options,
-        ILogger<AuthController> logger,
-        IAuditProvider auditProvider,
-        ISecurityLogger securityLogger,
-        IDynamicMenuService menuService,
-        IUserRuntimeScopeService runtimeScopeService)
-    {
-        _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
-        _tokenManager = tokenManager ?? throw new ArgumentNullException(nameof(tokenManager));
-        _storageProvider = storageProvider ?? throw new ArgumentNullException(nameof(storageProvider));
-        _tokenRepository = tokenRepository ?? throw new ArgumentNullException(nameof(tokenRepository));
-        _tokenEngine = tokenEngine ?? throw new ArgumentNullException(nameof(tokenEngine));
-        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _auditProvider = auditProvider ?? throw new ArgumentNullException(nameof(auditProvider));
-        _securityLogger = securityLogger ?? throw new ArgumentNullException(nameof(securityLogger));
-        _menuService = menuService ?? throw new ArgumentNullException(nameof(menuService));
-        _runtimeScopeService = runtimeScopeService ?? throw new ArgumentNullException(nameof(runtimeScopeService));
-    }
+    private readonly UserManager<ApplicationUser> _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
+    private readonly TokenManager _tokenManager = tokenManager ?? throw new ArgumentNullException(nameof(tokenManager));
+    private readonly ITokenStorageProvider _storageProvider = storageProvider ?? throw new ArgumentNullException(nameof(storageProvider));
+    private readonly IUserRefreshTokenRepository _tokenRepository = tokenRepository ?? throw new ArgumentNullException(nameof(tokenRepository));
+    private readonly TokenBucketEngine<ApplicationUser> _tokenEngine = tokenEngine ?? throw new ArgumentNullException(nameof(tokenEngine));
+    private readonly AuthTokenBucketOptions _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+    private readonly ILogger<AuthController> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly IAuditProvider _auditProvider = auditProvider ?? throw new ArgumentNullException(nameof(auditProvider));
+    private readonly ISecurityLogger _securityLogger = securityLogger ?? throw new ArgumentNullException(nameof(securityLogger));
+    private readonly IDynamicMenuService _menuService = menuService ?? throw new ArgumentNullException(nameof(menuService));
+    private readonly IUserRuntimeScopeService _runtimeScopeService = runtimeScopeService ?? throw new ArgumentNullException(nameof(runtimeScopeService));
 
     /// <summary>
     /// 標準帳密登入
@@ -77,8 +65,7 @@ public sealed class AuthController : ApiControllerBase
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>包含存取權牌、選單結構與權限集合之登入結果</returns>
     [HttpPost("login")]
-    [Menu("帳密登入", "fa-solid fa-right-to-bracket", order: 1, parent: "身份驗證")]
-    [Description("標準帳密登入端點，整合大容量 Bitmask 權限與 TokenBucketEngine 基礎設施")]
+    [Function("Login", "帳密登入", Icon = "fa-solid fa-right-to-bracket", Order = 1, Description = "標準帳密登入端點，整合大容量 Bitmask 權限與 TokenBucketEngine 基礎設施")]
     [ProducesResponseType(typeof(LoginResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
@@ -91,7 +78,7 @@ public sealed class AuthController : ApiControllerBase
         try
         {
             // 1. 基礎身份認證
-            var user = await _userManager.FindByNameAsync(request.Email) ?? await _userManager.FindByEmailAsync(request.Email) ;
+            var user = await _userManager.FindByNameAsync(request.Email) ?? await _userManager.FindByEmailAsync(request.Email);
             if (user == null || !await _userManager.CheckPasswordAsync(user, request.Password))
             {
                 _logger.LogWarning(
@@ -109,42 +96,23 @@ public sealed class AuthController : ApiControllerBase
                     Instance = HttpContext.Request.Path
                 });
             }
-            // 2. 獲取請求特徵 (包含 DeviceId 與 LabId)
+
+            // 2. 獲取請求特徵
             string deviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "UNKNOWN-DEVICE";
             string deviceName = Request.Headers["User-Agent"].FirstOrDefault() ?? "Generic Browser";
             string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
-            // 優先從 Header 取得請求的 LabId，若無則由 RuntimeScopeService 決定預設值
-            string requestedLabId = Request.Headers["X-Lab-Id"].FirstOrDefault();
+            string? requestedLabId = Request.Headers["X-Lab-Id"].FirstOrDefault();
+
             // 3. 簽發 Token
             var tokenResult = await _tokenEngine.IssueInitialSessionAsync(user, deviceId, deviceName, clientIp);
-            // 4. 初始化 Runtime Scope
-            // 傳入 requestedLabId，讓 Service 判斷該使用者是否有權進入該實驗室
-            // 呼叫初始化服務
+
+            // 4. 初始化 Runtime Scope 與選單資料
             var runtimeProfile = await _runtimeScopeService.InitializeUserScopeAsync(
                 user.Id.ToString(),
-                requestedLabId, // 從 Header 來的 string
+                requestedLabId,
                 cancellationToken);
 
-            // 直接在 DTO 使用服務回傳的結果
-            return Ok(new LoginResponseDto
-            {
-                TokenData = tokenResult,
-                Menus = runtimeProfile.Menus, // 從 Profile 取得
-                DeviceId = deviceId,
-                LabId = runtimeProfile.LabId.ToString(), // 同步正確的 LabId
-                Message = "登入成功"
-            });
-
-
             _logger.LogInformation("使用者 {Email} 登入成功，裝置 ID: {DeviceId}", user.Email, deviceId);
-            
-            // 1. 從 UserRuntimeScopeService 取得實質權限清單
-            IEnumerable<string> userPermissions = await _runtimeScopeService.GetUserPermissionsAsync(
-                user.Id.ToString(),
-                cancellationToken: cancellationToken);
-
-            // 2. 傳入權限集合，算出一套帶有 Level 與 IsDisplay 控制標記的階層選單
-            var menuTree = await _menuService.GetUserMenuAsync(userPermissions);
 
             return Ok(new LoginResponseDto
             {
@@ -152,7 +120,7 @@ public sealed class AuthController : ApiControllerBase
                 Menus = runtimeProfile.Menus,
                 DeviceId = deviceId,
                 LabId = runtimeProfile.LabId.ToString(),
-                AccessibleLabs = runtimeProfile.AccessibleLabs, // 帶入可存取清單
+                AccessibleLabs = runtimeProfile.AccessibleLabs,
                 Message = "登入成功"
             });
         }
@@ -169,14 +137,16 @@ public sealed class AuthController : ApiControllerBase
         }
     }
 
-
     /// <summary>
     /// 地端 Windows 網域單一登入
     /// </summary>
     [HttpGet("adlogin")]
     [Authorize(AuthenticationSchemes = "Windows")]
-    [Menu("AD登入", "fa-solid fa-lock", order: 1, parent: "身份驗證")]
-    [Description("內部網路 Windows 網域無感單一登入端點（全面整合 TokenManager 與大容量 Bitmask）")]
+    [Function("WindowsLogin", "AD單一登入", Icon = "fa-solid fa-windows", Order = 2, Description = "內部網路 Windows 網域無感單一登入端點（全面整合 TokenManager 與大容量 Bitmask）")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> WindowsLogin()
     {
         try
@@ -187,7 +157,7 @@ public sealed class AuthController : ApiControllerBase
                 return Unauthorized(new { message = "未通過 Windows 網域認證。" });
             }
 
-            string domainAccount = userIdentity.Name;
+            string? domainAccount = userIdentity.Name;
             if (string.IsNullOrWhiteSpace(domainAccount))
             {
                 return BadRequest(new { message = "無法解析有效的網域帳號名稱。" });
@@ -222,16 +192,14 @@ public sealed class AuthController : ApiControllerBase
             string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
 
             UserRefreshToken? existingSession = await _tokenEngine.GetActiveSessionAsync(user.Id.ToString(), deviceId);
-            TokenResult tokenResult;
+            TokenResult? tokenResult;
 
             if (existingSession != null)
             {
-                // 若存在活體工作階段，直接調用引擎換票分流或重組真實憑證
                 tokenResult = await _tokenEngine.RefreshSessionAsync(user, deviceId, existingSession.TokenHash);
             }
             else
             {
-                // 🚀 執行初次建立：整合大容量 Bitmask 權限與 TokenManager 簽發實體 JWT 票據
                 tokenResult = await _tokenEngine.IssueInitialSessionAsync(user, deviceId, deviceName, clientIp);
             }
 
@@ -250,16 +218,15 @@ public sealed class AuthController : ApiControllerBase
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "Windows AD 認證處理時發生異常。");
             return StatusCode(StatusCodes.Status500InternalServerError, new
             {
                 message = "Windows 認證處理器發生核心異常",
                 detail = ex.Message,
-                innerException = ex.InnerException?.Message,
-                stackTrace = ex.StackTrace
+                innerException = ex.InnerException?.Message
             });
         }
     }
-
 
     /// <summary>
     /// 雙向權限票據高併發輪轉刷新
@@ -268,8 +235,7 @@ public sealed class AuthController : ApiControllerBase
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>更新後之 Token 數據集</returns>
     [HttpPost("refresh")]
-    [Menu("刷新 Token", "fa-solid fa-arrows-rotate", order: 2, parent: "身份驗證")]
-    [Description("雙向權限票據高併發輪轉刷新端點，對齊更新後的 TokenBucketEngine 參數規範")]
+    [Function("RefreshToken", "刷新Token", Icon = "fa-solid fa-arrows-rotate", Order = 3, Description = "雙向權限票據高併發輪轉刷新端點，對齊更新後的 TokenBucketEngine 參數規範")]
     [ProducesResponseType(typeof(TokenResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -308,7 +274,6 @@ public sealed class AuthController : ApiControllerBase
             }
 
             string deviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "UNKNOWN-DEVICE";
-
             var tokenResult = await _tokenEngine.RefreshSessionAsync(user, deviceId, request.RefreshToken);
 
             return Ok(tokenResult);
@@ -373,8 +338,7 @@ public sealed class AuthController : ApiControllerBase
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>線上即時活動用戶統計資料</returns>
     [HttpGet("online-count")]
-    [Menu("線上人數統計", "fa-solid fa-users", order: 3, parent: "身份驗證")]
-    [Description("獲取線上即時活動用戶數觀測端點，支援自訂觀測時間視窗")]
+    [Function("GetOnlineUserCount", "線上人數統計", Icon = "fa-solid fa-users", Order = 4, Description = "獲取線上即時活動用戶數觀測端點，支援自訂觀測時間視窗")]
     [ProducesResponseType(typeof(OnlineUserCountResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
@@ -437,20 +401,18 @@ public sealed class AuthController : ApiControllerBase
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>切換後的新權限配置與選單結構</returns>
     [HttpPost("switch-context")]
-    [Menu("切換實驗室", "fa-solid fa-exchange-alt", order: 4, parent: "身份驗證")]
-    [Description("高階主管切換作用中的實驗室上下文，支援無感切換")]
+    [Function("SwitchContext", "切換實驗室", Icon = "fa-solid fa-right-left", Order = 5, Description = "高階主管切換作用中的實驗室上下文，支援無感切換")]
     [ProducesResponseType(typeof(UserPermissionProfileDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> SwitchContextAsync([FromBody] SwitchLabRequestDto request,
+    public async Task<IActionResult> SwitchContextAsync(
+        [FromBody] SwitchLabRequestDto request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // 1. 從 HttpContext 獲取當前使用者識別碼
-        string? userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                      ?? User.FindFirst("sub")?.Value;
+        string? userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
         if (string.IsNullOrEmpty(userId))
         {
             return Unauthorized(new ProblemDetails
@@ -464,7 +426,6 @@ public sealed class AuthController : ApiControllerBase
 
         try
         {
-            // 2. 呼叫服務層執行實驗室切換
             var newProfile = await _runtimeScopeService.SwitchLaboratoryAsync(userId, request.TargetLabId, cancellationToken);
 
             if (newProfile is null)
@@ -498,30 +459,23 @@ public sealed class AuthController : ApiControllerBase
     /// </summary>
     [HttpPost("logout")]
     [Authorize]
-    [Menu("單一登出", "fa-solid fa-right-from-bracket", order: 5, parent: "身份驗證")]
-    [Description("終止當前裝置的工作階段與 Refresh Token")]
+    [Function("Logout", "單一登出", Icon = "fa-solid fa-right-from-bracket", Order = 6, Description = "終止當前裝置的工作階段與 Refresh Token")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> LogoutAsync(CancellationToken cancellationToken = default)
     {
-        // 直接從 HttpContext 延伸方法取得原始的 Access Token
-        string? rawToken = await HttpContext.GetTokenAsync("access_token");
-
-        // 1. 從 ClaimsPrincipal 取得當前使用者識別碼
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(userId))
         {
-            return Unauthorized(new ProblemDetails { Status = 401, Title = "未授權存取" });
+            return Unauthorized(new ProblemDetails { Status = StatusCodes.Status401Unauthorized, Title = "未授權存取" });
         }
 
-        // 從 Request Header 取得當前裝置識別碼（與登入時保持一致的維度）
         string deviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "UNKNOWN-DEVICE";
 
         try
         {
-            // 透過 Token 引擎或 Repository 將該使用者在特定裝置的 Session 註銷
             await _tokenRepository.RevokeSessionAsync(userId, deviceId);
-
             _logger.LogInformation("使用者 {UserId} 在裝置 {DeviceId} 執行單一登出成功。", userId, deviceId);
 
             return Ok(new { Message = "單一裝置登出成功。" });
@@ -531,7 +485,7 @@ public sealed class AuthController : ApiControllerBase
             _logger.LogError(ex, "單一裝置登出時發生異常。UserId: {UserId}, DeviceId: {DeviceId}", userId, deviceId);
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
-                Status = 500,
+                Status = StatusCodes.Status500InternalServerError,
                 Title = "伺服器內部錯誤",
                 Detail = "登出程序執行失敗。"
             });
@@ -543,21 +497,20 @@ public sealed class AuthController : ApiControllerBase
     /// </summary>
     [HttpPost("logout-all")]
     [Authorize]
-    [Menu("所有裝置登出", "fa-solid fa-power-off", order: 6, parent: "身份驗證")]
-    [Description("強制終止該使用者所有裝置的有效 Token 與工作階段")]
+    [Function("LogoutAll", "所有裝置登出", Icon = "fa-solid fa-power-off", Order = 7, Description = "強制終止該使用者所有裝置的有效 Token 與工作階段")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> LogoutAllAsync(CancellationToken cancellationToken = default)
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(userId))
         {
-            return Unauthorized(new ProblemDetails { Status = 401, Title = "未授權存取" });
+            return Unauthorized(new ProblemDetails { Status = StatusCodes.Status401Unauthorized, Title = "未授權存取" });
         }
 
         try
         {
-            // 將該使用者名下的所有 Active Sessions 全部撤銷
             await _tokenRepository.RevokeAllUserSessionsAsync(userId);
 
             _securityLogger.LogSecurity(
@@ -576,7 +529,7 @@ public sealed class AuthController : ApiControllerBase
             _logger.LogError(ex, "所有裝置登出時發生異常。UserId: {UserId}", userId);
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
-                Status = 500,
+                Status = StatusCodes.Status500InternalServerError,
                 Title = "伺服器內部錯誤",
                 Detail = "全裝置登出程序執行失敗。"
             });

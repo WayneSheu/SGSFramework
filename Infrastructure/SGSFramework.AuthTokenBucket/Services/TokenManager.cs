@@ -9,7 +9,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace SGSFramework.AuthTokenBucket.Servers
+namespace SGSFramework.AuthTokenBucket.Services
 {
 
     /// <summary>

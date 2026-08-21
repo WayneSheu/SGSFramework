@@ -7,7 +7,6 @@ using SGSFramework.Core.Abstractions.Entities.Ledgers;
 using SGSFramework.VerifyLedger.Dtos;
 using SGSFramework.VerifyLedger.Reports;
 using SGSFramework.VerifyLedger.Services;
-using System.ComponentModel;
 using System.Reflection;
 using System.Text.Json;
 
@@ -18,9 +17,8 @@ namespace SGSFramework.VerifyLedger.Controllers
     /// </summary>
     [ApiController]
     [Route("api/ledger")]
-    [Menu("總帳驗證管理", "fa-solid fa-user-shield", order: 2, parent: null)]
+    [ControllerTitle("總帳驗證管理", Icon = "fa-solid fa-user-shield", Order = 20, Description = "泛型總帳驗證控制器，支援動態路由解析特定 DbContext 與 Entity")]
     [RequiresPermission("LEDGERVERIFICATION_READ")]
-    [Description("總帳驗證")]
     public class LedgerVerificationController : ControllerBase
     {
         private readonly IServiceProvider _serviceProvider;
@@ -38,13 +36,12 @@ namespace SGSFramework.VerifyLedger.Controllers
         /// 動態驗證指定資料庫與實體的總帳完整性
         /// </summary>
         [HttpPost("{contextName}/verify/{entityName}")]
+        [Function("VerifyLedger", "帳本驗證", Icon = "fa-solid fa-shield-halved", Order = 1, Description = "動態驗證指定資料庫內容與實體的總帳完整性雜湊值")]
+        [RequiresPermission("LEDGERVERIFICATION_VERIFYLEDGER")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [Menu("帳本驗證", "fa-solid fa-user-shield", order: 2, parent: "總帳驗證管理")]
-        [RequiresPermission("LEDGERVERIFICATION_VERIFYLEDGER")]
-        [Description("帳本驗證")]
         public async Task<IActionResult> VerifyLedgerAsync(string contextName, string entityName)
         {
             if (string.IsNullOrWhiteSpace(contextName) || string.IsNullOrWhiteSpace(entityName))
@@ -123,13 +120,12 @@ namespace SGSFramework.VerifyLedger.Controllers
         /// 驗證總帳並直接下載 PDF 稽核報告（支援完整動態淬取資料庫與資料表名稱）
         /// </summary>
         [HttpGet("{contextName}/report/{entityName}")]
+        [Function("DownloadLedgerReport", "帳本驗證報告", Icon = "fa-solid fa-file-pdf", Order = 2, Description = "驗證指定資料庫實體之總帳並直接產生下載 PDF 稽核報告")]
+        [RequiresPermission("LEDGERVERIFICATION_DOWNLOAD_REPORT")]
         [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(FileResult))]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [Menu("帳本驗證報告", "fa-solid fa-user-shield", order: 2, parent: "總帳驗證管理")]
-        [RequiresPermission("LEDGERVERIFICATION_DOWNLOAD_REPORT")]
-        [Description("帳本驗證報告")]
         public async Task<IActionResult> DownloadReport(string contextName, string entityName)
         {
             if (string.IsNullOrWhiteSpace(contextName) || string.IsNullOrWhiteSpace(entityName))

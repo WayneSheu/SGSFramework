@@ -8,7 +8,7 @@ using System.Collections;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace SGSFramework.AuthTokenBucket.Controllers
+namespace SGSFramework.AuthTokenBucket.Services
 {
     /// <summary>
     /// Controllers 層：動態授權 Filter

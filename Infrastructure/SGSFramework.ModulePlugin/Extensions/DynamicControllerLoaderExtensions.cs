@@ -1,39 +1,46 @@
 ﻿using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Routing;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Serilog;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Controllers.Services;
 using SGSFramework.ModulePlugin.Systems.Controller.Repositories;
 using SGSFramework.ModulePlugin.Systems.Module.Loaders;
-using System.ComponentModel;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
 
 namespace SGSFramework.ModulePlugin.Extensions;
 
 /// <summary>
 /// 應用程式啟動中介軟體擴充
-/// 掃描與解析 Controller 及其 Action 的中繼資料（路由、選單 [Menu]、權限 [RequiresPermission]），並同步至資料庫。
+/// 掃描與解析 Controller 及其 Action 的中繼資料（路由、選單、權限），並同步至資料庫。
+/// 支援三層 API Menu 結構: ModuleTitle (Section) -> ControllerTitle -> DisplayName (Function)
 /// </summary>
 public static class DynamicControllerLoaderExtensions
 {
     public static async Task UseDynamicControllersAsync(this IApplicationBuilder app)
     {
+        ArgumentNullException.ThrowIfNull(app);
+
         using var scope = app.ApplicationServices.CreateScope();
         var controllerRepo = scope.ServiceProvider.GetRequiredService<IDynamicControllerRepository<ControllerMetadata>>();
 
-        // 取得所有透過 ModuleLoader 正規載入且通過簽章驗證的合規模組名稱
         var loadedModuleNames = ModuleLoaderExtensions.GetLoadedModuleNames().ToHashSet(StringComparer.OrdinalIgnoreCase);
-
         var assemblies = AppDomain.CurrentDomain.GetAssemblies();
 
         foreach (var assembly in assemblies)
         {
             string moduleName = assembly.GetName().Name ?? "Unknown";
 
-            // 嚴格過濾：若該 Assembly 不在合法載入清單中，直接略過，絕不寫入 ControllerMetadata
-            if (!loadedModuleNames.Contains(moduleName) && !moduleName.Equals("PhysLIMS.Controller", StringComparison.OrdinalIgnoreCase) && !moduleName.Equals("SGS.API", StringComparison.OrdinalIgnoreCase))
+            // 過濾非目標模組 Assembly
+            if (!loadedModuleNames.Contains(moduleName)
+                && !moduleName.Equals("PhysLIMS.Controller", StringComparison.OrdinalIgnoreCase)
+                && !moduleName.Equals("SGS.API", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -44,57 +51,76 @@ public static class DynamicControllerLoaderExtensions
 
             if (controllerTypes.Count == 0) continue;
 
-            Log.Information("[DynamicController] 開始註冊模組: {Module}, 傳入 Controller 數量: {Count}", moduleName, controllerTypes.Count);
+            // 1. 解析 ModuleTitle: [ModuleAttribute] -> [AssemblyTitleAttribute] -> Assembly Name
+            var moduleAttr = assembly.GetCustomAttribute<ModuleAttribute>();
+            var assemblyTitleAttr = assembly.GetCustomAttribute<AssemblyTitleAttribute>();
+            string moduleTitle = !string.IsNullOrWhiteSpace(moduleAttr?.Title)
+                ? moduleAttr.Title
+                : (!string.IsNullOrWhiteSpace(assemblyTitleAttr?.Title) ? assemblyTitleAttr.Title : moduleName);
+
+            Log.Information("[DynamicController] 開始註冊模組: {Module} ({ModuleTitle}), 傳入 Controller 數量: {Count}",
+                moduleName, moduleTitle, controllerTypes.Count);
 
             var newMetas = new List<ControllerMetadata>();
 
             foreach (var ctrlType in controllerTypes)
             {
-                // 1. 取得 Controller 的路由基底 (RouteAttribute)
-                var routeAttrs = ctrlType.GetCustomAttributes<Microsoft.AspNetCore.Mvc.RouteAttribute>(inherit: true).ToList();
-                string baseRoute = routeAttrs.FirstOrDefault()?.Template ?? $"api/{ctrlType.Name.Replace("Controller", "")}";
-                // 2. 取得 Controller 的選單與權限屬性
-                var menuAttr = ctrlType.GetCustomAttribute<MenuAttribute>();
-                var permAttr = ctrlType.GetCustomAttribute<RequiresPermissionAttribute>();
-                var descAttr = ctrlType.GetCustomAttribute<DescriptionAttribute>();
-                var orderAttr = ctrlType.GetCustomAttribute<OrderAttribute>();
-                // 3. 取得 Controller 的所有 Action 方法
+                // 2. 解析 Route Base
+                var routeAttr = ctrlType.GetCustomAttributes<RouteAttribute>(inherit: true).FirstOrDefault();
+                string baseRoute = routeAttr?.Template ?? $"api/{ctrlType.Name.Replace("Controller", "", StringComparison.OrdinalIgnoreCase)}";
+
+                // 3. 解析 ControllerTitle
+                var ctrlTitleAttr = ctrlType.GetCustomAttribute<ControllerTitleAttribute>();
+                var ctrlPermAttr = ctrlType.GetCustomAttribute<RequiresPermissionAttribute>();
+
+                string controllerTitle = !string.IsNullOrWhiteSpace(ctrlTitleAttr?.Title)
+                    ? ctrlTitleAttr.Title
+                    : ctrlType.Name.Replace("Controller", "", StringComparison.OrdinalIgnoreCase);
+
+                // 4. 解析 Controller 的 Action
                 var actions = ctrlType.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-                    .Where(m => m.IsPublic && !m.IsSpecialName && !m.IsDefined(typeof(Microsoft.AspNetCore.Mvc.NonActionAttribute)));
+                    .Where(m => m.IsPublic && !m.IsSpecialName && !m.IsDefined(typeof(NonActionAttribute)));
 
                 foreach (var action in actions)
                 {
                     string actionName = action.Name;
+
+                    // 解析 HTTP Verb 與 Action 路由
+                    var httpMethodAttr = action.GetCustomAttributes<HttpMethodAttribute>(inherit: true).FirstOrDefault();
                     string routeTemplate = baseRoute;
 
-                    var httpGet = action.GetCustomAttribute<Microsoft.AspNetCore.Mvc.HttpGetAttribute>();
-                    var httpPost = action.GetCustomAttribute<Microsoft.AspNetCore.Mvc.HttpPostAttribute>();
-                    var httpPut = action.GetCustomAttribute<Microsoft.AspNetCore.Mvc.HttpPutAttribute>();
-                    var httpDelete = action.GetCustomAttribute<Microsoft.AspNetCore.Mvc.HttpDeleteAttribute>();
+                    if (httpMethodAttr?.Template is { Length: > 0 } relativeOrAbsoluteRoute)
+                    {
+                        routeTemplate = relativeOrAbsoluteRoute.StartsWith('/')
+                            ? relativeOrAbsoluteRoute.TrimStart('/')
+                            : $"{baseRoute}/{relativeOrAbsoluteRoute}";
+                    }
 
-                    if (httpGet?.Template != null) routeTemplate = $"{baseRoute}/{httpGet.Template}";
-                    else if (httpPost?.Template != null) routeTemplate = $"{baseRoute}/{httpPost.Template}";
-                    else if (httpPut?.Template != null) routeTemplate = $"{baseRoute}/{httpPut.Template}";
-                    else if (httpDelete?.Template != null) routeTemplate = $"{baseRoute}/{httpDelete.Template}";
+                    // 5. 解析 FunctionAttribute (Action 級別)
+                    var actionFuncAttr = action.GetCustomAttribute<FunctionAttribute>();
+                    var actionPermAttr = action.GetCustomAttribute<RequiresPermissionAttribute>() ?? ctrlPermAttr;
 
-                    var actionMenu = action.GetCustomAttribute<MenuAttribute>() ?? menuAttr;
-                    var actionPerm = action.GetCustomAttribute<RequiresPermissionAttribute>() ?? permAttr;
-                    var actionDesc = action.GetCustomAttribute<DescriptionAttribute>() ?? descAttr;
-                    var actionOrder = action.GetCustomAttribute<OrderAttribute>() ?? orderAttr;
+                    // 各屬性賦值與 Fallback 機制
+                    string actionDisplayName = !string.IsNullOrWhiteSpace(actionFuncAttr?.Title) ? actionFuncAttr.Title : actionName;
+                    string actionIcon = actionFuncAttr?.Icon ?? ctrlTitleAttr?.Icon ?? string.Empty;
+                    int actionOrder = actionFuncAttr?.Order ?? ctrlTitleAttr?.Order ?? 0;
+                    string? actionDescription = actionFuncAttr?.Description ?? ctrlTitleAttr?.Description;
 
                     newMetas.Add(new ControllerMetadata
                     {
                         Id = Guid.NewGuid(),
                         ModuleName = moduleName,
+                        ModuleTitle = moduleTitle,                  // 寫入 core.ControllerMetadata.ModuleTitle
                         ControllerName = ctrlType.Name,
+                        ControllerTitle = controllerTitle,          // 寫入 core.ControllerMetadata.ControllerTitle
                         ActionName = actionName,
+                        DisplayName = actionDisplayName,            // 寫入 DisplayName
                         RouteTemplate = routeTemplate,
-                        DisplayName = actionMenu?.Name ?? ctrlType.Name,
-                        ParentMenuName = actionMenu?.Parent,
-                        Icon = actionMenu?.Icon,
-                        DisplayOrder = actionOrder?.Order ?? 0,
-                        PermissionKey = actionPerm?.PermissionKey ?? string.Empty,
-                        Description = actionDesc?.Description,
+                        ParentMenuName = controllerTitle,
+                        Icon = actionIcon,                          // 寫入 Icon
+                        DisplayOrder = actionOrder,                  // 寫入 DisplayOrder
+                        PermissionKey = actionPermAttr?.PermissionKey ?? string.Empty,
+                        Description = actionDescription,            // 寫入 Description
                         ControllerTypeName = ctrlType.FullName ?? ctrlType.Name,
                         Version = assembly.GetName().Version?.ToString() ?? "1.0.0.0",
                         IsActive = true,
@@ -103,13 +129,11 @@ public static class DynamicControllerLoaderExtensions
                 }
             }
 
-            // 將新解析的 ControllerMetadata 與資料庫中現有的進行比對，並同步更新
-            // 將所有已註冊的 ControllerMetadata 設定為啟用狀態，並移除不再存在的 ControllerMetadata
+            // 將解析好的元資料同步寫入 Repository / DB
             await controllerRepo.RegisterAsync(moduleName, newMetas);
-            //
             Log.Information("[DynamicController] 模組 {Module} 註冊與狀態同步處理完畢。", moduleName);
         }
-    
+
         Log.Information("控制器元資料同步已成功完成。");
     }
 }

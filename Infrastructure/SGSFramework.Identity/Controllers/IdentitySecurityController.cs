@@ -1,15 +1,18 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
-using SGSFramework.Identity.DTOs;
-using System.ComponentModel;
+using SGSFramework.AuthTokenBucket.Services;
 using SGSFramework.Core.Abstractions.Attributes;
-using SGSFramework.Core.Controllers.Base;
-using SGSFramework.AuthTokenBucket.Servers;
 using SGSFramework.Core.Abstractions.Entities.Identities;
+using SGSFramework.Core.Controllers.Base;
+using SGSFramework.Identity.DTOs;
 
-namespace SGSFramework.Identity.Controllers;
+namespace SGSFramework.Identity.Controllers.v1;
 
 /// <summary>
 /// 身份安全管理控制器
@@ -17,21 +20,15 @@ namespace SGSFramework.Identity.Controllers;
 [ApiController]
 [Route("api/v1/identity-security")]
 [Produces("application/json")]
-[Menu("身份安全管理", "fa-solid fa-user-shield", order: 2, parent: null)]
+[Authorize]
+[ControllerTitle("身份安全管理", Icon = "fa-solid fa-user-shield", Order = 25, Description = "身份安全管理與緊急風險控制機制，支援帳號緊急熔斷與身分補償解凍")]
 [RequiresPermission("IDENTITY_SECURITY_MANAGEMENT")]
-[Description("身份安全管理與緊急風險控制機制")]
-public sealed class IdentitySecurityController : ApiControllerBase
+public sealed class IdentitySecurityController(
+    TokenBucketEngine<ApplicationUser> tokenEngine,
+    ILogger<IdentitySecurityController> logger) : ApiControllerBase
 {
-    private readonly TokenBucketEngine<ApplicationUser> _tokenEngine;
-    private readonly ILogger<IdentitySecurityController> _logger;
-
-    public IdentitySecurityController(
-        TokenBucketEngine<ApplicationUser> tokenEngine,
-        ILogger<IdentitySecurityController> logger)
-    {
-        _tokenEngine = tokenEngine ?? throw new ArgumentNullException(nameof(tokenEngine));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    }
+    private readonly TokenBucketEngine<ApplicationUser> _tokenEngine = tokenEngine ?? throw new ArgumentNullException(nameof(tokenEngine));
+    private readonly ILogger<IdentitySecurityController> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
     /// 帳號遭竊緊急熔斷（後端主動防禦方案）
@@ -40,9 +37,8 @@ public sealed class IdentitySecurityController : ApiControllerBase
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>熔斷結果資訊</returns>
     [HttpPost("emergency-freezes")]
-    [Menu("帳號緊急熔斷", "fa-solid fa-lock", order: 1, parent: "身份安全管理")]
     [RequiresPermission("IDENTITY_SECURITY_EMERGENCY_FREEZE")]
-    [Description("帳號遭竊緊急熔斷端點，強制銷毀所有工作階段並鎖定")]
+    [Function("EmergencyFreeze", "帳號緊急熔斷", Icon = "fa-solid fa-lock", Order = 1, Description = "帳號遭竊緊急熔斷端點，強制銷毀所有工作階段並鎖定")]
     [ProducesResponseType(typeof(EmergencyFreezeResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
@@ -97,7 +93,7 @@ public sealed class IdentitySecurityController : ApiControllerBase
             {
                 Status = StatusCodes.Status500InternalServerError,
                 Title = "系統內部錯誤",
-                Detail = $"執行緊急熔斷時發生系統核心異常：{ex.Message}",
+                Detail = "執行緊急熔斷程序時發生系統核心異常。",
                 Instance = HttpContext.Request.Path
             });
         }
@@ -110,9 +106,8 @@ public sealed class IdentitySecurityController : ApiControllerBase
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>身分修復與解凍結果</returns>
     [HttpPost("remediations")]
-    [Menu("身分重設與解凍", "fa-solid fa-unlock", order: 2, parent: "身份安全管理")]
     [RequiresPermission("IDENTITY_SECURITY_REMEDIATE")]
-    [Description("身分補償與重設密碼完成端點，安全清理風險 Session 並恢復帳號")]
+    [Function("RemediateAccount", "身分重設與解凍", Icon = "fa-solid fa-unlock", Order = 2, Description = "身分補償與重設密碼完成端點，安全清理風險 Session 並恢復帳號")]
     [ProducesResponseType(typeof(AccountRemediationResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
@@ -153,7 +148,7 @@ public sealed class IdentitySecurityController : ApiControllerBase
             {
                 Status = StatusCodes.Status500InternalServerError,
                 Title = "系統內部錯誤",
-                Detail = $"執行身分補償環境解凍時發生系統核心異常：{ex.Message}",
+                Detail = "執行身分補償環境解凍程序時發生系統核心異常。",
                 Instance = HttpContext.Request.Path
             });
         }

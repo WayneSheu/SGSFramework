@@ -342,11 +342,20 @@ public static class ModuleLoaderExtensions
             }
         }
 
-        // 1. 寫入/更新當前模組的中繼資料
+        // 1. 解析 ModuleTitle: [ModuleAttribute] -> [AssemblyTitleAttribute] -> moduleName
         var primaryAssembly = assemblyList.First();
+        var moduleAttr = primaryAssembly.GetCustomAttribute<ModuleAttribute>();
+        var assemblyTitleAttr = primaryAssembly.GetCustomAttribute<AssemblyTitleAttribute>();
+
+        string moduleTitle = !string.IsNullOrWhiteSpace(moduleAttr?.Title)
+            ? moduleAttr.Title
+            : (!string.IsNullOrWhiteSpace(assemblyTitleAttr?.Title) ? assemblyTitleAttr.Title : moduleName);
+
+        // 寫入/更新當前模組的中繼資料 (包含 ModuleTitle)
         var moduleMeta = new ModuleMetadata
         {
             ModuleName = moduleName,
+            ModuleTitle = moduleTitle,
             Version = primaryAssembly.GetName().Version?.ToString() ?? "1.0.0",
             AssemblyPath = string.IsNullOrEmpty(targetPath) ? primaryAssembly.Location : targetPath,
             IsActive = true,
@@ -366,7 +375,7 @@ public static class ModuleLoaderExtensions
         Log.Information(">>> [Controller Scan] 於模組 '{ModuleName}' ({AsmCount} 個 Assembly) 掃描到 {Count} 個原生 Controller 類別。",
             moduleName, assemblyList.Count, controllerTypes.Count);
 
-        var newMetas = ExtractControllerMetadatas(controllerTypes, moduleName);
+        var newMetas = ExtractControllerMetadatas(controllerTypes, moduleName, moduleTitle);
 
         // 3. 寫入/更新 ControllerMetadata
         await controllerRepo.RegisterAsync(moduleName, newMetas);
@@ -451,7 +460,7 @@ public static class ModuleLoaderExtensions
         }
     }
 
-    private static List<ControllerMetadata> ExtractControllerMetadatas(List<Type> controllerTypes, string moduleName)
+    private static List<ControllerMetadata> ExtractControllerMetadatas(List<Type> controllerTypes, string moduleName, string moduleTitle)
     {
         var newMetas = new List<ControllerMetadata>();
 
@@ -464,10 +473,14 @@ public static class ModuleLoaderExtensions
 
             string baseRoute = routeAttrs.FirstOrDefault()?.Template ?? $"api/{cleanControllerName}";
 
-            var menuAttr = ctrlType.GetCustomAttribute<MenuAttribute>();
-            var permAttr = ctrlType.GetCustomAttribute<RequiresPermissionAttribute>();
+            var ctrlTitleAttr = ctrlType.GetCustomAttribute<ControllerTitleAttribute>();
+            var ctrlPermAttr = ctrlType.GetCustomAttribute<RequiresPermissionAttribute>();
             var descAttr = ctrlType.GetCustomAttribute<DescriptionAttribute>();
             var orderAttr = ctrlType.GetCustomAttribute<OrderAttribute>();
+
+            string controllerTitle = !string.IsNullOrWhiteSpace(ctrlTitleAttr?.Title)
+                ? ctrlTitleAttr.Title
+                : cleanControllerName;
 
             var actions = ctrlType.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy)
                 .Where(m => m.IsPublic &&
@@ -497,24 +510,35 @@ public static class ModuleLoaderExtensions
                         : $"{baseRoute}/{actionSubRoute}";
                 }
 
-                var actionMenu = action.GetCustomAttribute<MenuAttribute>() ?? menuAttr;
-                var actionPerm = action.GetCustomAttribute<RequiresPermissionAttribute>() ?? permAttr;
+                var actionFuncAttr = action.GetCustomAttribute<FunctionAttribute>();
+                var actionMenu = action.GetCustomAttribute<MenuAttribute>();
+                var actionPerm = action.GetCustomAttribute<RequiresPermissionAttribute>() ?? ctrlPermAttr;
                 var actionDesc = action.GetCustomAttribute<DescriptionAttribute>() ?? descAttr;
                 var actionOrder = action.GetCustomAttribute<OrderAttribute>() ?? orderAttr;
+
+                string displayName = !string.IsNullOrWhiteSpace(actionFuncAttr?.Title)
+                    ? actionFuncAttr.Title
+                    : (actionMenu?.Name ?? actionName);
+
+                string icon = actionFuncAttr?.Icon ?? actionMenu?.Icon ?? ctrlTitleAttr?.Icon ?? string.Empty;
+                int displayOrder = actionFuncAttr?.Order ?? actionOrder?.Order ?? ctrlTitleAttr?.Order ?? 0;
+                string? description = actionFuncAttr?.Description ?? actionDesc?.Description ?? ctrlTitleAttr?.Description;
 
                 newMetas.Add(new ControllerMetadata
                 {
                     Id = Guid.NewGuid(),
                     ModuleName = moduleName,
+                    ModuleTitle = moduleTitle,
                     ControllerName = ctrlType.Name,
+                    ControllerTitle = controllerTitle,
                     ActionName = actionName,
+                    DisplayName = displayName,
                     RouteTemplate = routeTemplate,
-                    DisplayName = actionMenu?.Name ?? actionName,
-                    ParentMenuName = actionMenu?.Parent,
-                    Icon = actionMenu?.Icon,
-                    DisplayOrder = actionOrder?.Order ?? 0,
+                    ParentMenuName = controllerTitle,
+                    Icon = icon,
+                    DisplayOrder = displayOrder,
                     PermissionKey = actionPerm?.PermissionKey ?? string.Empty,
-                    Description = actionDesc?.Description,
+                    Description = description,
                     ControllerTypeName = ctrlType.FullName ?? ctrlType.Name,
                     Version = ctrlType.Assembly.GetName().Version?.ToString() ?? "1.0.0.0",
                     IsActive = true,

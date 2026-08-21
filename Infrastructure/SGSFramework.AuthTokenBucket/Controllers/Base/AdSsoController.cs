@@ -14,8 +14,8 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 using SGSFramework.Core.Controllers.Base;
-using SGSFramework.AuthTokenBucket.Servers;
 using SGSFramework.Core.Abstractions.Entities.Identities;
+using SGSFramework.AuthTokenBucket.Services;
 
 namespace SGSFramework.AuthTokenBucket.Controllers.Base
 {

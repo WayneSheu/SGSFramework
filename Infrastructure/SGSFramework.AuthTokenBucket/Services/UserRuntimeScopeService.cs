@@ -9,7 +9,7 @@ using SGSFramework.Core.Abstractions.Menus;
 using SGSFramework.Core.Controllers.Services;
 using SGSFramework.Core.DTOs;
 
-namespace SGSFramework.AuthTokenBucket.Servers;
+namespace SGSFramework.AuthTokenBucket.Services;
 
 /// <summary>
 /// 多租戶與動態實驗室（Lab/Department/Organization）架構下的核心執行期上下文服務。

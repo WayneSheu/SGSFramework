@@ -5,343 +5,275 @@ using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Abstractions.Entities.Modules;
 using SGSFramework.Core.Controllers.Services;
-using System.ComponentModel.DataAnnotations;
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
 
-namespace SGSFramework.ModulePlugin.Systems.Controller.Repositories
+namespace SGSFramework.ModulePlugin.Systems.Controller.Repositories;
+
+public class DynamicControllerRepository<T>(
+    DbContext context,
+    IMemoryCache cache,
+    ILogger<DynamicControllerRepository<T>> logger) : IDynamicControllerRepository<T>
+    where T : class, IControllerMetadata
 {
-    public class DynamicControllerRepository<T> : IDynamicControllerRepository<T> where T : class, IControllerMetadata
+    private readonly DbContext _context = context ?? throw new ArgumentNullException(nameof(context));
+    private readonly DbSet<T> _dbSet = context.Set<T>();
+    private readonly IMemoryCache _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+    private readonly ILogger<DynamicControllerRepository<T>> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly string _cacheKey = $"DynamicRegistry_{typeof(T).Name}";
+
+    // Reflection 快取，降低重複 Type.GetType 與 GetMethod 效能開銷
+    private static readonly ConcurrentDictionary<string, Type?> TypeCache = new(StringComparer.Ordinal);
+
+    public async Task RegisterAsync(string moduleName, IEnumerable<T> controllers)
     {
-        private readonly DbContext _context;
-        private readonly DbSet<T> _dbSet;
-        private readonly IMemoryCache _cache;
-        private readonly ILogger<DynamicControllerRepository<T>> _logger;
-        private readonly string _cacheKey;
+        ArgumentException.ThrowIfNullOrWhiteSpace(moduleName);
+        ArgumentNullException.ThrowIfNull(controllers);
 
-        public DynamicControllerRepository(DbContext context, IMemoryCache cache, ILogger<DynamicControllerRepository<T>> logger)
+        var strategy = _context.Database.CreateExecutionStrategy();
+
+        await strategy.ExecuteAsync(async () =>
         {
-            _context = context ?? throw new ArgumentNullException(nameof(context));
-            _dbSet = context.Set<T>();
-            _cache = cache ?? throw new ArgumentNullException(nameof(cache));
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _cacheKey = $"DynamicRegistry_{typeof(T).Name}";
-        }
+            _context.ChangeTracker.Clear();
 
-        public async Task RegisterAsync(string moduleName, IEnumerable<T> controllers)
-        {
-            var strategy = _context.Database.CreateExecutionStrategy();
+            var controllerList = controllers.ToList();
+            _logger.LogInformation("[DynamicController] 開始註冊模組: {ModuleName}，傳入 Controller 數量: {Count}", moduleName, controllerList.Count);
 
-            await strategy.ExecuteAsync(async () =>
+            try
             {
-                _context.ChangeTracker.Clear();
+                PreProcessControllers(controllerList);
 
-                var controllerList = controllers.ToList();
-                _logger.LogInformation("[DynamicController] 開始註冊模組: {ModuleName}，傳入 Controller 數量: {Count}", moduleName, controllerList.Count);
+                var existingEntities = await _dbSet
+                    .Where(x => x.ModuleName == moduleName)
+                    .ToListAsync();
 
-                try
+                _logger.LogInformation("[DynamicController] 資料庫現有 {ModuleName} 模組紀錄共 {Count} 筆。", moduleName, existingEntities.Count);
+
+                int resetCount = 0;
+                foreach (var entity in existingEntities)
                 {
-                    PreProcessControllers(controllerList);
-
-                    var existingEntities = await _dbSet
-                        .Where(x => x.ModuleName == moduleName)
-                        .ToListAsync();
-
-                    _logger.LogInformation("[DynamicController] 資料庫現有 {ModuleName} 模組紀錄共 {Count} 筆。", moduleName, existingEntities.Count);
-
-                    int resetCount = 0;
-                    foreach (var entity in existingEntities)
+                    if (entity.IsActive)
                     {
-                        if (entity.IsActive)
-                        {
-                            entity.IsActive = false;
-                            _context.Entry(entity).State = EntityState.Modified;
-                            resetCount++;
-                        }
+                        entity.IsActive = false;
+                        _context.Entry(entity).State = EntityState.Modified;
+                        resetCount++;
                     }
-                    _logger.LogInformation("[DynamicController] 已將 {Count} 筆舊有啟用紀錄在記憶體中標記為失效。", resetCount);
+                }
+                _logger.LogInformation("[DynamicController] 已將 {Count} 筆舊有啟用紀錄在記憶體中標記為失效。", resetCount);
 
-                    var existingDict = new Dictionary<string, T>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var entity in existingEntities)
+                var existingDict = new Dictionary<string, T>(StringComparer.OrdinalIgnoreCase);
+                foreach (var entity in existingEntities)
+                {
+                    var key = $"{GetCleanTypeName(entity.ControllerTypeName)}|{entity.ActionName?.Trim()}";
+                    existingDict.TryAdd(key, entity);
+                }
+
+                int addedCount = 0;
+                int updatedCount = 0;
+
+                foreach (var controller in controllerList)
+                {
+                    var cleanIncomingName = GetCleanTypeName(controller.ControllerTypeName);
+                    var actionName = controller.ActionName?.Trim();
+                    var key = $"{cleanIncomingName}|{actionName}";
+
+                    T? targetEntity = null;
+
+                    if (existingDict.TryGetValue(key, out var dictEntity))
                     {
-                        var key = $"{GetCleanTypeName(entity.ControllerTypeName)}|{entity.ActionName?.Trim()}";
-                        if (!existingDict.ContainsKey(key))
-                        {
-                            existingDict[key] = entity;
-                        }
+                        targetEntity = dictEntity;
+                    }
+                    else if (!string.IsNullOrWhiteSpace(controller.PermissionKey))
+                    {
+                        targetEntity = existingEntities.FirstOrDefault(e =>
+                            string.Equals(e.PermissionKey?.Trim(), controller.PermissionKey.Trim(), StringComparison.OrdinalIgnoreCase));
                     }
 
-                    int addedCount = 0;
-                    int updatedCount = 0;
-
-                    foreach (var controller in controllerList)
+                    if (targetEntity != null)
                     {
-                        var cleanIncomingName = GetCleanTypeName(controller.ControllerTypeName);
-                        var actionName = controller.ActionName?.Trim();
-                        var key = $"{cleanIncomingName}|{actionName}";
+                        targetEntity.IsActive = true;
+                        _context.Entry(targetEntity).State = EntityState.Modified;
 
-                        T? targetEntity = null;
-
-                        if (existingDict.TryGetValue(key, out var dictEntity))
+                        var controllerType = GetCachedType(controller.ControllerTypeName);
+                        if (controllerType != null && targetEntity is ControllerMetadata metadataEntity)
                         {
-                            targetEntity = dictEntity;
-                        }
-                        else if (!string.IsNullOrWhiteSpace(controller.PermissionKey))
-                        {
-                            targetEntity = existingEntities.FirstOrDefault(e =>
-                                string.Equals(e.PermissionKey?.Trim(), controller.PermissionKey.Trim(), StringComparison.OrdinalIgnoreCase));
+                            metadataEntity.SyncFromAttribute(controllerType);
                         }
 
-                        if (targetEntity != null)
+                        if (targetEntity is ControllerMetadata metaExisting && controller is ControllerMetadata metaNew)
                         {
-                            targetEntity.IsActive = true;
-                            _context.Entry(targetEntity).State = EntityState.Modified;
+                            metaExisting.Version = metaNew.Version;
+                            metaExisting.RouteTemplate = metaNew.RouteTemplate;
+                            metaExisting.ParentMenuName = metaNew.ParentMenuName;
+                            metaExisting.ControllerTypeName = metaNew.ControllerTypeName;
+                            metaExisting.ControllerName = metaNew.ControllerName;
+                            metaExisting.DisplayOrder = metaNew.DisplayOrder;
+                            metaExisting.Icon = metaNew.Icon;
+                            metaExisting.Description = metaNew.Description;
 
-                            var controllerType = Type.GetType(controller.ControllerTypeName);
-                            if (controllerType != null)
+                            if (!string.IsNullOrEmpty(metaNew.DisplayName))
                             {
-                                (targetEntity as ControllerMetadata)?.SyncFromAttribute(controllerType);
+                                metaExisting.DisplayName = metaNew.DisplayName;
                             }
-
-                            if (targetEntity is ControllerMetadata metaExisting && controller is ControllerMetadata metaNew)
-                            {
-                                metaExisting.Version = metaNew.Version;
-                                metaExisting.RouteTemplate = metaNew.RouteTemplate;
-                                metaExisting.ParentMenuName = metaNew.ParentMenuName;
-                                metaExisting.ControllerTypeName = metaNew.ControllerTypeName;
-                                metaExisting.ControllerName = metaNew.ControllerName;
-                                metaExisting.DisplayOrder = metaNew.DisplayOrder;
-
-                                if (!string.IsNullOrEmpty(metaNew.DisplayName))
-                                {
-                                    metaExisting.DisplayName = metaNew.DisplayName;
-                                }
-                            }
-                            targetEntity.PermissionKey = controller.PermissionKey;
-                            updatedCount++;
                         }
-                        else
-                        {
-                            var controllerType = Type.GetType(controller.ControllerTypeName);
-                            if (controllerType != null && controller is ControllerMetadata metaNewAdd)
-                            {
-                                metaNewAdd.SyncFromAttribute(controllerType);
-
-                                var controllerMenuAttr = controllerType.GetCustomAttribute<MenuAttribute>();
-                                if (controllerMenuAttr != null && !string.IsNullOrEmpty(controllerMenuAttr.Name))
-                                {
-                                    metaNewAdd.ParentMenuName = controllerMenuAttr.Name;
-                                }
-
-                                var methodInfo = controllerType.GetMethod(metaNewAdd.ActionName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase | BindingFlags.FlattenHierarchy);
-                                var actionMenuAttr = methodInfo?.GetCustomAttribute<MenuAttribute>();
-
-                                string parentMenuName = null;
-                                if (actionMenuAttr != null && !string.IsNullOrEmpty(actionMenuAttr.Parent))
-                                {
-                                    parentMenuName = actionMenuAttr.Parent;
-                                }
-                                else if (string.Equals(metaNewAdd.ActionName, "Index", StringComparison.OrdinalIgnoreCase) ||
-                                         string.Equals(metaNewAdd.ActionName, "INDEX", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    parentMenuName = controllerMenuAttr?.Parent;
-                                }
-                                else
-                                {
-                                    parentMenuName = controllerMenuAttr?.Name;
-                                }
-
-                                if (!string.IsNullOrEmpty(parentMenuName))
-                                {
-                                    metaNewAdd.ParentMenuName = parentMenuName;
-                                }
-
-                                // 確保 DisplayOrder 正確對應 Action 或 Controller 的 MenuAttribute.Order
-                                if (actionMenuAttr != null)
-                                {
-                                    metaNewAdd.DisplayOrder = actionMenuAttr.Order;
-                                }
-                                else if (controllerMenuAttr != null)
-                                {
-                                    metaNewAdd.DisplayOrder = controllerMenuAttr.Order;
-                                }
-
-                                var actionDisplayAttr = methodInfo?.GetCustomAttribute<DisplayAttribute>();
-                                string correctActionDisplayName = actionMenuAttr?.Name ?? actionDisplayAttr?.Name;
-
-                                if (!string.IsNullOrEmpty(correctActionDisplayName))
-                                {
-                                    metaNewAdd.DisplayName = correctActionDisplayName;
-                                }
-                                else if (metaNewAdd.DisplayName == metaNewAdd.ControllerName)
-                                {
-                                    metaNewAdd.DisplayName = metaNewAdd.ActionName;
-                                }
-                            }
-
-                            controller.IsActive = true;
-                            await _dbSet.AddAsync(controller);
-                            addedCount++;
-                        }
-                    }
-
-                    var changesCount = await _context.SaveChangesAsync();
-                    _logger.LogInformation("[DynamicController] SaveChangesAsync 完成。新增: {AddCount} 筆, 更新/重啟: {UpdCount} 筆, EF 偵測異動總數: {Changes}。", addedCount, updatedCount, changesCount);
-
-                    _cache.Remove(_cacheKey);
-                    _logger.LogInformation("[DynamicController] 模組 {ModuleName} 註冊與狀態同步處理完畢。", moduleName);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "[DynamicController] 註冊模組 {ModuleName} 時發生未預期錯誤: {Message}", moduleName, ex.Message);
-                    throw;
-                }
-            });
-        }
-
-        private static void PreProcessControllers(IEnumerable<T> controllers)
-        {
-            foreach (var controller in controllers)
-            {
-                var controllerType = Type.GetType(controller.ControllerTypeName);
-                if (controllerType != null)
-                {
-                    if (controller is ControllerMetadata metadata)
-                    {
-                        metadata.SyncFromAttribute(controllerType);
-                    }
-
-                    var versionAttr = controllerType.GetCustomAttribute<ApiVersionAttribute>();
-                    var version = versionAttr?.Version ?? "v1";
-
-                    if (controller is ControllerMetadata metaVer)
-                    {
-                        metaVer.Version = version;
-                    }
-
-                    var cleanRoute = controller.RouteTemplate.TrimStart('/');
-                    var versionPrefixes = Enumerable.Range(1, 20).Select(i => $"v{i}/").ToArray();
-                    if (versionPrefixes.Any(prefix => cleanRoute.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        cleanRoute = string.Join('/', cleanRoute.Split('/').Skip(1));
-                    }
-
-                    if (controller is ControllerMetadata metaRoute)
-                    {
-                        metaRoute.RouteTemplate = $"{version}/{cleanRoute}";
-                    }
-                }
-                else
-                {
-                    if (string.IsNullOrEmpty(controller.Version) && controller is ControllerMetadata metaDefault)
-                    {
-                        metaDefault.Version = "v1";
-                    }
-                }
-
-                if (controllerType != null && controller is ControllerMetadata metaController)
-                {
-                    var controllerMenuAttr = controllerType.GetCustomAttribute<MenuAttribute>();
-
-                    var methodInfo = controllerType.GetMethod(metaController.ActionName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase | BindingFlags.FlattenHierarchy);
-                    var actionMenuAttr = methodInfo?.GetCustomAttribute<MenuAttribute>();
-
-                    string parentMenuName = null;
-                    if (actionMenuAttr != null && !string.IsNullOrEmpty(actionMenuAttr.Parent))
-                    {
-                        parentMenuName = actionMenuAttr.Parent;
-                    }
-                    else if (string.Equals(metaController.ActionName, "Index", StringComparison.OrdinalIgnoreCase) ||
-                             string.Equals(metaController.ActionName, "INDEX", StringComparison.OrdinalIgnoreCase))
-                    {
-                        parentMenuName = controllerMenuAttr?.Parent;
+                        targetEntity.PermissionKey = controller.PermissionKey;
+                        updatedCount++;
                     }
                     else
                     {
-                        parentMenuName = controllerMenuAttr?.Name;
-                    }
+                        var controllerType = GetCachedType(controller.ControllerTypeName);
+                        if (controllerType != null && controller is ControllerMetadata metaNewAdd)
+                        {
+                            metaNewAdd.SyncFromAttribute(controllerType);
 
-                    if (!string.IsNullOrEmpty(parentMenuName))
-                    {
-                        metaController.ParentMenuName = parentMenuName;
-                    }
+                            var controllerTitleAttr = controllerType.GetCustomAttribute<ControllerTitleAttribute>();
+                            var methodInfo = controllerType.GetMethod(metaNewAdd.ActionName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase | BindingFlags.FlattenHierarchy);
+                            var actionFuncAttr = methodInfo?.GetCustomAttribute<FunctionAttribute>();
 
-                    // 【修正點】優先取得 Action 的 Order，其次為 Controller 的 Order
-                    if (actionMenuAttr != null)
-                    {
-                        metaController.DisplayOrder = actionMenuAttr.Order;
-                    }
-                    else if (controllerMenuAttr != null)
-                    {
-                        metaController.DisplayOrder = controllerMenuAttr.Order;
-                    }
+                            metaNewAdd.ParentMenuName = controllerTitleAttr?.Title ?? metaNewAdd.ControllerName;
+                            metaNewAdd.DisplayOrder = actionFuncAttr?.Order ?? controllerTitleAttr?.Order ?? 0;
+                            metaNewAdd.Icon = actionFuncAttr?.Icon ?? controllerTitleAttr?.Icon;
+                            metaNewAdd.Description = actionFuncAttr?.Description ?? controllerTitleAttr?.Description;
 
-                    var actionDisplayAttr = methodInfo?.GetCustomAttribute<DisplayAttribute>();
-                    string correctActionDisplayName = actionMenuAttr?.Name ?? actionDisplayAttr?.Name;
+                            string correctActionDisplayName = actionFuncAttr?.Title ?? metaNewAdd.ActionName;
+                            metaNewAdd.DisplayName = correctActionDisplayName;
+                        }
 
-                    if (!string.IsNullOrEmpty(correctActionDisplayName))
-                    {
-                        metaController.DisplayName = correctActionDisplayName;
-                    }
-                    else if (metaController.DisplayName == metaController.ControllerName || string.IsNullOrEmpty(metaController.DisplayName))
-                    {
-                        metaController.DisplayName = metaController.ActionName;
+                        controller.IsActive = true;
+                        await _dbSet.AddAsync(controller);
+                        addedCount++;
                     }
                 }
-            }
-        }
 
-        private static string GetCleanTypeName(string typeName)
-        {
-            if (string.IsNullOrWhiteSpace(typeName)) return string.Empty;
-            var commaIndex = typeName.IndexOf(',');
-            return commaIndex > 0 ? typeName.Substring(0, commaIndex).Trim() : typeName.Trim();
-        }
+                var changesCount = await _context.SaveChangesAsync();
+                _logger.LogInformation("[DynamicController] SaveChangesAsync 完成。新增: {AddCount} 筆, 更新/重啟: {UpdCount} 筆, EF 偵測異動總數: {Changes}。", addedCount, updatedCount, changesCount);
 
-        public async Task UnregisterByModuleAsync(string moduleName)
-        {
-            try
-            {
-                var entities = await _dbSet.Where(x => x.ModuleName == moduleName && x.IsActive).ToListAsync();
-                foreach (var entity in entities)
-                {
-                    entity.IsActive = false;
-                    _context.Entry(entity).State = EntityState.Modified;
-                }
-                await _context.SaveChangesAsync();
                 _cache.Remove(_cacheKey);
+                _cache.Remove($"{_cacheKey}_AllActive");
+                _logger.LogInformation("[DynamicController] 模組 {ModuleName} 註冊與狀態同步處理完畢。", moduleName);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[DynamicController] 反註冊模組 {ModuleName} 時發生錯誤。", moduleName);
+                _logger.LogError(ex, "[DynamicController] 註冊模組 {ModuleName} 時發生未預期錯誤: {Message}", moduleName, ex.Message);
                 throw;
             }
-        }
+        });
+    }
 
-        public async Task<IEnumerable<T>> GetActiveControllersAsync()
+    private static void PreProcessControllers(IEnumerable<T> controllers)
+    {
+        foreach (var controller in controllers)
         {
-            return await _cache.GetOrCreateAsync(_cacheKey, async entry =>
+            var controllerType = GetCachedType(controller.ControllerTypeName);
+            if (controllerType != null)
             {
-                entry.SlidingExpiration = TimeSpan.FromHours(1);
-                return await _dbSet.AsNoTracking().Where(x => x.IsActive).ToListAsync();
-            }) ?? new List<T>();
-        }
+                if (controller is ControllerMetadata metadata)
+                {
+                    metadata.SyncFromAttribute(controllerType);
+                }
 
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <returns></returns>
-        public async Task<IEnumerable<T>> GetAllActiveAsync()
+                // API 版本號解析
+                var versionAttr = controllerType.GetCustomAttribute<ApiVersionAttribute>();
+                var version = versionAttr?.Version ?? "v1";
+
+                if (controller is ControllerMetadata metaVer)
+                {
+                    metaVer.Version = version;
+                }
+
+                var cleanRoute = controller.RouteTemplate.TrimStart('/');
+                var versionPrefixes = Enumerable.Range(1, 20).Select(i => $"v{i}/").ToArray();
+                if (versionPrefixes.Any(prefix => cleanRoute.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+                {
+                    cleanRoute = string.Join('/', cleanRoute.Split('/').Skip(1));
+                }
+
+                if (controller is ControllerMetadata metaRoute)
+                {
+                    metaRoute.RouteTemplate = $"{version}/{cleanRoute}";
+                }
+
+                if (controller is ControllerMetadata metaController)
+                {
+                    var controllerTitleAttr = controllerType.GetCustomAttribute<ControllerTitleAttribute>();
+                    var methodInfo = controllerType.GetMethod(metaController.ActionName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase | BindingFlags.FlattenHierarchy);
+                    var actionFuncAttr = methodInfo?.GetCustomAttribute<FunctionAttribute>();
+
+                    metaController.ParentMenuName = controllerTitleAttr?.Title ?? metaController.ControllerName;
+                    metaController.DisplayOrder = actionFuncAttr?.Order ?? controllerTitleAttr?.Order ?? 0;
+                    metaController.Icon = actionFuncAttr?.Icon ?? controllerTitleAttr?.Icon;
+                    metaController.Description = actionFuncAttr?.Description ?? controllerTitleAttr?.Description;
+
+                    string correctActionDisplayName = actionFuncAttr?.Title ?? metaController.ActionName;
+                    metaController.DisplayName = correctActionDisplayName;
+                }
+            }
+            else
+            {
+                if (string.IsNullOrEmpty(controller.Version) && controller is ControllerMetadata metaDefault)
+                {
+                    metaDefault.Version = "v1";
+                }
+            }
+        }
+    }
+
+    private static Type? GetCachedType(string typeName)
+    {
+        if (string.IsNullOrWhiteSpace(typeName)) return null;
+        return TypeCache.GetOrAdd(typeName, name => Type.GetType(name));
+    }
+
+    private static string GetCleanTypeName(string typeName)
+    {
+        if (string.IsNullOrWhiteSpace(typeName)) return string.Empty;
+        var commaIndex = typeName.IndexOf(',');
+        return commaIndex > 0 ? typeName[..commaIndex].Trim() : typeName.Trim();
+    }
+
+    public async Task UnregisterByModuleAsync(string moduleName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(moduleName);
+
+        try
         {
-            List<T> result = new List<T>();
-
-            return await _cache.GetOrCreateAsync($"{_cacheKey}_AllActive", async entry =>
+            var entities = await _dbSet.Where(x => x.ModuleName == moduleName && x.IsActive).ToListAsync();
+            foreach (var entity in entities)
             {
-                entry.SlidingExpiration = TimeSpan.FromHours(1);
-                result = await _dbSet.AsNoTracking().Where(x => x.IsActive).ToListAsync();
+                entity.IsActive = false;
+                _context.Entry(entity).State = EntityState.Modified;
+            }
+            await _context.SaveChangesAsync();
 
-                return result;
-            
-            }) ?? new List<T>();
+            _cache.Remove(_cacheKey);
+            _cache.Remove($"{_cacheKey}_AllActive");
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[DynamicController] 反註冊模組 {ModuleName} 時發生錯誤。", moduleName);
+            throw;
+        }
+    }
+
+    public async Task<IEnumerable<T>> GetActiveControllersAsync()
+    {
+        return await _cache.GetOrCreateAsync(_cacheKey, async entry =>
+        {
+            entry.SlidingExpiration = TimeSpan.FromHours(1);
+            return await _dbSet.AsNoTracking().Where(x => x.IsActive).ToListAsync();
+        }) ?? [];
+    }
+
+    public async Task<IEnumerable<T>> GetAllActiveAsync()
+    {
+        return await _cache.GetOrCreateAsync($"{_cacheKey}_AllActive", async entry =>
+        {
+            entry.SlidingExpiration = TimeSpan.FromHours(1);
+            return await _dbSet.AsNoTracking().Where(x => x.IsActive).ToListAsync();
+        }) ?? [];
     }
 }

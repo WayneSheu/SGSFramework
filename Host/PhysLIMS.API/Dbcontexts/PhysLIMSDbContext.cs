@@ -1,7 +1,6 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
-using SGS.Modules.ORG.Infrastructure.Configurations;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Abstractions.Entities.Identities;
@@ -9,14 +8,11 @@ using SGSFramework.Core.Abstractions.Entities.Ledgers;
 using SGSFramework.Core.Abstractions.Entities.Modules;
 using SGSFramework.Core.Abstractions.Logings;
 using SGSFramework.Core.Abstractions.Outbox;
-using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Abstractions.Permissions.Identities;
 using SGSFramework.Core.Identiies.Tenants;
 using SGSFramework.Core.Migrations;
 using SGSFramework.Infrastructure.Persistence.Configurations;
 using SGSFramework.Persistent.Abstractions.Dbcontexts;
-using System;
-using System.Linq;
 
 namespace PhysLIMS.API.Dbcontexts;
 
