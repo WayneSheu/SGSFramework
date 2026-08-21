@@ -70,7 +70,14 @@ namespace SGSFramework.VerifyLedger.Services
                 }
 
                 using var command = connection.CreateCommand();
-                command.CommandText = "EXEC sys.sp_verify_database_ledger @digests;";
+
+                // 加上 SET 宣告（當 DB 已啟用 ALLOW_SNAPSHOT_ISOLATION 時即可正常運作）
+                string verifyCommandText = @"
+                                            SET TRANSACTION ISOLATION LEVEL SNAPSHOT;
+                                            EXEC sys.sp_verify_database_ledger @digests;";
+
+                command.CommandText = verifyCommandText;
+
 
                 var digestsParam = new SqlParameter("@digests", SqlDbType.NVarChar, -1)
                 {

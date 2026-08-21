@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using SGS.Modules.ORG.Application.Features.Laboratories.Command;
 using SGS.Modules.ORG.Application.Features.Laboratories.Dtos;
+using SGS.Modules.ORG.Application.Features.Laboratories.Queries;
 using SGS.Modules.ORG.Application.Features.Laboratories.Query;
 using SGS.Modules.ORG.Controllers.Requests;
 using SGSFramework.Core.Abstractions.Attributes;
