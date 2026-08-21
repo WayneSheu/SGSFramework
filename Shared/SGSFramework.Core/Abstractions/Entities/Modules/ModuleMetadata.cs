@@ -6,6 +6,7 @@ namespace SGSFramework.Core.Abstractions.Entities.Modules
     public class ModuleMetadata : IModuleEntity
     {
         public Guid Id { get; set; }
+        public string ModuleTitle { get; set; } = string.Empty;
         public string ModuleName { get; set; } = string.Empty;
         public string Version { get; set; } = "1.0.0";
         public string AssemblyPath { get; set; } = string.Empty; // 持久化路徑
@@ -25,6 +26,10 @@ namespace SGSFramework.Core.Abstractions.Entities.Modules
             builder.HasIndex(e => e.ModuleName).IsUnique();
 
             // 屬性精確設定
+            builder.Property(e => e.ModuleTitle)
+           .IsRequired()
+           .HasMaxLength(100);
+
             builder.Property(e => e.ModuleName)
                 .IsRequired()
                 .HasMaxLength(100);

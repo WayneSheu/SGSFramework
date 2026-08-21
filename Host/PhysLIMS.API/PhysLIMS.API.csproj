@@ -2,9 +2,12 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+	<!-- 加入 NU1900 避免資安警報在 PMC 建置時阻斷指令 -->
+	<NoWarn>$(NoWarn);NU1900</NoWarn>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
 	<VersionPrefix>2026.08.15.1920</VersionPrefix>
+
   </PropertyGroup>
 
   <ItemGroup>
@@ -30,10 +33,6 @@
     <ProjectReference Include="..\..\Infrastructure\SGSFramework.ModulePlugin\SGSFramework.ModulePlugin.csproj" />
     <ProjectReference Include="..\..\Modules\ORG\Module.ORG.Infrastructure\SGS.Modules.ORG.Infrastructure.csproj" />
     <ProjectReference Include="..\PhysLIMS.Controller\SGSFramework.ApiInfrastructure.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="logs\" />
   </ItemGroup>
 
   <ItemGroup>

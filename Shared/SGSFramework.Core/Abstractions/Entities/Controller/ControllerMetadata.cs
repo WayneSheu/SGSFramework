@@ -13,6 +13,9 @@ namespace SGSFramework.Core.Abstractions.Entities.Controller
         public Guid Id { get; set; }
         public string Version { get; set; } = "v1";
         public string ModuleName { get; set; } = string.Empty;
+
+        public string ControllerTitle { get; set; } = string.Empty;
+
         public string ControllerName { get; set; } = string.Empty;
         public string ControllerTypeName { get; set; } = string.Empty;
         public string ActionName { get; set; } = string.Empty;
@@ -44,6 +47,7 @@ namespace SGSFramework.Core.Abstractions.Entities.Controller
 
             //欄位長度限制與必要性 (防禦性設計)
             builder.Property(x => x.ModuleName).IsRequired().HasMaxLength(50);
+            builder.Property(x => x.ControllerTitle).IsRequired().HasMaxLength(100);
             builder.Property(x => x.ControllerName).IsRequired().HasMaxLength(100);
             builder.Property(x => x.RouteTemplate).IsRequired().HasMaxLength(250);
             builder.Property(x => x.DisplayName).IsRequired().HasMaxLength(100);

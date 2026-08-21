@@ -1,4 +1,10 @@
 <Solution>
+  <Folder Name="/docs/" />
+  <Folder Name="/docs/architecture/" />
+  <Folder Name="/docs/assets/" />
+  <Folder Name="/docs/specs/">
+    <File Path="SGSFromeWork_Architecture.md" />
+  </Folder>
   <Folder Name="/Host/">
     <Project Path="Host/PhysLIMS.API/PhysLIMS.API.csproj" />
     <Project Path="Host/PhysLIMS.Controller/SGSFramework.ApiInfrastructure.csproj" />

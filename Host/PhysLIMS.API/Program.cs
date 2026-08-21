@@ -16,6 +16,7 @@ using PhysLIMS.API.Models;
 using Scalar.AspNetCore;
 using Serilog;
 using SGSFramework.ApiInfrastructure.Bootstrappers;
+using SGSFramework.ApiInfrastructure.Extensions;
 using SGSFramework.ApiInfrastructure.Filters;
 using SGSFramework.AuditLog.Extensions;
 using SGSFramework.AuthTokenBucket.Abstractions;
@@ -49,11 +50,18 @@ try
     builder.AddSGSFrameworkCore();
 
     // 1. 註冊自訂 Scalar API 文件服務
+    // 註冊 OpenAPI 服務並掛載 Menu 與 Document 雙重轉換器
     builder.Services.AddOpenApi("v1", options =>
     {
         options.ShouldInclude = (description) => true;
+
+        // A. 註冊 Operation 層級 Transformer：解析 [Menu] 特性，寫入 x-menu metadata 與 Summary (優先執行)
+        options.AddOperationTransformer<MenuAttributeTransformer>();
+
+        // B. 註冊 Document 層級 Transformer：整理全域 Tags、x-tagGroups 選單樹狀分組與 DB 權限對映
         options.AddDocumentTransformer<DynamicControllerDocumentTransformer>();
     });
+
     // 註冊 Scalar API 文件服務
     builder.Services.AddAPIDocServices();
 
@@ -327,13 +335,6 @@ try
                 await mainDbContext.Database.MigrateAsync();
                 logger.LogInformation("主專案 DB Migration 完成。");
             }
-            //catch (SqlException sqlEx)
-            //{
-            //    // 提供更精確的錯誤訊息幫助排除 Error 26
-            //    logger.LogCritical(sqlEx, "資料庫連線失敗 [ErrorCode: {ErrorCode}]。請檢查：\n1. 伺服器名稱/IP: {Server}\n2. SQL Server 服務是否執行\n3. 該機器是否能 Ping 通資料庫伺服器\n4. 防火牆是否開放 Port 1433",
-            //        sqlEx.ErrorCode, mainDbContextOptions.Extensions.OfType<SqlServerOptionsExtension>().FirstOrDefault()?.ConnectionString);
-            //    throw;
-            //}
             catch (Microsoft.Data.SqlClient.SqlException sqlEx)
             {
                 // 安全遮蔽連線字串中的密碼供日誌安全審計
@@ -401,13 +402,17 @@ try
 
     // Step 7. OpenAPI 與 Scalar 文件映射
     app.MapOpenApi();
-    app.MapScalarApiReference(options =>
+    // 4. 配置 Scalar API 文件 UI 中介軟體
+    if (app.Environment.IsDevelopment())
     {
-        options.WithTitle("PhysLIMS 2.0 API 文件")
-               .WithTheme(ScalarTheme.Solarized)
-               .WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient)
-               .WithOpenApiRoutePattern("/openapi/{documentName}.json");
-    });
+        app.MapScalarApiReference(options =>
+        {
+            options.WithTitle("PhysLIMS 2.0 API 文件")
+                .WithTheme(ScalarTheme.Solarized)
+                .WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient)
+                .WithOpenApiRoutePattern("/openapi/{documentName}.json");
+        });
+    }
 
     app.MapGet("/", async context =>
     {

@@ -59,6 +59,8 @@ namespace SGS.Modules.ORG.Infrastructure.Dbcontexts
         public DbSet<OutboxMessage> OutboxMessages { get; set; }
         public DbSet<Organization> Organizations { get; set; }
 
+        public DbSet<UserLaboratory> UserLaboratories { get; set; }
+
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
             base.OnConfiguring(optionsBuilder);

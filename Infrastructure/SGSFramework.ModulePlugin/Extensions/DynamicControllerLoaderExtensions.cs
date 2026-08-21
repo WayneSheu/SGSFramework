@@ -50,14 +50,15 @@ public static class DynamicControllerLoaderExtensions
 
             foreach (var ctrlType in controllerTypes)
             {
+                // 1. 取得 Controller 的路由基底 (RouteAttribute)
                 var routeAttrs = ctrlType.GetCustomAttributes<Microsoft.AspNetCore.Mvc.RouteAttribute>(inherit: true).ToList();
                 string baseRoute = routeAttrs.FirstOrDefault()?.Template ?? $"api/{ctrlType.Name.Replace("Controller", "")}";
-
+                // 2. 取得 Controller 的選單與權限屬性
                 var menuAttr = ctrlType.GetCustomAttribute<MenuAttribute>();
                 var permAttr = ctrlType.GetCustomAttribute<RequiresPermissionAttribute>();
                 var descAttr = ctrlType.GetCustomAttribute<DescriptionAttribute>();
                 var orderAttr = ctrlType.GetCustomAttribute<OrderAttribute>();
-
+                // 3. 取得 Controller 的所有 Action 方法
                 var actions = ctrlType.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
                     .Where(m => m.IsPublic && !m.IsSpecialName && !m.IsDefined(typeof(Microsoft.AspNetCore.Mvc.NonActionAttribute)));
 
@@ -102,10 +103,13 @@ public static class DynamicControllerLoaderExtensions
                 }
             }
 
+            // 將新解析的 ControllerMetadata 與資料庫中現有的進行比對，並同步更新
+            // 將所有已註冊的 ControllerMetadata 設定為啟用狀態，並移除不再存在的 ControllerMetadata
             await controllerRepo.RegisterAsync(moduleName, newMetas);
+            //
             Log.Information("[DynamicController] 模組 {Module} 註冊與狀態同步處理完畢。", moduleName);
         }
-
-        Log.Information("Controller Metadata synchronization completed successfully.");
+    
+        Log.Information("控制器元資料同步已成功完成。");
     }
 }
