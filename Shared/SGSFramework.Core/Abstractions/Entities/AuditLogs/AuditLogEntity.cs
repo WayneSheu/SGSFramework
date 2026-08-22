@@ -75,7 +75,7 @@ namespace SGSFramework.Core.Abstractions.Entities.AuditLogs
 
             // 3. 時間戳記欄位
             builder.Property(e => e.CreatedAt)
-                   .HasColumnType("datetime2(7)")
+                   .HasColumnType("datetimeoffset(7)")
                    .HasDefaultValueSql("SYSUTCDATETIME()")
                    .IsRequired();
 

@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SGS.Modules.ORG.Infrastructure.Dbcontexts;
 
@@ -11,9 +12,11 @@ using SGS.Modules.ORG.Infrastructure.Dbcontexts;
 namespace SGS.Modules.ORG.Infrastructure.Migrations
 {
     [DbContext(typeof(ORGDbContext))]
-    partial class ORGDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260822035459_update_org_auditlog")]
+    partial class update_org_auditlog
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

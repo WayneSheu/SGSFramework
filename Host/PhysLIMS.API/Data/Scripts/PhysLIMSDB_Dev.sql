@@ -77,30 +77,39 @@ GRANT ALTER, CONTROL ON SCHEMA::[core] TO [deploy_sgs_user];
 GRANT ALTER, CONTROL ON SCHEMA::[org] TO [deploy_sgs_user];
 GO 
 
-USE [PhysLIMSDB_Dev];
-GO
 
--- 1. 確保 deploy_sgs_user 具備資料庫使用者身份 (若尚未映射)
-IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = 'deploy_sgs_user')
-BEGIN
-    CREATE USER [deploy_sgs_user] FOR LOGIN [deploy_sgs_user];
-END
-GO
-
--- 2. 授予 VIEW LEDGER CONTENT 權限
-GRANT VIEW LEDGER CONTENT TO [deploy_sgs_user];
-GO
-
-
-USE [master];
-GO
--- 2. 啟用該資料庫的 ALLOW_SNAPSHOT_ISOLATION
+-- ============================================================================
+-- 4. 設定 Ledger 權限
+-- ============================================================================
+-- 啟用 SNAPSHOT ISOLATION (允許應用程式發起 Snapshot Transaction)
 ALTER DATABASE [PhysLIMSDB_Dev]
 SET ALLOW_SNAPSHOT_ISOLATION ON;
 GO
 
--- 3. (可選) 建議同步檢查並啟用 READ_COMMITTED_SNAPSHOT 以提升高並發效能
-ALTER DATABASE [PhysLIMSDB_Dev] 
-SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE;
+-- 3. (選用) 若希望所有預設的 READ COMMITTED 事務自動改用快照列版本控管，可加開以下設定：
+ALTER DATABASE [PhysLIMSDB_Dev] SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE;
+ GO
+
+-- 4. 驗證資料庫設定狀態
+SELECT 
+    name AS DatabaseName,
+    snapshot_isolation_state_desc AS SnapshotIsolationStatus,
+    is_read_committed_snapshot_on AS IsReadCommittedSnapshotOn
+FROM sys.databases
+WHERE name = N'PhysLIMSDB_Dev';
 GO
+
+-- 針對指定資料庫使用者授予 VIEW LEDGER CONTENT 權限
+USE [PhysLIMSDB_Dev];
+GO
+
+-- 授權給指定角色或使用者  授予 VIEW LEDGER CONTENT 權限
+GRANT VIEW LEDGER CONTENT TO [deploy_sgs_user];
+GRANT VIEW LEDGER CONTENT TO [app_sgs_user];
+GO
+
+
+
+
+
 
