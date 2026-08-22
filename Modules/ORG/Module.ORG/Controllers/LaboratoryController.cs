@@ -220,22 +220,32 @@ public class LaboratoryController : ApiControllerBase
     [Function("EditLaboratory", "編輯實驗室", Icon = "fa-solid fa-pen-to-square", Order = 6, Description = "更新既有實驗室之基本屬性資訊")]
     [RequiresPermission("ORG_LAB_PUT")]
     [ProducesResponseType(typeof(Result<LaboratoryDto>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> EditLaboratory([FromRoute] int id, [FromBody] EditLaboratoryCommand command, CancellationToken cancellationToken)
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> EditLaboratory(
+        [FromRoute] int id,
+        [FromBody] EditLaboratoryCommand command,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        if (id != command.Id)
+        if (id <= 0)
         {
-            return BadRequest("Route ID does not match Payload ID.");
+            return BadRequest(Result.Failure<LaboratoryDto>(
+                Error.Validation("ORG_INVALID_ID", "實驗室識別碼必須大於 0。")
+            ));
         }
 
         try
         {
-            var result = await _mediator.Send(command, cancellationToken);
+            // 強制將 Route 的 ID 與 Body 解構合併為精確指令
+            var fullCommand = command with { Id = id };
+
+            var result = await _mediator.Send(fullCommand, cancellationToken);
             if (!result.IsSuccess)
             {
                 _logger.LogError("Edit 實驗室失敗: {Error}", result.Error);
             }
+
             return HandleResult(result);
         }
         catch (Exception ex)
@@ -244,6 +254,7 @@ public class LaboratoryController : ApiControllerBase
             return StatusCode(StatusCodes.Status500InternalServerError, "An internal server error occurred.");
         }
     }
+
 
     /// <summary>
     /// 刪除實驗室

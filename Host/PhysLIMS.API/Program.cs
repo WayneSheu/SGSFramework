@@ -2,6 +2,7 @@
 // 檔案路徑: src/SGSFramework/Host/PhysLIMS.API/Program.cs
 // ==========================================
 
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -9,6 +10,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.SqlServer.Infrastructure.Internal;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using PhysLIMS.API.Dbcontexts;
 using PhysLIMS.API.Extensions;
 using PhysLIMS.API.Helpers;
@@ -37,6 +39,7 @@ using SGSFramework.Persistent.ScriptRunners;
 using SGSFramework.SystemLog.Extensions;
 using SGSFramework.VerifyLedger.Extensions;
 using System.Reflection;
+using System.Text;
 using System.Text.RegularExpressions;
 
 try
@@ -217,6 +220,27 @@ try
     builder.Services.AddLedgerVerificationServices();
     builder.Services.AddCodeSecurity(config);
     builder.AddDIContainerValidation();
+
+    // 配置 Authentication 並指定 DefaultAuthenticateScheme 與 DefaultChallengeScheme
+    builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
+    .AddJwtBearer(options =>
+    {
+        options.RequireHttpsMetadata = false;
+        options.SaveToken = true;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SecretKey"] ?? "YourSuperSecretKeyHere1234567890!")),
+            ValidateIssuer = false,
+            ValidateAudience = false
+        };
+    });
+
+    builder.Services.AddAuthorization();
 
     var app = builder.Build();
 

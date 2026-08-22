@@ -100,6 +100,21 @@ namespace SGS.Modules.ORG.Infrastructure.Entities.Org
 
             TenantLabId = tenantLabId;
         }
+
+        /// <summary>
+        /// 更新實驗室基本資訊
+        /// </summary>
+        public void UpdateDetails(string name, string? description, string? location)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                throw new ArgumentException("實驗室名稱不可為空。", nameof(name));
+            }
+
+            Name = name.Trim();
+            Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+            Location = string.IsNullOrWhiteSpace(location) ? null : location.Trim();
+        }
     }
 
     public class OrganizationConfiguration : IEntityTypeConfiguration<Organization>
