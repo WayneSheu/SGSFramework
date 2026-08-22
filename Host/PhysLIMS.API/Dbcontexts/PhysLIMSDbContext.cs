@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using SGSFramework.Core.Abstractions.DbContexts;
+using SGSFramework.Core.Abstractions.Entities.AuditLogs;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Entities.Ledgers;
@@ -22,6 +23,8 @@ public class PhysLIMSDbContext : BaseIdentityDbContext<ApplicationUser, Applicat
         : base(options, tenantService)
     {
     }
+
+    public DbSet<AuditLogEntity> AuditLogs { get; }
 
     public DbSet<OutboxMessage> OutboxMessages { get; set; } = null!;
     public DbSet<SystemLog> SystemLogs { get; set; } = null!;
