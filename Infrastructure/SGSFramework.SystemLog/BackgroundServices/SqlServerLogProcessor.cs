@@ -60,7 +60,8 @@ namespace SGSFramework.SystemLog.BackgroundServices
         private static DataTable BuildDataTable(IEnumerable<LogEvent> items)
         {
             var dt = new DataTable();
-            dt.Columns.Add("TimeStamp", typeof(DateTime));
+            dt.Columns.Add("TimeStamp", typeof(DateTimeOffset));
+            dt.Columns.Add("CreatedAt", typeof(DateTimeOffset)); 
             dt.Columns.Add("Message", typeof(string));
             dt.Columns.Add("Level", typeof(string));
             dt.Columns.Add("Exception", typeof(string));
@@ -80,7 +81,9 @@ namespace SGSFramework.SystemLog.BackgroundServices
             foreach (var item in items)
             {
                 var row = dt.NewRow();
-                row["TimeStamp"] = item.Timestamp.DateTime;
+                // 直接指派 item.Timestamp (它原本就是 DateTimeOffset 型態)
+                row["Timestamp"] = item.Timestamp;
+                row["CreatedAt"] = DateTimeOffset.Now;// 設定 CreatedAt 為當前本地時間
                 row["Message"] = item.RenderMessage();
                 row["Level"] = item.Level.ToString();
                 row["Exception"] = item.Exception?.ToString();
@@ -110,7 +113,9 @@ namespace SGSFramework.SystemLog.BackgroundServices
         private static void ConfigureColumnMappings(SqlBulkCopy bulkCopy)
         {
             bulkCopy.ColumnMappings.Clear();
-            bulkCopy.ColumnMappings.Add("TimeStamp", "TimeStamp");
+            // 💡 修正：將第二個參數改為 "TimeStamp" (大寫 S)，以精準匹配資料庫欄位名稱
+            bulkCopy.ColumnMappings.Add("Timestamp", "TimeStamp");
+            bulkCopy.ColumnMappings.Add("CreatedAt", "CreatedAt");
             bulkCopy.ColumnMappings.Add("Message", "Message");
             bulkCopy.ColumnMappings.Add("Level", "Level");
             bulkCopy.ColumnMappings.Add("Exception", "Exception");
