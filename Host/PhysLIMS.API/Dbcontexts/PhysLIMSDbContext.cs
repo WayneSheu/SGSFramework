@@ -38,6 +38,8 @@ public class PhysLIMSDbContext : BaseIdentityDbContext<ApplicationUser, Applicat
     public DbSet<UserResourceGrant> UserResourceGrants { get; set; } = null!;
     public DbSet<Permission> Permissions { get; set; } = null!;
 
+    public DbSet<UserLabMapping> UserLabMappings { get; set; } = null!;
+
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
@@ -61,15 +63,17 @@ public class PhysLIMSDbContext : BaseIdentityDbContext<ApplicationUser, Applicat
         // 2. 自動掃描同 Assembly 下的所有 IEntityTypeConfiguration
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(PhysLIMSDbContext).Assembly);
 
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(UserLabMappingConfiguration).Assembly);
+
         // 3. 針對所有實作 ILedgerEntity 的實體自動附加 MSSQL Ledger 標註
         var ledgerEntityTypes = modelBuilder.Model.GetEntityTypes()
             .Where(t => typeof(ILedgerEntity).IsAssignableFrom(t.ClrType) && !t.ClrType.IsInterface)
             .ToList();
 
-        foreach (var entityType in ledgerEntityTypes)
-        {
-            entityType.AddAnnotation("SqlServer:IsLedgerAppendOnly", true);
-        }
+        //foreach (var entityType in ledgerEntityTypes)
+        //{
+        //    entityType.AddAnnotation("SqlServer:IsLedgerAppendOnly", true);
+        //}
 
         // 4. Identity 相關實體 Schema 顯式對齊 "core"
         modelBuilder.Entity<IdentityUserToken<Guid>>(entity =>

@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using SGSFramework.Core.Abstractions.Menus;
+using SGSFramework.ModulePlugin.Systems.Menu.Strategies;
 using SGSFramework.ModulePlugin.Systems.Services;
-using SGSFramework.ModulePlugin.Systems.Strategies;
 using System;
 using System.Collections.Generic;
 using System.Text;

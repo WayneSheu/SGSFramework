@@ -17,34 +17,34 @@ namespace SGSFramework.SystemLog.Persistents
         {
             // 1. 定義等冪性（Idempotent）的 DDL 腳本：若不存在則建立 Ledger 表
             const string ddlScript = @"
-           IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[SecurityAuditLedger]') AND type in (N'U'))
-BEGIN
-    -- 由於 Ledger 表具備防篡改鏈鎖定，必須透過專用程序或刪除總帳架構進行重置
-    DROP TABLE [dbo].[SecurityAuditLedger];
-END
+                               IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[core].[SecurityAuditLedger]') AND type in (N'U'))
+                    BEGIN
+                        -- 由於 Ledger 表具備防篡改鏈鎖定，必須透過專用程序或刪除總帳架構進行重置
+                        DROP TABLE [core].[SecurityAuditLedger];
+                    END
 
-CREATE TABLE [core].[SecurityAuditLedger] (
-    [Id] INT IDENTITY(1,1) NOT NULL,
-    [Message] NVARCHAR(MAX) NULL,
-    [Level] NVARCHAR(128) NULL,
-    [Timestamp] DATETIMEOFFSET(7) NOT NULL,
-    [Exception] NVARCHAR(MAX) NULL,
-    [Properties] NVARCHAR(MAX) NULL,
-    -- 💡 安全審計專用強型別獨立欄位
-    [LogType] NVARCHAR(64) NULL,
-    [EventCategory] NVARCHAR(128) NULL,
-    [UserId] NVARCHAR(128) NULL,
-    [ClientIp] NVARCHAR(64) NULL,
-    CONSTRAINT [PK_SecurityAuditLedger] PRIMARY KEY CLUSTERED ([Id] ASC)
-)
-WITH (LEDGER = ON (APPEND_ONLY = ON)); -- 🔐 啟用總帳唯讀附加特徵
-GO
+                    CREATE TABLE [core].[SecurityAuditLedger] (
+                        [Id] INT IDENTITY(1,1) NOT NULL,
+                        [Message] NVARCHAR(MAX) NULL,
+                        [Level] NVARCHAR(128) NULL,
+                        [Timestamp] DATETIMEOFFSET(7) NOT NULL,
+                        [Exception] NVARCHAR(MAX) NULL,
+                        [Properties] NVARCHAR(MAX) NULL,
+                        -- 💡 安全審計專用強型別獨立欄位
+                        [LogType] NVARCHAR(64) NULL,
+                        [EventCategory] NVARCHAR(128) NULL,
+                        [UserId] NVARCHAR(128) NULL,
+                        [ClientIp] NVARCHAR(64) NULL,
+                        CONSTRAINT [PK_SecurityAuditLedger] PRIMARY KEY CLUSTERED ([Id] ASC)
+                    )
+                    WITH (LEDGER = ON (APPEND_ONLY = ON)); -- 🔐 啟用總帳唯讀附加特徵
+                    GO
 
-                -- 建立最佳化索引
-                CREATE NONCLUSTERED INDEX [IX_SecurityLogs_Timestamp] ON [dbo].[SecurityLogs] ([Timestamp] DESC);
-                CREATE NONCLUSTERED INDEX [IX_SecurityLogs_UserId] ON [dbo].[SecurityLogs] ([UserId]);
-                CREATE NONCLUSTERED INDEX [IX_SecurityLogs_CorrelationId] ON [dbo].[SecurityLogs] ([CorrelationId]);
-            END";
+                                    -- 建立最佳化索引
+                                    CREATE NONCLUSTERED INDEX [IX_SecurityLogs_Timestamp] ON [core].[SecurityLogs] ([Timestamp] DESC);
+                                    CREATE NONCLUSTERED INDEX [IX_SecurityLogs_UserId] ON [core].[SecurityLogs] ([UserId]);
+                                    CREATE NONCLUSTERED INDEX [IX_SecurityLogs_CorrelationId] ON [core].[SecurityLogs] ([CorrelationId]);
+                                END";
 
             try
             {
@@ -60,58 +60,6 @@ GO
                 // 如果此處失敗，直接向外拋出異常，阻斷應用程式啟動，因為安全審計基礎建設未就緒
                 throw new InvalidOperationException("無法初始化 SecurityLogs 安全性帳本資料表，系統拒絕啟動。", ex);
             }
-
-
-            //migrationBuilder.Sql(@"
-            //                    CREATE TABLE [dbo].[SecurityLogs]
-            //                    (
-            //                        [Id]            INT IDENTITY(1,1) NOT NULL,
-            //                        [CorrelationId] NVARCHAR(450) NULL,
-            //                        [Message]       NVARCHAR(MAX) NULL,
-            //                        [Level]         NVARCHAR(MAX) NULL,
-            //                        [Timestamp]     DATETIMEOFFSET NOT NULL,
-            //                        [Exception]     NVARCHAR(MAX) NULL,
-            //                        [Properties]    NVARCHAR(MAX) NULL,
-            //                        [LogType]       NVARCHAR(MAX) NULL,
-            //                        [EventCategory] NVARCHAR(MAX) NULL,
-            //                        [UserId]        NVARCHAR(MAX) NULL,
-            //                        [ClientIp]      NVARCHAR(MAX) NULL,
-            //                        [AlertId]       NVARCHAR(MAX) NULL,
-            //                        [Fingerprint]   NVARCHAR(MAX) NULL,
-
-            //                        CONSTRAINT [PK_SecurityLogs] PRIMARY KEY CLUSTERED ([Id] ASC)
-            //                    )
-            //                    WITH (LEDGER = ON (APPEND_ONLY = ON));
-            //                ");
-
-            //migrationBuilder.Sql(@"
-            //                    CREATE TABLE [dbo].[SystemLogs]
-            //                    (
-            //                        [Id]            BIGINT IDENTITY(1,1) NOT NULL,
-            //                        [TimeStamp]     DATETIME2 NOT NULL,
-            //                        [Message]       NVARCHAR(MAX) NULL,
-            //                        [Level]         NVARCHAR(128) NULL,
-            //                        [Exception]     NVARCHAR(MAX) NULL,
-            //                        [TenantId]      NVARCHAR(50) NULL,
-            //                        [UserId]        NVARCHAR(50) NULL,
-            //                        [ModuleName]    NVARCHAR(50) NULL,
-            //                        [Operation]     NVARCHAR(MAX) NULL,
-            //                        [CorrelationId] VARCHAR(50) NULL,
-            //                        [IP]            VARCHAR(45) NULL,
-            //                        [Url]           NVARCHAR(2083) NULL,
-            //                        [Payload]       NVARCHAR(MAX) NULL,
-            //                        [PrevHash]      NVARCHAR(64) NULL,
-            //                        [CurrentHash]   NVARCHAR(64) NULL,
-            //                        [CreatedAt]     DATETIME2 NOT NULL CONSTRAINT [DF_SystemLogs_CreatedAt] DEFAULT (SYSUTCDATETIME()),
-            //                        [AlertId]       CHAR(32) NULL,
-            //                        [Fingerprint]   CHAR(64) NULL,
-
-            //                        CONSTRAINT [PK_SystemLogs] PRIMARY KEY CLUSTERED ([Id] ASC)
-            //                    )
-            //                    WITH (LEDGER = ON (APPEND_ONLY = ON));
-            //                ");
-
-
         }
     }
 }

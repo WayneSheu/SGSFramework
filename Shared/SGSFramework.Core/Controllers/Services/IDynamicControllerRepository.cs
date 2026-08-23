@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.Text;
 
 namespace SGSFramework.Core.Controllers.Services
-{ 
+{
     /// <summary>
     /// 動態控制器註冊倉儲介面
     /// </summary>

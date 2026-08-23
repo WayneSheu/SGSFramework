@@ -31,7 +31,7 @@ namespace SGSFramework.Persistent.Abstractions.Dbcontexts
            ITenantService? tenantService = null) : base(options)
         {
             var extension = options.FindExtension<ToolkitOptionsExtension>();
-            _schema = extension?.Schema ?? "dbo";
+            _schema = extension?.Schema ?? "core";
             _tenantId = tenantService?.GetTenantId();
         }
 

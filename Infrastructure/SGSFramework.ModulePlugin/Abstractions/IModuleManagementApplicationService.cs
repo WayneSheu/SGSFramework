@@ -8,27 +8,39 @@ namespace SGSFramework.ModulePlugin.Abstractions
 {
     /// <summary>
     /// 商業模組動態管理應用層服務介面
-    /// </summary>
     public interface IModuleManagementApplicationService
     {
         /// <summary>
-        /// 獲取所有已載入模組之詳細資訊
+        /// 取得所有啟用的模組詳細資訊
         /// </summary>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
         Task<IEnumerable<ModuleDetailResponse>> GetActiveModulesDetailsAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// 處理模組檔案上傳、檔案寫入、動態卸載與控制器元資料同步
+        /// 上傳模組檔案
         /// </summary>
+        /// <param name="files"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
         Task<ModuleUploadResponseDto> UploadModuleAsync(List<IFormFile> files, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// 切換指定模組之啟用狀態
+        /// 切換模組啟用狀態
         /// </summary>
+        /// <param name="moduleName"></param>
+        /// <param name="isActive"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
         Task<ToggleStatusResponseDto> ToggleModuleStatusAsync(string moduleName, bool isActive, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// 動態卸載並刪除指定模組元資料
+        /// 移除模組
         /// </summary>
+        /// <param name="moduleName"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
         Task RemoveModuleAsync(string moduleName, CancellationToken cancellationToken = default);
+  
     }
 }

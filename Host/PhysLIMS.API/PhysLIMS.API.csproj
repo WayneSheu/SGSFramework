@@ -34,7 +34,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Infrastructure\Enterprise.HttpSdk\Enterprise.HttpSdk.csproj" />
     <ProjectReference Include="..\..\Infrastructure\SGSFramework.ModulePlugin\SGSFramework.ModulePlugin.csproj" />
-    <ProjectReference Include="..\..\Modules\ORG\Module.ORG.Infrastructure\SGS.Modules.ORG.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Shared\SGSFramework.Core\SGSFramework.Core.csproj" />
     <ProjectReference Include="..\PhysLIMS.Controller\SGSFramework.ApiInfrastructure.csproj" />
   </ItemGroup>
 

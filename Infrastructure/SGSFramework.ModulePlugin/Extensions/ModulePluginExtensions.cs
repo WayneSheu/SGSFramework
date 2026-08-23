@@ -1,4 +1,9 @@
-﻿using Microsoft.AspNetCore.Builder;
+﻿// ==========================================
+// 檔案路徑: src/SGSFramework/Infrastructure/SGSFramework.ModulePlugin/Extensions/ModulePluginExtensions.cs
+// 架構層級: Application / Infrastructure Framework
+// ==========================================
+
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
@@ -8,8 +13,10 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Serilog;
+using SGSFramework.Core.Abstractions.Alerts;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Controllers.Services;
+using SGSFramework.Core.Extensions;
 using SGSFramework.Core.Migrations;
 using SGSFramework.ModulePlugin.Abstractions;
 using SGSFramework.ModulePlugin.Services;
@@ -19,14 +26,10 @@ using SGSFramework.ModulePlugin.Systems.Controller.Services;
 using SGSFramework.ModulePlugin.Systems.Menu.Extensions;
 using SGSFramework.ModulePlugin.Systems.Module;
 using SGSFramework.ModulePlugin.Systems.Module.Containers;
+using SGSFramework.ModulePlugin.Systems.Module.Extensions;
 using SGSFramework.ModulePlugin.Systems.Module.Loaders;
 using SGSFramework.ModulePlugin.Systems.Module.Registries;
-using SGSFramework.ModulePlugin.Systems.Module.Repositories;
 using SGSFramework.ModulePlugin.Systems.Module.Services;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace SGSFramework.ModulePlugin.Extensions;
 
@@ -36,7 +39,7 @@ namespace SGSFramework.ModulePlugin.Extensions;
 public static class ModulePluginExtensions
 {
     /// <summary>
-    /// 將模組化插件系統的核心服務與動態控制器倉儲註冊至 DI 容器（支援指定 DbContext）。
+    /// 將模組化插件系統的核心服務、策略模式存取層與動態控制器倉儲註冊至 DI 容器（支援指定 DbContext）。
     /// </summary>
     /// <typeparam name="TDbContext">目標 EF Core DbContext 類型</typeparam>
     /// <param name="services">DI 服務集合</param>
@@ -48,24 +51,20 @@ public static class ModulePluginExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(config);
 
-        // 1. 模組註冊與註冊表服務 (Singleton)
-        services.AddSingleton<ModuleRegistry>();
-        services.AddSingleton<IModuleRegistry>(sp => sp.GetRequiredService<ModuleRegistry>());
-        services.AddSingleton<ServiceRegistryMonitor>();
+        // 1. 載入外掛模組持久化與策略服務 (包含 IModuleStorageStrategy & IModuleRepository)
+        services.AddModuleFrameworkServices<TDbContext>();
 
-        // 2. 動態 ActionDescriptor 變更通知提供者 (Singleton)
-        services.AddSingleton<IDynamicActionDescriptorChangeProvider>(DynamicActionDescriptorChangeProvider.Instance);
-        services.AddSingleton<IActionDescriptorChangeProvider>(sp => sp.GetRequiredService<IDynamicActionDescriptorChangeProvider>());
+        // 2. 模組註冊與註冊表服務 (Singleton)
+        services.TryAddSingleton<ModuleRegistry>();
+        services.TryAddSingleton<IModuleRegistry>(sp => sp.GetRequiredService<ModuleRegistry>());
+        services.TryAddSingleton<ServiceRegistryMonitor>();
 
-        // 3. 模組與動態控制器資料庫倉儲 (Scoped, 依賴目標 DbContext)
-        services.AddScoped<IModuleRepository>(sp =>
-        {
-            var context = sp.GetRequiredService<TDbContext>();
-            var cache = sp.GetRequiredService<IMemoryCache>();
-            return new ModuleRepository<TDbContext>(context, cache);
-        });
+        // 3. 動態 ActionDescriptor 變更通知提供者 (Singleton)
+        services.TryAddSingleton<IDynamicActionDescriptorChangeProvider>(DynamicActionDescriptorChangeProvider.Instance);
+        services.TryAddSingleton<IActionDescriptorChangeProvider>(sp => sp.GetRequiredService<IDynamicActionDescriptorChangeProvider>());
 
-        services.AddScoped<IDynamicControllerRepository<ControllerMetadata>>(sp =>
+        // 4. 動態控制器資料庫倉儲 (Scoped, 依賴目標 DbContext)
+        services.TryAddScoped<IDynamicControllerRepository<ControllerMetadata>>(sp =>
         {
             var context = sp.GetRequiredService<TDbContext>();
             var cache = sp.GetRequiredService<IMemoryCache>();
@@ -73,25 +72,31 @@ public static class ModulePluginExtensions
             return new DynamicControllerRepository<ControllerMetadata>(context, cache, logger);
         });
 
-        services.AddScoped(typeof(IDynamicControllerRepository<>), typeof(DynamicControllerRepository<>));
+        services.TryAddScoped(typeof(IDynamicControllerRepository<>), typeof(DynamicControllerRepository<>));
 
-        // 4. 模組生命週期管理、熱加載與應用層服務 (Scoped)
-        services.AddScoped<ModuleLifecycleService>();
-        services.AddScoped<IModuleAssemblyRegisterService, ModuleAssemblyRegisterService>();
-        services.AddScoped<IModuleUnloader, ModuleUnloader>();
+        // 5. 模組生命週期管理、熱加載與應用層服務 (Scoped)
+        services.TryAddScoped<ModuleLifecycleService>();
+        services.TryAddScoped<IModuleAssemblyRegisterService, ModuleAssemblyRegisterService>();
+        services.TryAddScoped<IModuleUnloader, ModuleUnloader>();
 
-        // 註冊模組管理應用層服務 (解決 ModuleManagementController DI 解析失敗的問題)
-        services.AddScoped<IModuleManagementApplicationService, ModuleManagementApplicationService>();
+        // 註冊模組管理應用層服務
+        services.TryAddScoped<IModuleManagementApplicationService, ModuleManagementApplicationService>();
 
-        // 5. 動態外掛模組與背景監控服務 (HostedServices)
+        // 6. 動態外掛模組與背景監控服務 (HostedServices)
         services.AddModularModules(config);
+
+        services.AddMemoryCache();
+        // 配置區段整合鏈式擴充方法
+        services.AddAlertFloodSuppression();
+        // 防洪與告警服務註冊
+        services.AddSingleton<IAlertFloodSuppressor, InMemoryAlertFloodSuppressor>();
         services.AddHostedService<ModuleMonitorService>();
         services.AddHostedService<ModuleFileWatcherService>();
 
-        // 6. 系統核心模組與內建控制器自動同步初始化服務
+        // 7. 系統核心模組與內建控制器自動同步初始化服務
         services.AddHostedService<SystemModuleDatabaseInitializerHostedService>();
 
-        // 7. 註冊動態選單擴充
+        // 8. 註冊動態選單擴充
         services.AddDynamicMenu();
 
         return services;
@@ -108,21 +113,20 @@ public static class ModulePluginExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(config);
 
-        services.AddSingleton<ModuleRegistry>();
-        services.AddSingleton<IModuleRegistry>(sp => sp.GetRequiredService<ModuleRegistry>());
-        services.AddSingleton<ServiceRegistryMonitor>();
+        services.TryAddSingleton<ModuleRegistry>();
+        services.TryAddSingleton<IModuleRegistry>(sp => sp.GetRequiredService<ModuleRegistry>());
+        services.TryAddSingleton<ServiceRegistryMonitor>();
 
-        services.AddSingleton<IDynamicActionDescriptorChangeProvider>(DynamicActionDescriptorChangeProvider.Instance);
-        services.AddSingleton<IActionDescriptorChangeProvider>(sp => sp.GetRequiredService<IDynamicActionDescriptorChangeProvider>());
+        services.TryAddSingleton<IDynamicActionDescriptorChangeProvider>(DynamicActionDescriptorChangeProvider.Instance);
+        services.TryAddSingleton<IActionDescriptorChangeProvider>(sp => sp.GetRequiredService<IDynamicActionDescriptorChangeProvider>());
 
-        services.AddScoped<ModuleLifecycleService>();
-        services.AddScoped<IModuleAssemblyRegisterService, ModuleAssemblyRegisterService>();
-        services.AddScoped<IModuleUnloader, ModuleUnloader>();
+        services.TryAddScoped<ModuleLifecycleService>();
+        services.TryAddScoped<IModuleAssemblyRegisterService, ModuleAssemblyRegisterService>();
+        services.TryAddScoped<IModuleUnloader, ModuleUnloader>();
 
-        // 註冊模組管理應用層服務
-        services.AddScoped<IModuleManagementApplicationService, ModuleManagementApplicationService>();
+        services.TryAddScoped<IModuleManagementApplicationService, ModuleManagementApplicationService>();
 
-        services.AddScoped(typeof(IDynamicControllerRepository<>), typeof(DynamicControllerRepository<>));
+        services.TryAddScoped(typeof(IDynamicControllerRepository<>), typeof(DynamicControllerRepository<>));
 
         services.AddModularModules(config);
         services.AddHostedService<ModuleMonitorService>();

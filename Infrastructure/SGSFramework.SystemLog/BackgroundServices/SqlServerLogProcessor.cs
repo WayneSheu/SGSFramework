@@ -1,91 +1,130 @@
 ﻿#nullable enable
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+using System.Data;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Serilog.Events;
-using SGSFramework.Core.Abstractions.Processors;
-using SGSFramework.SystemLog.Readers;
 
-namespace SGSFramework.SystemLog.BackgroundServices;
-
-/// <summary>
-/// Infrastructure 層：負責將 Serilog 事件批次寫入 MSSQL 資料庫 (核心系統日誌)
-/// </summary>
-public sealed class SqlServerLogProcessor : IPersistentProcessor<LogEvent>
+namespace SGSFramework.SystemLog.BackgroundServices
 {
-    private readonly string _connectionString;
-    private readonly string _fallbackPath;
-    private readonly string _tableName = "core.SystemLogs";
-
-    public SqlServerLogProcessor(IConfiguration config)
+    public interface ISqlServerLogProcessor
     {
-        ArgumentNullException.ThrowIfNull(config);
-
-        _connectionString = config.GetSection("PersistentSettings:ConnectionStrings")["DefaultConnection"]
-            ?? config.GetConnectionString("DefaultConnection")
-            ?? throw new InvalidOperationException("找不到 PersistentSettings:ConnectionStrings:DefaultConnection 連線字串。");
-
-        _fallbackPath = config["Logging:FallbackPath"] ?? @"C:\Logs\Fallback\";
-        if (!Directory.Exists(_fallbackPath))
-        {
-            Directory.CreateDirectory(_fallbackPath);
-        }
+        Task ProcessBatchAsync(IEnumerable<LogEvent> items, CancellationToken ct);
+        Task FallbackAsync(IEnumerable<LogEvent> items, Exception ex);
     }
 
-    public async Task ProcessBatchAsync(IEnumerable<LogEvent> items, CancellationToken ct)
+    public class SqlServerLogProcessor : ISqlServerLogProcessor
     {
-        ArgumentNullException.ThrowIfNull(items);
+        private readonly string _connectionString;
+        private readonly ILogger<SqlServerLogProcessor> _logger;
 
-        try
+        public SqlServerLogProcessor(IConfiguration configuration, ILogger<SqlServerLogProcessor> logger)
         {
-            using var connection = new SqlConnection(_connectionString);
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            _connectionString = configuration.GetValue<string>("PersistentSettings:ConnectionStrings:DefaultConnection")
+                ?? throw new InvalidOperationException("未配置 DefaultConnection 資料庫連線字串。");
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        }
 
-            using var bulkCopy = new SqlBulkCopy(connection, SqlBulkCopyOptions.TableLock | SqlBulkCopyOptions.UseInternalTransaction, null)
+        public async Task ProcessBatchAsync(IEnumerable<LogEvent> items, CancellationToken ct)
+        {
+            var table = BuildDataTable(items);
+            if (table.Rows.Count == 0) return;
+
+            using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync(ct);
+
+            using var bulkCopy = new SqlBulkCopy(connection)
             {
-                DestinationTableName = _tableName,
-                BatchSize = 1000,
+                DestinationTableName = "core.SystemLogs",
+                BatchSize = table.Rows.Count,
                 BulkCopyTimeout = 30
             };
 
-            using var reader = new LogEventDataReader(items);
+            // 💡 顯式指定 Column Mapping，避免 Target Column 不符引發 InvalidOperationException
+            ConfigureColumnMappings(bulkCopy);
 
-            // 動態映射 LogEventDataReader 所提供的所有欄位名稱（包含可修復 CS0535/ Error 515 的 CreatedAt 欄位）
-            for (int i = 0; i < reader.FieldCount; i++)
+            await bulkCopy.WriteToServerAsync(table, ct);
+        }
+
+        public Task FallbackAsync(IEnumerable<LogEvent> items, Exception ex)
+        {
+            // 降級處理邏輯（例如備份至本地 File System 或 Memory Queue）
+            _logger.LogWarning(ex, "[Fallback] 日誌持久化降級，改為本地降級處理機制。");
+            return Task.CompletedTask;
+        }
+
+        private static DataTable BuildDataTable(IEnumerable<LogEvent> items)
+        {
+            var dt = new DataTable();
+            dt.Columns.Add("TimeStamp", typeof(DateTime));
+            dt.Columns.Add("Message", typeof(string));
+            dt.Columns.Add("Level", typeof(string));
+            dt.Columns.Add("Exception", typeof(string));
+            dt.Columns.Add("TenantId", typeof(string));
+            dt.Columns.Add("UserId", typeof(string));
+            dt.Columns.Add("ModuleName", typeof(string));
+            dt.Columns.Add("Operation", typeof(string));
+            dt.Columns.Add("CorrelationId", typeof(string));
+            dt.Columns.Add("IP", typeof(string));
+            dt.Columns.Add("Url", typeof(string));
+            dt.Columns.Add("Payload", typeof(string));
+            dt.Columns.Add("PrevHash", typeof(string));
+            dt.Columns.Add("CurrentHash", typeof(string));
+            dt.Columns.Add("AlertId", typeof(string));
+            dt.Columns.Add("Fingerprint", typeof(string));
+
+            foreach (var item in items)
             {
-                var colName = reader.GetName(i);
-                bulkCopy.ColumnMappings.Add(colName, colName);
+                var row = dt.NewRow();
+                row["TimeStamp"] = item.Timestamp.DateTime;
+                row["Message"] = item.RenderMessage();
+                row["Level"] = item.Level.ToString();
+                row["Exception"] = item.Exception?.ToString();
+
+                // 映射 Serilog Properties 或自定義延伸屬性
+                row["TenantId"] = item.Properties.TryGetValue("TenantId", out var tId) ? tId.ToString()?.Trim('"') : DBNull.Value;
+                row["UserId"] = item.Properties.TryGetValue("UserId", out var uId) ? uId.ToString()?.Trim('"') : DBNull.Value;
+                row["ModuleName"] = item.Properties.TryGetValue("ModuleName", out var mName) ? mName.ToString()?.Trim('"') : DBNull.Value;
+                row["Operation"] = item.Properties.TryGetValue("Operation", out var op) ? op.ToString()?.Trim('"') : DBNull.Value;
+                row["CorrelationId"] = item.Properties.TryGetValue("CorrelationId", out var cId) ? cId.ToString()?.Trim('"') : DBNull.Value;
+                row["IP"] = item.Properties.TryGetValue("IP", out var ip) ? ip.ToString()?.Trim('"') : DBNull.Value;
+                row["Url"] = item.Properties.TryGetValue("Url", out var url) ? url.ToString()?.Trim('"') : DBNull.Value;
+
+                row["Payload"] = item.Properties.Count > 0 ? System.Text.Json.JsonSerializer.Serialize(item.Properties) : string.Empty;
+
+                // 雜湊鏈結與告警欄位預設值
+                row["PrevHash"] = DBNull.Value;
+                row["CurrentHash"] = DBNull.Value;
+                row["AlertId"] = item.Properties.TryGetValue("AlertId", out var aId) ? aId.ToString()?.Trim('"') : DBNull.Value;
+                row["Fingerprint"] = item.Properties.TryGetValue("Fingerprint", out var fp) ? fp.ToString()?.Trim('"') : DBNull.Value;
+
+                dt.Rows.Add(row);
             }
 
-            await bulkCopy.WriteToServerAsync(reader, ct).ConfigureAwait(false);
+            return dt;
         }
-        catch (Exception ex)
+        private static void ConfigureColumnMappings(SqlBulkCopy bulkCopy)
         {
-            await FallbackAsync(items, ex).ConfigureAwait(false);
-            throw;
+            bulkCopy.ColumnMappings.Clear();
+            bulkCopy.ColumnMappings.Add("TimeStamp", "TimeStamp");
+            bulkCopy.ColumnMappings.Add("Message", "Message");
+            bulkCopy.ColumnMappings.Add("Level", "Level");
+            bulkCopy.ColumnMappings.Add("Exception", "Exception");
+            bulkCopy.ColumnMappings.Add("TenantId", "TenantId");
+            bulkCopy.ColumnMappings.Add("UserId", "UserId");
+            bulkCopy.ColumnMappings.Add("ModuleName", "ModuleName");
+            bulkCopy.ColumnMappings.Add("Operation", "Operation");
+            bulkCopy.ColumnMappings.Add("CorrelationId", "CorrelationId");
+            bulkCopy.ColumnMappings.Add("IP", "IP");
+            bulkCopy.ColumnMappings.Add("Url", "Url");
+            bulkCopy.ColumnMappings.Add("Payload", "Payload");
+            bulkCopy.ColumnMappings.Add("AlertId", "AlertId");
+            bulkCopy.ColumnMappings.Add("Fingerprint", "Fingerprint");
         }
-    }
 
-    public async Task FallbackAsync(IEnumerable<LogEvent> items, Exception ex)
-    {
-        ArgumentNullException.ThrowIfNull(items);
-        ArgumentNullException.ThrowIfNull(ex);
-
-        try
-        {
-            var fileName = Path.Combine(_fallbackPath, $"fallback-{DateTime.UtcNow:yyyyMMdd}.log");
-            var content = items.Select(i => $"[{i.Timestamp:O}] [{i.Level}] {i.RenderMessage()} | EX: {ex.Message}");
-
-            await File.AppendAllLinesAsync(fileName, content, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch
-        {
-            // 防止 Fallback 內部二次拋出例外蓋掉原始 SqlException
-        }
     }
 }

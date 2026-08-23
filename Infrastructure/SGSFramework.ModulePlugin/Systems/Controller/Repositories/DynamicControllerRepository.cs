@@ -1,4 +1,9 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿// ==========================================
+// 檔案路徑: src/SGSFramework/Infrastructure/SGSFramework.ModulePlugin/Systems/Controller/Repositories/DynamicControllerRepository.cs
+// 架構層級: Infrastructure Layer
+// ==========================================
+
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using SGSFramework.Core.Abstractions.Attributes;
@@ -26,7 +31,6 @@ public class DynamicControllerRepository<T>(
     private readonly ILogger<DynamicControllerRepository<T>> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly string _cacheKey = $"DynamicRegistry_{typeof(T).Name}";
 
-    // Reflection 快取，降低重複 Type.GetType 與 GetMethod 效能開銷
     private static readonly ConcurrentDictionary<string, Type?> TypeCache = new(StringComparer.Ordinal);
 
     public async Task RegisterAsync(string moduleName, IEnumerable<T> controllers)
@@ -40,50 +44,51 @@ public class DynamicControllerRepository<T>(
         {
             _context.ChangeTracker.Clear();
 
-            var controllerList = controllers.ToList();
-            _logger.LogInformation("[DynamicController] 開始註冊模組: {ModuleName}，傳入 Controller 數量: {Count}", moduleName, controllerList.Count);
+            // 1. 記憶體去重：防範傳入參數中包含相同 ControllerName + ActionName 的重複項
+            var rawControllers = controllers.ToList();
+            PreProcessControllers(rawControllers);
+
+            var controllerList = rawControllers
+                .GroupBy(c => $"{c.ControllerName?.Trim()}|{c.ActionName?.Trim()}", StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .ToList();
+
+            _logger.LogInformation("[DynamicController] 開始註冊模組: {ModuleName}，傳入且經去重之 Controller/Action 數量: {Count}", moduleName, controllerList.Count);
 
             try
             {
-                PreProcessControllers(controllerList);
-
                 var existingEntities = await _dbSet
                     .Where(x => x.ModuleName == moduleName)
                     .ToListAsync();
 
                 _logger.LogInformation("[DynamicController] 資料庫現有 {ModuleName} 模組紀錄共 {Count} 筆。", moduleName, existingEntities.Count);
 
-                int resetCount = 0;
+                // 2. 將既有紀錄預設設為不啟用 (Soft-reset)
                 foreach (var entity in existingEntities)
                 {
-                    if (entity.IsActive)
-                    {
-                        entity.IsActive = false;
-                        _context.Entry(entity).State = EntityState.Modified;
-                        resetCount++;
-                    }
+                    entity.IsActive = false;
+                    _context.Entry(entity).State = EntityState.Modified;
                 }
-                _logger.LogInformation("[DynamicController] 已將 {Count} 筆舊有啟用紀錄在記憶體中標記為失效。", resetCount);
 
+                // 以 ControllerName + ActionName 建立資料庫既有資料的快速 Index
                 var existingDict = new Dictionary<string, T>(StringComparer.OrdinalIgnoreCase);
                 foreach (var entity in existingEntities)
                 {
-                    var key = $"{GetCleanTypeName(entity.ControllerTypeName)}|{entity.ActionName?.Trim()}";
+                    var key = $"{entity.ControllerName?.Trim()}|{entity.ActionName?.Trim()}";
                     existingDict.TryAdd(key, entity);
                 }
 
                 int addedCount = 0;
                 int updatedCount = 0;
 
+                // 3. 執行 Upsert 比對
                 foreach (var controller in controllerList)
                 {
-                    var cleanIncomingName = GetCleanTypeName(controller.ControllerTypeName);
-                    var actionName = controller.ActionName?.Trim();
-                    var key = $"{cleanIncomingName}|{actionName}";
+                    var controllerKey = $"{controller.ControllerName?.Trim()}|{controller.ActionName?.Trim()}";
 
                     T? targetEntity = null;
 
-                    if (existingDict.TryGetValue(key, out var dictEntity))
+                    if (existingDict.TryGetValue(controllerKey, out var dictEntity))
                     {
                         targetEntity = dictEntity;
                     }
@@ -111,6 +116,7 @@ public class DynamicControllerRepository<T>(
                             metaExisting.ParentMenuName = metaNew.ParentMenuName;
                             metaExisting.ControllerTypeName = metaNew.ControllerTypeName;
                             metaExisting.ControllerName = metaNew.ControllerName;
+                            metaExisting.ActionName = metaNew.ActionName;
                             metaExisting.DisplayOrder = metaNew.DisplayOrder;
                             metaExisting.Icon = metaNew.Icon;
                             metaExisting.Description = metaNew.Description;
@@ -176,7 +182,6 @@ public class DynamicControllerRepository<T>(
                     metadata.SyncFromAttribute(controllerType);
                 }
 
-                // API 版本號解析
                 var versionAttr = controllerType.GetCustomAttribute<ApiVersionAttribute>();
                 var version = versionAttr?.Version ?? "v1";
 
@@ -226,13 +231,6 @@ public class DynamicControllerRepository<T>(
     {
         if (string.IsNullOrWhiteSpace(typeName)) return null;
         return TypeCache.GetOrAdd(typeName, name => Type.GetType(name));
-    }
-
-    private static string GetCleanTypeName(string typeName)
-    {
-        if (string.IsNullOrWhiteSpace(typeName)) return string.Empty;
-        var commaIndex = typeName.IndexOf(',');
-        return commaIndex > 0 ? typeName[..commaIndex].Trim() : typeName.Trim();
     }
 
     public async Task UnregisterByModuleAsync(string moduleName)

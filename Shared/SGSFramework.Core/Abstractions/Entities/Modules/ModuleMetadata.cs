@@ -3,6 +3,9 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace SGSFramework.Core.Abstractions.Entities.Modules
 {
+    /// <summary>
+    /// 模組元資料實體，包含模組的基本資訊與狀態
+    /// </summary>
     public class ModuleMetadata : IModuleEntity
     {
         public Guid Id { get; set; }
@@ -19,6 +22,10 @@ namespace SGSFramework.Core.Abstractions.Entities.Modules
     {
         public void Configure(EntityTypeBuilder<ModuleMetadata> builder)
         {
+            ArgumentNullException.ThrowIfNull(builder);
+
+            builder.ToTable("ModuleMetadatas", "core");
+
             // 設定主鍵
             builder.HasKey(e => e.Id);
 

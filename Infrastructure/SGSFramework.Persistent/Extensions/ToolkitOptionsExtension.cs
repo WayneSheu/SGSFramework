@@ -47,7 +47,7 @@ namespace SGSFramework.Persistent.Extensions
             public override void PopulateDebugInfo(
                 IDictionary<string, string> debugInfo) =>
                 debugInfo["Toolkit:Schema"] =
-                    ((ToolkitOptionsExtension)Extension).Schema ?? "dbo";
+                    ((ToolkitOptionsExtension)Extension).Schema ?? "core";
         }
     }
 }

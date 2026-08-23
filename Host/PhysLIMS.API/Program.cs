@@ -1,5 +1,6 @@
 // ==========================================
 // 檔案路徑: src/SGSFramework/Host/PhysLIMS.API/Program.cs
+// 架構層級: Presentation / Host Layer
 // ==========================================
 
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -104,6 +105,7 @@ try
 
     Log.Information("開始掃描並註冊既有動態外掛模組與 DI 服務 (Startup Phase)...");
 
+    // 一鍵包含框架服務與對應 DbContext 的 IModuleStorageStrategy/IModuleRepository 策略注入[cite: 3, 4]
     builder.Services.AddModulePlugin<PhysLIMSDbContext>(config);
     builder.Services.AddControllerScanner<PhysLIMSDbContext>();
 
@@ -349,7 +351,7 @@ try
     Log.Information("觸發 MVC ActionDescriptorCollection 變更通知，刷新 Dynamic Controller 路由...");
     changeProvider.NotifyChanges();
 
-    //  攔截 OpenAPI 請求，強制破除前端快取 (避免 Skeleton Loader 讀取舊檔案卡死)
+    // 攔截 OpenAPI 請求，強制破除前端快取 (避免 Skeleton Loader 讀取舊檔案卡死)
     app.Use(async (context, next) =>
     {
         if (context.Request.Path.StartsWithSegments("/openapi", StringComparison.OrdinalIgnoreCase))

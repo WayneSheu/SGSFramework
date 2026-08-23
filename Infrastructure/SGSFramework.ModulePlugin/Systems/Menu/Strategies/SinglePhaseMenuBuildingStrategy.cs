@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace SGSFramework.ModulePlugin.Systems.Strategies
+namespace SGSFramework.ModulePlugin.Systems.Menu.Strategies
 {
     /// <summary>
     /// 單階段授權選單構建策略 (Single-Phase Strategy)

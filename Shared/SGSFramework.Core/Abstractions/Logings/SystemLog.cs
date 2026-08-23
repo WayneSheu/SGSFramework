@@ -88,6 +88,7 @@ namespace SGSFramework.Core.Abstractions.Logings
 
             // 5. 時間與預設值配置
             builder.Property(e => e.CreatedAt)
+                .HasColumnType("DATETIMEOFFSET(7)")
                 .HasDefaultValueSql("SYSUTCDATETIME()") // SQL Server 2025 自動產生 UTC 時間
                 .ValueGeneratedOnAdd();
 

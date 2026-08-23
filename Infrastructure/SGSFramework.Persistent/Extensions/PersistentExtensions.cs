@@ -89,7 +89,7 @@ namespace SGSFramework.Persistent.Extensions
         /// <typeparam name="TUser">Identity User 實體，繼承 IdentityUser</typeparam>
         /// <typeparam name="TRole">Identity Role 實體，繼承 IdentityRole</typeparam>
         /// <typeparam name="TKey">主鍵型別，通常為 Guid 或 string</typeparam>
-        /// <param name="schema">資料庫 Schema，預設 "dbo"</param>
+        /// <param name="schema">資料庫 Schema，預設 "core"</param>
         /// <param name="configureIdentity">可選：進一步調整 IdentityOptions（密碼強度、Lockout...）</param>
         /// <param name="extraOptions">可選：進一步調整 DbContextOptionsBuilder</param>
         public static IServiceCollection AddIdentityDbContextWithOptions<TContext, TUser, TRole, TKey>(

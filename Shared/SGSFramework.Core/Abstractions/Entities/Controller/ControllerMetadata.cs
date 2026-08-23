@@ -62,10 +62,10 @@ namespace SGSFramework.Core.Abstractions.Entities.Controller
             builder.HasIndex(x => x.PermissionKey).HasDatabaseName("IX_Metadata_PermissionKey");
             builder.HasIndex(x => x.ModuleName).HasDatabaseName("IX_Metadata_ModuleName");
 
-            // 確保模組與控制器名稱的唯一性，防止註冊衝突
-            builder.HasIndex(x => new { x.ModuleName, x.ControllerName })
+            // 修正後：提升唯一索引粒度至 Module + Controller + Action
+            builder.HasIndex(x => new { x.ModuleName, x.ControllerName, x.ActionName })
                    .IsUnique()
-                   .HasDatabaseName("UX_Module_Controller");
+                   .HasDatabaseName("UX_Module_Controller_Action");
 
         }
     }

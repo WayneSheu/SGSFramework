@@ -59,29 +59,58 @@ namespace PhysLIMS.API.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "ControllerMetadata",
+                name: "AuditLogs",
+                schema: "core",
+                columns: table => new
+                {
+                    Id = table.Column<long>(type: "bigint", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset(7)", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
+                    TraceId = table.Column<string>(type: "char(32)", unicode: false, fixedLength: true, maxLength: 32, nullable: false),
+                    UserId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
+                    RemoteIp = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
+                    Timestamp = table.Column<DateTimeOffset>(type: "datetimeoffset(7)", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
+                    Schema = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
+                    TableName = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
+                    Action = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    KeyValues = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    OldValues = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    NewValues = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    ChangedColumns = table.Column<string>(type: "nvarchar(max)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_AuditLogs", x => x.Id);
+                })
+                .Annotation("SqlServer:IsLedger", true)
+                .Annotation("SqlServer:LedgerType", "APPEND_ONLY");
+
+            migrationBuilder.CreateTable(
+                name: "ControllerMetadatas",
                 schema: "core",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Version = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    ModuleName = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    ControllerName = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    ModuleName = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    ModuleTitle = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    ControllerTitle = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    ControllerName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
                     ControllerTypeName = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    ActionName = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    RouteTemplate = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    ActionName = table.Column<string>(type: "nvarchar(450)", nullable: false),
+                    RouteTemplate = table.Column<string>(type: "nvarchar(250)", maxLength: 250, nullable: false),
                     Description = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    DisplayName = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    DisplayName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
                     Icon = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     DisplayOrder = table.Column<int>(type: "int", nullable: false),
                     ParentMenuName = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    PermissionKey = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    IsActive = table.Column<bool>(type: "bit", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                    PermissionKey = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    IsActive = table.Column<bool>(type: "bit", nullable: false, defaultValue: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "GETUTCDATE()")
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_ControllerMetadata", x => x.Id);
+                    table.PrimaryKey("PK_ControllerMetadatas", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -92,11 +121,11 @@ namespace PhysLIMS.API.Migrations
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     ControllerId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     ParentId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
-                    DisplayName = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    DisplayName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
                     Icon = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    Route = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Route = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
                     DisplayOrder = table.Column<int>(type: "int", nullable: false),
-                    PermissionKey = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    PermissionKey = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
                     IsActive = table.Column<bool>(type: "bit", nullable: false)
                 },
                 constraints: table =>
@@ -107,7 +136,8 @@ namespace PhysLIMS.API.Migrations
                         column: x => x.ParentId,
                         principalSchema: "core",
                         principalTable: "MenuItems",
-                        principalColumn: "Id");
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -116,12 +146,13 @@ namespace PhysLIMS.API.Migrations
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    ModuleName = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    Version = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    AssemblyPath = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    ModuleTitle = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    ModuleName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    Version = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false, defaultValue: "1.0.0"),
+                    AssemblyPath = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: false),
                     IsActive = table.Column<bool>(type: "bit", nullable: false),
                     LastLoadedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    Checksum = table.Column<string>(type: "nvarchar(max)", nullable: false)
+                    Checksum = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: false)
                 },
                 constraints: table =>
                 {
@@ -158,7 +189,7 @@ namespace PhysLIMS.API.Migrations
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     RoleId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     LabId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    PermissionVector = table.Column<byte[]>(type: "varbinary(max)", nullable: false)
+                    PermissionVector = table.Column<byte[]>(type: "varbinary(64)", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -172,12 +203,12 @@ namespace PhysLIMS.API.Migrations
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    PermissionKey = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    PermissionKey = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
                     BitPosition = table.Column<int>(type: "int", nullable: false),
                     ModuleName = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     ControllerName = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     ActionName = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    Description = table.Column<string>(type: "nvarchar(max)", nullable: false)
+                    Description = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: false)
                 },
                 constraints: table =>
                 {
@@ -202,67 +233,62 @@ namespace PhysLIMS.API.Migrations
                     table.PrimaryKey("PK_RemediationTickets", x => x.TicketId);
                 });
 
-            migrationBuilder.Sql(@"
--- 1. 建立 SecurityLogs (Append-Only Ledger Table)
-CREATE TABLE [core].[SecurityLogs] (
-    [Id] INT IDENTITY(1,1) NOT NULL,
-    [CorrelationId] NVARCHAR(450) NULL,
-    [Message] NVARCHAR(MAX) NULL,
-    [Level] NVARCHAR(MAX) NULL,
-    [Timestamp] DATETIMEOFFSET(7) NOT NULL,
-    [Exception] NVARCHAR(MAX) NULL,
-    [Properties] NVARCHAR(MAX) NULL,
-    [LogType] NVARCHAR(MAX) NULL,
-    [EventCategory] NVARCHAR(MAX) NULL,
-    [UserId] NVARCHAR(MAX) NULL,
-    [ClientIp] NVARCHAR(MAX) NULL,
-    [AlertId] NVARCHAR(MAX) NULL,
-    [Fingerprint] NVARCHAR(MAX) NULL,
-    CONSTRAINT [PK_SecurityLogs] PRIMARY KEY CLUSTERED ([Id] ASC)
-)
-WITH 
-(
-    LEDGER = ON 
-    (
-        APPEND_ONLY = ON
-    )
-);
-");
+            migrationBuilder.CreateTable(
+                name: "SecurityLog",
+                schema: "core",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    CorrelationId = table.Column<string>(type: "varchar(50)", unicode: false, maxLength: 50, nullable: true),
+                    Message = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Level = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
+                    Timestamp = table.Column<DateTimeOffset>(type: "datetimeoffset(7)", nullable: false),
+                    Exception = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Properties = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    LogType = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
+                    EventCategory = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
+                    UserId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
+                    ClientIp = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
+                    AlertId = table.Column<string>(type: "nchar(32)", fixedLength: true, maxLength: 32, nullable: true),
+                    Fingerprint = table.Column<string>(type: "nchar(64)", fixedLength: true, maxLength: 64, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_SecurityLog", x => x.Id);
+                })
+                .Annotation("SqlServer:IsLedger", true)
+                .Annotation("SqlServer:LedgerType", "APPEND_ONLY");
 
-            migrationBuilder.Sql(@"
- -- 2. 建立 SystemLogs (Append-Only Ledger Table)
-CREATE TABLE [core].[SystemLogs] (
-    [Id] BIGINT IDENTITY(1,1) NOT NULL,
-    [TimeStamp] DATETIME2(7) NOT NULL,
-    [Message] NVARCHAR(MAX) NULL,
-    [Level] NVARCHAR(128) NULL,
-    [Exception] NVARCHAR(MAX) NULL,
-    [TenantId] NVARCHAR(50) NULL,
-    [UserId] NVARCHAR(50) NULL,
-    [ModuleName] NVARCHAR(50) NULL,
-    [Operation] NVARCHAR(MAX) NULL,
-    [CorrelationId] VARCHAR(50) NULL,
-    [IP] VARCHAR(45) NULL,
-    [Url] NVARCHAR(2083) NULL,
-    [Payload] NVARCHAR(MAX) NULL,
-    [PrevHash] NVARCHAR(64) NULL,
-    [CurrentHash] NVARCHAR(64) NULL,
-    [CreatedAt] DATETIME2(7) NOT NULL CONSTRAINT [DF_SystemLogs_CreatedAt] DEFAULT (SYSUTCDATETIME()),
-    [AlertId] CHAR(32) NULL,
-    [Fingerprint] CHAR(64) NULL,
-    CONSTRAINT [PK_SystemLogs] PRIMARY KEY CLUSTERED ([Id] ASC)
-)
-WITH 
-(
-    LEDGER = ON 
-    (
-        APPEND_ONLY = ON
-    )
-);
-
-");
-
-
+            migrationBuilder.CreateTable(
+                 name: "SystemLogs",
+                 schema: "core",
+                 columns: table => new
+                 {
+                     Id = table.Column<long>(type: "bigint", nullable: false)
+                         .Annotation("SqlServer:Identity", "1, 1"),
+                     TimeStamp = table.Column<DateTime>(type: "datetime2", nullable: false),
+                     Message = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                     Level = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
+                     Exception = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                     TenantId = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                     UserId = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                     ModuleName = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                     Operation = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                     CorrelationId = table.Column<string>(type: "varchar(50)", unicode: false, maxLength: 50, nullable: true),
+                     IP = table.Column<string>(type: "varchar(45)", unicode: false, maxLength: 45, nullable: true),
+                     Url = table.Column<string>(type: "nvarchar(2083)", maxLength: 2083, nullable: true),
+                     Payload = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                     CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset(7)", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
+                     AlertId = table.Column<string>(type: "nchar(32)", fixedLength: true, maxLength: 32, nullable: true),
+                     Fingerprint = table.Column<string>(type: "nchar(64)", fixedLength: true, maxLength: 64, nullable: true)
+                 },
+                 constraints: table =>
+                 {
+                     table.PrimaryKey("PK_SystemLogs", x => x.Id);
+                 })
+                 .Annotation("SqlServer:IsLedger", true)
+                 .Annotation("SqlServer:LedgerType", "APPEND_ONLY");
 
             migrationBuilder.CreateTable(
                 name: "UserRefreshTokens",
@@ -274,14 +300,14 @@ WITH
                     UserId = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
                     DeviceId = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
                     DeviceName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    RefreshTokenHash = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    RefreshTokenHash = table.Column<string>(type: "nchar(64)", fixedLength: true, maxLength: 64, nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
                     RotatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
                     ReusedTokenCache = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
                     ExpiresAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     LastActiveAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     ClientIp = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
-                    IsDead = table.Column<bool>(type: "bit", nullable: false),
+                    IsDead = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
                     IsFrozen = table.Column<bool>(type: "bit", nullable: false),
                     RiskReason = table.Column<string>(type: "nvarchar(max)", nullable: true)
                 },
@@ -408,6 +434,36 @@ WITH
                 });
 
             migrationBuilder.CreateTable(
+                name: "UserLabMappings",
+                schema: "core",
+                columns: table => new
+                {
+                    UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    LabId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    TenantLabId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    IsPrimary = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
+                    JobTitle = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    EffectiveDate = table.Column<DateTime>(type: "datetime2(7)", nullable: false),
+                    ExpiryDate = table.Column<DateTime>(type: "datetime2(7)", nullable: true),
+                    IsActive = table.Column<bool>(type: "bit", nullable: false, defaultValue: true),
+                    CreatedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset(7)", nullable: false, defaultValueSql: "SYSDATETIMEOFFSET()"),
+                    CreatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    UpdatedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset(7)", nullable: true),
+                    UpdatedBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_UserLabMappings", x => new { x.UserId, x.LabId });
+                    table.ForeignKey(
+                        name: "FK_UserLabMappings_Users_UserId",
+                        column: x => x.UserId,
+                        principalSchema: "core",
+                        principalTable: "AspNetUsers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "UserResourceGrants",
                 schema: "core",
                 columns: table => new
@@ -416,8 +472,8 @@ WITH
                     UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     MenuItemId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     LabId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    PermissionType = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    EffectType = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    PermissionType = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
+                    EffectType = table.Column<string>(type: "nvarchar(10)", maxLength: 10, nullable: false),
                     DelegatorUserId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     ValidFrom = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
                     ValidTo = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true)
@@ -480,11 +536,58 @@ WITH
                 unique: true,
                 filter: "[NormalizedUserName] IS NOT NULL");
 
+            //migrationBuilder.CreateIndex(
+            //    name: "IX_AuditLog_IsRepaired",
+            //    schema: "core",
+            //    table: "AuditLogs",
+            //    column: "IsRepaired",
+            //    filter: "[IsRepaired] = 0")
+            //    .Annotation("SqlServer:Include", new[] { "TableName", "TraceId", "GapReason" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_AuditLog_TraceId_Covering",
+                schema: "core",
+                table: "AuditLogs",
+                column: "TraceId")
+                .Annotation("SqlServer:Include", new[] { "Action", "CreatedAt", "TableName" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Metadata_ModuleName",
+                schema: "core",
+                table: "ControllerMetadatas",
+                column: "ModuleName");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Metadata_PermissionKey",
+                schema: "core",
+                table: "ControllerMetadatas",
+                column: "PermissionKey");
+
+            migrationBuilder.CreateIndex(
+                name: "UX_Module_Controller_Action",
+                schema: "core",
+                table: "ControllerMetadatas",
+                columns: new[] { "ModuleName", "ControllerName", "ActionName" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_MenuItems_DisplayOrder",
+                schema: "core",
+                table: "MenuItems",
+                column: "DisplayOrder");
+
             migrationBuilder.CreateIndex(
                 name: "IX_MenuItems_ParentId",
                 schema: "core",
                 table: "MenuItems",
                 column: "ParentId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ModuleMetadatas_ModuleName",
+                schema: "core",
+                table: "ModuleMetadatas",
+                column: "ModuleName",
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_core_OutboxMessages_CorrelationId",
@@ -499,9 +602,36 @@ WITH
                 columns: new[] { "ProcessedOnUtc", "IsDead", "ScheduledAtUtc" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_SecurityLogs_CorrelationId",
+                name: "IX_PermissionGrant_Role_Lab",
                 schema: "core",
-                table: "SecurityLogs",
+                table: "PermissionGrants",
+                columns: new[] { "RoleId", "LabId" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Permissions_BitPosition",
+                schema: "core",
+                table: "Permissions",
+                column: "BitPosition",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Permissions_PermissionKey",
+                schema: "core",
+                table: "Permissions",
+                column: "PermissionKey",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RemediationTickets_TicketId_UserId",
+                schema: "core",
+                table: "RemediationTickets",
+                columns: new[] { "TicketId", "UserId" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_SecurityLog_CorrelationId",
+                schema: "core",
+                table: "SecurityLog",
                 column: "CorrelationId");
 
             migrationBuilder.CreateIndex(
@@ -523,11 +653,49 @@ WITH
                 column: "TimeStamp");
 
             migrationBuilder.CreateIndex(
-                name: "IX_UserRefreshTokens_UserId_DeviceId",
+                name: "IX_UserLabMappings_EffectiveRange",
+                schema: "core",
+                table: "UserLabMappings",
+                columns: new[] { "UserId", "IsActive", "EffectiveDate", "ExpiryDate" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_UserLabMappings_TenantLabId_UserId",
+                schema: "core",
+                table: "UserLabMappings",
+                columns: new[] { "TenantLabId", "UserId", "IsActive" });
+
+            migrationBuilder.CreateIndex(
+                name: "UX_UserLabMappings_OnePrimaryPerUser",
+                schema: "core",
+                table: "UserLabMappings",
+                column: "UserId",
+                unique: true,
+                filter: "[IsPrimary] = 1 AND [IsActive] = 1");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_UserRefreshTokens_RefreshTokenHash",
+                schema: "core",
+                table: "UserRefreshTokens",
+                column: "RefreshTokenHash");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_UserRefreshTokens_UserId_DeviceId_IsDead",
+                schema: "core",
+                table: "UserRefreshTokens",
+                columns: new[] { "UserId", "DeviceId", "IsDead" });
+
+            migrationBuilder.CreateIndex(
+                name: "UX_UserRefreshTokens_UserId_DeviceId",
                 schema: "core",
                 table: "UserRefreshTokens",
                 columns: new[] { "UserId", "DeviceId" },
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_UserResource_Lookup",
+                schema: "core",
+                table: "UserResourceGrants",
+                columns: new[] { "UserId", "MenuItemId", "LabId" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_UserResourceGrants_MenuItemId",
@@ -560,7 +728,11 @@ WITH
                 schema: "core");
 
             migrationBuilder.DropTable(
-                name: "ControllerMetadata",
+                name: "AuditLogs",
+                schema: "core");
+
+            migrationBuilder.DropTable(
+                name: "ControllerMetadatas",
                 schema: "core");
 
             migrationBuilder.DropTable(
@@ -584,14 +756,20 @@ WITH
                 schema: "core");
 
             migrationBuilder.DropTable(
-                name: "SecurityLogs",
+                name: "SecurityLog",
                 schema: "core")
+                .Annotation("SqlServer:IsLedger", true)
                 .Annotation("SqlServer:IsLedgerAppendOnly", true);
 
             migrationBuilder.DropTable(
                 name: "SystemLogs",
                 schema: "core")
+                .Annotation("SqlServer:IsLedger", true)
                 .Annotation("SqlServer:IsLedgerAppendOnly", true);
+
+            migrationBuilder.DropTable(
+                name: "UserLabMappings",
+                schema: "core");
 
             migrationBuilder.DropTable(
                 name: "UserRefreshTokens",

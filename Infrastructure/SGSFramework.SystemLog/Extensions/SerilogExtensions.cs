@@ -72,7 +72,7 @@ namespace SGSFramework.SystemLog.Extensions
             builder.Services.AddSingleton<SqlServerLogProcessor>();
             builder.Services.AddSingleton<ISecurityLogger,SecurityLogger>();
             builder.Services.AddSingleton<SqlServerSecurityProcessor>();
-            builder.Services.AddSingleton<IPersistentProcessor<LogEvent>, SqlServerLogProcessor>();
+   
 
             // =========================================================================
             // 常駐背景服務註冊 (Hosted Services / Workers 消費端)

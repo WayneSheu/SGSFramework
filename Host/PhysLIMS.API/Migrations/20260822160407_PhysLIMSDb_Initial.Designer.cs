@@ -12,8 +12,8 @@ using PhysLIMS.API.Dbcontexts;
 namespace PhysLIMS.API.Migrations
 {
     [DbContext(typeof(PhysLIMSDbContext))]
-    [Migration("20260822035235_update_core_auditlog")]
-    partial class update_core_auditlog
+    [Migration("20260822160407_PhysLIMSDb_Initial")]
+    partial class PhysLIMSDb_Initial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -137,21 +137,27 @@ namespace PhysLIMS.API.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetimeoffset(7)")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
                     b.Property<string>("Action")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("ChangedColumns")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
-
                     b.Property<string>("GapReason")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
 
                     b.Property<bool>("IsRepaired")
-                        .HasColumnType("bit");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
 
                     b.Property<string>("KeyValues")
                         .HasColumnType("nvarchar(max)");
@@ -163,44 +169,65 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("OriginalStoredHash")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<string>("PreviousHash")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<string>("RemoteIp")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<DateTimeOffset?>("RepairedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset(7)");
 
                     b.Property<string>("Schema")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("StoredHash")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<string>("TableName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<DateTimeOffset>("Timestamp")
-                        .HasColumnType("datetimeoffset");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetimeoffset(7)")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
 
                     b.Property<string>("TraceId")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("char(32)")
+                        .IsFixedLength();
 
                     b.Property<string>("UserId")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
-                    b.HasKey("Id");
+                    b.HasKey("Id", "CreatedAt");
+
+                    b.HasIndex("IsRepaired")
+                        .HasDatabaseName("IX_AuditLog_IsRepaired")
+                        .HasFilter("[IsRepaired] = 0");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("IsRepaired"), new[] { "TableName", "TraceId", "GapReason" });
+
+                    b.HasIndex("TraceId")
+                        .HasDatabaseName("IX_AuditLog_TraceId_Covering");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TraceId"), new[] { "Action", "CreatedAt", "TableName" });
 
                     b.ToTable("AuditLogs", "core");
-
-                    b.HasAnnotation("SqlServer:IsLedgerAppendOnly", true);
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Controller.ControllerMetadata", b =>
@@ -211,29 +238,34 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<string>("ActionName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<string>("ControllerName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("ControllerTitle")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("ControllerTypeName")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
 
                     b.Property<string>("Description")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("DisplayName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<int>("DisplayOrder")
                         .HasColumnType("int");
@@ -242,26 +274,32 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
 
                     b.Property<string>("ModuleName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("ModuleTitle")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("ParentMenuName")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("PermissionKey")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("RouteTemplate")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
 
                     b.Property<string>("Version")
                         .IsRequired()
@@ -269,7 +307,17 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("ControllerMetadata", "core");
+                    b.HasIndex("ModuleName")
+                        .HasDatabaseName("IX_Metadata_ModuleName");
+
+                    b.HasIndex("PermissionKey")
+                        .HasDatabaseName("IX_Metadata_PermissionKey");
+
+                    b.HasIndex("ModuleName", "ControllerName", "ActionName")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Module_Controller_Action");
+
+                    b.ToTable("ControllerMetadatas", "core");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Controller.MenuItem", b =>
@@ -283,7 +331,8 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<string>("DisplayName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<int>("DisplayOrder")
                         .HasColumnType("int");
@@ -298,12 +347,16 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("PermissionKey")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("Route")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("DisplayOrder");
 
                     b.HasIndex("ParentId");
 
@@ -321,7 +374,8 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<string>("EffectType")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
 
                     b.Property<Guid>("LabId")
                         .HasColumnType("uniqueidentifier");
@@ -331,7 +385,8 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<string>("PermissionType")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
@@ -345,6 +400,9 @@ namespace PhysLIMS.API.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("MenuItemId");
+
+                    b.HasIndex("UserId", "MenuItemId", "LabId")
+                        .HasDatabaseName("IX_UserResource_Lookup");
 
                     b.ToTable("UserResourceGrants", "core");
                 });
@@ -484,7 +542,72 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasKey("TicketId");
 
+                    b.HasIndex("TicketId", "UserId");
+
                     b.ToTable("RemediationTickets", "core");
+                });
+
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.UserLabMapping", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LabId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetimeoffset(7)")
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET()");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("EffectiveDate")
+                        .HasColumnType("datetime2(7)");
+
+                    b.Property<DateTime?>("ExpiryDate")
+                        .HasColumnType("datetime2(7)");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("IsPrimary")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("JobTitle")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("TenantLabId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset(7)");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("UserId", "LabId");
+
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_UserLabMappings_OnePrimaryPerUser")
+                        .HasFilter("[IsPrimary] = 1 AND [IsActive] = 1");
+
+                    b.HasIndex("TenantLabId", "UserId", "IsActive")
+                        .HasDatabaseName("IX_UserLabMappings_TenantLabId_UserId");
+
+                    b.HasIndex("UserId", "IsActive", "EffectiveDate", "ExpiryDate")
+                        .HasDatabaseName("IX_UserLabMappings_EffectiveRange");
+
+                    b.ToTable("UserLabMappings", "core");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.UserRefreshToken", b =>
@@ -501,7 +624,9 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("nvarchar(50)");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
 
                     b.Property<string>("DeviceId")
                         .IsRequired()
@@ -517,7 +642,9 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<bool>("IsDead")
-                        .HasColumnType("bit");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
 
                     b.Property<bool>("IsFrozen")
                         .HasColumnType("bit");
@@ -528,8 +655,9 @@ namespace PhysLIMS.API.Migrations
                     b.Property<string>("RefreshTokenHash")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)")
-                        .HasColumnName("RefreshTokenHash");
+                        .HasColumnType("nchar(64)")
+                        .HasColumnName("RefreshTokenHash")
+                        .IsFixedLength();
 
                     b.Property<string>("ReusedTokenCache")
                         .HasMaxLength(64)
@@ -548,8 +676,15 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("RefreshTokenHash")
+                        .HasDatabaseName("IX_UserRefreshTokens_RefreshTokenHash");
+
                     b.HasIndex("UserId", "DeviceId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("UX_UserRefreshTokens_UserId_DeviceId");
+
+                    b.HasIndex("UserId", "DeviceId", "IsDead")
+                        .HasDatabaseName("IX_UserRefreshTokens_UserId_DeviceId_IsDead");
 
                     b.ToTable("UserRefreshTokens", "core");
                 });
@@ -562,11 +697,13 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<string>("AssemblyPath")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
 
                     b.Property<string>("Checksum")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
@@ -576,17 +713,25 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<string>("ModuleName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("ModuleTitle")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("Version")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("1.0.0");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ModuleName")
+                        .IsUnique();
 
                     b.ToTable("ModuleMetadatas", "core");
                 });
@@ -600,48 +745,58 @@ namespace PhysLIMS.API.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<string>("AlertId")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("char(32)");
 
                     b.Property<string>("ClientIp")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(64)
+                        .HasColumnType("NVARCHAR(64)");
 
                     b.Property<string>("CorrelationId")
-                        .HasColumnType("nvarchar(450)");
+                        .HasMaxLength(50)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(50)");
 
                     b.Property<string>("EventCategory")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(128)
+                        .HasColumnType("NVARCHAR(128)");
 
                     b.Property<string>("Exception")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("NVARCHAR(MAX)");
 
                     b.Property<string>("Fingerprint")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("char(64)");
 
                     b.Property<string>("Level")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(128)
+                        .HasColumnType("NVARCHAR(128)");
 
                     b.Property<string>("LogType")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(64)
+                        .HasColumnType("NVARCHAR(64)");
 
                     b.Property<string>("Message")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("NVARCHAR(MAX)");
 
                     b.Property<string>("Properties")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("NVARCHAR(MAX)");
 
                     b.Property<DateTimeOffset>("Timestamp")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("DATETIMEOFFSET(7)");
 
                     b.Property<string>("UserId")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(128)
+                        .HasColumnType("NVARCHAR(128)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("CorrelationId");
 
-                    b.ToTable("SecurityLogs", "core");
+                    b.ToTable("SecurityLog", "core");
 
-                    b.HasAnnotation("SqlServer:IsLedgerAppendOnly", true);
+                    b
+                        .HasAnnotation("SqlServer:IsAppendOnly", true)
+                        .HasAnnotation("SqlServer:IsLedger", true)
+                        .HasAnnotation("SqlServer:IsLedgerAppendOnly", true);
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Logings.SystemLog", b =>
@@ -653,13 +808,17 @@ namespace PhysLIMS.API.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
                     b.Property<string>("AlertId")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("char(32)");
 
                     b.Property<string>("CorrelationId")
-                        .HasColumnType("nvarchar(450)");
+                        .HasMaxLength(50)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(50)");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("DATETIMEOFFSET(7)")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
 
                     b.Property<string>("CurrentHash")
                         .HasMaxLength(64)
@@ -669,19 +828,23 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Fingerprint")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("char(64)");
 
                     b.Property<string>("IP")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(45)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(45)");
 
                     b.Property<string>("Level")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<string>("Message")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("ModuleName")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("Operation")
                         .HasColumnType("nvarchar(max)");
@@ -694,16 +857,20 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("TenantId")
-                        .HasColumnType("nvarchar(450)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<DateTime>("TimeStamp")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("Url")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(2083)
+                        .IsUnicode(true)
+                        .HasColumnType("nvarchar(2083)");
 
                     b.Property<string>("UserId")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.HasKey("Id");
 
@@ -715,7 +882,10 @@ namespace PhysLIMS.API.Migrations
 
                     b.ToTable("SystemLogs", "core");
 
-                    b.HasAnnotation("SqlServer:IsLedgerAppendOnly", true);
+                    b
+                        .HasAnnotation("SqlServer:IsAppendOnly", true)
+                        .HasAnnotation("SqlServer:IsLedger", true)
+                        .HasAnnotation("SqlServer:IsLedgerAppendOnly", true);
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Outbox.OutboxMessage", b =>
@@ -799,7 +969,8 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<string>("Description")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
 
                     b.Property<string>("ModuleName")
                         .IsRequired()
@@ -807,9 +978,16 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<string>("PermissionKey")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("BitPosition")
+                        .IsUnique();
+
+                    b.HasIndex("PermissionKey")
+                        .IsUnique();
 
                     b.ToTable("Permissions", "core");
                 });
@@ -825,12 +1003,16 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<byte[]>("PermissionVector")
                         .IsRequired()
-                        .HasColumnType("varbinary(max)");
+                        .HasColumnType("varbinary(64)");
 
                     b.Property<Guid>("RoleId")
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("RoleId", "LabId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_PermissionGrant_Role_Lab");
 
                     b.ToTable("PermissionGrants", "core");
                 });
@@ -890,7 +1072,8 @@ namespace PhysLIMS.API.Migrations
                 {
                     b.HasOne("SGSFramework.Core.Abstractions.Entities.Controller.MenuItem", "Parent")
                         .WithMany("Children")
-                        .HasForeignKey("ParentId");
+                        .HasForeignKey("ParentId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Parent");
                 });
@@ -904,6 +1087,18 @@ namespace PhysLIMS.API.Migrations
                         .IsRequired();
 
                     b.Navigation("MenuItem");
+                });
+
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.UserLabMapping", b =>
+                {
+                    b.HasOne("SGSFramework.Core.Abstractions.Entities.Identities.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_UserLabMappings_Users_UserId");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Controller.MenuItem", b =>

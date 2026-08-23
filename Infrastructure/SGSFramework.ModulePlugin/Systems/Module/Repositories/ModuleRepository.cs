@@ -1,291 +1,156 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Abstractions.Entities.Modules;
 using SGSFramework.ModulePlugin.Abstractions;
+using SGSFramework.ModulePlugin.Systems.Module.Services;
+using SGSFramework.ModulePlugin.Systems.Module.Strategies;
 
 namespace SGSFramework.ModulePlugin.Systems.Module.Repositories
 {
     /// <summary>
-    /// 模組資料存取庫，提供對模組元數據的 CRUD 操作。
+    /// ModuleRepository 提供了模組元資料的存取與管理功能，並整合了模組儲存策略與檔案存儲服務。
     /// </summary>
     /// <typeparam name="TDbContext"></typeparam>
+    /// <summary>
+    /// 基於 EF Core 與 MemoryCache 的模組倉儲實作
+    /// </summary>
+    /// <typeparam name="TDbContext">目標 EF Core DbContext 類型</typeparam>
     public class ModuleRepository<TDbContext> : IModuleRepository
         where TDbContext : DbContext
     {
         private readonly TDbContext _dbContext;
         private readonly IMemoryCache _cache;
-        private readonly string _cacheKey;
+        private readonly DbSet<ModuleMetadata> _dbSet;
+        private const string CacheKeyPrefix = "ModuleInfo_";
 
         public ModuleRepository(TDbContext dbContext, IMemoryCache cache)
         {
-            _dbContext = dbContext;
-            _cache = cache;
-            _cacheKey = $"DynamicRegistry_{typeof(ControllerMetadata).Name}";
+            _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+            _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+            _dbSet = _dbContext.Set<ModuleMetadata>();
         }
-
-        /// <summary>
-        /// 根據模組名稱查詢模組元數據。
-        /// </summary>
-        /// <param name="moduleName"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-        public async Task<ModuleMetadata?> GetModuleByNameAsync(string moduleName, CancellationToken cancellationToken = default)
-        {
-            return await _dbContext.Set<ModuleMetadata>()
-                .FirstOrDefaultAsync(m => m.ModuleName == moduleName, cancellationToken);
-        }
-
-        /// <summary>
-        /// 查詢所有模組元數據。
-        /// </summary>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
 
         public async Task<IEnumerable<ModuleMetadata>> GetAllModulesAsync(CancellationToken cancellationToken = default)
         {
-            return await _dbContext.Set<ModuleMetadata>()
-                .AsNoTracking()
-                .ToListAsync(cancellationToken);
+            return await _dbSet.AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        /// <summary>
-        /// 新增或更新模組元數據。如果模組已存在，則更新其版本、組件路徑和最後載入時間；如果不存在，則新增一條記錄。
-        /// </summary>
-        /// <param name="module"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-        public async Task UpsertAsync(ModuleMetadata module, CancellationToken cancellationToken = default)
+        public async Task<ModuleMetadata?> GetModuleByNameAsync(string moduleName, CancellationToken cancellationToken = default)
         {
-            var existing = await _dbContext.Set<ModuleMetadata>()
-                .FirstOrDefaultAsync(m => m.ModuleName == module.ModuleName, cancellationToken);
+            ArgumentException.ThrowIfNullOrWhiteSpace(moduleName);
 
-            if (existing != null)
+            var cacheKey = $"{CacheKeyPrefix}{moduleName.ToLowerInvariant()}";
+
+            if (_cache.TryGetValue(cacheKey, out ModuleMetadata? cachedModule))
             {
-                existing.Version = module.Version;
-                existing.AssemblyPath = module.AssemblyPath;
-                existing.LastLoadedAt = DateTime.UtcNow;
-            }
-            else
-            {
-                module.Id = Guid.NewGuid();
-                module.LastLoadedAt = DateTime.UtcNow;
-                await _dbContext.Set<ModuleMetadata>().AddAsync(module, cancellationToken);
+                return cachedModule;
             }
 
-            await _dbContext.SaveChangesAsync(cancellationToken);
-        }
+            var module = await _dbSet.AsNoTracking()
+                .FirstOrDefaultAsync(m => m.ModuleName == moduleName, cancellationToken)
+                .ConfigureAwait(false);
 
-        /// <summary>
-        /// 設定模組的啟用狀態，並同步更新其相關控制器的啟用狀態。
-        /// </summary>
-        /// <param name="moduleName"></param>
-        /// <param name="isActive"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-        public async Task SetModuleStatusAsync(string moduleName, bool isActive, CancellationToken cancellationToken = default)
-        {
-            var strategy = _dbContext.Database.CreateExecutionStrategy();
-
-            await strategy.ExecuteAsync(async () =>
+            if (module != null)
             {
-                using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-                try
-                {
-                    var module = await _dbContext.Set<ModuleMetadata>()
-                        .FirstOrDefaultAsync(m => m.ModuleName == moduleName, cancellationToken);
-                    if (module != null) module.IsActive = isActive;
+                _cache.Set(cacheKey, module, TimeSpan.FromMinutes(30));
+            }
 
-                    await _dbContext.Set<ControllerMetadata>()
-                        .Where(c => c.ModuleName == moduleName)
-                        .ExecuteUpdateAsync(s => s.SetProperty(c => c.IsActive, isActive), cancellationToken);
-
-                    await _dbContext.SaveChangesAsync(cancellationToken);
-                    await transaction.CommitAsync(cancellationToken);
-                }
-                catch
-                {
-                    await transaction.RollbackAsync(cancellationToken);
-                    throw;
-                }
-            });
+            return module;
         }
 
-        /// <summary>
-        /// 切換模組的啟用狀態，並同步更新其相關控制器的啟用狀態。
-        /// </summary>
-        /// <param name="moduleName"></param>
-        /// <param name="isActive"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
+        public async Task UpsertAsync(ModuleMetadata moduleInfo, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(moduleInfo);
+
+            try
+            {
+                var existing = await _dbSet
+                    .FirstOrDefaultAsync(m => m.ModuleName == moduleInfo.ModuleName, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (existing == null)
+                {
+                    await _dbSet.AddAsync(moduleInfo, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    existing.Version = moduleInfo.Version;
+                    existing.AssemblyPath = moduleInfo.AssemblyPath;
+                    existing.IsActive = moduleInfo.IsActive;
+                    existing.LastLoadedAt = moduleInfo.LastLoadedAt;
+                    existing.Checksum = moduleInfo.Checksum;
+                    _dbSet.Update(existing);
+                }
+
+                await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+                InvalidateCache(moduleInfo.ModuleName);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"更新模組 [{moduleInfo.ModuleName}] 元資料時發生錯誤。", ex);
+            }
+        }
+
         public async Task ToggleModuleStatusAsync(string moduleName, bool isActive, CancellationToken cancellationToken = default)
         {
-            var strategy = _dbContext.Database.CreateExecutionStrategy();
+            ArgumentException.ThrowIfNullOrWhiteSpace(moduleName);
 
-            await strategy.ExecuteAsync(async () =>
+            try
             {
-                using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-                try
+                var module = await _dbSet
+                    .FirstOrDefaultAsync(m => m.ModuleName == moduleName, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (module == null)
                 {
-                    var module = await _dbContext.Set<ModuleMetadata>()
-                        .FirstOrDefaultAsync(m => m.ModuleName == moduleName, cancellationToken);
-                    if (module != null) module.IsActive = isActive;
-
-                    await _dbContext.Set<ControllerMetadata>()
-                        .Where(c => c.ModuleName == moduleName)
-                        .ExecuteUpdateAsync(s => s.SetProperty(c => c.IsActive, isActive), cancellationToken);
-
-                    await _dbContext.SaveChangesAsync(cancellationToken);
-                    await transaction.CommitAsync(cancellationToken);
-
-                    _cache.Remove("DynamicRegistry_ControllerMetadata");
+                    throw new KeyNotFoundException($"找不到模組 [{moduleName}] 的資料庫紀錄。");
                 }
-                catch { await transaction.RollbackAsync(cancellationToken); throw; }
-            });
-        }
 
-        /// <summary>
-        /// 刪除指定模組及其相關控制器的元數據，並嘗試刪除對應的組件檔案和 PDB 檔案。
-        /// </summary>
-        /// <param name="moduleName"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
+                module.IsActive = isActive;
+                module.LastLoadedAt = DateTime.UtcNow;
+
+                _dbSet.Update(module);
+                await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+                InvalidateCache(moduleName);
+            }
+            catch (Exception ex) when (ex is not KeyNotFoundException)
+            {
+                throw new InvalidOperationException($"切換模組 [{moduleName}] 啟用狀態為 [{isActive}] 時發生錯誤。", ex);
+            }
+        }
 
         public async Task RemoveModuleAsync(string moduleName, CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(moduleName);
 
-            string? assemblyPath = null;
-            var strategy = _dbContext.Database.CreateExecutionStrategy();
-
-            await strategy.ExecuteAsync(async () =>
+            try
             {
-                using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-                try
+                var module = await _dbSet
+                    .FirstOrDefaultAsync(m => m.ModuleName == moduleName, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (module != null)
                 {
-                    var module = await GetModuleByNameAsync(moduleName, cancellationToken);
-                    assemblyPath = module?.AssemblyPath;
-
-                    await DeleteControllersByModuleNameAsync(moduleName, cancellationToken);
-
-                    if (module != null)
-                    {
-                        await DeleteModuleMetadataAsync(module, cancellationToken);
-                    }
-
-                    await _dbContext.SaveChangesAsync(cancellationToken);
-                    await transaction.CommitAsync(cancellationToken);
+                    _dbSet.Remove(module);
+                    await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                 }
-                catch
-                {
-                    await transaction.RollbackAsync(cancellationToken);
-                    throw;
-                }
-            });
 
-            _cache.Remove(_cacheKey);
-
-            for (int i = 0; i < 3; i++)
-            {
-                GC.Collect();
-                GC.WaitForPendingFinalizers();
+                InvalidateCache(moduleName);
             }
-
-            var pluginsDirectory = Path.Combine(AppContext.BaseDirectory, "plugins");
-            if (Directory.Exists(pluginsDirectory))
+            catch (Exception ex)
             {
-                if (!string.IsNullOrEmpty(assemblyPath))
-                {
-                    try
-                    {
-                        var fullPath = Path.IsPathFullyQualified(assemblyPath)
-                            ? assemblyPath
-                            : Path.Combine(AppContext.BaseDirectory, assemblyPath);
-
-                        if (File.Exists(fullPath))
-                        {
-                            File.SetAttributes(fullPath, FileAttributes.Normal);
-                            File.Delete(fullPath);
-                        }
-
-                        var pdbPath = Path.ChangeExtension(fullPath, ".pdb");
-                        if (File.Exists(pdbPath))
-                        {
-                            File.SetAttributes(pdbPath, FileAttributes.Normal);
-                            File.Delete(pdbPath);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"[FileDelete Warning] 主組件或 PDB 檔案刪除失敗: {ex.Message}");
-                    }
-                }
-
-                var searchPatternDll = $"{moduleName}*.dll";
-                var matchingDlls = Directory.GetFiles(pluginsDirectory, searchPatternDll, SearchOption.TopDirectoryOnly);
-
-                var searchPatternPdb = $"{moduleName}*.pdb";
-                var matchingPdbs = Directory.GetFiles(pluginsDirectory, searchPatternPdb, SearchOption.TopDirectoryOnly);
-
-                if (matchingDlls.Length == 0 && moduleName.Contains('.'))
-                {
-                    var shortName = moduleName.Split('.').Last();
-                    matchingDlls = Directory.GetFiles(pluginsDirectory, $"*{shortName}*.dll", SearchOption.TopDirectoryOnly);
-                    matchingPdbs = Directory.GetFiles(pluginsDirectory, $"*{shortName}*.pdb", SearchOption.TopDirectoryOnly);
-                }
-
-                var allFilesToDelete = matchingDlls.Concat(matchingPdbs).Distinct();
-
-                foreach (var file in allFilesToDelete)
-                {
-                    try
-                    {
-                        if (File.Exists(file))
-                        {
-                            File.SetAttributes(file, FileAttributes.Normal);
-                            File.Delete(file);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"[Plugin File Delete Error] 檔案 [{file}] 刪除失敗（可能仍被佔用）: {ex.Message}");
-                    }
-                }
+                throw new InvalidOperationException($"移除模組 [{moduleName}] 時發生錯誤。", ex);
             }
         }
 
-        /// <summary>
-        /// 刪除指定模組名稱的所有控制器元數據。
-        /// </summary>
-        /// <param name="moduleName"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-        public async Task DeleteControllersByModuleNameAsync(string moduleName, CancellationToken cancellationToken = default)
+        private void InvalidateCache(string moduleName)
         {
-            ArgumentException.ThrowIfNullOrWhiteSpace(moduleName);
-
-            var controllers = await _dbContext.Set<ControllerMetadata>()
-                .Where(c => c.ModuleName == moduleName)
-                .ToListAsync(cancellationToken);
-
-            if (controllers.Count > 0)
-            {
-                _dbContext.Set<ControllerMetadata>().RemoveRange(controllers);
-            }
-        }
-
-        /// <summary>
-        /// 刪除指定的模組元數據。
-        /// </summary>
-        /// <param name="module"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-
-        public async Task DeleteModuleMetadataAsync(ModuleMetadata module, CancellationToken cancellationToken = default)
-        {
-            ArgumentNullException.ThrowIfNull(module);
-            _dbContext.Set<ModuleMetadata>().Remove(module);
-            await Task.CompletedTask;
+            var cacheKey = $"{CacheKeyPrefix}{moduleName.ToLowerInvariant()}";
+            _cache.Remove(cacheKey);
         }
     }
 }

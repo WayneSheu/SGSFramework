@@ -1,4 +1,9 @@
-﻿using System;
+﻿// ==========================================
+// 檔案路徑: src/SGSFramework/Infrastructure/SGSFramework.ModulePlugin/Services/ModuleManagementApplicationService.cs
+// 架構層級: Application Layer
+// ==========================================
+
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -36,7 +41,7 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
     public async Task<IEnumerable<ModuleDetailResponse>> GetActiveModulesDetailsAsync(CancellationToken cancellationToken = default)
     {
         var loadedModuleNames = _moduleRegistry.GetLoadedModules()?.ToList() ?? new List<string>();
-        var allDbModules = await _moduleRepo.GetAllModulesAsync(cancellationToken);
+        var allDbModules = await _moduleRepo.GetAllModulesAsync(cancellationToken).ConfigureAwait(false);
 
         return allDbModules
             .Where(m => loadedModuleNames.Contains(m.ModuleName, StringComparer.OrdinalIgnoreCase) || m.IsActive)
@@ -86,7 +91,7 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
                     mainDllTempPath = Path.GetTempFileName();
                     await using (var tempStream = new FileStream(mainDllTempPath, FileMode.Create, FileAccess.Write, FileShare.None))
                     {
-                        await file.CopyToAsync(tempStream, cancellationToken);
+                        await file.CopyToAsync(tempStream, cancellationToken).ConfigureAwait(false);
                     }
 
                     try
@@ -104,7 +109,7 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
 
                 await using (var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None))
                 {
-                    await file.CopyToAsync(fileStream, cancellationToken);
+                    await file.CopyToAsync(fileStream, cancellationToken).ConfigureAwait(false);
                 }
 
                 uploadedFilesResult.Add(new UploadedFileInfoResponseDto
@@ -135,7 +140,7 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
             {
                 var assembly = Assembly.LoadFrom(mainDllFullPath);
                 using var scope = _serviceProvider.CreateScope();
-                await ModuleLoaderExtensions.RegisterModuleToDbAsync(assembly, detectedModuleName, mainDllFullPath, scope.ServiceProvider);
+                await ModuleLoaderExtensions.RegisterModuleToDbAsync(assembly, detectedModuleName, mainDllFullPath, scope.ServiceProvider).ConfigureAwait(false);
             }
 
             return new ModuleUploadResponseDto
@@ -167,7 +172,7 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(moduleName);
 
-        var module = await _moduleRepo.GetModuleByNameAsync(moduleName, cancellationToken);
+        var module = await _moduleRepo.GetModuleByNameAsync(moduleName, cancellationToken).ConfigureAwait(false);
         if (module == null)
         {
             throw new KeyNotFoundException($"無法啟用模組 [{moduleName}]：資料庫中找不到對應的模組元資料紀錄。");
@@ -181,7 +186,7 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
                 if (File.Exists(fallbackPath))
                 {
                     module.AssemblyPath = fallbackPath;
-                    await _moduleRepo.UpsertAsync(module, cancellationToken);
+                    await _moduleRepo.UpsertAsync(module, cancellationToken).ConfigureAwait(false);
                 }
                 else
                 {
@@ -190,7 +195,7 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
             }
         }
 
-        await _moduleRepo.ToggleModuleStatusAsync(moduleName, isActive, cancellationToken);
+        await _moduleRepo.ToggleModuleStatusAsync(moduleName, isActive, cancellationToken).ConfigureAwait(false);
 
         return new ToggleStatusResponseDto
         {
@@ -213,6 +218,6 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
             _logger.LogWarning(ex, "卸載記憶體中模組 [{ModuleName}] 時拋出例外，將繼續清理 DB 元資料。", moduleName);
         }
 
-        await _moduleRepo.RemoveModuleAsync(moduleName, cancellationToken);
+        await _moduleRepo.RemoveModuleAsync(moduleName, cancellationToken).ConfigureAwait(false);
     }
 }

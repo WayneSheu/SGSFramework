@@ -26,7 +26,7 @@ namespace SGSFramework.ModulePlugin.Systems.Module.Loaders
                 _logger.LogInformation(">>> 開始卸載模組: {ModuleName}", moduleName);
 
                 // 1. 原子化停用：更新 DB 狀態
-                await _moduleRepo.SetModuleStatusAsync(moduleName, false);
+                await _moduleRepo.ToggleModuleStatusAsync(moduleName, false);
 
                 // 2. 執行記憶體卸載 (針對 AssemblyLoadContext)
                 var context = AssemblyLoadContext.All
