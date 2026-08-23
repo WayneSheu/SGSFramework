@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SGSFramework.Core.Abstractions.Attributes;
+using SGSFramework.Core.Abstractions.Entities.Base;
 using SGSFramework.Core.Abstractions.Entities.Ledgers;
 using System.ComponentModel.DataAnnotations;
 
@@ -95,22 +96,22 @@ namespace SGSFramework.Core.Abstractions.Logings
         {
             ArgumentNullException.ThrowIfNull(builder);
 
-            // 🟢 修正：因 EF Core 不原生支援 .IsLedger() 語法，
+            // 因 EF Core 不原生支援 .IsLedger() 語法，
             // 且實體表已透過手動 DDL 建立，此處僅需進行標準資料表名稱映射。
             builder.ToTable("SecurityLog");
-            // 啟用密碼學分類帳
+            //啟用 Ledger Append-Only 屬性
             builder.HasAnnotation("SqlServer:IsLedger", true);
             // 鎖定僅限附加模式 (Append-Only)
             builder.HasAnnotation("SqlServer:IsAppendOnly", true);
 
-            // 🔑 2. 主鍵與流水號配置
+            //主鍵與流水號配置
             builder.HasKey(e => e.Id);
             builder.Property(e => e.Id)
                    .UseIdentityColumn();
 
             builder.Property(e => e.CorrelationId).HasMaxLength(50).IsUnicode(false);
 
-            // 📐 3. 欄位屬性與實體資料庫類型 (DDL) 嚴格對齊
+            //欄位屬性與實體資料庫類型 (DDL) 嚴格對齊
             builder.Property(e => e.Message)
                    .HasColumnType("NVARCHAR(MAX)")
                    .IsRequired(false);
@@ -122,6 +123,7 @@ namespace SGSFramework.Core.Abstractions.Logings
 
             builder.Property(e => e.Timestamp)
                    .HasColumnType("DATETIMEOFFSET(7)")
+                   .HasDefaultValueSql("SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time'")
                    .IsRequired();
 
             builder.Property(e => e.Exception)

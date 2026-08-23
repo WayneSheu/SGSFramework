@@ -14,7 +14,7 @@ namespace SGSFramework.Core.Abstractions.Logings
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public long Id { get; set; } // bigint
         [AutoIndex]
-        public DateTime TimeStamp { get; set; } // Serilog 預設使用 TimeStamp DateTimeOffset.Now
+        public DateTimeOffset TimeStamp { get; set; } // Serilog 預設使用 TimeStamp DateTimeOffset.Now
         public string? Message { get; set; }
         public string? Level { get; set; }
         public string? Exception { get; set; }
@@ -63,8 +63,6 @@ namespace SGSFramework.Core.Abstractions.Logings
             builder.HasAnnotation("SqlServer:IsLedger", true);
             // 鎖定僅限附加模式 (Append-Only)
             builder.HasAnnotation("SqlServer:IsAppendOnly", true);
-
-
             // 2. 主鍵配置 (bigint IDbuilder)
             builder.HasKey(e => e.Id);
             builder.Property(e => e.Id).ValueGeneratedOnAdd();
@@ -72,7 +70,11 @@ namespace SGSFramework.Core.Abstractions.Logings
             // 3. Serilog 標準欄位配置
             builder.Property(e => e.Message).IsRequired(false);
             builder.Property(e => e.Level).HasMaxLength(128);
-            builder.Property(e => e.TimeStamp).IsRequired();
+            builder.Property(e => e.TimeStamp)
+                .HasColumnType("DATETIMEOFFSET(7)")
+                .HasDefaultValueSql("SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time'")
+                .ValueGeneratedOnAdd();
+
             builder.Property(e => e.Exception).IsRequired(false);
 
             // 4. 自定義業務欄位配置 (長度與索引)
@@ -89,7 +91,7 @@ namespace SGSFramework.Core.Abstractions.Logings
             // 5. 時間與預設值配置
             builder.Property(e => e.CreatedAt)
                 .HasColumnType("DATETIMEOFFSET(7)")
-                .HasDefaultValueSql("SYSUTCDATETIME()") // SQL Server 2025 自動產生 UTC 時間
+                .HasDefaultValueSql("SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time'")
                 .ValueGeneratedOnAdd();
 
             // 強型別欄位映射與長度約束

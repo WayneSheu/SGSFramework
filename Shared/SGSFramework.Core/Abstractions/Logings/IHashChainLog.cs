@@ -3,7 +3,7 @@
     public interface IHashChainLog
     {
         long Id { get; set; }
-        DateTime TimeStamp { get; set; }
+        DateTimeOffset TimeStamp { get; set; }
         string Message { get; set; }
         string Level { get; set; }
         string? UserId { get; set; }

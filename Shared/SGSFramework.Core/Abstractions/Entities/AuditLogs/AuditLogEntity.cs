@@ -76,12 +76,12 @@ namespace SGSFramework.Core.Abstractions.Entities.AuditLogs
             // 3. 時間戳記欄位
             builder.Property(e => e.CreatedAt)
                    .HasColumnType("datetimeoffset(7)")
-                   .HasDefaultValueSql("SYSUTCDATETIME()")
+                   .HasDefaultValueSql("SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time'")
                    .IsRequired();
 
             builder.Property(e => e.Timestamp)
                    .HasColumnType("datetimeoffset(7)")
-                   .HasDefaultValueSql("SYSUTCDATETIME()")
+                   .HasDefaultValueSql("SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time'")
                    .IsRequired();
 
             // 4. 行為與目標描述

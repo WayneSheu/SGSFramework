@@ -137,7 +137,7 @@ namespace PhysLIMS.API.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetimeoffset(7)")
-                        .HasDefaultValueSql("SYSUTCDATETIME()");
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time'");
 
                     b.Property<string>("Action")
                         .IsRequired()
@@ -198,7 +198,7 @@ namespace PhysLIMS.API.Migrations
                     b.Property<DateTimeOffset>("Timestamp")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetimeoffset(7)")
-                        .HasDefaultValueSql("SYSUTCDATETIME()");
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time'");
 
                     b.Property<string>("TraceId")
                         .IsRequired()
@@ -778,7 +778,9 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("NVARCHAR(MAX)");
 
                     b.Property<DateTimeOffset>("Timestamp")
-                        .HasColumnType("DATETIMEOFFSET(7)");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("DATETIMEOFFSET(7)")
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time'");
 
                     b.Property<string>("UserId")
                         .HasMaxLength(128)
@@ -815,7 +817,7 @@ namespace PhysLIMS.API.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("DATETIMEOFFSET(7)")
-                        .HasDefaultValueSql("SYSUTCDATETIME()");
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time'");
 
                     b.Property<string>("CurrentHash")
                         .HasMaxLength(64)
@@ -857,8 +859,10 @@ namespace PhysLIMS.API.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
-                    b.Property<DateTime>("TimeStamp")
-                        .HasColumnType("datetime2");
+                    b.Property<DateTimeOffset>("TimeStamp")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("DATETIMEOFFSET(7)")
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time'");
 
                     b.Property<string>("Url")
                         .HasMaxLength(2083)
