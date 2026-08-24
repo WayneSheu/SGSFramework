@@ -70,6 +70,28 @@ public class LaboratoryController : ApiControllerBase
     }
 
     /// <summary>
+    /// 取得區域實驗室清單
+    /// </summary>
+    [HttpGet("regional")]
+    [Function("GetRegionalLaboratories", "取得區域實驗室清單", Icon = "fa-solid fa-map-location-dot", Order = 0, Description = "取得頂層或區域層級之實驗室節點清單")]
+    [RequiresPermission("ORG_LAB_READ")]
+    [ProducesResponseType(typeof(Result<List<LaboratoryDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetRegionalLaboratories(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var query = new GetRegionalLaboratoriesQuery();
+            var result = await _mediator.Send(query, cancellationToken);
+            return HandleResult(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving regional laboratories.");
+            return StatusCode(StatusCodes.Status500InternalServerError, "An internal server error occurred.");
+        }
+    }
+
+    /// <summary>
     /// 取得實驗室清單
     /// </summary>
     [HttpGet]
