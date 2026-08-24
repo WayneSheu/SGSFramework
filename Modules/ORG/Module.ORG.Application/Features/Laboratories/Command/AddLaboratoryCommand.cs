@@ -110,11 +110,11 @@ public sealed class AddLaboratoryCommandHandler : IRequestHandler<AddLaboratoryC
         }
         catch (InvalidOperationException ex)
         {
-            return Error.Failure("ORG_OPERATIONAL_FAILED", ex.Message);
+            return Error.Unexpected("ORG_OPERATIONAL_FAILED", ex.Message);
         }
         catch (Exception ex)
         {
-            return Error.Failure("ORG_CREATE_FAILED", $"新增實驗室時發生系統錯誤: {ex.Message}");
+            return Error.Unexpected("ORG_CREATE_FAILED", $"新增實驗室時發生系統錯誤: {ex.Message}");
         }
     }
 }

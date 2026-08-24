@@ -122,7 +122,7 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Command
             catch (Exception ex)
             {
                 _logger.LogError(ex, "搬移節點 ID {NodeId} 至 {NewParentId} 時發生未預期系統錯誤。", request.NodeId, request.NewParentId);
-                return Error.Failure("Laboratory.MoveFailed", $"搬移節點時發生系統錯誤: {ex.Message}");
+                return Error.Unexpected("Laboratory.MoveFailed", $"搬移節點時發生系統錯誤: {ex.Message}");
             }
         }
     }

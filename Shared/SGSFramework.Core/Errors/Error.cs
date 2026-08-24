@@ -26,13 +26,19 @@ namespace SGSFramework.Core.Errors
         // 這些方法提供了一個簡潔的方式來創建特定類型的錯誤實例，並且可以根據需要擴展以支持更多的錯誤類型
 
         /// <summary>
-        /// 一般失敗
+        ///  一般業務邏輯失敗 (400)
         /// </summary>
         /// <param name="code"></param>
         /// <param name="message"></param>
         /// <returns></returns>
         public static Error Failure(string code, string message) => new(code, message, ErrorType.Failure);
-        
+
+        /// <summary>
+        /// 未預期的系統內部錯誤 (500)
+        /// </summary>
+        public static Error Unexpected(string code, string message) => new(code, message, ErrorType.Unexpected);
+
+
         /// <summary>
         /// 驗證失敗
         /// </summary>

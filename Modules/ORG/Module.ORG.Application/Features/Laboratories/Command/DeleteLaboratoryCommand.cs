@@ -66,7 +66,7 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Command
                 _logger.LogError(ex, "刪除 ID 為 {Id} 的實驗室時發生未預期錯誤。", request.Id);
 
                 // 4. 嚴禁在 Handler 中重新拋出通用 Exception，必須包裹為 Result.Failure 回傳
-                return Error.Failure("Laboratory.DeleteFailed", $"刪除實驗室失敗: {ex.Message}");
+                return Error.Unauthorized("Laboratory.DeleteFailed", $"刪除實驗室失敗: {ex.Message}");
             }
         }
 

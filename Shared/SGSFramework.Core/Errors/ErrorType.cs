@@ -9,10 +9,11 @@ namespace SGSFramework.Core.Errors
     /// </summary>
     public enum ErrorType
     {
-        Failure = 0,// 一般失敗，適用於未知錯誤或不特定類型的錯誤
-        Validation = 1,// 驗證失敗，適用於輸入資料不符合規範或商業邏輯驗證失敗的情況
-        NotFound = 2,// 未找到，適用於請求的資源不存在或無法找到的情況
-        Conflict = 3,// 衝突，適用於請求的操作與現有資源狀態衝突的情況，例如嘗試創建已存在的資源或更新已被修改的資源
-        Unauthorized = 4// 未授權，適用於請求缺乏有效的身份驗證或授權資訊的情況
+        Failure = 0,      // 一般業務失敗 (400 Bad Request)[cite: 9]
+        Validation = 1,   // 輸入驗證失敗 (400 Bad Request)[cite: 9]
+        NotFound = 2,     // 資源不存在 (404 Not Found)[cite: 9]
+        Conflict = 3,     // 狀態衝突 (409 Conflict)[cite: 9]
+        Unauthorized = 4, // 身份驗證/授權失敗 (401/403)[cite: 9]
+        Unexpected = 5    // 未預期系統異常 (500 Internal Server Error)
     }
 }

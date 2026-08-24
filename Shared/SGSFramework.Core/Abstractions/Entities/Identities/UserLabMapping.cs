@@ -29,120 +29,109 @@ public class UserLabMapping : IAuditable
     private UserLabMapping() { }
 
     /// <summary>
-    /// 創建主要用戶實驗室關聯。
+    /// 通用建立處理工廠 (由 IsPrimary 參數決定升降級)
     /// </summary>
-    /// <param name="userId"></param>
-    /// <param name="labId"></param>
-    /// <param name="tenantLabId"></param>
-    /// <param name="jobTitle"></param>
-    /// <param name="operatorId"></param>
-    /// <returns></returns>
+    public static UserLabMapping Create(
+        Guid userId,
+        int labId,
+        Guid tenantLabId,
+        bool isPrimary,
+        string? jobTitle = null,
+        DateTime? effectiveDate = null,
+        DateTime? expiryDate = null,
+        string? operatorId = null)
+    {
+        ValidateInputs(userId, labId, tenantLabId);
+
+        var nowUtc = DateTimeOffset.UtcNow;
+        return new UserLabMapping
+        {
+            UserId = userId,
+            LabId = labId,
+            TenantLabId = tenantLabId,
+            IsPrimary = isPrimary,
+            JobTitle = jobTitle?.Trim(),
+            EffectiveDate = effectiveDate ?? nowUtc.UtcDateTime,
+            ExpiryDate = expiryDate,
+            IsActive = true,
+            CreatedAtUtc = nowUtc,
+            CreatedBy = operatorId
+        };
+    }
+
+    /// <summary>
+    /// 創建主要用戶實驗室關聯
+    /// </summary>
     public static UserLabMapping CreatePrimary(
         Guid userId,
-        int labId, // 修正為 int
+        int labId,
         Guid tenantLabId,
         string? jobTitle = null,
         string? operatorId = null)
     {
-        ValidateInputs(userId, labId, tenantLabId);
-
-        var now = DateTimeOffset.UtcNow;
-        return new UserLabMapping
-        {
-            UserId = userId,
-            LabId = labId,
-            TenantLabId = tenantLabId,
-            IsPrimary = true,
-            JobTitle = jobTitle?.Trim(),
-            EffectiveDate = now.UtcDateTime,
-            IsActive = true,
-            CreatedAtUtc = now,
-            CreatedBy = operatorId
-        };
+        return Create(userId, labId, tenantLabId, isPrimary: true, jobTitle: jobTitle, operatorId: operatorId);
     }
 
     /// <summary>
-    /// 創建次要用戶實驗室關聯。 
+    /// 創建次要用戶實驗室關聯
     /// </summary>
-    /// <param name="userId"></param>
-    /// <param name="labId"></param>
-    /// <param name="tenantLabId"></param>
-    /// <param name="jobTitle"></param>
-    /// <param name="operatorId"></param>
-    /// <returns></returns>
     public static UserLabMapping CreateSecondary(
         Guid userId,
-        int labId, // 修正為 int
+        int labId,
         Guid tenantLabId,
         string? jobTitle = null,
         string? operatorId = null)
     {
-        ValidateInputs(userId, labId, tenantLabId);
-
-        var now = DateTimeOffset.UtcNow;
-        return new UserLabMapping
-        {
-            UserId = userId,
-            LabId = labId,
-            TenantLabId = tenantLabId,
-            IsPrimary = false,
-            JobTitle = jobTitle?.Trim(),
-            EffectiveDate = now.UtcDateTime,
-            IsActive = true,
-            CreatedAtUtc = now,
-            CreatedBy = operatorId
-        };
+        return Create(userId, labId, tenantLabId, isPrimary: false, jobTitle: jobTitle, operatorId: operatorId);
     }
 
-
-
     /// <summary>
-    /// 更新職位標題
+    /// 更新詳細屬性內容 (領域領域邏輯)
     /// </summary>
-    /// <param name="operatorId"></param>
+    public void UpdateDetails(
+        Guid tenantLabId,
+        bool isPrimary,
+        string? jobTitle,
+        DateTime effectiveDate,
+        DateTime? expiryDate,
+        string? operatorId = null)
+    {
+        if (tenantLabId == Guid.Empty) throw new ArgumentException("TenantLabId 不能為 Empty Guid。", nameof(tenantLabId));
+
+        TenantLabId = tenantLabId;
+        IsPrimary = isPrimary;
+        JobTitle = jobTitle?.Trim();
+        EffectiveDate = effectiveDate;
+        ExpiryDate = expiryDate;
+        IsActive = true;
+
+        SetUpdated(operatorId);
+    }
+
     public void DemoteToSecondary(string? operatorId = null)
     {
         IsPrimary = false;
         SetUpdated(operatorId);
     }
 
-    /// <summary>
-    /// 升級為主要歸屬實驗室
-    /// </summary>
-    /// <param name="operatorId"></param>
     public void PromoteToPrimary(string? operatorId = null)
     {
         IsPrimary = true;
         SetUpdated(operatorId);
     }
 
-    /// <summary>
-    /// 停用用戶實驗室關聯
-    /// </summary>
-    /// <param name="operatorId"></param>
     public void Deactivate(string? operatorId = null)
     {
         IsActive = false;
         SetUpdated(operatorId);
     }
 
-    /// <summary>
-    /// 更新最後修改時間和用戶
-    /// </summary>
-    /// <param name="operatorId"></param>
     private void SetUpdated(string? operatorId)
     {
         UpdatedAtUtc = DateTimeOffset.UtcNow;
         UpdatedBy = operatorId;
     }
 
-    /// <summary>
-    /// 
-    /// </summary>
-    /// <param name="userId"></param>
-    /// <param name="labId"></param>
-    /// <param name="tenantLabId"></param>
-    /// <exception cref="ArgumentException"></exception>
     private static void ValidateInputs(Guid userId, int labId, Guid tenantLabId)
     {
         if (userId == Guid.Empty) throw new ArgumentException("UserId 不能為 Empty Guid。", nameof(userId));
@@ -150,11 +139,6 @@ public class UserLabMapping : IAuditable
         if (tenantLabId == Guid.Empty) throw new ArgumentException("TenantLabId 不能為 Empty Guid。", nameof(tenantLabId));
     }
 
-    /// <summary>
-    /// 
-    /// </summary>
-    /// <param name="referenceTime"></param>
-    /// <returns></returns>
     public bool IsValidAt(DateTime referenceTime)
     {
         if (!IsActive) return false;
@@ -162,7 +146,6 @@ public class UserLabMapping : IAuditable
         if (ExpiryDate.HasValue && referenceTime > ExpiryDate.Value) return false;
         return true;
     }
-
 }
 
 /// <summary>
