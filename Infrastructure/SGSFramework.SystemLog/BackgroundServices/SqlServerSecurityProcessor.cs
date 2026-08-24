@@ -34,8 +34,8 @@ namespace SGSFramework.SystemLog.BackgroundServices
 
             try
             {
-                // 🟢 修正：完整對齊基底結構，加入實體欄位映射與新設查察欄位
-                var sql = @"INSERT INTO cro.SecurityLogs 
+                //完整對齊基底結構，加入實體欄位映射與新設查察欄位
+                var sql = @"INSERT INTO core.SecurityLog 
                         (TimeStamp, Message, Level, Exception, LogType, EventCategory, UserId, ClientIp, CorrelationId, AlertId, Fingerprint) 
                         VALUES 
                         (@TimeStamp, @Message, @Level, @Exception, @LogType, @EventCategory, @UserId, @ClientIp, @CorrelationId, @AlertId, @Fingerprint);";

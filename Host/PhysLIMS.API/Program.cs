@@ -26,6 +26,7 @@ using SGSFramework.AuditLog.Extensions;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.Extensions;
 using SGSFramework.CodeSecurity.Extensions;
+using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.ApiDoc.Extensions;
 using SGSFramework.Core.Exceptions;
@@ -87,6 +88,8 @@ try
                .ConfigureWarnings(warnings =>
                    warnings.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
     });
+    // 將 ICoreDbContext 的解析轉向現有的 PhysLIMSDbContext 執行個體
+    builder.Services.AddScoped<ICoreDbContext>(sp => sp.GetRequiredService<PhysLIMSDbContext>());
     // 將 DbContext 指向相同的 Scoped ApplicationDbContext 實例
     builder.Services.AddScoped<DbContext>(sp => sp.GetRequiredService<PhysLIMSDbContext>());
     // 3. 泛型 Identity 完整打包註冊

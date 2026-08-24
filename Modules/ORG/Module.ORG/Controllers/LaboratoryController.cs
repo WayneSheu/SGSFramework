@@ -34,35 +34,6 @@ public class LaboratoryController : ApiControllerBase
         _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
     }
 
-    /// <summary>
-    /// 取得目前登入使用者可存取的所有實驗室清單 (含繼承之子節點)
-    /// </summary>
-    [HttpGet("accessible")]
-    [Authorize]
-    [RequiresPermission("")]
-    [Function("GetMyAccessibleLaboratories", "取得可存取實驗室", Icon = "fa-solid fa-user-shield", Order = 0, Description = "取得登入者權限範圍內包含繼承節點的可存取實驗室清單")]
-    [ProducesResponseType(typeof(Result<List<AccessibleLaboratoryDto>>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> GetMyAccessibleLaboratories(CancellationToken cancellationToken)
-    {
-        try
-        {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (string.IsNullOrWhiteSpace(userId))
-            {
-                return Unauthorized();
-            }
-
-            var query = new GetAccessibleLaboratoriesQuery(userId);
-            var result = await _mediator.Send(query, cancellationToken);
-            return HandleResult(result);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Unexpected error occurred in GetMyAccessibleLaboratories.");
-            return StatusCode(StatusCodes.Status500InternalServerError, "An internal server error occurred.");
-        }
-    }
 
     /// <summary>
     /// 取得區域實驗室清單

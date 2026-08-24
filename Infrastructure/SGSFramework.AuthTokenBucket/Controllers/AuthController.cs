@@ -67,7 +67,9 @@ public sealed class AuthController(
     [HttpPost("login")]
     [Function("Login", "帳密登入", Icon = "fa-solid fa-right-to-bracket", Order = 1, Description = "標準帳密登入端點，整合大容量 Bitmask 權限與 TokenBucketEngine 基礎設施")]
     [ProducesResponseType(typeof(LoginResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status423Locked)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> LoginAsync(
         [FromBody] LoginRequestDto request,
@@ -75,44 +77,92 @@ public sealed class AuthController(
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // 1. DTO 驗證檢查
+        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "無效的請求數據",
+                Detail = "帳號與密碼欄位不可為空。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+
+        string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+        string deviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "UNKNOWN-DEVICE";
+        string deviceName = Request.Headers["User-Agent"].FirstOrDefault() ?? "Generic Browser";
+        string? requestedLabId = Request.Headers["X-Lab-Id"].FirstOrDefault();
+
         try
         {
-            // 1. 基礎身份認證
-            var user = await _userManager.FindByNameAsync(request.Email) ?? await _userManager.FindByEmailAsync(request.Email);
-            if (user == null || !await _userManager.CheckPasswordAsync(user, request.Password))
+            // 2. 查詢使用者 (支援帳號或 Email)
+            var user = await _userManager.FindByNameAsync(request.Email)
+                       ?? await _userManager.FindByEmailAsync(request.Email);
+
+            if (user == null)
             {
-                _logger.LogWarning(
-                    "[Security-Event:{EventCode}] 登入失敗：帳號或密碼錯誤。帳號: {TargetUser}, 來源IP: {RemoteIp}",
-                    "SEC-401-Unauthorized",
-                    request.Email,
-                    HttpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown"
+                LogLoginFailure(request.Email, clientIp, "使用者不存在");
+                return BuildUnauthorizedResult("帳號或密碼錯誤。");
+            }
+
+            // 3. 檢查帳號狀態：是否鎖定 (Lockout)
+            if (await _userManager.IsLockedOutAsync(user))
+            {
+                _securityLogger.LogSecurity(
+                    eventCode: "SEC-423-LOCKED",
+                    eventCategory: "Auth.Login",
+                    userId: user.Id.ToString(),
+                    clientIp: clientIp,
+                    messageTemplate: "帳號已被暫時鎖定。帳號: {Email}, 來源IP: {ClientIp}",
+                    user.Email ?? request.Email,
+                    clientIp
                 );
 
-                return Unauthorized(new ProblemDetails
+
+                return StatusCode(StatusCodes.Status423Locked, new ProblemDetails
                 {
-                    Status = StatusCodes.Status401Unauthorized,
-                    Title = "身分驗證失敗",
-                    Detail = "帳號或密碼錯誤。",
+                    Status = StatusCodes.Status423Locked,
+                    Title = "帳號已被鎖定",
+                    Detail = "由於連續嘗試失敗次數過多，帳號已被暫時鎖定，請稍後再試。",
                     Instance = HttpContext.Request.Path
                 });
             }
 
-            // 2. 獲取請求特徵
-            string deviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "UNKNOWN-DEVICE";
-            string deviceName = Request.Headers["User-Agent"].FirstOrDefault() ?? "Generic Browser";
-            string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
-            string? requestedLabId = Request.Headers["X-Lab-Id"].FirstOrDefault();
+            // 4. 檢查密碼與登入嘗試紀錄 (lockoutOnFailure: true 可自動計數並觸發鎖定)
+            bool isPasswordValid = await _userManager.CheckPasswordAsync(user, request.Password);
+            if (!isPasswordValid)
+            {
+                // 累計失敗次數 (若達到設定上限，UserManager 會自動執行 Lockout)
+                await _userManager.AccessFailedAsync(user);
+                LogLoginFailure(request.Email, clientIp, "密碼比對失敗");
 
-            // 3. 簽發 Token
+                return BuildUnauthorizedResult("帳號或密碼錯誤。");
+            }
+
+            // 5. 重置失敗計數器 (密碼正確)
+            await _userManager.ResetAccessFailedCountAsync(user);
+
+            // 6. 簽發 Token
             var tokenResult = await _tokenEngine.IssueInitialSessionAsync(user, deviceId, deviceName, clientIp);
 
-            // 4. 初始化 Runtime Scope 與選單資料
+            // 7. 初始化 Runtime Scope 與選單資料
             var runtimeProfile = await _runtimeScopeService.InitializeUserScopeAsync(
                 user.Id.ToString(),
                 requestedLabId,
                 cancellationToken);
 
-            _logger.LogInformation("使用者 {Email} 登入成功，裝置 ID: {DeviceId}", user.Email, deviceId);
+            // 8. 紀錄成功的 Security/Audit 日誌
+            _securityLogger.LogSecurity(
+                eventCode: "SEC-200-LOGIN-SUCCESS",
+                eventCategory: "Auth.Login",
+                userId: user.Id.ToString(),
+                clientIp: clientIp,
+                messageTemplate: "使用者登入成功。帳號: {Email}, 裝置ID: {DeviceId}, 來源IP: {ClientIp}",
+                user.Email ?? string.Empty,
+                deviceId,
+                clientIp
+            );
 
             return Ok(new LoginResponseDto
             {
@@ -126,16 +176,47 @@ public sealed class AuthController(
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "標準帳密登入端點發生未預期核心異常。");
+            _logger.LogError(ex, "標準帳密登入端點發生未預期核心異常。帳號: {TargetUser}, IP: {ClientIp}", request.Email, clientIp);
+
+            // 資安最佳實務：對外不洩漏具體的 Exception Message 內容
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
                 Status = StatusCodes.Status500InternalServerError,
                 Title = "伺服器內部錯誤",
-                Detail = ex.Message,
+                Detail = "系統執行身份驗證時發生未預期錯誤，請聯絡系統管理員。",
                 Instance = HttpContext.Request.Path
             });
         }
     }
+
+    #region Private Helper Methods
+
+    private void LogLoginFailure(string targetUser, string clientIp, string reason)
+    {
+        _securityLogger.LogSecurity(
+            eventCode: "SEC-401-UNAUTHORIZED",
+            eventCategory: "Auth.Login",
+            userId: targetUser,
+            clientIp: clientIp,
+            messageTemplate: "登入失敗 ({Reason})。帳號: {TargetUser}, 來源IP: {ClientIp}",
+            reason,
+            targetUser,
+            clientIp
+        );
+    }
+
+    private UnauthorizedObjectResult BuildUnauthorizedResult(string detailMessage)
+    {
+        return Unauthorized(new ProblemDetails
+        {
+            Status = StatusCodes.Status401Unauthorized,
+            Title = "身分驗證失敗",
+            Detail = detailMessage,
+            Instance = HttpContext.Request.Path
+        });
+    }
+
+    #endregion
 
     /// <summary>
     /// 地端 Windows 網域單一登入

@@ -1,7 +1,9 @@
 ﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SGS.Modules.ORG.Application.Features.Laboratories.Dtos;
+using SGS.Modules.ORG.Infrastructure.Dbcontexts;
 using SGS.Modules.ORG.Infrastructure.Entities.Org;
+using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Errors;
 using SGSFramework.Core.Results;
@@ -21,61 +23,57 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Queries
     /// 依循 Clean Architecture 規範，透過 DbContext / IQueryable 進行高效率 Read-Only 查詢與 DTO 投影
     /// </summary>
     public sealed class GetUserLabMappingsByUserIdQueryHandler
-        : IRequestHandler<GetUserLabMappingsByUserIdQuery, Result<List<UserLabMappingDto>>>
+    : IRequestHandler<GetUserLabMappingsByUserIdQuery, Result<List<UserLabMappingDto>>>
     {
-        private readonly DbContext _context;
+        private readonly ICoreDbContext _coreContext;
+        private readonly ORGDbContext _orgContext;
 
-        public GetUserLabMappingsByUserIdQueryHandler(DbContext context)
+        public GetUserLabMappingsByUserIdQueryHandler(
+            ICoreDbContext coreContext,
+            ORGDbContext orgContext)
         {
-            _context = context ?? throw new ArgumentNullException(nameof(context));
+            _coreContext = coreContext ?? throw new ArgumentNullException(nameof(coreContext));
+            _orgContext = orgContext ?? throw new ArgumentNullException(nameof(orgContext));
         }
 
         public async Task<Result<List<UserLabMappingDto>>> Handle(
             GetUserLabMappingsByUserIdQuery request,
             CancellationToken cancellationToken)
         {
-            if (request.UserId == Guid.Empty)
-            {
-                return Result.Failure<List<UserLabMappingDto>>(
-                    Error.Validation("USERLAB_INVALID_USERID", "使用者識別碼不能為 Empty Guid。"));
-            }
+            // 1. 從 ICoreDbContext 撈取 UserLabMapping[cite: 6]
+            var mappings = await _coreContext.UserLabMappings
+                .AsNoTracking()
+                .Where(m => m.UserId == request.UserId)
+                .ToListAsync(cancellationToken);
 
-            try
-            {
-                // 進行 Read-Only 投影查詢 ( Join 實驗室主檔取得 LabName 與 LabCode )
-                var result = await (
-                    from mapping in _context.Set<UserLabMapping>().AsNoTracking()
-                    where mapping.UserId == request.UserId
-                    join lab in _context.Set<Organization>().AsNoTracking()
-                        on mapping.LabId equals lab.Id into labGroup
-                    from lab in labGroup.DefaultIfEmpty()
-                    orderby mapping.IsPrimary descending, mapping.CreatedAtUtc descending
-                    select new UserLabMappingDto
-                    {
-                        UserId = mapping.UserId,
-                        LabId = mapping.LabId,
-                        TenantLabId = mapping.TenantLabId,
-                        LabName = lab != null ? lab.Name : string.Empty,
-                        LabCode = lab != null ? lab.Code : string.Empty,
-                        IsPrimary = mapping.IsPrimary,
-                        JobTitle = mapping.JobTitle,
-                        EffectiveDate = mapping.EffectiveDate,
-                        ExpiryDate = mapping.ExpiryDate,
-                        IsActive = mapping.IsActive,
-                        CreatedAtUtc = mapping.CreatedAtUtc,
-                        CreatedBy = mapping.CreatedBy,
-                        UpdatedAtUtc = mapping.UpdatedAtUtc,
-                        UpdatedBy = mapping.UpdatedBy
-                    }
-                ).ToListAsync(cancellationToken);
+            if (!mappings.Any()) return Result.Success(new List<UserLabMappingDto>());
 
-                return Result.Success(result);
-            }
-            catch (Exception ex)
-            {
-                return Result.Failure<List<UserLabMappingDto>>(
-                    Error.Failure("USERLAB_QUERY_ERROR", $"查詢使用者實驗室關聯時發生未預期錯誤：{ex.Message}"));
-            }
+            // 2. 從 ORGDbContext 撈取 Organization 並於記憶體組裝[cite: 6, 8]
+            var labIds = mappings.Select(m => m.LabId).Distinct().ToList();
+            var labs = await _orgContext.Organizations
+                .AsNoTracking()
+                .Where(o => labIds.Contains(o.Id))
+                .ToDictionaryAsync(o => o.Id, cancellationToken);
+
+            var result = mappings.Select(m => {
+                labs.TryGetValue(m.LabId, out var lab);
+                return new UserLabMappingDto
+                {
+                    UserId = m.UserId,
+                    LabId = m.LabId,
+                    TenantLabId = m.TenantLabId,
+                    LabName = lab?.Name ?? string.Empty,
+                    LabCode = lab?.Code ?? string.Empty,
+                    IsPrimary = m.IsPrimary,
+                    JobTitle = m.JobTitle,
+                    EffectiveDate = m.EffectiveDate,
+                    ExpiryDate = m.ExpiryDate,
+                    IsActive = m.IsActive,
+                    CreatedAtUtc = m.CreatedAtUtc
+                };
+            }).ToList();
+
+            return Result.Success(result);
         }
     }
 }
