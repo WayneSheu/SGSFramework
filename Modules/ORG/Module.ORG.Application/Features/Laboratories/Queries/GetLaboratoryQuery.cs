@@ -7,7 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace SGS.Modules.ORG.Application.Features.Laboratories.Query
+namespace SGS.Modules.ORG.Application.Features.Laboratories.Queries 
 {
 
     /// <summary>

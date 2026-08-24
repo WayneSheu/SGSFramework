@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Security.Claims;
-using System.Threading;
-using System.Threading.Tasks;
-using MediatR;
+﻿using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -11,12 +6,12 @@ using Microsoft.Extensions.Logging;
 using SGS.Modules.ORG.Application.Features.Laboratories.Command;
 using SGS.Modules.ORG.Application.Features.Laboratories.Dtos;
 using SGS.Modules.ORG.Application.Features.Laboratories.Queries;
-using SGS.Modules.ORG.Application.Features.Laboratories.Query;
 using SGS.Modules.ORG.Controllers.Requests;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Controllers.Base;
 using SGSFramework.Core.Errors;
 using SGSFramework.Core.Results;
+using System.Security.Claims;
 
 namespace SGS.Modules.ORG.Controllers;
 

@@ -63,6 +63,8 @@ public class PhysLIMSDbContext : BaseIdentityDbContext<ApplicationUser, Applicat
         // 2. 自動掃描同 Assembly 下的所有 IEntityTypeConfiguration
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(PhysLIMSDbContext).Assembly);
 
+
+        // UserLabMappingConfiguration
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(UserLabMappingConfiguration).Assembly);
 
         // 3. 針對所有實作 ILedgerEntity 的實體自動附加 MSSQL Ledger 標註

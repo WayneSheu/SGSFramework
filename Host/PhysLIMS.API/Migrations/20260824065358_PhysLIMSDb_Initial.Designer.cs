@@ -12,7 +12,7 @@ using PhysLIMS.API.Dbcontexts;
 namespace PhysLIMS.API.Migrations
 {
     [DbContext(typeof(PhysLIMSDbContext))]
-    [Migration("20260823064219_PhysLIMSDb_Initial")]
+    [Migration("20260824065358_PhysLIMSDb_Initial")]
     partial class PhysLIMSDb_Initial
     {
         /// <inheritdoc />
@@ -552,8 +552,8 @@ namespace PhysLIMS.API.Migrations
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid>("LabId")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int>("LabId")
+                        .HasColumnType("int");
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .ValueGeneratedOnAdd()

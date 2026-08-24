@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using SGSFramework.Core.Abstractions.Adapters;
 using SGSFramework.Core.Abstractions.Entities.Base;
 using SGSFramework.Identity.Abstractions;
 using SGSFramework.Identity.Repositories;
@@ -44,7 +45,8 @@ namespace SGSFramework.Identity.Extensions
 
             // 3. 註冊泛型倉儲服務
             services.AddScoped<IGenericIdentityRepository<TUser, TKey>, GenericIdentityRepository<TContext, TUser, TRole, TKey>>();
-
+            // 註冊 UserLabRepository 介面與實作對應
+            services.AddScoped<IUserLabRepository, UserLabRepository>();
             // 4. 註冊角色管理服務 (開放泛型與具體泛型介面)
             services.AddScoped(typeof(IRoleManagementService<,>), typeof(RoleManagementService<,>));
             services.AddScoped<IRoleManagementService<TRole, TKey>, RoleManagementService<TRole, TKey>>();

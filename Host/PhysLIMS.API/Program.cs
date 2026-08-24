@@ -68,7 +68,7 @@ try
 
     // 2. 主專案資料庫上下文註冊
     builder.Services.AddTransient<IDatabaseInitializer, DatabaseInitializer>();
-
+    //
     builder.Services.AddDbContext<PhysLIMSDbContext>(options =>
     {
         var connectionString = config.GetSection("PersistentSettings:ConnectionStrings")["DefaultConnection"];
@@ -87,7 +87,8 @@ try
                .ConfigureWarnings(warnings =>
                    warnings.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
     });
-
+    // 將 DbContext 指向相同的 Scoped ApplicationDbContext 實例
+    builder.Services.AddScoped<DbContext>(sp => sp.GetRequiredService<PhysLIMSDbContext>());
     // 3. 泛型 Identity 完整打包註冊
     builder.Services.AddGenericIdentityPackage<PhysLIMSDbContext, ApplicationUser, ApplicationRole, Guid>(options =>
     {

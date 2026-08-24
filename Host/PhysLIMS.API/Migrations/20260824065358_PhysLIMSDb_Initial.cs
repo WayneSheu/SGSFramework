@@ -83,6 +83,7 @@ namespace PhysLIMS.API.Migrations
                 ) WITH (LEDGER = ON (APPEND_ONLY = ON));
             ");
 
+
             migrationBuilder.CreateTable(
                 name: "ControllerMetadatas",
                 schema: "core",
@@ -274,9 +275,9 @@ namespace PhysLIMS.API.Migrations
             CONSTRAINT [PK_SystemLogs] PRIMARY KEY CLUSTERED ([Id] ASC)
              ) WITH (LEDGER = ON (APPEND_ONLY = ON));
             ");
-        
 
-        migrationBuilder.CreateTable(
+
+            migrationBuilder.CreateTable(
                 name: "UserRefreshTokens",
                 schema: "core",
                 columns: table => new
@@ -425,7 +426,7 @@ namespace PhysLIMS.API.Migrations
                 columns: table => new
                 {
                     UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    LabId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    LabId = table.Column<int>(type: "int", nullable: false),
                     TenantLabId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     IsPrimary = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
                     JobTitle = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),

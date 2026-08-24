@@ -10,8 +10,8 @@ using SGSFramework.Core.Helpers;
 using SGSFramework.Core.Errors;
 using SGS.Modules.ORG.Application.Abstractions;
 
-namespace SGS.Modules.ORG.Application.Features.Laboratories.Query
-{
+namespace SGS.Modules.ORG.Application.Features.Laboratories.Queries
+{ 
     /// <summary>
     /// 依據實驗室 Id 取得該節點及其完整下階層樹狀結構之查詢指令
     /// </summary>

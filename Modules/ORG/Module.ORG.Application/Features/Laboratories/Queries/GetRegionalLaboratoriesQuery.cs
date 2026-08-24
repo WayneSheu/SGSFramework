@@ -9,7 +9,7 @@ using System.Collections.Generic;
 using System.Text;
 using SGSFramework.Core.Errors; 
 
-namespace SGS.Modules.ORG.Application.Features.Laboratories.Query
+namespace SGS.Modules.ORG.Application.Features.Laboratories.Queries 
 {
     /// <summary>
     /// 取得區域層級/頂層實驗室清單查詢指令

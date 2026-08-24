@@ -549,8 +549,8 @@ namespace PhysLIMS.API.Migrations
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid>("LabId")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int>("LabId")
+                        .HasColumnType("int");
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .ValueGeneratedOnAdd()
