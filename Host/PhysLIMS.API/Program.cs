@@ -54,6 +54,13 @@ try
 
     IConfiguration config = builder.Configuration;
 
+    // 顯式設定 HTTPS 重新導向連接埠，對應當前開發環境 HTTPS port (例如 7253)
+    //builder.Services.AddHttpsRedirection(options =>
+    //{
+    //    options.RedirectStatusCode = StatusCodes.Status307TemporaryRedirect;
+    //    options.HttpsPort = 7253;
+    //});
+
     // 注入 SGSFramework.Core 的服務 
     builder.AddSGSFrameworkCore();
 
@@ -109,7 +116,7 @@ try
 
     Log.Information("開始掃描並註冊既有動態外掛模組與 DI 服務 (Startup Phase)...");
 
-    // 一鍵包含框架服務與對應 DbContext 的 IModuleStorageStrategy/IModuleRepository 策略注入[cite: 3, 4]
+    // 一鍵包含框架服務與對應 DbContext 的 IModuleStorageStrategy/IModuleRepository 策略注入
     builder.Services.AddModulePlugin<PhysLIMSDbContext>(config);
     builder.Services.AddControllerScanner<PhysLIMSDbContext>();
 
@@ -275,6 +282,7 @@ try
     else
     {
         app.UseDeveloperExceptionPage();
+        app.UseHttpsRedirection(); // 開發環境若啟用強制重新導向，確保已指定 HttpsPort
     }
 
     // DB Bootstrapping & EF Core Migration
@@ -349,8 +357,6 @@ try
     app.UseAuthentication();
     app.UseAuthorization();
 
-    app.MapControllers();
-
     var changeProvider = app.Services.GetRequiredService<IDynamicActionDescriptorChangeProvider>();
     Log.Information("觸發 MVC ActionDescriptorCollection 變更通知，刷新 Dynamic Controller 路由...");
     changeProvider.NotifyChanges();
@@ -367,7 +373,7 @@ try
         await next();
     });
 
-    // 註冊 OpenAPI endpoints 與 Scalar 介面
+    // 註冊 OpenAPI endpoints 與 Scalar 介面 (必須在 app.MapControllers() 之前或對齊路由端點)
     app.MapOpenApi();
 
     if (app.Environment.IsDevelopment())
@@ -377,9 +383,11 @@ try
             options.WithTitle("PhysLIMS 2.0 API 文件")
                 .WithTheme(ScalarTheme.Solarized)
                 .WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient)
-                .WithOpenApiRoutePattern("/openapi/{documentName}.json");
+                .WithOpenApiRoutePattern("/openapi/v1.json"); // 改為明確對應 v1.json 路由，解決 404 問題
         });
     }
+
+    app.MapControllers();
 
     app.MapGet("/", async context =>
     {

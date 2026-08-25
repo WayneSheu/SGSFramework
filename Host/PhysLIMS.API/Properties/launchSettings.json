@@ -2,8 +2,8 @@
   "$schema": "https://json.schemastore.org/launchsettings.json",
   "iisSettings": {
     //原生的 Windows 驗證（Negotiate）高度依賴伺服器主機的設定。請確保 launchSettings.json 最上方的 iisSettings 已開啟 Windows 驗證：
-    "windowsAuthentication": true, // 🚀 必須為 true
-    "anonymousAuthentication": false // 🚀 測試 SSO 時建議先關閉匿名，強制觸發 Windows 握手
+    "windowsAuthentication": true, // 開啟 Windows 驗證
+    "anonymousAuthentication": false //測試 SSO 時建議先關閉匿名，強制觸發 Windows 握手
   },
   "profiles": {
     "SES.API": {

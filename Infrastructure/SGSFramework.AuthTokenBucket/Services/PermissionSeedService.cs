@@ -1,4 +1,9 @@
-﻿namespace SGSFramework.AuthTokenBucket.Services
+﻿// ==========================================
+// 檔案路徑: src/SGSFramework/Infrastructure/SGSFramework.AuthTokenBucket/Services/PermissionSeedService.cs
+// 架構層級: Infrastructure Layer
+// ==========================================
+
+namespace SGSFramework.AuthTokenBucket.Services
 {
     using Microsoft.AspNetCore.Mvc;
     using Microsoft.EntityFrameworkCore;
@@ -60,16 +65,12 @@
                 .ToArray();
 
             var metadataMap = ExtractPermissionMetadata(allAssemblies);
-            var dbPermissions = await _dbContext.Set<Permission>().ToListAsync(cancellationToken);
 
-            bool hasChanges = false;
-
+            // 迴圈逐筆處理，完美解決 BitPosition 唯一索引 (Unique Index) 碰撞與暫存值衝突問題
             foreach (var kvp in scannedMappings)
             {
                 string key = kvp.Key;
-                int bitPosition = kvp.Value; //直接讀取 BitPosition 索引位置
-
-                var existing = dbPermissions.FirstOrDefault(p => string.Equals(p.PermissionKey, key, StringComparison.OrdinalIgnoreCase));
+                int bitPosition = kvp.Value;
 
                 metadataMap.TryGetValue(key, out var meta);
                 string moduleName = !string.IsNullOrEmpty(meta.ModuleName) ? meta.ModuleName : "SGSFramework.System";
@@ -77,7 +78,61 @@
                 string actionName = meta.ActionName ?? string.Empty;
                 string description = meta.Description ?? $"Auto-scanned permission: {key}";
 
-                if (existing == null)
+                // 1. 先行檢查是否有其他不相關的紀錄佔用了目標 BitPosition
+                var conflictByBit = await _dbContext.Set<Permission>()
+                    .FirstOrDefaultAsync(p => p.BitPosition == bitPosition && p.PermissionKey != key, cancellationToken);
+
+                if (conflictByBit != null)
+                {
+                    _logger.LogWarning(
+                        "偵測到 BitPosition 衝突：嘗試指派 BitPosition {BitPosition} 給 Key '{NewKey}'，但已被 Key '{ExistingKey}' 佔用。將暫時釋放衝突項目的 BitPosition。",
+                        bitPosition, key, conflictByBit.PermissionKey);
+
+                    // 暫時將衝突項目的 BitPosition 設為負數並立即寫入，避免後續更新時觸發唯一索引錯誤 (Error 2601)
+                    conflictByBit.BitPosition = -Math.Abs(conflictByBit.Id + 10000);
+                    await _dbContext.SaveChangesAsync(cancellationToken);
+                }
+
+                // 2. 查詢目前要處理的 Key 是否已經存在
+                var existingByKey = await _dbContext.Set<Permission>()
+                    .FirstOrDefaultAsync(p => p.PermissionKey == key, cancellationToken);
+
+                bool isModified = false;
+
+                if (existingByKey != null)
+                {
+                    if (existingByKey.BitPosition != bitPosition)
+                    {
+                        existingByKey.BitPosition = bitPosition;
+                        isModified = true;
+                    }
+                    if (string.IsNullOrEmpty(existingByKey.ModuleName))
+                    {
+                        existingByKey.ModuleName = moduleName;
+                        isModified = true;
+                    }
+                    if (string.IsNullOrEmpty(existingByKey.ControllerName) && !string.IsNullOrEmpty(controllerName))
+                    {
+                        existingByKey.ControllerName = controllerName;
+                        isModified = true;
+                    }
+                    if (string.IsNullOrEmpty(existingByKey.ActionName) && !string.IsNullOrEmpty(actionName))
+                    {
+                        existingByKey.ActionName = actionName;
+                        isModified = true;
+                    }
+                    if ((string.IsNullOrEmpty(existingByKey.Description) || existingByKey.Description.StartsWith("Auto-scanned permission:")) && !string.IsNullOrEmpty(description))
+                    {
+                        existingByKey.Description = description;
+                        isModified = true;
+                    }
+
+                    if (isModified)
+                    {
+                        _logger.LogInformation("Updated permission metadata for key: {Key}", key);
+                    }
+                }
+                else
                 {
                     var newPermission = new Permission
                     {
@@ -90,49 +145,23 @@
                     };
 
                     _dbContext.Set<Permission>().Add(newPermission);
-                    hasChanges = true;
+                    isModified = true;
                     _logger.LogInformation("Auto-seeded new permission key: {Key} (BitPosition: {BitPos}, Module: {Mod}, Controller: {Ctrl}, Action: {Act})", key, bitPosition, moduleName, controllerName, actionName);
                 }
-                else
-                {
-                    bool updated = false;
-                    if (existing.BitPosition != bitPosition)
-                    {
-                        existing.BitPosition = bitPosition;
-                        updated = true;
-                    }
-                    if (string.IsNullOrEmpty(existing.ModuleName))
-                    {
-                        existing.ModuleName = moduleName;
-                        updated = true;
-                    }
-                    if (string.IsNullOrEmpty(existing.ControllerName) && !string.IsNullOrEmpty(controllerName))
-                    {
-                        existing.ControllerName = controllerName;
-                        updated = true;
-                    }
-                    if (string.IsNullOrEmpty(existing.ActionName) && !string.IsNullOrEmpty(actionName))
-                    {
-                        existing.ActionName = actionName;
-                        updated = true;
-                    }
-                    if ((string.IsNullOrEmpty(existing.Description) || existing.Description.StartsWith("Auto-scanned permission:")) && !string.IsNullOrEmpty(description))
-                    {
-                        existing.Description = description;
-                        updated = true;
-                    }
 
-                    if (updated)
+                if (isModified)
+                {
+                    try
                     {
-                        hasChanges = true;
-                        _logger.LogInformation("Updated permission metadata for key: {Key}", key);
+                        await _dbContext.SaveChangesAsync(cancellationToken);
+                    }
+                    catch (DbUpdateException ex)
+                    {
+                        _logger.LogError(ex, "儲存權限項目失敗 (Key: {Key}, BitPosition: {BitPos})，可能發生唯一索引衝突。", key, bitPosition);
+                        _dbContext.ChangeTracker.Clear();
+                        throw;
                     }
                 }
-            }
-
-            if (hasChanges)
-            {
-                await _dbContext.SaveChangesAsync(cancellationToken);
             }
         }
 
