@@ -3,23 +3,16 @@
 // 架構層級: Presentation / Host Layer
 // ==========================================
 
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
-using Microsoft.EntityFrameworkCore.SqlServer.Infrastructure.Internal;
-using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.Tokens;
 using PhysLIMS.API.Dbcontexts;
 using PhysLIMS.API.Extensions;
-using PhysLIMS.API.Helpers;
-using PhysLIMS.API.Models;
 using Scalar.AspNetCore;
 using Serilog;
 using SGSFramework.ApiInfrastructure.Bootstrappers;
-using SGSFramework.ApiInfrastructure.Extensions;
 using SGSFramework.ApiInfrastructure.Filters;
 using SGSFramework.ApiInfrastructure.Transformers;
 using SGSFramework.AuditLog.Extensions;
@@ -41,42 +34,30 @@ using SGSFramework.Persistent.ScriptRunners;
 using SGSFramework.SystemLog.Extensions;
 using SGSFramework.VerifyLedger.Extensions;
 using System.Reflection;
-using System.Text;
-using System.Text.RegularExpressions;
 
 try
 {
     var builder = WebApplication.CreateBuilder(args);
 
-    // 設定系統日誌系統
     builder.AddSystemLog();
     Log.Information("Starting WebAPI Application.");
 
     IConfiguration config = builder.Configuration;
-
-    // 顯式設定 HTTPS 重新導向連接埠，對應當前開發環境 HTTPS port (例如 7253)
-    //builder.Services.AddHttpsRedirection(options =>
-    //{
-    //    options.RedirectStatusCode = StatusCodes.Status307TemporaryRedirect;
-    //    options.HttpsPort = 7253;
-    //});
-
-    // 注入 SGSFramework.Core 的服務 
     builder.AddSGSFrameworkCore();
 
-    // 1. 註冊 OpenAPI 與 Scalar API 文件服務
+    // 1. OpenAPI 與 Scalar 文件設定
     builder.Services.AddOpenApi("v1", options =>
     {
         options.ShouldInclude = (description) => true;
         options.AddOperationTransformer<MenuAttributeTransformer>();
         options.AddDocumentTransformer<DynamicControllerDocumentFilter>();
+        options.AddDocumentTransformer<OpenApiSecurityRequirementTransformer>();
     });
 
     builder.Services.AddAPIDocServices();
 
-    // 2. 主專案資料庫上下文註冊
+    // 2. 資料庫上下文註冊
     builder.Services.AddTransient<IDatabaseInitializer, DatabaseInitializer>();
-    //
     builder.Services.AddDbContext<PhysLIMSDbContext>(options =>
     {
         var connectionString = config.GetSection("PersistentSettings:ConnectionStrings")["DefaultConnection"];
@@ -95,11 +76,11 @@ try
                .ConfigureWarnings(warnings =>
                    warnings.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
     });
-    // 將 ICoreDbContext 的解析轉向現有的 PhysLIMSDbContext 執行個體
+
     builder.Services.AddScoped<ICoreDbContext>(sp => sp.GetRequiredService<PhysLIMSDbContext>());
-    // 將 DbContext 指向相同的 Scoped ApplicationDbContext 實例
     builder.Services.AddScoped<DbContext>(sp => sp.GetRequiredService<PhysLIMSDbContext>());
-    // 3. 泛型 Identity 完整打包註冊
+
+    // 3. ASP.NET Core Identity 打包註冊
     builder.Services.AddGenericIdentityPackage<PhysLIMSDbContext, ApplicationUser, ApplicationRole, Guid>(options =>
     {
         options.Password.RequireDigit = true;
@@ -111,39 +92,26 @@ try
         options.SignIn.RequireConfirmedAccount = false;
     });
 
-    // 4. 註冊 Controllers 與外掛模組核心
-    var mvcBuilder = builder.Services.AddControllers();
-
-    Log.Information("開始掃描並註冊既有動態外掛模組與 DI 服務 (Startup Phase)...");
-
-    // 一鍵包含框架服務與對應 DbContext 的 IModuleStorageStrategy/IModuleRepository 策略注入
+    // 4. 控制器與動態外掛模組註冊
+    builder.Services.AddControllers();
     builder.Services.AddModulePlugin<PhysLIMSDbContext>(config);
     builder.Services.AddControllerScanner<PhysLIMSDbContext>();
 
-    mvcBuilder.ConfigureApplicationPartManager(apm =>
-    {
-        Log.Information(">>> [ApplicationParts] 目前完成註冊的 Application Parts 總數: {Count}", apm.ApplicationParts.Count);
-    });
-
-    // 5. 審計基礎設施服務
+    // 5. 基礎設施服務
     builder.Services.AddAuditLog(config);
-
-    // 6. CORS 設定
     builder.Services.AddCors(options =>
     {
         options.AddPolicy("AllowAll", policy =>
         {
-            policy.AllowAnyOrigin()
-                  .AllowAnyMethod()
-                  .AllowAnyHeader();
+            policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
         });
     });
 
-    // 7. 全域異常處理
     builder.Services.AddProblemDetails();
     builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
-    // 8. Token Bucket 認證、動態 BitMask 權限掃描與 SSO
+    // 6. Token Bucket 身份驗證與授權配置
+    // (AddTokenBucketAuthentication 內部已封裝 JwtBearer 處理器與 PostConfigureAll 強制鎖定機制)
     var scannedAssemblies = AppDomain.CurrentDomain.GetAssemblies()
         .Where(a => a.FullName != null &&
                    (a.FullName.StartsWith("SGS.") ||
@@ -154,10 +122,10 @@ try
 
     builder.Services.AddTokenBucketAuthentication<PhysLIMSDbContext, ApplicationUser>(options =>
     {
-        options.SecretKey = config["Jwt:Secret"]
-                        ?? throw new InvalidOperationException("核心資安配置錯誤：未在 appsettings.json 中找到 'Jwt:Secret' 設定項。");
-        options.Issuer = config["Jwt:Issuer"]!;
-        options.Audience = config["Jwt:Audience"]!;
+        options.SecretKey = config["JwtSettings:Secret"]
+                        ?? throw new InvalidOperationException("核心資安配置錯誤：未在 appsettings.json 中找到 'JwtSettings:Secret' 設定項。");
+        options.Issuer = config["JwtSettings:Issuer"]!;
+        options.Audience = config["JwtSettings:Audience"]!;
         options.MaxDeviceCount = 6;
         options.RefreshTokenExpirationDays = 7;
         options.RefreshTokenGracePeriodSeconds = 8;
@@ -167,16 +135,8 @@ try
     builder.Services.AddSSOServices();
     builder.Services.AddAuthorization();
 
-    #region 身分驗證配置 (Presentation / Host Layer)
-    if (builder.Environment.IsDevelopment())
-    {
-        builder.Services.AddAuthentication(options =>
-        {
-            options.DefaultAuthenticateScheme = "Windows";
-            options.DefaultChallengeScheme = "Windows";
-        });
-    }
-    else
+    #region 身分驗證環境配置 (IIS / Kestrel)
+    if (!builder.Environment.IsDevelopment())
     {
         var isIISHosted = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("APP_POOL_ID")) ||
                           !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ANCM_PREFER_USER_STORE"));
@@ -185,75 +145,14 @@ try
         {
             Log.Information("偵測到 IIS 託管環境，整合 IIS Native Windows Authentication。");
             RemoveNegotiateServices(builder.Services);
-
-            builder.Services.AddAuthentication(options =>
-            {
-                options.DefaultAuthenticateScheme = Microsoft.AspNetCore.Server.IISIntegration.IISDefaults.AuthenticationScheme;
-                options.DefaultChallengeScheme = Microsoft.AspNetCore.Server.IISIntegration.IISDefaults.AuthenticationScheme;
-            });
-
-            builder.Services.PostConfigure<Microsoft.AspNetCore.Authentication.AuthenticationOptions>(options =>
-            {
-                if (options.SchemeMap.ContainsKey("Negotiate"))
-                {
-                    options.SchemeMap.Remove("Negotiate");
-                }
-
-                var negotiateScheme = options.Schemes.FirstOrDefault(s => s.Name == "Negotiate");
-                if (negotiateScheme != null)
-                {
-                    if (options.Schemes is List<Microsoft.AspNetCore.Authentication.AuthenticationSchemeBuilder> schemeList)
-                    {
-                        schemeList.Remove(negotiateScheme);
-                    }
-                    Log.Warning("已成功自 AuthenticationOptions 中強制完全抹除 'Negotiate' Scheme。");
-                }
-
-                options.DefaultAuthenticateScheme = Microsoft.AspNetCore.Server.IISIntegration.IISDefaults.AuthenticationScheme;
-                options.DefaultChallengeScheme = Microsoft.AspNetCore.Server.IISIntegration.IISDefaults.AuthenticationScheme;
-            });
-        }
-        else
-        {
-            Log.Information("偵測到獨立 Kestrel 託管環境，啟用 Native Negotiate 驗證。");
-
-            builder.Services.PostConfigure<Microsoft.AspNetCore.Authentication.AuthenticationOptions>(options =>
-            {
-                if (!options.SchemeMap.ContainsKey("Negotiate"))
-                {
-                    builder.Services.AddSafeNegotiateAuthentication();
-                }
-            });
         }
     }
     #endregion
 
-    // 9. 註冊生產級 Admin 自動種子服務與其他擴充服務
     builder.Services.AddProductionAdminSeeder(builder.Configuration);
     builder.Services.AddLedgerVerificationServices();
     builder.Services.AddCodeSecurity(config);
     builder.AddDIContainerValidation();
-
-    // 配置 Authentication 並指定 DefaultAuthenticateScheme 與 DefaultChallengeScheme
-    builder.Services.AddAuthentication(options =>
-    {
-        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-    })
-    .AddJwtBearer(options =>
-    {
-        options.RequireHttpsMetadata = false;
-        options.SaveToken = true;
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SecretKey"] ?? "YourSuperSecretKeyHere1234567890!")),
-            ValidateIssuer = false,
-            ValidateAudience = false
-        };
-    });
-
-    builder.Services.AddAuthorization();
 
     var app = builder.Build();
 
@@ -262,7 +161,6 @@ try
 
     try
     {
-        bootstrapLogger.LogInformation(">>> 執行前置檢查：IIS 應用程式集區環境變數配置...");
         IisBootstrapTask.Execute(builder.Configuration, bootstrapLogger);
     }
     catch (Exception ex)
@@ -282,86 +180,48 @@ try
     else
     {
         app.UseDeveloperExceptionPage();
-        app.UseHttpsRedirection(); // 開發環境若啟用強制重新導向，確保已指定 HttpsPort
     }
 
-    // DB Bootstrapping & EF Core Migration
+    // 資料庫自動 Migration 流程
     var autoMigrate = config.GetValue<bool>("Database:AutoMigrate", true);
     if (app.Environment.IsDevelopment() || autoMigrate)
     {
         using var scope = app.Services.CreateScope();
-        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        var initializer = scope.ServiceProvider.GetRequiredService<IDatabaseInitializer>();
+        await initializer.InitializeDatabaseAsync().ConfigureAwait(false);
 
-        try
-        {
-            logger.LogInformation("Step 1: 開始執行 Bootstrapping 腳本 (使用 Windows/Master 權限)...");
-            var initializer = scope.ServiceProvider.GetRequiredService<IDatabaseInitializer>();
-            await initializer.InitializeDatabaseAsync().ConfigureAwait(false);
-            logger.LogInformation("Bootstrapping 腳本執行完成。");
-        }
-        catch (Exception ex)
-        {
-            logger.LogCritical(ex, "Bootstrapping 失敗，終止啟動。");
-            throw;
-        }
-
-        string migrationConnectionString = string.Empty;
-        try
-        {
-            migrationConnectionString = config.GetSection("PersistentSettings:ConnectionStrings")["MigrationConnection"]!;
-            if (string.IsNullOrWhiteSpace(migrationConnectionString))
+        var migrationConnectionString = config.GetSection("PersistentSettings:ConnectionStrings")["MigrationConnection"]!;
+        var mainDbContextOptions = new DbContextOptionsBuilder<PhysLIMSDbContext>()
+            .UseSqlServer(migrationConnectionString, sqlOptions =>
             {
-                throw new InvalidOperationException("未配置 MigrationConnection。");
-            }
-            logger.LogInformation("Step 2: 開始執行主專案 DB Migration...");
+                sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "core");
+                sqlOptions.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: TimeSpan.FromSeconds(5), errorNumbersToAdd: null);
+            })
+            .Options;
 
-            var mainDbContextOptions = new DbContextOptionsBuilder<PhysLIMSDbContext>()
-                .UseSqlServer(migrationConnectionString, sqlOptions =>
-                {
-                    sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "core");
-                    sqlOptions.EnableRetryOnFailure(
-                        maxRetryCount: 3,
-                        maxRetryDelay: TimeSpan.FromSeconds(5),
-                        errorNumbersToAdd: null);
-                })
-                .Options;
-
-            await using var mainDbContext = new PhysLIMSDbContext(mainDbContextOptions);
-            var connection = mainDbContext.Database.GetDbConnection();
-            await connection.OpenAsync().ConfigureAwait(false);
-            await connection.CloseAsync().ConfigureAwait(false);
-
-            await mainDbContext.Database.MigrateAsync().ConfigureAwait(false);
-            logger.LogInformation("主專案 DB Migration 完成。");
-        }
-        catch (Exception ex)
-        {
-            logger.LogCritical(ex, "主專案 DB Migration 發生未預期的嚴重錯誤。");
-            throw;
-        }
+        await using var mainDbContext = new PhysLIMSDbContext(mainDbContextOptions);
+        await mainDbContext.Database.MigrateAsync().ConfigureAwait(false);
     }
 
-    // 初始化動態控制器與外掛模組
-    Log.Information("開始初始化模組系統與動態控制器...");
+    // 初始化動態控制器與權限
     await app.InitializeModularSystemAsync().ConfigureAwait(false);
     await app.UseDynamicControllersAsync().ConfigureAwait(false);
 
     using (var scope = app.Services.CreateScope())
     {
-        Log.Information("開始同步與初始化動態 BitMask 權限資料...");
         var permissionSeeder = scope.ServiceProvider.GetRequiredService<IPermissionSeedService>();
         await permissionSeeder.SeedAndSyncPermissionsAsync().ConfigureAwait(false);
     }
 
     app.UseRouting();
+
+    // 確保 Validation 與 Challenge 能正確被 JwtBearer 攔截與回應
     app.UseAuthentication();
     app.UseAuthorization();
 
     var changeProvider = app.Services.GetRequiredService<IDynamicActionDescriptorChangeProvider>();
-    Log.Information("觸發 MVC ActionDescriptorCollection 變更通知，刷新 Dynamic Controller 路由...");
     changeProvider.NotifyChanges();
 
-    // 攔截 OpenAPI 請求，強制破除前端快取 (避免 Skeleton Loader 讀取舊檔案卡死)
     app.Use(async (context, next) =>
     {
         if (context.Request.Path.StartsWithSegments("/openapi", StringComparison.OrdinalIgnoreCase))
@@ -373,22 +233,19 @@ try
         await next();
     });
 
-    // 註冊 OpenAPI endpoints 與 Scalar 介面 (必須在 app.MapControllers() 之前或對齊路由端點)
     app.MapOpenApi();
-
-    if (app.Environment.IsDevelopment())
+    app.MapScalarApiReference(options =>
     {
-        app.MapScalarApiReference(options =>
+        options.Title = "PhysLIMS 2.0 API";
+        options.Theme = ScalarTheme.Solarized;
+        options.Layout = ScalarLayout.Modern;
+        options.Authentication = new ScalarAuthenticationOptions
         {
-            options.WithTitle("PhysLIMS 2.0 API 文件")
-                .WithTheme(ScalarTheme.Solarized)
-                .WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient)
-                .WithOpenApiRoutePattern("/openapi/v1.json"); // 改為明確對應 v1.json 路由，解決 404 問題
-        });
-    }
+            PreferredSecurityScheme = JwtBearerDefaults.AuthenticationScheme
+        };
+    });
 
     app.MapControllers();
-
     app.MapGet("/", async context =>
     {
         context.Response.Redirect("/scalar/v1");
@@ -417,6 +274,5 @@ static void RemoveNegotiateServices(IServiceCollection services)
     foreach (var service in negotiateServices)
     {
         services.Remove(service);
-        Log.Warning("已成功攔截並自 DI 容器中剔除潛在衝突之 Negotiate 服務: {ServiceType}", service.ServiceType.FullName);
     }
 }

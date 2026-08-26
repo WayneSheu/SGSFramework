@@ -26,6 +26,7 @@
     <Project Path="Modules/ORG/Module.ORG.Application/SGS.Modules.ORG.Application.csproj" />
     <Project Path="Modules/ORG/Module.ORG.Infrastructure/SGS.Modules.ORG.Infrastructure.csproj" />
     <Project Path="Modules/ORG/Module.ORG/SGS.Modules.ORG.csproj" />
+    <Project Path="SGS.Modules.ORG.Contracts/SGS.Modules.ORG.Contracts.csproj" Id="cd6b1c20-9e54-4299-aafb-b905813a2788" />
   </Folder>
   <Folder Name="/Shared/">
     <Project Path="Shared/SGSFramework.Core/SGSFramework.Core.csproj" />

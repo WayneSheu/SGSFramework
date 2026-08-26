@@ -40,6 +40,15 @@ public sealed class NullOrganizationIntegrationService : IOrganizationIntegratio
         return Task.FromResult(new List<OrganizationInfoContract>());
     }
 
+    /// <summary>
+    /// 獲取全系統所有未刪除且有效的區域實驗室/組織 (Null Object Fallback 實作)
+    /// </summary>
+    public Task<List<OrganizationInfoContract>> GetAllActiveOrganizationsAsync(CancellationToken cancellationToken = default)
+    {
+        LogWarning(nameof(GetAllActiveOrganizationsAsync));
+        return Task.FromResult(new List<OrganizationInfoContract>());
+    }
+
     public Task<UserPermissionProfileDto?> GetUserLabProfileAsync(
         string userId,
         Guid targetLabId,

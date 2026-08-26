@@ -16,6 +16,8 @@
 	
   <ItemGroup>
 
+    <ProjectReference Include="..\..\..\SGS.Modules.ORG.Contracts\SGS.Modules.ORG.Contracts.csproj" />
+
     <ProjectReference Include="..\Module.ORG.Infrastructure\SGS.Modules.ORG.Infrastructure.csproj" />
   </ItemGroup>
 

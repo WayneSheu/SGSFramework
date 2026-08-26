@@ -12,9 +12,6 @@ using ConfigurationSection = Microsoft.Web.Administration.ConfigurationSection;
 namespace SGSFramework.ApiInfrastructure.Services
 {
     /// <summary>
-    /// IIS 應用程式集區環境變數自動化設定服務（需具備 Windows 管理員權限）
-    /// </summary>
-    /// <summary>
     /// IIS 應用程式集區環境變數與生產級效能參數自動化設定服務（需具備 Windows 管理員權限）
     /// </summary>
     public class IisEnvironmentConfigurator

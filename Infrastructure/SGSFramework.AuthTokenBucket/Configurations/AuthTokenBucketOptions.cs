@@ -21,7 +21,11 @@ namespace SGSFramework.AuthTokenBucket.Configurations
         /// </summary>
         public int RefreshTokenGracePeriodSeconds { get; set; } = 8;
         public int MaxDeviceCount { get; set; } = 6; // 多裝置主動控管上限
-
+        
+        /// <summary>
+        /// JWT 時間校驗偏移容忍值（秒），預設為 0 秒以進行嚴格驗證
+        /// </summary>
+        public int ClockSkewSeconds { get; set; } = 0;
 
     }
 }

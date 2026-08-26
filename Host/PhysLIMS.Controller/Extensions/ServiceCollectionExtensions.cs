@@ -1,6 +1,9 @@
 ﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using SGSFramework.ApiInfrastructure.Filters;
+using SGSFramework.AuthTokenBucket.Abstractions;
+using SGSFramework.AuthTokenBucket.Services;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Controllers.Providers;
 using SGSFramework.ModulePlugin.Systems.Controller.Repositories;
@@ -26,6 +29,15 @@ public static class ServiceCollectionExtensions
             {
                 manager.FeatureProviders.Add(new InternalControllerFeatureProvider());
             });
+
+        // 註冊 Core 權限授權驗證服務 (DI)
+        services.AddScoped<IPermissionAuthorizationService, PermissionAuthorizationService>();
+
+        // 註冊 MVC 全域 Authorization Filter
+        services.AddControllers(options =>
+        {
+            options.Filters.Add<PermissionAuthorizationFilter>();
+        });
 
         return services;
     }

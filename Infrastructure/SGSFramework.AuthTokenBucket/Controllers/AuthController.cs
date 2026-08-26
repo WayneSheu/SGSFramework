@@ -1,16 +1,11 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Security.Claims;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authentication;
+﻿using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SGS.Modules.ORG.Contracts.Queries;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.Configurations;
 using SGSFramework.AuthTokenBucket.DTOs;
@@ -23,6 +18,7 @@ using SGSFramework.Core.Abstractions.Menus;
 using SGSFramework.Core.Controllers.Base;
 using SGSFramework.Core.DTOs;
 using SGSFramework.Core.HttpAuditProviders;
+using System.Security.Claims;
 
 namespace SGSFramework.AuthTokenBucket.Controllers.v1;
 
@@ -44,7 +40,8 @@ public sealed class AuthController(
     IAuditProvider auditProvider,
     ISecurityLogger securityLogger,
     IDynamicMenuService menuService,
-    IUserRuntimeScopeService runtimeScopeService) : ApiControllerBase
+    IUserRuntimeScopeService runtimeScopeService,
+    ISender mediator) : ApiControllerBase
 {
     private readonly UserManager<ApplicationUser> _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
     private readonly TokenManager _tokenManager = tokenManager ?? throw new ArgumentNullException(nameof(tokenManager));
@@ -57,6 +54,7 @@ public sealed class AuthController(
     private readonly ISecurityLogger _securityLogger = securityLogger ?? throw new ArgumentNullException(nameof(securityLogger));
     private readonly IDynamicMenuService _menuService = menuService ?? throw new ArgumentNullException(nameof(menuService));
     private readonly IUserRuntimeScopeService _runtimeScopeService = runtimeScopeService ?? throw new ArgumentNullException(nameof(runtimeScopeService));
+    private readonly ISender _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
 
     /// <summary>
     /// 標準帳密登入
@@ -119,7 +117,6 @@ public sealed class AuthController(
                     clientIp
                 );
 
-
                 return StatusCode(StatusCodes.Status423Locked, new ProblemDetails
                 {
                     Status = StatusCodes.Status423Locked,
@@ -129,11 +126,10 @@ public sealed class AuthController(
                 });
             }
 
-            // 4. 檢查密碼與登入嘗試紀錄 (lockoutOnFailure: true 可自動計數並觸發鎖定)
+            // 4. 檢查密碼與登入嘗試紀錄
             bool isPasswordValid = await _userManager.CheckPasswordAsync(user, request.Password);
             if (!isPasswordValid)
             {
-                // 累計失敗次數 (若達到設定上限，UserManager 會自動執行 Lockout)
                 await _userManager.AccessFailedAsync(user);
                 LogLoginFailure(request.Email, clientIp, "密碼比對失敗");
 
@@ -143,16 +139,35 @@ public sealed class AuthController(
             // 5. 重置失敗計數器 (密碼正確)
             await _userManager.ResetAccessFailedCountAsync(user);
 
-            // 6. 簽發 Token
+            // 6. 透過 MediatR 遠端解耦呼叫 ORG 模組取得可存取實驗室清單 (自動支援 Sysadmin 全域存取)
+            var accessibleLabsResult = await _mediator.Send(new GetAccessibleLaboratoriesQuery(user.Id.ToString()), cancellationToken);
+            var accessibleLabs = accessibleLabsResult.IsSuccess ? accessibleLabsResult.Value : [];
+
+            // 7. 驗證並解析請求端指定的實驗室上下文
+            Guid targetLabGuid = Guid.Empty;
+            if (!string.IsNullOrWhiteSpace(requestedLabId) && Guid.TryParse(requestedLabId, out Guid parsedLabId))
+            {
+                if (accessibleLabs.Any(l => l.LabId == parsedLabId))
+                {
+                    targetLabGuid = parsedLabId;
+                }
+            }
+
+            if (targetLabGuid == Guid.Empty && accessibleLabs.Any())
+            {
+                targetLabGuid = accessibleLabs.First().LabId;
+            }
+
+            // 8. 簽發 Token
             var tokenResult = await _tokenEngine.IssueInitialSessionAsync(user, deviceId, deviceName, clientIp);
 
-            // 7. 初始化 Runtime Scope 與選單資料
+            // 9. 初始化 Runtime Scope 與選單資料
             var runtimeProfile = await _runtimeScopeService.InitializeUserScopeAsync(
                 user.Id.ToString(),
-                requestedLabId,
+                targetLabGuid == Guid.Empty ? null : targetLabGuid.ToString(),
                 cancellationToken);
 
-            // 8. 紀錄成功的 Security/Audit 日誌
+            // 10. 紀錄成功的 Security/Audit 日誌
             _securityLogger.LogSecurity(
                 eventCode: "SEC-200-LOGIN-SUCCESS",
                 eventCategory: "Auth.Login",
@@ -169,8 +184,8 @@ public sealed class AuthController(
                 TokenData = tokenResult,
                 Menus = runtimeProfile.Menus,
                 DeviceId = deviceId,
-                LabId = runtimeProfile.LabId.ToString(),
-                AccessibleLabs = runtimeProfile.AccessibleLabs,
+                LabId = targetLabGuid.ToString(),
+                AccessibleLabs = accessibleLabs,
                 Message = "登入成功"
             });
         }
@@ -178,7 +193,6 @@ public sealed class AuthController(
         {
             _logger.LogError(ex, "標準帳密登入端點發生未預期核心異常。帳號: {TargetUser}, IP: {ClientIp}", request.Email, clientIp);
 
-            // 資安最佳實務：對外不洩漏具體的 Exception Message 內容
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
                 Status = StatusCodes.Status500InternalServerError,
@@ -223,7 +237,7 @@ public sealed class AuthController(
     /// </summary>
     [HttpGet("adlogin")]
     [Authorize(AuthenticationSchemes = "Windows")]
-    [Function("WindowsLogin", "AD單一登入", Icon = "fa-solid fa-windows", Order = 2, Description = "內部網路 Windows 網域無感單一登入端點（全面整合 TokenManager 與大容量 Bitmask）")]
+    [Function("WindowsLogin", "AD單一登入", Icon = "fa-solid fa-windows", Order = 2, Description = "內部網路 Windows 網域無感單一登入端點")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -312,11 +326,8 @@ public sealed class AuthController(
     /// <summary>
     /// 雙向權限票據高併發輪轉刷新
     /// </summary>
-    /// <param name="request">刷新 Token 請求內容</param>
-    /// <param name="cancellationToken">異步取消權牌</param>
-    /// <returns>更新後之 Token 數據集</returns>
     [HttpPost("refresh")]
-    [Function("RefreshToken", "刷新Token", Icon = "fa-solid fa-arrows-rotate", Order = 3, Description = "雙向權限票據高併發輪轉刷新端點，對齊更新後的 TokenBucketEngine 參數規範")]
+    [Function("RefreshToken", "刷新Token", Icon = "fa-solid fa-arrows-rotate", Order = 3, Description = "雙向權限票據高併發輪轉刷新端點")]
     [ProducesResponseType(typeof(TokenResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -415,11 +426,8 @@ public sealed class AuthController(
     /// <summary>
     /// 獲取線上即時活動用戶數觀測
     /// </summary>
-    /// <param name="query">線上人數查詢過濾參數</param>
-    /// <param name="cancellationToken">異步取消權牌</param>
-    /// <returns>線上即時活動用戶統計資料</returns>
     [HttpGet("online-count")]
-    [Function("GetOnlineUserCount", "線上人數統計", Icon = "fa-solid fa-users", Order = 4, Description = "獲取線上即時活動用戶數觀測端點，支援自訂觀測時間視窗")]
+    [Function("GetOnlineUserCount", "線上人數統計", Icon = "fa-solid fa-users", Order = 4, Description = "獲取線上即時活動用戶數觀測端點")]
     [ProducesResponseType(typeof(OnlineUserCountResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
@@ -478,11 +486,8 @@ public sealed class AuthController(
     /// <summary>
     /// 切換作用中的實驗室上下文 (無感切換)
     /// </summary>
-    /// <param name="request">目標實驗室切換請求</param>
-    /// <param name="cancellationToken">異步取消權牌</param>
-    /// <returns>切換後的新權限配置與選單結構</returns>
     [HttpPost("switch-context")]
-    [Function("SwitchContext", "切換實驗室", Icon = "fa-solid fa-right-left", Order = 5, Description = "高階主管切換作用中的實驗室上下文，支援無感切換")]
+    [Function("SwitchContext", "切換實驗室", Icon = "fa-solid fa-right-left", Order = 5, Description = "高階主管切換作用中的實驗室上下文")]
     [ProducesResponseType(typeof(UserPermissionProfileDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
@@ -536,7 +541,7 @@ public sealed class AuthController(
     }
 
     /// <summary>
-    /// 單一裝置登出（依據當前請求帶入的 DeviceId 與使用者身分）
+    /// 單一裝置登出
     /// </summary>
     [HttpPost("logout")]
     [Authorize]
@@ -574,7 +579,7 @@ public sealed class AuthController(
     }
 
     /// <summary>
-    /// 所有裝置登出（強制終止該使用者所有登入中的裝置工作階段）
+    /// 所有裝置登出
     /// </summary>
     [HttpPost("logout-all")]
     [Authorize]

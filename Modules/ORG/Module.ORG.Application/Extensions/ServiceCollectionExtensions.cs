@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SGS.Modules.ORG.Application.Abstractions;
 using SGS.Modules.ORG.Application.Services;
+using SGS.Modules.ORG.Infrastructure.Services;
 using SGSFramework.Core.Abstractions.Adapters;
 
 namespace SGS.Modules.ORG.Application.Extensions;

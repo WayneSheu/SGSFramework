@@ -21,6 +21,7 @@
 		<Exec Command="dotnet nuget push &quot;$(ProjectDir)bin\$(Configuration)\*.nupkg&quot; --source http://localhost:5000/v3/index.json --api-key TeamSecret2026_InitialAccess! --allow-insecure-connections --skip-duplicate" />
 	</Target>
 	<ItemGroup>
+		<!-- 關鍵設定：引入 ASP.NET Core 共享框架，無須獨立安裝 JwtBearer NuGet 套件 -->
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
 	</ItemGroup>
 	
@@ -32,13 +33,16 @@
     </Content>
   </ItemGroup>
 
+	
   <ItemGroup>
+	  <!-- 引入 JwtBearer 核心套件 -->
+	 <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.2" />
     <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.19.1" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.19.1" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\SGS.Modules.ORG.Contracts\SGS.Modules.ORG.Contracts.csproj" />
     <ProjectReference Include="..\..\Shared\SGSFramework.Core\SGSFramework.Core.csproj" />
   </ItemGroup>
-
 </Project>

@@ -49,4 +49,11 @@ public interface IOrganizationIntegrationService
         string userId,
         Guid targetLabId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 獲取全系統所有未刪除且有效的區域實驗室/組織 (專供系統管理員特權開路呼叫)
+    /// </summary>
+    Task<List<OrganizationInfoContract>> GetAllActiveOrganizationsAsync(
+        CancellationToken cancellationToken = default);
+
 }
