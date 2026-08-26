@@ -189,16 +189,26 @@ public sealed class AuthController(
                 Message = "登入成功"
             });
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning(ex, "[Login-Forbidden] 登入阻斷：用戶身分驗證成功，但缺乏實驗室權限。RequestedLabId: {LabId}", request.RequestedLabId);
+
+            // 回傳 HTTP 403 暨業務警告代碼，避免前端收到 500 Internal Server Error
+            return StatusCode(StatusCodes.Status403Forbidden, new
+            {
+                success = false,
+                errorCode = "AUTH_NO_LAB_PERMISSION",
+                message = ex.Message
+            });
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "標準帳密登入端點發生未預期核心異常。帳號: {TargetUser}, IP: {ClientIp}", request.Email, clientIp);
-
-            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            _logger.LogError(ex, "登入處理時發生非預期系統例外。");
+            return StatusCode(StatusCodes.Status500InternalServerError, new
             {
-                Status = StatusCodes.Status500InternalServerError,
-                Title = "伺服器內部錯誤",
-                Detail = "系統執行身份驗證時發生未預期錯誤，請聯絡系統管理員。",
-                Instance = HttpContext.Request.Path
+                success = false,
+                errorCode = "SYS_INTERNAL_ERROR",
+                message = "系統發生非預期錯誤，請聯繫系統管理員。"
             });
         }
     }

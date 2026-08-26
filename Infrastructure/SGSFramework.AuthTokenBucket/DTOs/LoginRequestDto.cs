@@ -11,5 +11,6 @@ namespace SGSFramework.AuthTokenBucket.DTOs
     {
         public string Email { get; init; } = string.Empty;
         public string Password { get; init; } = string.Empty;
+        public string? RequestedLabId {  get; init; } = string.Empty;
     }
 }
