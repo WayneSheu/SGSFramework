@@ -75,8 +75,7 @@ public sealed class AuthController(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // 1. DTO 驗證檢查
-        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
+        if (string.IsNullOrWhiteSpace(request.NameOrEmail) || string.IsNullOrWhiteSpace(request.Password))
         {
             return BadRequest(new ProblemDetails
             {
@@ -90,93 +89,48 @@ public sealed class AuthController(
         string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
         string deviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "UNKNOWN-DEVICE";
         string deviceName = Request.Headers["User-Agent"].FirstOrDefault() ?? "Generic Browser";
-        string? requestedLabId = Request.Headers["X-Lab-Id"].FirstOrDefault();
+
+        // 優先從 Body 取得 requestedLabId，若無則降級讀取 Header
+        string? targetRequestedLabId = !string.IsNullOrWhiteSpace(request.RequestedLabId)
+            ? request.RequestedLabId
+            : Request.Headers["X-Lab-Id"].FirstOrDefault();
 
         try
         {
-            // 2. 查詢使用者 (支援帳號或 Email)
-            var user = await _userManager.FindByNameAsync(request.Email)
-                       ?? await _userManager.FindByEmailAsync(request.Email);
+            // 1. 身分與密碼驗證
+            var user = await _userManager.FindByNameAsync(request.NameOrEmail)
+                       ?? await _userManager.FindByEmailAsync(request.NameOrEmail);
 
-            if (user == null)
+            if (user is null || !await _userManager.CheckPasswordAsync(user, request.Password))
             {
-                LogLoginFailure(request.Email, clientIp, "使用者不存在");
+                if (user is not null) await _userManager.AccessFailedAsync(user);
                 return BuildUnauthorizedResult("帳號或密碼錯誤。");
             }
 
-            // 3. 檢查帳號狀態：是否鎖定 (Lockout)
-            if (await _userManager.IsLockedOutAsync(user))
-            {
-                _securityLogger.LogSecurity(
-                    eventCode: "SEC-423-LOCKED",
-                    eventCategory: "Auth.Login",
-                    userId: user.Id.ToString(),
-                    clientIp: clientIp,
-                    messageTemplate: "帳號已被暫時鎖定。帳號: {Email}, 來源IP: {ClientIp}",
-                    user.Email ?? request.Email,
-                    clientIp
-                );
-
-                return StatusCode(StatusCodes.Status423Locked, new ProblemDetails
-                {
-                    Status = StatusCodes.Status423Locked,
-                    Title = "帳號已被鎖定",
-                    Detail = "由於連續嘗試失敗次數過多，帳號已被暫時鎖定，請稍後再試。",
-                    Instance = HttpContext.Request.Path
-                });
-            }
-
-            // 4. 檢查密碼與登入嘗試紀錄
-            bool isPasswordValid = await _userManager.CheckPasswordAsync(user, request.Password);
-            if (!isPasswordValid)
-            {
-                await _userManager.AccessFailedAsync(user);
-                LogLoginFailure(request.Email, clientIp, "密碼比對失敗");
-
-                return BuildUnauthorizedResult("帳號或密碼錯誤。");
-            }
-
-            // 5. 重置失敗計數器 (密碼正確)
             await _userManager.ResetAccessFailedCountAsync(user);
 
-            // 6. 透過 MediatR 遠端解耦呼叫 ORG 模組取得可存取實驗室清單 (自動支援 Sysadmin 全域存取)
-            var accessibleLabsResult = await _mediator.Send(new GetAccessibleLaboratoriesQuery(user.Id.ToString()), cancellationToken);
-            var accessibleLabs = accessibleLabsResult.IsSuccess ? accessibleLabsResult.Value : [];
-
-            // 7. 驗證並解析請求端指定的實驗室上下文
-            Guid targetLabGuid = Guid.Empty;
-            if (!string.IsNullOrWhiteSpace(requestedLabId) && Guid.TryParse(requestedLabId, out Guid parsedLabId))
-            {
-                if (accessibleLabs.Any(l => l.LabId == parsedLabId))
-                {
-                    targetLabGuid = parsedLabId;
-                }
-            }
-
-            if (targetLabGuid == Guid.Empty && accessibleLabs.Any())
-            {
-                targetLabGuid = accessibleLabs.First().LabId;
-            }
-
-            // 8. 簽發 Token
-            var tokenResult = await _tokenEngine.IssueInitialSessionAsync(user, deviceId, deviceName, clientIp);
-
-            // 9. 初始化 Runtime Scope 與選單資料
+            // 2. 透過 Service 統一進行 3-Tier 實驗室上下文初始化 (Requested -> Primary -> Active First)
             var runtimeProfile = await _runtimeScopeService.InitializeUserScopeAsync(
                 user.Id.ToString(),
-                targetLabGuid == Guid.Empty ? null : targetLabGuid.ToString(),
+                targetRequestedLabId,
                 cancellationToken);
 
-            // 10. 紀錄成功的 Security/Audit 日誌
+            // 3. 取得可存取實驗室清單 (供前端 Select 切換選單使用)
+            var accessibleLabsResult = await _mediator.Send(new GetAccessibleLaboratoriesQuery(user.Id.ToString()), cancellationToken);
+            var accessibleLabs = accessibleLabsResult.IsSuccess ? accessibleLabsResult.Value : new List<AccessibleLabDto>();
+
+            // 4. 簽發 Token
+            var tokenResult = await _tokenEngine.IssueInitialSessionAsync(user, deviceId, deviceName, clientIp);
+
+            // 5. 紀錄 Security Log
             _securityLogger.LogSecurity(
                 eventCode: "SEC-200-LOGIN-SUCCESS",
                 eventCategory: "Auth.Login",
                 userId: user.Id.ToString(),
                 clientIp: clientIp,
-                messageTemplate: "使用者登入成功。帳號: {Email}, 裝置ID: {DeviceId}, 來源IP: {ClientIp}",
+                messageTemplate: "使用者登入成功。帳號: {Email}, 鎖定實驗室: {LabId}",
                 user.Email ?? string.Empty,
-                deviceId,
-                clientIp
+                runtimeProfile.LabId
             );
 
             return Ok(new LoginResponseDto
@@ -184,16 +138,14 @@ public sealed class AuthController(
                 TokenData = tokenResult,
                 Menus = runtimeProfile.Menus,
                 DeviceId = deviceId,
-                LabId = targetLabGuid.ToString(),
+                LabId = runtimeProfile.LabId.ToString(), // 回傳確定鎖定的 Target LabId
                 AccessibleLabs = accessibleLabs,
                 Message = "登入成功"
             });
         }
         catch (UnauthorizedAccessException ex)
         {
-            _logger.LogWarning(ex, "[Login-Forbidden] 登入阻斷：用戶身分驗證成功，但缺乏實驗室權限。RequestedLabId: {LabId}", request.RequestedLabId);
-
-            // 回傳 HTTP 403 暨業務警告代碼，避免前端收到 500 Internal Server Error
+            _logger.LogWarning(ex, "[Login-Forbidden] 登入阻斷：無實驗室存取權限。RequestedLabId: {LabId}", targetRequestedLabId);
             return StatusCode(StatusCodes.Status403Forbidden, new
             {
                 success = false,
@@ -203,7 +155,7 @@ public sealed class AuthController(
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "登入處理時發生非預期系統例外。");
+            _logger.LogError(ex, "登入處理時發生系統例外。");
             return StatusCode(StatusCodes.Status500InternalServerError, new
             {
                 success = false,
@@ -211,22 +163,6 @@ public sealed class AuthController(
                 message = "系統發生非預期錯誤，請聯繫系統管理員。"
             });
         }
-    }
-
-    #region Private Helper Methods
-
-    private void LogLoginFailure(string targetUser, string clientIp, string reason)
-    {
-        _securityLogger.LogSecurity(
-            eventCode: "SEC-401-UNAUTHORIZED",
-            eventCategory: "Auth.Login",
-            userId: targetUser,
-            clientIp: clientIp,
-            messageTemplate: "登入失敗 ({Reason})。帳號: {TargetUser}, 來源IP: {ClientIp}",
-            reason,
-            targetUser,
-            clientIp
-        );
     }
 
     private UnauthorizedObjectResult BuildUnauthorizedResult(string detailMessage)
@@ -240,7 +176,6 @@ public sealed class AuthController(
         });
     }
 
-    #endregion
 
     /// <summary>
     /// 地端 Windows 網域單一登入

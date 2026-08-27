@@ -16,7 +16,12 @@ namespace SGSFramework.Core.DTOs
         public Guid LabId { get; set; }
 
         /// <summary>
-        /// 實驗室/組織節點名稱 (例如: "台北食品實驗室", "台中檢驗組")
+        /// 實驗室/組織節點代碼
+        /// </summary>
+        public string LabCode { get; set; } = string.Empty;
+
+        /// <summary>
+        /// 實驗室/組織節點名稱 
         /// </summary>
         public string LabName { get; set; } = string.Empty;
 

@@ -30,6 +30,8 @@ namespace SGS.Modules.ORG.Infrastructure.Entities.Org
         public string NodePath { get; set; } = string.Empty;
         public int Level { get; private set; }
 
+        public bool IsActive { get; private set; } = true;
+
         /// <summary>
         /// 計算生效的 TenantLabId (如非 Level 2，則向父節點遞迴繼承)
         /// </summary>
@@ -115,6 +117,24 @@ namespace SGS.Modules.ORG.Infrastructure.Entities.Org
             Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
             Location = string.IsNullOrWhiteSpace(location) ? null : location.Trim();
         }
+
+        // 業務行為：停用組織
+        public void Deactivate(string reason)
+        {
+            if (!IsActive) return;
+
+            IsActive = false;
+            // 可加載 Domain Event，如：UnregisterActiveUserSessionsEvent
+        }
+
+        // 業務行為：重新啟用組織
+        public void Activate()
+        {
+            if (IsDeleted)
+                throw new InvalidOperationException("無法啟用已刪除的組織。");
+
+            IsActive = true;
+        }
     }
 
     public class OrganizationConfiguration : IEntityTypeConfiguration<Organization>
@@ -136,6 +156,10 @@ namespace SGS.Modules.ORG.Infrastructure.Entities.Org
             builder.Property(x => x.Name).IsRequired().HasMaxLength(50);
             builder.Property(x => x.Code).HasMaxLength(20);
             builder.Property(x => x.Description).HasMaxLength(200);
+            // 強制設定非空與預設值
+            builder.Property(x => x.IsActive)
+                   .IsRequired()
+                   .HasDefaultValue(true);
 
             builder.Property(x => x.Level)
                    .IsRequired()

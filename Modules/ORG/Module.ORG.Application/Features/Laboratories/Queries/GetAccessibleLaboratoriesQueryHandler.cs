@@ -64,19 +64,20 @@ public class GetAccessibleLaboratoriesQueryHandler : IRequestHandler<GetAccessib
             {
                 _logger.LogInformation("使用者 {UserId} ({Email}) 為系統管理員，啟動全域實驗室特權載入機制。", request.UserId, user.Email);
 
-                // 【核心修正】先執行 ToListAsync 將實體拉回記憶體，避開 EF Core 無法轉譯 (lab, index) 的限制
+                // 先執行 ToListAsync 將實體拉回記憶體，避開 EF Core 無法轉譯 (lab, index) 的限制
                 var rawLabs = await _orgDbContext.Organizations
                     .AsNoTracking()
-                    .Where(x => !x.IsDeleted && x.TenantLabId.HasValue)
+                    .Where(x => !x.IsDeleted && x.IsActive && x.TenantLabId.HasValue)
                     .ToListAsync(cancellationToken);
 
                 // 於記憶體（Client-side）進行帶 index 的 DTO 轉換
                 var allLabs = rawLabs.Select((lab, index) => new AccessibleLabDto
                 {
                     LabId = lab.TenantLabId!.Value,
-                    //LabCode = lab.Code ?? string.Empty,
+                    LabCode = lab.Code ?? string.Empty,
                     LabName = lab.Name ?? "系統實驗室",
                     Path = lab.NodePath,
+                    HierarchyLevel=lab.Level,
                     IsPrimary = index == 0
                 }).ToList();
 
@@ -86,7 +87,7 @@ public class GetAccessibleLaboratoriesQueryHandler : IRequestHandler<GetAccessib
                     allLabs.Add(new AccessibleLabDto
                     {
                         LabId = Guid.Empty,
-                        //LabCode = "GLOBAL",
+                        LabCode = "GLOBAL",
                         LabName = "全域管理員預設實驗室",
                         IsPrimary = true
                     });
@@ -113,6 +114,7 @@ public class GetAccessibleLaboratoriesQueryHandler : IRequestHandler<GetAccessib
                 .AsNoTracking()
                 .Where(x => x.TenantLabId.HasValue
                          && labGuids.Contains(x.TenantLabId.Value)
+                         && x.IsActive
                          && !x.IsDeleted)
                 .ToListAsync(cancellationToken);
 
@@ -123,9 +125,10 @@ public class GetAccessibleLaboratoriesQueryHandler : IRequestHandler<GetAccessib
             var result = labs.Select(lab => new AccessibleLabDto
             {
                 LabId = lab.TenantLabId!.Value,
-                //LabCode = lab.Code ?? string.Empty,
+                LabCode = lab.Code ?? string.Empty,
                 LabName = lab.Name ?? "未知實驗室",
                 Path = lab.NodePath,
+                HierarchyLevel=lab.Level,
                 IsPrimary = mappingDict.TryGetValue(lab.TenantLabId.Value, out var m) && m.IsPrimary
             }).ToList();
 

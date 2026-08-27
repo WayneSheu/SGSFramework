@@ -50,6 +50,9 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
         _menuService = menuService ?? throw new ArgumentNullException(nameof(menuService));
     }
 
+    /// <summary>
+    /// 初始化使用者執行期實驗室作用域（包含 Primary 與 Active 判定優化）
+    /// </summary>
     public async Task<UserPermissionProfileDto> InitializeUserScopeAsync(
         string userId,
         string? requestedLabId,
@@ -57,18 +60,39 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
     {
         ArgumentException.ThrowIfNullOrEmpty(userId);
 
+        // 1. 取得使用者權限內且啟用的實驗室清單 (IOrganizationIntegrationService 必須確保僅回傳 IsActive = true)
         var accessibleLabs = await GetAccessibleLabsAsync(userId, cancellationToken);
 
-        var targetLab = accessibleLabs.FirstOrDefault(l => l.LabId.ToString().Equals(requestedLabId, StringComparison.OrdinalIgnoreCase))
-                     ?? accessibleLabs.FirstOrDefault();
-
-        if (targetLab == null)
+        if (accessibleLabs == null || !accessibleLabs.Any())
         {
-            // 將 LogError 降級為 LogWarning，記錄為業務阻斷事件而非系統崩潰
-            _logger.LogWarning("[Auth-Scope-Denied] 使用者未授權存取任何實驗室，且全域開路降級亦未找到可用節點。UserId: {UserId}, RequestedLabId: {LabId}", userId, requestedLabId);
+            _logger.LogWarning("[Auth-Scope-Denied] 使用者未授權存取任何啟用的實驗室。UserId: {UserId}, RequestedLabId: {LabId}", userId, requestedLabId);
             throw new UnauthorizedAccessException("無權存取任何實驗室。");
         }
 
+        // 2. 實驗室解析決策矩陣 (Requested -> Primary -> FirstAvailable)
+        AccessibleLabDto? targetLab = null;
+
+        if (!string.IsNullOrWhiteSpace(requestedLabId))
+        {
+            targetLab = accessibleLabs.FirstOrDefault(l => l.LabId.ToString().Equals(requestedLabId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // 若未指定或指定的 LabId 無效/無存取權，優先取 IsPrimary = true 的主要實驗室
+        targetLab ??= accessibleLabs.FirstOrDefault(l => l.IsPrimary);
+
+        // 若無設定 Primary，則降級取第一個可用的啟用實驗室
+        targetLab ??= accessibleLabs.FirstOrDefault();
+
+        if (targetLab == null)
+        {
+            _logger.LogWarning("[Auth-Scope-Denied] 無法解析有效的預設實驗室節點。UserId: {UserId}", userId);
+            throw new UnauthorizedAccessException("無權存取任何實驗室。");
+        }
+
+        _logger.LogInformation("[Auth-Scope-Resolved] 已成功鎖定執行期實驗室上下文。UserId: {UserId}, TargetLabId: {LabId}, IsPrimary: {IsPrimary}",
+            userId, targetLab.LabId, targetLab.IsPrimary);
+
+        // 3. 載入權限與動態選單
         var permissions = await GetUserPermissionsAsync(userId, targetLab.LabId, cancellationToken);
         var menuTree = await _menuService.GetUserMenuAsync(permissions);
 
@@ -274,7 +298,7 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
                     LabName = lab.Name,
                     Path = lab.NodePathString,
                     HierarchyLevel = lab.HierarchyLevel,
-                    IsPrimary = index == 0
+                    IsPrimary = index == 0// 管理員預設以第一個 Active 節點為主
                 }).ToList();
 
                 // 2. 備援防護
@@ -286,7 +310,7 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
                 return allAdminLabs;
             }
 
-            // 3. 一般使用者流程
+            // 一般使用者：從可存取的組織對映中提取，保留 Mapping 表的 IsPrimary 屬性
             var orgs = await _orgIntegrationService.GetUserAccessibleOrganizationsAsync(userId, cancellationToken);
 
             return orgs.Select(x => new AccessibleLabDto
@@ -294,7 +318,8 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
                 LabId = x.Id,
                 LabName = x.Name,
                 Path = x.NodePathString,
-                HierarchyLevel = x.HierarchyLevel
+                HierarchyLevel = x.HierarchyLevel,
+                IsPrimary=x.IsPrimary
             }).ToList();
         }
         catch (Exception ex)

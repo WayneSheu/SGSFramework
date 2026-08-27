@@ -4,17 +4,17 @@ namespace SGSFramework.Core.Abstractions.Adapters;
 
 
 /// <summary>
-/// 跨模組組織節點資訊契約 DTO
+/// 跨模組傳遞之組織/實驗室資料契約 (包含主實驗室標籤與啟用狀態)
 /// </summary>
-/// <param name="Id"></param>
-/// <param name="Name"></param>
-/// <param name="NodePathString"></param>
-/// <param name="HierarchyLevel"></param>
-public record OrganizationInfoContract(Guid Id, string Name, string NodePathString, int HierarchyLevel);
+public record OrganizationInfoContract(
+    Guid Id,
+    string Name,
+    string NodePathString,
+    int HierarchyLevel,
+    bool IsPrimary = false,
+    bool IsActive = true
+);
 
-/// <summary>
-/// 跨模組組織資料整合服務介面 (防腐層適配器 Adapter)
-/// </summary>
 /// <summary>
 /// 跨模組組織資料整合服務介面 (防腐層適配器 Adapter)
 /// </summary>
