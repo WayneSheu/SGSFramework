@@ -1,7 +1,8 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using SGSFramework.Core.Abstractions.Alerts;
+using SGSFramework.Alert.Abstractions;
+using SGSFramework.Core.Alerts;
 using SGSFramework.ModulePlugin.Abstractions;
 
 namespace SGSFramework.ModulePlugin.Systems.Module.Services;

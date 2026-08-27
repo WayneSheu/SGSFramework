@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Abstractions;
+using SGSFramework.AuthTokenBucket.DTOs;
 using SGSFramework.Core.Abstractions.Adapters;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Abstractions.Entities.Identities;
@@ -23,6 +24,7 @@ using SGSFramework.Core.DTOs;
 
 /// <summary>
 /// 多租戶與動態實驗室（Lab/Department/Organization）架構下的核心執行期上下文服務。
+/// 提供 3-Tier 實驗室決策矩陣、無感切換與自我修復退路機制。
 /// </summary>
 public class UserRuntimeScopeService : IUserRuntimeScopeService
 {
@@ -32,7 +34,10 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IDynamicControllerRepository<ControllerMetadata> _controllerRepo;
     private readonly IDynamicMenuService _menuService;
+
     private static readonly TimeSpan CacheExpiration = TimeSpan.FromMinutes(15);
+    private const string SystemAdminRole = "sysadmin";
+    private const string SuperAdminRole = "SuperAdmin";
 
     public UserRuntimeScopeService(
         IOrganizationIntegrationService orgIntegrationService,
@@ -51,7 +56,7 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
     }
 
     /// <summary>
-    /// 初始化使用者執行期實驗室作用域（包含 Primary 與 Active 判定優化）
+    /// 初始化使用者執行期實驗室作用域 (3-Tier 決策機制: Requested -> Primary -> FirstAvailable)
     /// </summary>
     public async Task<UserPermissionProfileDto> InitializeUserScopeAsync(
         string userId,
@@ -60,39 +65,18 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
     {
         ArgumentException.ThrowIfNullOrEmpty(userId);
 
-        // 1. 取得使用者權限內且啟用的實驗室清單 (IOrganizationIntegrationService 必須確保僅回傳 IsActive = true)
         var accessibleLabs = await GetAccessibleLabsAsync(userId, cancellationToken);
-
         if (accessibleLabs == null || !accessibleLabs.Any())
         {
             _logger.LogWarning("[Auth-Scope-Denied] 使用者未授權存取任何啟用的實驗室。UserId: {UserId}, RequestedLabId: {LabId}", userId, requestedLabId);
-            throw new UnauthorizedAccessException("無權存取任何實驗室。");
+            throw new UnauthorizedAccessException("您未獲得任何實驗室的存取權限。");
         }
 
-        // 2. 實驗室解析決策矩陣 (Requested -> Primary -> FirstAvailable)
-        AccessibleLabDto? targetLab = null;
-
-        if (!string.IsNullOrWhiteSpace(requestedLabId))
-        {
-            targetLab = accessibleLabs.FirstOrDefault(l => l.LabId.ToString().Equals(requestedLabId, StringComparison.OrdinalIgnoreCase));
-        }
-
-        // 若未指定或指定的 LabId 無效/無存取權，優先取 IsPrimary = true 的主要實驗室
-        targetLab ??= accessibleLabs.FirstOrDefault(l => l.IsPrimary);
-
-        // 若無設定 Primary，則降級取第一個可用的啟用實驗室
-        targetLab ??= accessibleLabs.FirstOrDefault();
-
-        if (targetLab == null)
-        {
-            _logger.LogWarning("[Auth-Scope-Denied] 無法解析有效的預設實驗室節點。UserId: {UserId}", userId);
-            throw new UnauthorizedAccessException("無權存取任何實驗室。");
-        }
+        AccessibleLabDto targetLab = ResolveTargetLab(accessibleLabs, requestedLabId);
 
         _logger.LogInformation("[Auth-Scope-Resolved] 已成功鎖定執行期實驗室上下文。UserId: {UserId}, TargetLabId: {LabId}, IsPrimary: {IsPrimary}",
             userId, targetLab.LabId, targetLab.IsPrimary);
 
-        // 3. 載入權限與動態選單
         var permissions = await GetUserPermissionsAsync(userId, targetLab.LabId, cancellationToken);
         var menuTree = await _menuService.GetUserMenuAsync(permissions);
 
@@ -106,6 +90,95 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
         };
     }
 
+    /// <summary>
+    /// 切換作用中實驗室上下文 (具備自我修復退路與警告通知機制)
+    /// </summary>
+    public async Task<SwitchLabResultDto> SwitchLaboratoryWithFallbackAsync(
+        string userId,
+        Guid? targetLabId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(userId);
+
+        var accessibleLabs = await GetAccessibleLabsAsync(userId, cancellationToken);
+        if (accessibleLabs == null || !accessibleLabs.Any())
+        {
+            _logger.LogWarning("[ScopeSwitch-Denied] 使用者無可存取實驗室。UserId: {UserId}", userId);
+            throw new UnauthorizedAccessException("您未獲配任何實驗室存取權限，無法執行切換。");
+        }
+
+        bool isTargetValid = targetLabId.HasValue
+            && targetLabId.Value != Guid.Empty
+            && accessibleLabs.Any(l => l.LabId == targetLabId.Value);
+
+        Guid finalLabId;
+        bool isFallback = false;
+        string? warningMessage = null;
+
+        if (isTargetValid)
+        {
+            finalLabId = targetLabId!.Value;
+        }
+        else
+        {
+            // 自動退路機制：優先選擇 IsPrimary == true，次之選擇第一個可用實驗室
+            var primaryLab = accessibleLabs.FirstOrDefault(l => l.IsPrimary) ?? accessibleLabs.First();
+            finalLabId = primaryLab.LabId;
+            isFallback = true;
+
+            warningMessage = targetLabId.HasValue && targetLabId.Value != Guid.Empty
+                ? $"您無權存取指定的實驗室，系統已自動切換至主要實驗室：{primaryLab.LabName}。"
+                : $"未指定有效的實驗室，系統已自動切換至主要實驗室：{primaryLab.LabName}。";
+
+            _logger.LogWarning("[ScopeSwitch-Fallback] 使用者 {UserId} 請求無效或未授權之實驗室 {TargetLabId}，已自動降級切換至 {FinalLabId}",
+                userId, targetLabId, finalLabId);
+        }
+
+        var permissions = await GetCachedOrFetchPermissionsAsync(userId, finalLabId, cancellationToken);
+        var menuTree = await _menuService.GetUserMenuAsync(permissions);
+        var targetLabInfo = accessibleLabs.First(l => l.LabId == finalLabId);
+
+        var profile = new UserPermissionProfileDto
+        {
+            UserId = userId,
+            LabId = finalLabId,
+            LabName = targetLabInfo.LabName,
+            Permissions = permissions,
+            Menus = menuTree
+        };
+
+        return new SwitchLabResultDto
+        {
+            Profile = profile,
+            IsFallback = isFallback,
+            WarningMessage = warningMessage
+        };
+    }
+
+    /// <summary>
+    /// 舊有相容介面切換實作 (內部轉呼叫降級機制)
+    /// </summary>
+    public async Task<UserPermissionProfileDto?> SwitchLaboratoryAsync(
+        string userId,
+        Guid targetLabId,
+        CancellationToken cancellationToken = default)
+    {
+
+        try
+        {
+            var result = await SwitchLaboratoryWithFallbackAsync(userId, targetLabId, cancellationToken);
+            return result.Profile;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "切換實驗室上下文發生未預期異常。UserId: {UserId}, TargetLabId: {TargetLabId}", userId, targetLabId);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 獲取使用者在特定實驗室下的最終權限 Key 集合
+    /// </summary>
     public async Task<IEnumerable<string>> GetUserPermissionsAsync(
         string userId,
         Guid? activeLabId = null,
@@ -116,36 +189,34 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
         try
         {
             var user = await _userManager.FindByIdAsync(userId);
+            if (user == null) return Enumerable.Empty<string>();
+
             if (await IsSystemAdminAsync(user))
             {
                 var allMetas = await _controllerRepo.GetAllActiveAsync();
-
                 var allPermissions = allMetas
                     .Where(m => !string.IsNullOrEmpty(m.PermissionKey))
                     .Select(m => m.PermissionKey!)
                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-                allPermissions.Add("sysadmin");
-                allPermissions.Add("SuperAdmin");
-
+                allPermissions.Add(SystemAdminRole);
+                allPermissions.Add(SuperAdminRole);
                 return allPermissions;
             }
 
             if (!activeLabId.HasValue)
             {
                 var accessibleLabs = await GetAccessibleLabsAsync(userId, cancellationToken);
-                var defaultLab = accessibleLabs.FirstOrDefault();
-                if (defaultLab == null)
-                {
-                    return Enumerable.Empty<string>();
-                }
+                var defaultLab = accessibleLabs.FirstOrDefault(l => l.IsPrimary) ?? accessibleLabs.FirstOrDefault();
+                if (defaultLab == null) return Enumerable.Empty<string>();
+
                 activeLabId = defaultLab.LabId;
             }
 
-            var userPermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId.Value, cancellationToken);
+            var rawPermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId.Value, cancellationToken);
             var permissionKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var permString in userPermissions)
+            foreach (var permString in rawPermissions)
             {
                 var parts = permString.Split(':');
                 if (parts.Length >= 2 && long.TryParse(parts[1], out long mask))
@@ -169,11 +240,14 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "獲取使用者權限清單時發生異常。UserId: {UserId}", userId);
+            _logger.LogError(ex, "獲取使用者權限清單時發生異常。UserId: {UserId}, ActiveLabId: {LabId}", userId, activeLabId);
             return Enumerable.Empty<string>();
         }
     }
 
+    /// <summary>
+    /// 驗證使用者於特定實驗室下的特定模組與 Bitmask 權限點
+    /// </summary>
     public async Task<bool> ValidateRuntimePermissionAsync(
         string userId,
         Guid activeLabId,
@@ -186,93 +260,43 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
 
         if (bitPosition is < 0 or > 63)
         {
-            _logger.LogWarning("位元位置 {BitPosition} 超過 64 位元遮罩合法範圍 (0-63)", bitPosition);
+            _logger.LogWarning("權限 Bit 位元位置 {BitPosition} 超過 64 位元長整型邊界 (0-63)。", bitPosition);
             return false;
         }
 
         try
         {
             var user = await _userManager.FindByIdAsync(userId);
-            if (await IsSystemAdminAsync(user))
-            {
-                return true;
-            }
+            if (user == null) return false;
+
+            if (await IsSystemAdminAsync(user)) return true;
 
             bool isLabScopeValid = await _orgIntegrationService.IsInUserScopeAsync(userId, activeLabId, cancellationToken);
             if (!isLabScopeValid)
             {
-                _logger.LogWarning("使用者 {UserId} 嘗試存取越權實驗室 {LabId}", userId, activeLabId);
+                _logger.LogWarning("使用者 {UserId} 嘗試越權存取未授權實驗室 {LabId}", userId, activeLabId);
                 return false;
             }
 
             var userPermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId, cancellationToken);
-            var modulePermissionString = userPermissions.FirstOrDefault(p => p.StartsWith($"{module}:", StringComparison.OrdinalIgnoreCase));
+            var modulePerm = userPermissions.FirstOrDefault(p => p.StartsWith($"{module}:", StringComparison.OrdinalIgnoreCase));
 
-            if (string.IsNullOrEmpty(modulePermissionString))
-            {
-                return false;
-            }
+            if (string.IsNullOrEmpty(modulePerm)) return false;
 
-            var parts = modulePermissionString.Split(':');
-            if (parts.Length < 2 || !long.TryParse(parts[1], out long bitmask))
-            {
-                return false;
-            }
+            var parts = modulePerm.Split(':');
+            if (parts.Length < 2 || !long.TryParse(parts[1], out long bitmask)) return false;
 
-            long targetBit = 1L << bitPosition;
-            return (bitmask & targetBit) != 0;
+            return (bitmask & (1L << bitPosition)) != 0;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "驗證執行期權限發生異常. UserId: {UserId}, LabId: {LabId}, Module: {Module}", userId, activeLabId, module);
+            _logger.LogError(ex, "驗證執行期權限發生異常。UserId: {UserId}, LabId: {LabId}, Module: {Module}", userId, activeLabId, module);
             return false;
         }
     }
 
-    public async Task<UserPermissionProfileDto?> SwitchLaboratoryAsync(
-        string userId,
-        Guid targetLabId,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(userId);
-
-        try
-        {
-            var orgTask = _orgIntegrationService.GetOrganizationByIdAsync(targetLabId, cancellationToken);
-            var labsTask = GetAccessibleLabsAsync(userId, cancellationToken);
-
-            await Task.WhenAll(orgTask, labsTask);
-
-            var targetOrg = await orgTask;
-            if (targetOrg is null) return null;
-
-            if (!await IsAuthorizedToLabAsync(userId, targetLabId, cancellationToken))
-            {
-                _logger.LogWarning("使用者 {UserId} 嘗試存取未授權實驗室 {TargetLabId}", userId, targetLabId);
-                return null;
-            }
-
-            var permissions = await GetCachedOrFetchPermissionsAsync(userId, targetLabId, cancellationToken);
-            var menus = await _menuService.GetUserMenuAsync(permissions);
-
-            return new UserPermissionProfileDto
-            {
-                UserId = userId,
-                LabId = targetOrg.Id,
-                LabName = targetOrg.Name,
-                Permissions = permissions,
-                Menus = menus
-            };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "切換實驗室上下文失敗。UserId: {UserId}, TargetLabId: {TargetLabId}", userId, targetLabId);
-            return null;
-        }
-    }
-
     /// <summary>
-    /// 獲取使用者可存取的實驗室清單 (完全由 IOrganizationIntegrationService 抽象層隔離)
+    /// 獲取使用者可存取的實驗室清單 (整合 SystemAdmin 與一般使用者對映)
     /// </summary>
     public async Task<List<AccessibleLabDto>> GetAccessibleLabsAsync(
         string userId,
@@ -283,34 +307,29 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
         try
         {
             var user = await _userManager.FindByIdAsync(userId);
-            bool isSysAdmin = await IsSystemAdminAsync(user);
+            if (user == null) return new List<AccessibleLabDto>();
 
-            // 1. 若為系統管理員，直接呼叫 Integration Service 專為管理員開放的跨模組介面
-            if (isSysAdmin)
+            if (await IsSystemAdminAsync(user))
             {
-                _logger.LogInformation("使用者 {UserId} 為系統管理員，透過 Integration Service 載入全系統區域實驗室...", userId);
-
                 var allOrgs = await _orgIntegrationService.GetAllActiveOrganizationsAsync(cancellationToken);
 
-                var allAdminLabs = allOrgs.Select((lab, index) => new AccessibleLabDto
+                var adminLabs = allOrgs.Select((lab, index) => new AccessibleLabDto
                 {
                     LabId = lab.Id,
                     LabName = lab.Name,
                     Path = lab.NodePathString,
                     HierarchyLevel = lab.HierarchyLevel,
-                    IsPrimary = index == 0// 管理員預設以第一個 Active 節點為主
+                    IsPrimary = index == 0 // 管理員預設鎖定第一個 Active 實驗室為主節點
                 }).ToList();
 
-                // 2. 備援防護
-                if (!allAdminLabs.Any())
+                if (!adminLabs.Any())
                 {
-                    allAdminLabs.Add(CreateFallbackAdminLab());
+                    adminLabs.Add(CreateFallbackAdminLab());
                 }
 
-                return allAdminLabs;
+                return adminLabs;
             }
 
-            // 一般使用者：從可存取的組織對映中提取，保留 Mapping 表的 IsPrimary 屬性
             var orgs = await _orgIntegrationService.GetUserAccessibleOrganizationsAsync(userId, cancellationToken);
 
             return orgs.Select(x => new AccessibleLabDto
@@ -319,45 +338,41 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
                 LabName = x.Name,
                 Path = x.NodePathString,
                 HierarchyLevel = x.HierarchyLevel,
-                IsPrimary=x.IsPrimary
+                IsPrimary = x.IsPrimary
             }).ToList();
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "獲取可存取實驗室清單時發生異常。UserId: {UserId}", userId);
-
-            var user = await _userManager.FindByIdAsync(userId);
-            if (await IsSystemAdminAsync(user))
-            {
-                return new List<AccessibleLabDto> { CreateFallbackAdminLab() };
-            }
-
             return new List<AccessibleLabDto>();
         }
     }
 
     #region Private Helper Methods
 
-    private async Task<bool> IsAuthorizedToLabAsync(string userId, Guid labId, CancellationToken ct)
+    private static AccessibleLabDto ResolveTargetLab(List<AccessibleLabDto> accessibleLabs, string? requestedLabId)
     {
-        var user = await _userManager.FindByIdAsync(userId);
-        if (await IsSystemAdminAsync(user))
+        AccessibleLabDto? target = null;
+
+        if (!string.IsNullOrWhiteSpace(requestedLabId))
         {
-            return true;
+            target = accessibleLabs.FirstOrDefault(l =>
+                l.LabId.ToString().Equals(requestedLabId, StringComparison.OrdinalIgnoreCase));
         }
 
-        return await _orgIntegrationService.IsInUserScopeAsync(userId, labId, ct);
+        // 優先取 IsPrimary == true，次之取第一個可用的啟用實驗室
+        target ??= accessibleLabs.FirstOrDefault(l => l.IsPrimary);
+        target ??= accessibleLabs.FirstOrDefault();
+
+        return target ?? throw new UnauthorizedAccessException("無法解析有效的實驗室節點。");
     }
 
     private async Task<bool> IsSystemAdminAsync(ApplicationUser? user)
     {
-        if (user == null)
-        {
-            return false;
-        }
+        if (user == null) return false;
 
-        return await _userManager.IsInRoleAsync(user, "SuperAdmin") ||
-               await _userManager.IsInRoleAsync(user, "sysadmin");
+        return await _userManager.IsInRoleAsync(user, SuperAdminRole) ||
+               await _userManager.IsInRoleAsync(user, SystemAdminRole);
     }
 
     private static AccessibleLabDto CreateFallbackAdminLab()
@@ -382,9 +397,7 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
         var permissions = await _cache.GetOrCreateAsync(cacheKey, async entry =>
         {
             entry.AbsoluteExpirationRelativeToNow = CacheExpiration;
-
             var permissionDict = await FetchUserModulePermissionsFromDbAsync(userId, labId, cancellationToken);
-
             return permissionDict.Select(p => $"{p.Key}:{p.Value}").ToList();
         });
 
@@ -396,7 +409,6 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
         Guid labId,
         CancellationToken cancellationToken)
     {
-        // 移除非必要 Task.FromResult 開銷
         var mockPermissions = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
         {
             { "ReportManagement", 15L },

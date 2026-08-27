@@ -1,6 +1,6 @@
 ﻿// ==========================================
 // 檔案路徑: src/SGSFramework/Infrastructure/SGSFramework.ModulePlugin/Extensions/ModulePluginExtensions.cs
-// 架構層級: Application / Infrastructure Framework
+// 架構層級: Infrastructure Framework
 // ==========================================
 
 using Microsoft.AspNetCore.Builder;
@@ -13,7 +13,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Serilog;
-using SGSFramework.Core.Abstractions.Alerts;
+using SGSFramework.Alert.Extensions;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Controllers.Services;
 using SGSFramework.Core.Extensions;
@@ -85,18 +85,16 @@ public static class ModulePluginExtensions
         // 6. 動態外掛模組與背景監控服務 (HostedServices)
         services.AddModularModules(config);
 
-        services.AddMemoryCache();
-        // 配置區段整合鏈式擴充方法
-        services.AddAlertFloodSuppression();
-        // 防洪與告警服務註冊
-        services.AddSingleton<IAlertFloodSuppressor, InMemoryAlertFloodSuppressor>();
+        // 7. 整合告警基礎設施 (包含佇列、防洪機制與 Worker 註冊)
+        services.AddEnterpriseAlertInfrastructure();
+
         services.AddHostedService<ModuleMonitorService>();
         services.AddHostedService<ModuleFileWatcherService>();
 
-        // 7. 系統核心模組與內建控制器自動同步初始化服務
+        // 8. 系統核心模組與內建控制器自動同步初始化服務
         services.AddHostedService<SystemModuleDatabaseInitializerHostedService>();
 
-        // 8. 註冊動態選單擴充
+        // 9. 註冊動態選單擴充
         services.AddDynamicMenu();
 
         return services;

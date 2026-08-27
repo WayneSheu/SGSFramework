@@ -30,6 +30,7 @@
 		<None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\SGSFramework.Alert\SGSFramework.Alert.csproj" />
     <ProjectReference Include="..\..\Shared\SGSFramework.Core\SGSFramework.Core.csproj" />
     <ProjectReference Include="..\SGSFramework.AuthTokenBucket\SGSFramework.AuthTokenBucket.csproj" />
   </ItemGroup>

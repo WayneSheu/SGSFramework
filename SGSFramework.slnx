@@ -20,6 +20,7 @@
     <Project Path="Infrastructure/SGSFramework.Persistent/SGSFramework.Persistent.csproj" />
     <Project Path="Infrastructure/SGSFramework.SystemLog/SGSFramework.SystemLog.csproj" />
     <Project Path="Infrastructure/SGSFramework.VerifyLedger/SGSFramework.VerifyLedger.csproj" />
+    <Project Path="SGSFramework.Alert/SGSFramework.Alert.csproj" Id="daca5d79-559f-4083-bd82-c9cc494fbf08" />
   </Folder>
   <Folder Name="/Modules/" />
   <Folder Name="/Modules/ORG/">

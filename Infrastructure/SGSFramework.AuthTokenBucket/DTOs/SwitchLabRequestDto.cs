@@ -9,6 +9,9 @@ namespace SGSFramework.AuthTokenBucket.DTOs
     /// </summary>
     public sealed record SwitchLabRequestDto
     {
-        public Guid TargetLabId { get; init; }
+        /// <summary>
+        /// 目標實驗室識別碼 (可空，若為 null 或無權存取將自動退路至主實驗室)
+        /// </summary>
+        public Guid? TargetLabId { get; init; }
     }
 }

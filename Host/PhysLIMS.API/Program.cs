@@ -1,15 +1,9 @@
-// ==========================================
-// 檔案路徑: src/SGSFramework/Host/PhysLIMS.API/Program.cs
-// 架構層級: Presentation / Host Layer
-// ==========================================
-
-using Microsoft.AspNetCore.Authentication;
+// Path: src/SGSFramework/Host/PhysLIMS.API/Program.cs
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using PhysLIMS.API.Dbcontexts;
-using PhysLIMS.API.Extensions;
 using Scalar.AspNetCore;
 using Serilog;
 using SGSFramework.ApiInfrastructure.Bootstrappers;
@@ -19,6 +13,7 @@ using SGSFramework.AuditLog.Extensions;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.Extensions;
 using SGSFramework.CodeSecurity.Extensions;
+using SGSFramework.Core.Abstractions.Database;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.ApiDoc.Extensions;
@@ -27,9 +22,9 @@ using SGSFramework.Core.Extensions;
 using SGSFramework.Core.Migrations;
 using SGSFramework.Core.SSOs;
 using SGSFramework.Identity.Extensions;
-using SGSFramework.ModulePlugin.Extensions;
+using SGSFramework.ModulePlugin.Extensions; // 包含 AddModulePlugin, AddControllerScanner, InitializeModularSystemAsync
 using SGSFramework.ModulePlugin.Systems.Controller.Providers;
-using SGSFramework.Persistent.Abstractions.ScriptRunners;
+using SGSFramework.Persistent.Extensions; // 匯入 IScriptExecutionStrategy & DatabaseInitializer DI 註冊擴充
 using SGSFramework.Persistent.ScriptRunners;
 using SGSFramework.SystemLog.Extensions;
 using SGSFramework.VerifyLedger.Extensions;
@@ -56,8 +51,10 @@ try
 
     builder.Services.AddAPIDocServices();
 
-    // 2. 資料庫上下文註冊
-    builder.Services.AddTransient<IDatabaseInitializer, DatabaseInitializer>();
+    // 2. 資料庫基礎設施與上下文註冊
+    // 使用 Extension 統一註冊 IScriptExecutionStrategy (SqlScriptExecutionStrategy) 與 IDatabaseInitializer (DatabaseInitializer)
+    builder.Services.AddPersistentServices();
+
     builder.Services.AddDbContext<PhysLIMSDbContext>(options =>
     {
         var connectionString = config.GetSection("PersistentSettings:ConnectionStrings")["DefaultConnection"];
@@ -92,7 +89,7 @@ try
         options.SignIn.RequireConfirmedAccount = false;
     });
 
-    // 4. 控制器與動態外掛模組註冊
+    // 4. 控制器與動態外掛模組註冊 (AddModulePlugin 內部已自動註冊告警基礎設施 AddEnterpriseAlertInfrastructure)
     builder.Services.AddControllers();
     builder.Services.AddModulePlugin<PhysLIMSDbContext>(config);
     builder.Services.AddControllerScanner<PhysLIMSDbContext>();
@@ -111,7 +108,6 @@ try
     builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
     // 6. Token Bucket 身份驗證與授權配置
-    // (AddTokenBucketAuthentication 內部已封裝 JwtBearer 處理器與 PostConfigureAll 強制鎖定機制)
     var scannedAssemblies = AppDomain.CurrentDomain.GetAssemblies()
         .Where(a => a.FullName != null &&
                    (a.FullName.StartsWith("SGS.") ||
@@ -182,25 +178,28 @@ try
         app.UseDeveloperExceptionPage();
     }
 
-    // 資料庫自動 Migration 流程
+    // 資料庫自動 Migration 與腳本初始化流程
     var autoMigrate = config.GetValue<bool>("Database:AutoMigrate", true);
     if (app.Environment.IsDevelopment() || autoMigrate)
     {
         using var scope = app.Services.CreateScope();
         var initializer = scope.ServiceProvider.GetRequiredService<IDatabaseInitializer>();
-        await initializer.InitializeDatabaseAsync().ConfigureAwait(false);
+        await initializer.InitializeDatabaseAsync(app.Lifetime.ApplicationStopping).ConfigureAwait(false);
 
-        var migrationConnectionString = config.GetSection("PersistentSettings:ConnectionStrings")["MigrationConnection"]!;
-        var mainDbContextOptions = new DbContextOptionsBuilder<PhysLIMSDbContext>()
-            .UseSqlServer(migrationConnectionString, sqlOptions =>
-            {
-                sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "core");
-                sqlOptions.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: TimeSpan.FromSeconds(5), errorNumbersToAdd: null);
-            })
-            .Options;
+        var migrationConnectionString = config.GetSection("PersistentSettings:ConnectionStrings")["MigrationConnection"];
+        if (!string.IsNullOrWhiteSpace(migrationConnectionString))
+        {
+            var mainDbContextOptions = new DbContextOptionsBuilder<PhysLIMSDbContext>()
+                .UseSqlServer(migrationConnectionString, sqlOptions =>
+                {
+                    sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "core");
+                    sqlOptions.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: TimeSpan.FromSeconds(5), errorNumbersToAdd: null);
+                })
+                .Options;
 
-        await using var mainDbContext = new PhysLIMSDbContext(mainDbContextOptions);
-        await mainDbContext.Database.MigrateAsync().ConfigureAwait(false);
+            await using var mainDbContext = new PhysLIMSDbContext(mainDbContextOptions);
+            await mainDbContext.Database.MigrateAsync(app.Lifetime.ApplicationStopping).ConfigureAwait(false);
+        }
     }
 
     // 初始化動態控制器與權限
@@ -246,10 +245,10 @@ try
     });
 
     app.MapControllers();
-    app.MapGet("/", async context =>
+    app.MapGet("/", context =>
     {
         context.Response.Redirect("/scalar/v1");
-        await Task.CompletedTask;
+        return Task.CompletedTask;
     });
 
     await app.RunAsync().ConfigureAwait(false);

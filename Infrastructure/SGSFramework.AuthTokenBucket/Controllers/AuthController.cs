@@ -429,11 +429,11 @@ public sealed class AuthController(
     }
 
     /// <summary>
-    /// 切換作用中的實驗室上下文 (無感切換)
+    /// 切換作用中的實驗室上下文 (支援自動退路與通知)
     /// </summary>
     [HttpPost("switch-context")]
-    [Function("SwitchContext", "切換實驗室", Icon = "fa-solid fa-right-left", Order = 5, Description = "高階主管切換作用中的實驗室上下文")]
-    [ProducesResponseType(typeof(UserPermissionProfileDto), StatusCodes.Status200OK)]
+    [Function("SwitchContext", "切換實驗室", Icon = "fa-solid fa-right-left", Order = 5, Description = "切換作用中的實驗室上下文，若權限不足將自動切換至主要實驗室並提醒")]
+    [ProducesResponseType(typeof(SwitchLabResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
@@ -442,7 +442,7 @@ public sealed class AuthController(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-
+        
         string? userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
         if (string.IsNullOrEmpty(userId))
         {
@@ -457,24 +457,27 @@ public sealed class AuthController(
 
         try
         {
-            var newProfile = await _runtimeScopeService.SwitchLaboratoryAsync(userId, request.TargetLabId, cancellationToken);
+            // 執行退路切換服務
+            var result = await _runtimeScopeService.SwitchLaboratoryWithFallbackAsync(userId, request.TargetLabId, cancellationToken);
 
-            if (newProfile is null)
+            return Ok(result);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning(ex, "[SwitchContext-Forbidden] 使用者 {UserId} 切換實驗室失敗：完全缺乏可用權限。", userId);
+
+            return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
             {
-                return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
-                {
-                    Status = StatusCodes.Status403Forbidden,
-                    Title = "切換實驗室失敗",
-                    Detail = "目標實驗室不存在，或您無權存取該實驗室。",
-                    Instance = HttpContext.Request.Path
-                });
-            }
-
-            return Ok(newProfile);
+                Status = StatusCodes.Status403Forbidden,
+                Title = "權限不足",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
+            });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "切換實驗室上下文時發生未預期異常。UserId: {UserId}, TargetLabId: {LabId}", userId, request.TargetLabId);
+
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
                 Status = StatusCodes.Status500InternalServerError,

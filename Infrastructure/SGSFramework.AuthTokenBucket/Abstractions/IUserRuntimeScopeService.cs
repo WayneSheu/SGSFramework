@@ -32,15 +32,13 @@ namespace SGSFramework.AuthTokenBucket.Abstractions
             CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// 無感切換實驗室上下文：驗證權限並回傳該實驗室的 Bitmask 權限與動態 Menu
+        /// 切換作用中實驗室 (具備主實驗室自動退路與訊息通知能力)
         /// </summary>
-        /// <param name="userId">使用者識別碼</param>
-        /// <param name="targetLabId">欲切換到的目標實驗室 Guid</param>
-        /// <param name="cancellationToken">取消權杖</param>
-        Task<UserPermissionProfileDto?> SwitchLaboratoryAsync(
-            string userId,
-            Guid targetLabId,
-            CancellationToken cancellationToken = default);
+        Task<SwitchLabResultDto> SwitchLaboratoryWithFallbackAsync(
+            string userId, 
+            Guid? targetLabId, 
+            CancellationToken ct = default
+        );
 
 
         /// <summary>

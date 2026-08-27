@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace SGSFramework.Core.Abstractions.Alerts
+namespace SGSFramework.Alert.Abstractions
 {
     /// <summary>
     /// 防洪告警抑制器介面，定義告警過濾與狀態檢查行為。

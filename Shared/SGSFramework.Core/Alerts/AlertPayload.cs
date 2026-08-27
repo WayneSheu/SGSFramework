@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace SGSFramework.Core.Abstractions.Alerts
+namespace SGSFramework.Core.Alerts
 {
     public sealed record AlertPayload
     {

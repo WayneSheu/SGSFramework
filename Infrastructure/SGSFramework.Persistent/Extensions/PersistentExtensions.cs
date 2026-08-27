@@ -5,12 +5,13 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SGSFramework.AuditLog.Interceptors;
+using SGSFramework.Core.Abstractions.Database;
 using SGSFramework.Persistent.Abstractions.Dbcontexts;
-using SGSFramework.Persistent.Abstractions.ScriptRunners;
 using SGSFramework.Persistent.Configurations.Options;
 using SGSFramework.Persistent.Converters;
 using SGSFramework.Persistent.Extensions;
@@ -19,13 +20,34 @@ using SGSFramework.Persistent.Repositories.Hierarchy;
 using SGSFramework.Persistent.Repositories.Traditionals;
 using SGSFramework.Persistent.Repositories.Vector;
 using SGSFramework.Persistent.ScriptRunners;
+using SGSFramework.Persistent.ScriptRunners.Strategies;
 using IdentityOptions = Microsoft.AspNetCore.Identity.IdentityOptions;
 
 namespace SGSFramework.Persistent.Extensions
 {
     public static class PersistentExtensions
     {
-       
+        #region 基礎設施服務註冊 (Database Initializer & Script Execution Strategy)
+        /// <summary>
+        /// 註冊資料庫初始化器與腳本執行策略服務
+        /// </summary>
+        /// <param name="services">DI 服務容器</param>
+        /// <returns>IServiceCollection</returns>
+        public static IServiceCollection AddPersistentServices(this IServiceCollection services)
+        {
+            ArgumentNullException.ThrowIfNull(services);
+
+            // 1. 註冊 SQL 腳本執行策略 (Strategy Pattern)
+            services.AddSingleton<IScriptExecutionStrategy, SqlScriptExecutionStrategy>();
+
+            // 2. 註冊資料庫初始化服務
+            services.AddTransient<IDatabaseInitializer, DatabaseInitializer>();
+
+            return services;
+        }
+
+       #endregion
+
 
         #region Dbcontext 註冊方法 for WebApi 
 
@@ -46,8 +68,13 @@ namespace SGSFramework.Persistent.Extensions
         {
             EnsureOptionsRegistered(services, configuration);
 
-            // 1. 註冊 DatabaseInitializer 服務
-            services.AddTransient<IDatabaseInitializer, DatabaseInitializer>();
+ 
+            // 註冊腳本執行策略 (Strategy Pattern) - 無狀態實作，使用 Singleton
+            services.TryAddSingleton<IScriptExecutionStrategy, SqlScriptExecutionStrategy>();
+
+            // 註冊 DatabaseInitializer 服務 Transient 生命週期
+            services.TryAddTransient<IDatabaseInitializer, DatabaseInitializer>();
+
 
             services.AddDbContext<TContext>((sp, options) =>
             {
