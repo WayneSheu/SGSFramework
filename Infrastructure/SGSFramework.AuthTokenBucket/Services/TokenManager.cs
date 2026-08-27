@@ -52,6 +52,11 @@ public sealed class TokenManager : ITokenManager
 
     public string GenerateAccessToken(IdentityUser<Guid> user, string bitmaskString, string deviceId)
     {
+        return GenerateAccessToken(user, bitmaskString, deviceId, null, false);
+    }
+
+    public string GenerateAccessToken(IdentityUser<Guid> user, string bitmaskString, string deviceId, IList<string>? roles, bool isSystemAdmin)
+    {
         ArgumentNullException.ThrowIfNull(user);
         ArgumentException.ThrowIfNullOrEmpty(deviceId);
 
@@ -62,8 +67,20 @@ public sealed class TokenManager : ITokenManager
                 new(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new(ClaimTypes.Name, user.UserName ?? string.Empty),
                 new("device_id", deviceId),
-                new("permissions", bitmaskString ?? string.Empty)
+                new("permissions", bitmaskString ?? string.Empty),
+                new("is_admin", isSystemAdmin ? "true" : "false")
             };
+
+            if (roles != null)
+            {
+                foreach (var role in roles)
+                {
+                    if (!string.IsNullOrWhiteSpace(role))
+                    {
+                        claims.Add(new Claim(ClaimTypes.Role, role));
+                    }
+                }
+            }
 
             var signingCredentials = new SigningCredentials(_signingKey, SecurityAlgorithms.HmacSha256);
 

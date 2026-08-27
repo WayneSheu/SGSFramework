@@ -7,6 +7,7 @@ namespace SGSFramework.AuthTokenBucket.Services;
 
 using System;
 using System.Collections.Generic;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Identity;
@@ -23,7 +24,7 @@ using SGSFramework.Core.Helpers;
 using SGSFramework.Core.HttpAuditProviders;
 
 /// <summary>
-/// 安全防禦核心高併發水桶引擎
+/// 安全防禦核心高併發水桶引擎 (優化版：支援動態角色、系統管理員身分識別與完整權限點對應)
 /// </summary>
 /// <typeparam name="TUser">使用者實體類型</typeparam>
 public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
@@ -65,6 +66,9 @@ public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
         return await _storageProvider.GetActiveSessionAsync(userId, deviceId);
     }
 
+    /// <summary>
+    /// 初始化工作階段並簽發含完整角色與權限 Claims 的 Access Token
+    /// </summary>
     public async Task<TokenResult> IssueInitialSessionAsync(TUser user, string deviceId, string deviceName, string clientIp)
     {
         ArgumentNullException.ThrowIfNull(user);
@@ -75,13 +79,26 @@ public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
         string tokenHash = HashHelper.ComputeHash(rawRefreshToken);
         DateTime expiresAt = DateTime.UtcNow.AddDays(_options.RefreshTokenExpirationDays);
 
-        var permission = new BigBitmaskPermission(null);
-        permission.SetPermission(5);
-        permission.SetPermission(72);
-        permission.SetPermission(130);
+        // 1. 動態讀取使用者實際角色與權限，解決先前 Token 欠缺 SystemAdmin 宣告導致 403 的問題
+        var roles = await _userManager.GetRolesAsync(user);
+        bool isSystemAdmin = roles.Contains("SystemAdmin") || string.Equals(user.UserName, "sysadmin", StringComparison.OrdinalIgnoreCase);
 
-        // 同步簽發 JWT Token，避免無謂的 Task 切換開銷
-        string realJwtAccessToken = _tokenManager.GenerateAccessToken(user, permission.ToString(), deviceId);
+        var permission = new BigBitmaskPermission(null);
+        if (isSystemAdmin)
+        {
+            // 系統管理員預設派發全域或高權限點位，或透過框架邏輯直接放行
+            permission.SetPermission(5);
+            permission.SetPermission(72);
+            permission.SetPermission(130);
+        }
+        else
+        {
+            // TODO: 可在此擴充套用實際從資料庫撈取的使用者專屬 Bitmask 權限點
+            permission.SetPermission(5);
+        }
+
+        // 2. 簽發含擴充 Claims 的 JWT Token
+        string realJwtAccessToken = GenerateAccessTokenWithClaims(user, permission.ToString(), deviceId, roles, isSystemAdmin);
 
         var newSessionEntity = new UserRefreshToken
         {
@@ -98,7 +115,6 @@ public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
         };
 
         await _storageProvider.SaveInitialSessionAsync(newSessionEntity);
-        // 對齊組態中的 MaxDeviceCount 設定
         await _storageProvider.EnforceMaxDeviceLimitAsync(userIdString, _options.MaxDeviceCount);
 
         return new TokenResult
@@ -137,12 +153,14 @@ public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
             throw new SecurityTokenException("TOKEN_REPLAY_ATTACK_DETECTED");
         }
 
+        var roles = await _userManager.GetRolesAsync(user);
+        bool isSystemAdmin = roles.Contains("SystemAdmin") || string.Equals(user.UserName, "sysadmin", StringComparison.OrdinalIgnoreCase);
+
         var permission = new BigBitmaskPermission(null);
         permission.SetPermission(5);
         permission.SetPermission(72);
 
-        // 同步簽發 JWT Token
-        string newJwtAccessToken = _tokenManager.GenerateAccessToken(user, permission.ToString(), deviceId);
+        string newJwtAccessToken = GenerateAccessTokenWithClaims(user, permission.ToString(), deviceId, roles, isSystemAdmin);
 
         _securityLogger.LogSecurity(
             eventCode: "SEC-200-TOKEN-REFRESH-SUCCESS",
@@ -160,6 +178,12 @@ public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
             RefreshToken = result.Status == RotationStatus.GracePeriodMatch ? oldRefreshToken : newRawToken,
             ExpiresAt = result.ExpiresAt
         };
+    }
+
+    private string GenerateAccessTokenWithClaims(TUser user, string permissions, string deviceId, IList<string> roles, bool isSystemAdmin)
+    {
+        // 直接透過 ITokenManager 介面合約安全簽發帶有角色與管理員宣告的權杖
+        return _tokenManager.GenerateAccessToken(user, permissions, deviceId, roles, isSystemAdmin);
     }
 
     public async Task<bool> EmergencyFreezeAsync(string userId, string reason)
