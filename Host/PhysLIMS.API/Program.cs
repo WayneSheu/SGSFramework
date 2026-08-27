@@ -7,6 +7,7 @@ using PhysLIMS.API.Dbcontexts;
 using Scalar.AspNetCore;
 using Serilog;
 using SGSFramework.ApiInfrastructure.Bootstrappers;
+using SGSFramework.ApiInfrastructure.Extensions;
 using SGSFramework.ApiInfrastructure.Filters;
 using SGSFramework.ApiInfrastructure.Transformers;
 using SGSFramework.AuditLog.Extensions;
@@ -90,7 +91,8 @@ try
     });
 
     // 4. 控制器與動態外掛模組註冊 (AddModulePlugin 內部已自動註冊告警基礎設施 AddEnterpriseAlertInfrastructure)
-    builder.Services.AddControllers();
+    // 4. 控制器基礎設施與動態外掛模組註冊
+    builder.Services.AddControllerInfrastructure(config); // 整合 NullableGuidJsonConverter、PermissionFilter 與 Controller 發現機制
     builder.Services.AddModulePlugin<PhysLIMSDbContext>(config);
     builder.Services.AddControllerScanner<PhysLIMSDbContext>();
 
