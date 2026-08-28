@@ -497,6 +497,61 @@ public sealed class AuthController(
     }
 
     /// <summary>
+    /// 取得當前使用者所有已登入的裝置與工作階段清單
+    /// </summary>
+    [HttpGet("sessions")]
+    [Authorize]
+    [Function("GetActiveSessions", "取得線上裝置清單", Icon = "fa-solid fa-laptop-code", Order = 8, Description = "獲取當前使用者所有已登入的裝置與 Session 清單")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetActiveSessionsAsync(CancellationToken cancellationToken = default)
+    {
+        string? userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
+        if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized(new ProblemDetails
+            {
+                Status = StatusCodes.Status401Unauthorized,
+                Title = "未授權存取",
+                Instance = HttpContext.Request.Path
+            });
+        }
+
+        string currentDeviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "UNKNOWN-DEVICE";
+
+        try
+        {
+            // 呼叫 Repository 取得目前使用者的所有 Active Sessions
+            var sessions = await _tokenRepository.GetActiveSessionsAsync(userId, cancellationToken);
+
+            var sessionDtos = sessions.Select(s => new
+            {
+                s.DeviceId,
+                s.DeviceName,
+                s.ClientIp,
+                s.CreatedAt,
+                s.LastActiveAt,
+                IsCurrent = string.Equals(s.DeviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase)
+            });
+
+            return Ok(sessionDtos);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "獲取使用者的所有裝置工作階段清單時發生異常。UserId: {UserId}", userId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "無法獲取裝置清單。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
+
+    /// <summary>
     /// 單一裝置登出
     /// </summary>
     [HttpPost("logout")]

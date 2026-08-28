@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.AuthTokenBucket.Abstractions;
+using SGSFramework.Core.Abstractions.DbContexts;
+using SGSFramework.Core.Abstractions.Entities.Identities;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -40,6 +41,20 @@ public sealed class UserRefreshTokenRepository<TDbContext> : IUserRefreshTokenRe
         {
             throw new InvalidOperationException("執行泛型在線人數統計查詢時發生資料庫核心異常。", ex);
         }
+    }
+
+
+    /// <summary>
+    /// 取得指定用戶的所有活躍會話
+    /// </summary>
+    /// <param name="userId"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    public async Task<IEnumerable<UserRefreshToken>> GetActiveSessionsAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        return await _context.UserRefreshTokens
+            .Where(t => t.UserId == userId && !t.IsDead && !t.IsFrozen && t.ExpiresAt > DateTime.UtcNow)
+            .ToListAsync(cancellationToken);
     }
 
     public async Task RevokeSessionAsync(string userId, string deviceId, CancellationToken cancellationToken = default)
