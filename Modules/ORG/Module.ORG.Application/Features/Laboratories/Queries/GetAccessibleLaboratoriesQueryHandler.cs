@@ -2,10 +2,8 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using SGS.Modules.ORG.Application.Features.Laboratories.Dtos;
 using SGS.Modules.ORG.Contracts.Queries;
 using SGS.Modules.ORG.Infrastructure.Dbcontexts;
-using SGSFramework.Core.Abstractions.Adapters;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.DTOs;
 using SGSFramework.Core.Errors;
@@ -21,29 +19,22 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Queries;
 /// <summary>
 /// 取得使用者可存取實驗室清單查詢處理器
 /// </summary>
-public class GetAccessibleLaboratoriesQueryHandler : IRequestHandler<GetAccessibleLaboratoriesQuery, Result<List<AccessibleLabDto>>>
+public sealed class GetAccessibleLaboratoriesQueryHandler(
+    ORGDbContext orgDbContext,
+    UserManager<ApplicationUser> userManager,
+    ILogger<GetAccessibleLaboratoriesQueryHandler> logger)
+    : IRequestHandler<GetAccessibleLaboratoriesQuery, Result<List<AccessibleLabDto>>>
 {
-    private readonly IUserLabRepository _userLabRepository;
-    private readonly ORGDbContext _orgDbContext;
-    private readonly UserManager<ApplicationUser> _userManager;
-    private readonly ILogger<GetAccessibleLaboratoriesQueryHandler> _logger;
-
-    public GetAccessibleLaboratoriesQueryHandler(
-        IUserLabRepository userLabRepository,
-        ORGDbContext orgDbContext,
-        UserManager<ApplicationUser> userManager,
-        ILogger<GetAccessibleLaboratoriesQueryHandler> logger)
-    {
-        _userLabRepository = userLabRepository ?? throw new ArgumentNullException(nameof(userLabRepository));
-        _orgDbContext = orgDbContext ?? throw new ArgumentNullException(nameof(orgDbContext));
-        _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    }
+    private readonly ORGDbContext _orgDbContext = orgDbContext ?? throw new ArgumentNullException(nameof(orgDbContext));
+    private readonly UserManager<ApplicationUser> _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
+    private readonly ILogger<GetAccessibleLaboratoriesQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     public async Task<Result<List<AccessibleLabDto>>> Handle(
         GetAccessibleLaboratoriesQuery request,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
+
         var validationResult = request.Validate();
         if (validationResult.IsFailure)
         {
@@ -58,92 +49,44 @@ public class GetAccessibleLaboratoriesQueryHandler : IRequestHandler<GetAccessib
 
         try
         {
-            // 1. 檢查使用者身分與系統管理員特權 (SuperAdmin / sysadmin)
-            var user = await _userManager.FindByIdAsync(request.UserId);
-            if (user != null && (await _userManager.IsInRoleAsync(user, "SuperAdmin") || await _userManager.IsInRoleAsync(user, "sysadmin")))
+            // 1. 系統管理員特權流程
+            var user = await _userManager.FindByIdAsync(request.UserId).ConfigureAwait(false);
+            if (user != null && (await _userManager.IsInRoleAsync(user, "SuperAdmin").ConfigureAwait(false) ||
+                                 await _userManager.IsInRoleAsync(user, "sysadmin").ConfigureAwait(false)))
             {
                 _logger.LogInformation("使用者 {UserId} ({Email}) 為系統管理員，啟動全域實驗室特權載入機制。", request.UserId, user.Email);
 
-                // 先執行 ToListAsync 將實體拉回記憶體，避開 EF Core 無法轉譯 (lab, index) 的限制
-                var rawLabs = await _orgDbContext.Organizations
-                    .AsNoTracking()
-                    .Where(x => !x.IsDeleted && x.IsActive && x.TenantLabId.HasValue)
-                    .ToListAsync(cancellationToken);
-
-                // 於記憶體（Client-side）進行帶 index 的 DTO 轉換
-                var allLabs = rawLabs.Select((lab, index) => new AccessibleLabDto
-                {
-                    LabId = lab.TenantLabId!.Value,
-                    LabCode = lab.Code ?? string.Empty,
-                    LabName = lab.Name ?? "系統實驗室",
-                    Path = lab.NodePath,
-                    HierarchyLevel=lab.Level,
-                    IsPrimary = index == 0
-                }).ToList();
-
-                // 萬一 DB 尚未建置任何 Organization，回傳全域降級節點
-                if (!allLabs.Any())
-                {
-                    allLabs.Add(new AccessibleLabDto
-                    {
-                        LabId = Guid.Empty,
-                        LabCode = "GLOBAL",
-                        LabName = "全域管理員預設實驗室",
-                        IsPrimary = true
-                    });
-                }
-
-                return Result.Success(allLabs);
+                var superAdminLabs = await LoadAllActiveLabsForAdminAsync(cancellationToken).ConfigureAwait(false);
+                return Result.Success(superAdminLabs);
             }
 
-            // 2. 一般使用者流程
-            var mappings = await _userLabRepository.GetAccessibleLabsAsync(userIdGuid, cancellationToken);
-            if (mappings == null || !mappings.Any())
-            {
-                _logger.LogWarning("使用者 {UserId} 未綁定任何實驗室權限。", request.UserId);
-                return Result.Success(new List<AccessibleLabDto>());
-            }
-
-            var labGuids = mappings
-                .Where(m => m.TenantLabId != Guid.Empty)
-                .Select(m => m.TenantLabId)
-                .Distinct()
-                .ToList();
-
-            var labs = await _orgDbContext.Organizations
+            // 2. 一般使用者流程：完整補齊 LabId, ParentLabId, ParentTenantLabId 投影轉譯
+            var userLabs = await _orgDbContext.UserAccessibleLabReadModels
                 .AsNoTracking()
-                .Where(x => x.TenantLabId.HasValue
-                         && labGuids.Contains(x.TenantLabId.Value)
-                         && x.IsActive
-                         && !x.IsDeleted)
-                .ToListAsync(cancellationToken);
-
-            var mappingDict = mappings
-                .GroupBy(m => m.TenantLabId)
-                .ToDictionary(g => g.Key, g => g.First());
-
-            var result = labs.Select(lab => new AccessibleLabDto
-            {
-                LabId = lab.TenantLabId!.Value,
-                LabCode = lab.Code ?? string.Empty,
-                LabName = lab.Name ?? "未知實驗室",
-                Path = lab.NodePath,
-                HierarchyLevel=lab.Level,
-                IsPrimary = mappingDict.TryGetValue(lab.TenantLabId.Value, out var m) && m.IsPrimary
-            }).ToList();
-
-            // Fallback 降級保護
-            if (!result.Any() && mappings.Any())
-            {
-                result = mappings.Select(m => new AccessibleLabDto
+                .Where(x => x.UserId == userIdGuid)
+                .Select(x => new AccessibleLabDto
                 {
-                    LabId = m.TenantLabId,
-                    //LabName = m.LabName ?? "預設實驗室",
-                    IsPrimary = m.IsPrimary
-                }).ToList();
+                    LabId = x.LabId,
+                    TenantLabId = x.TenantLabId,
+                    LabCode = x.LabCode,
+                    LabName = x.LabName,
+                    Path = x.Path,
+                    HierarchyLevel = x.HierarchyLevel,
+                    IsPrimary = x.IsPrimary,
+                    ParentLabId = x.ParentLabId,
+                    ParentTenantLabId = x.ParentTenantLabId,
+                    ParentLabCode = x.ParentLabCode,
+                    ParentLabName = x.ParentLabName
+                })
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!userLabs.Any())
+            {
+                _logger.LogWarning("使用者 {UserId} 未綁定任何實驗室權限或目標實驗室已停用。", request.UserId);
             }
 
-            return Result.Success(result);
+            return Result.Success(userLabs);
         }
         catch (Exception ex)
         {
@@ -151,5 +94,69 @@ public class GetAccessibleLaboratoriesQueryHandler : IRequestHandler<GetAccessib
             return Result.Failure<List<AccessibleLabDto>>(
                 Error.Failure("ORG_LABS_FETCH_ERROR", "無法存取實驗室清單。"));
         }
+    }
+
+    private async Task<List<AccessibleLabDto>> LoadAllActiveLabsForAdminAsync(CancellationToken cancellationToken)
+    {
+        var activeOrgs = await _orgDbContext.Organizations
+            .AsNoTracking()
+            .Where(x => !x.IsDeleted && x.IsActive)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var rootLookup = activeOrgs
+            .Where(x => x.Level == 1)
+            .ToDictionary(x => ExtractLevel1Segment(x.NodePath), StringComparer.OrdinalIgnoreCase);
+
+        var labs = activeOrgs
+            .Where(x => x.TenantLabId.HasValue)
+            .Select((lab, index) =>
+            {
+                string rootSegment = ExtractLevel1Segment(lab.NodePath);
+                bool hasParent = rootLookup.TryGetValue(rootSegment, out var parentNode);
+
+                return new AccessibleLabDto
+                {
+                    LabId = lab.Id,
+                    TenantLabId = lab.TenantLabId!.Value,
+                    LabCode = lab.Code ?? string.Empty,
+                    LabName = lab.Name ?? string.Empty,
+                    Path = lab.NodePath ?? string.Empty,
+                    HierarchyLevel = lab.Level,
+                    IsPrimary = index == 0,
+                    ParentLabId = lab.Level == 1 ? lab.Id : (hasParent ? parentNode!.Id : lab.Id),
+                    ParentTenantLabId = lab.Level == 1 ? lab.TenantLabId : (hasParent ? parentNode!.TenantLabId : lab.TenantLabId),
+                    ParentLabCode = lab.Level == 1 ? lab.Code ?? string.Empty : (hasParent ? parentNode!.Code ?? "ROOT" : "ROOT"),
+                    ParentLabName = lab.Level == 1 ? lab.Name ?? string.Empty : (hasParent ? parentNode!.Name ?? "根組織" : "根組織")
+                };
+            })
+            .ToList();
+
+        if (!labs.Any())
+        {
+            labs.Add(new AccessibleLabDto
+            {
+                LabId = 0,
+                TenantLabId = Guid.Empty,
+                LabCode = "GLOBAL",
+                LabName = "全域管理員預設實驗室",
+                Path = "/",
+                HierarchyLevel = 1,
+                IsPrimary = true,
+                ParentLabId = 0,
+                ParentTenantLabId = Guid.Empty,
+                ParentLabCode = "GLOBAL",
+                ParentLabName = "全域管理員預設實驗室"
+            });
+        }
+
+        return labs;
+    }
+
+    private static string ExtractLevel1Segment(string? nodePath)
+    {
+        if (string.IsNullOrWhiteSpace(nodePath)) return string.Empty;
+        var parts = nodePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 0 ? $"/{parts[0]}/" : nodePath;
     }
 }

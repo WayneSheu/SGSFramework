@@ -19,9 +19,9 @@ public sealed class UserPermissionProfileDto
     /// <summary>
     /// 當前作用中的實驗室識別碼 (LabId)
     /// </summary>
-    public required Guid LabId { get; init; }
+    public required Guid TenantLabId { get; init; }
 
-    /// <summary>
+    /// <summary>`
     /// 當前作用中的實驗室名稱
     /// </summary>
     public string LabName { get; init; } = string.Empty;

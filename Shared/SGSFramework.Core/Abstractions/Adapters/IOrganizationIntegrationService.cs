@@ -6,14 +6,21 @@ namespace SGSFramework.Core.Abstractions.Adapters;
 /// <summary>
 /// 跨模組傳遞之組織/實驗室資料契約 (包含主實驗室標籤與啟用狀態)
 /// </summary>
-public record OrganizationInfoContract(
-    Guid Id,
-    string Name,
-    string NodePathString,
-    int HierarchyLevel,
-    bool IsPrimary = false,
-    bool IsActive = true
-);
+public record OrganizationInfoContract
+{
+    public int Id { get; init; }
+    public Guid TenantLabId { get; init; }
+    public string Code { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
+    public string NodePathString { get; init; } = string.Empty;
+    public int HierarchyLevel { get; init; }
+    public bool IsPrimary { get; init; }
+    public bool IsActive { get; init; } = true;
+    public int? ParentLabId { get; init; }
+    public Guid? ParentTenantLabId { get; init; }
+    public string? ParentLabCode { get; init; }
+    public string? ParentLabName { get; init; }
+}
 
 /// <summary>
 /// 跨模組組織資料整合服務介面 (防腐層適配器 Adapter)

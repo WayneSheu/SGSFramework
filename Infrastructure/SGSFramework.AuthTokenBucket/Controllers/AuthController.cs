@@ -61,7 +61,7 @@ public sealed class AuthController(
     /// </summary>
     /// <param name="request">登入憑證資訊</param>
     /// <param name="cancellationToken">異步取消權牌</param>
-    /// <returns>包含存取權牌、選單結構與權限集合之登入結果</returns>
+    /// <returns>包含存取權牌、選單結構與分組實驗室集合之登入結果</returns>
     [HttpPost("login")]
     [Function("Login", "帳密登入", Icon = "fa-solid fa-right-to-bracket", Order = 1, Description = "標準帳密登入端點，整合大容量 Bitmask 權限與 TokenBucketEngine 基礎設施")]
     [ProducesResponseType(typeof(LoginResponseDto), StatusCodes.Status200OK)]
@@ -115,9 +115,13 @@ public sealed class AuthController(
                 targetRequestedLabId,
                 cancellationToken);
 
-            // 3. 取得可存取實驗室清單 (供前端 Select 切換選單使用)
+            // 3. 取得可存取實驗室清單並執行 Parent 分組轉譯
             var accessibleLabsResult = await _mediator.Send(new GetAccessibleLaboratoriesQuery(user.Id.ToString()), cancellationToken);
-            var accessibleLabs = accessibleLabsResult.IsSuccess ? accessibleLabsResult.Value : new List<AccessibleLabDto>();
+            var flatLabs = accessibleLabsResult.IsSuccess ? accessibleLabsResult.Value : [];
+ 
+            // 執行階層分組並自動淨化子階層 Parent 屬性
+            var groupedLabs = AccessibleLabGroupDto.CreateGroupedList(flatLabs);
+
 
             // 4. 簽發 Token
             var tokenResult = await _tokenEngine.IssueInitialSessionAsync(user, deviceId, deviceName, clientIp);
@@ -130,7 +134,7 @@ public sealed class AuthController(
                 clientIp: clientIp,
                 messageTemplate: "使用者登入成功。帳號: {Email}, 鎖定實驗室: {LabId}",
                 user.Email ?? string.Empty,
-                runtimeProfile.LabId
+                runtimeProfile.TenantLabId
             );
 
             return Ok(new LoginResponseDto
@@ -138,44 +142,34 @@ public sealed class AuthController(
                 TokenData = tokenResult,
                 Menus = runtimeProfile.Menus,
                 DeviceId = deviceId,
-                LabId = runtimeProfile.LabId.ToString(), // 回傳確定鎖定的 Target LabId
-                AccessibleLabs = accessibleLabs,
+                TenantLabId = runtimeProfile.TenantLabId.ToString(),
+                GroupedLabs = groupedLabs,
                 Message = "登入成功"
             });
         }
         catch (UnauthorizedAccessException ex)
         {
             _logger.LogWarning(ex, "[Login-Forbidden] 登入阻斷：無實驗室存取權限。RequestedLabId: {LabId}", targetRequestedLabId);
-            return StatusCode(StatusCodes.Status403Forbidden, new
+            return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
             {
-                success = false,
-                errorCode = "AUTH_NO_LAB_PERMISSION",
-                message = ex.Message
+                Status = StatusCodes.Status403Forbidden,
+                Title = "無實驗室權限",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
             });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "登入處理時發生系統例外。");
-            return StatusCode(StatusCodes.Status500InternalServerError, new
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
-                success = false,
-                errorCode = "SYS_INTERNAL_ERROR",
-                message = "系統發生非預期錯誤，請聯繫系統管理員。"
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "系統發生非預期錯誤，請聯繫系統管理員。",
+                Instance = HttpContext.Request.Path
             });
         }
     }
-
-    private UnauthorizedObjectResult BuildUnauthorizedResult(string detailMessage)
-    {
-        return Unauthorized(new ProblemDetails
-        {
-            Status = StatusCodes.Status401Unauthorized,
-            Title = "身分驗證失敗",
-            Detail = detailMessage,
-            Instance = HttpContext.Request.Path
-        });
-    }
-
 
     /// <summary>
     /// 地端 Windows 網域單一登入
@@ -184,29 +178,41 @@ public sealed class AuthController(
     [Authorize(AuthenticationSchemes = "Windows")]
     [Function("WindowsLogin", "AD單一登入", Icon = "fa-solid fa-windows", Order = 2, Description = "內部網路 Windows 網域無感單一登入端點")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> WindowsLogin()
     {
         try
         {
             var userIdentity = HttpContext.User.Identity;
-            if (userIdentity == null || !userIdentity.IsAuthenticated)
+            if (userIdentity is null || !userIdentity.IsAuthenticated)
             {
-                return Unauthorized(new { message = "未通過 Windows 網域認證。" });
+                return Unauthorized(new ProblemDetails
+                {
+                    Status = StatusCodes.Status401Unauthorized,
+                    Title = "認證失敗",
+                    Detail = "未通過 Windows 網域認證。",
+                    Instance = HttpContext.Request.Path
+                });
             }
 
             string? domainAccount = userIdentity.Name;
             if (string.IsNullOrWhiteSpace(domainAccount))
             {
-                return BadRequest(new { message = "無法解析有效的網域帳號名稱。" });
+                return BadRequest(new ProblemDetails
+                {
+                    Status = StatusCodes.Status400BadRequest,
+                    Title = "請求無效",
+                    Detail = "無法解析有效的網域帳號名稱。",
+                    Instance = HttpContext.Request.Path
+                });
             }
 
             string ssoUserName = domainAccount.Contains('\\') ? domainAccount.Split('\\')[1] : domainAccount;
 
             var user = await _userManager.FindByNameAsync(ssoUserName) ?? await _userManager.FindByNameAsync(domainAccount);
-            if (user == null)
+            if (user is null)
             {
                 user = new ApplicationUser
                 {
@@ -219,10 +225,12 @@ public sealed class AuthController(
                 var createResult = await _userManager.CreateAsync(user);
                 if (!createResult.Succeeded)
                 {
-                    return StatusCode(StatusCodes.Status500InternalServerError, new
+                    return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
                     {
-                        message = "JIT 自動撥備使用者失敗",
-                        errors = createResult.Errors.Select(e => e.Description)
+                        Status = StatusCodes.Status500InternalServerError,
+                        Title = "使用者撥備失敗",
+                        Detail = string.Join("; ", createResult.Errors.Select(e => e.Description)),
+                        Instance = HttpContext.Request.Path
                     });
                 }
             }
@@ -232,20 +240,19 @@ public sealed class AuthController(
             string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
 
             UserRefreshToken? existingSession = await _tokenEngine.GetActiveSessionAsync(user.Id.ToString(), deviceId);
-            TokenResult? tokenResult;
+            TokenResult? tokenResult = existingSession is not null
+                ? await _tokenEngine.RefreshSessionAsync(user, deviceId, existingSession.TokenHash)
+                : await _tokenEngine.IssueInitialSessionAsync(user, deviceId, deviceName, clientIp);
 
-            if (existingSession != null)
+            if (tokenResult is null || string.IsNullOrEmpty(tokenResult.AccessToken))
             {
-                tokenResult = await _tokenEngine.RefreshSessionAsync(user, deviceId, existingSession.TokenHash);
-            }
-            else
-            {
-                tokenResult = await _tokenEngine.IssueInitialSessionAsync(user, deviceId, deviceName, clientIp);
-            }
-
-            if (tokenResult == null || string.IsNullOrEmpty(tokenResult.AccessToken))
-            {
-                return StatusCode(StatusCodes.Status400BadRequest, new { message = "認證水桶防禦熔斷：安全憑證簽發失敗。" });
+                return BadRequest(new ProblemDetails
+                {
+                    Status = StatusCodes.Status400BadRequest,
+                    Title = "簽發失敗",
+                    Detail = "認證水桶防禦熔斷：安全憑證簽發失敗。",
+                    Instance = HttpContext.Request.Path
+                });
             }
 
             return Ok(new
@@ -259,11 +266,12 @@ public sealed class AuthController(
         catch (Exception ex)
         {
             _logger.LogError(ex, "Windows AD 認證處理時發生異常。");
-            return StatusCode(StatusCodes.Status500InternalServerError, new
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
-                message = "Windows 認證處理器發生核心異常",
-                detail = ex.Message,
-                innerException = ex.InnerException?.Message
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
             });
         }
     }
@@ -286,7 +294,7 @@ public sealed class AuthController(
         try
         {
             var principal = _tokenManager.GetPrincipalFromExpiredToken(request.AccessToken);
-            if (principal == null)
+            if (principal is null)
             {
                 return BadRequest(new ProblemDetails
                 {
@@ -299,7 +307,7 @@ public sealed class AuthController(
 
             string userId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
             var user = await _userManager.FindByIdAsync(userId);
-            if (user == null)
+            if (user is null)
             {
                 return Unauthorized(new ProblemDetails
                 {
@@ -380,9 +388,11 @@ public sealed class AuthController(
         [FromQuery] OnlineUserCountQueryDto query,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(query);
+
         int finalWindow = query.WindowMinutes ?? (_options.AccessTokenExpirationMinutes + 2);
 
-        if (finalWindow <= 0 || finalWindow > 1440)
+        if (finalWindow is <= 0 or > 1440)
         {
             return BadRequest(new ProblemDetails
             {
@@ -442,7 +452,7 @@ public sealed class AuthController(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        
+
         string? userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
         if (string.IsNullOrEmpty(userId))
         {
@@ -457,9 +467,7 @@ public sealed class AuthController(
 
         try
         {
-            // 執行退路切換服務
             var result = await _runtimeScopeService.SwitchLaboratoryWithFallbackAsync(userId, request.TargetLabId, cancellationToken);
-
             return Ok(result);
         }
         catch (UnauthorizedAccessException ex)
@@ -499,10 +507,15 @@ public sealed class AuthController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> LogoutAsync(CancellationToken cancellationToken = default)
     {
-        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        string? userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(userId))
         {
-            return Unauthorized(new ProblemDetails { Status = StatusCodes.Status401Unauthorized, Title = "未授權存取" });
+            return Unauthorized(new ProblemDetails
+            {
+                Status = StatusCodes.Status401Unauthorized,
+                Title = "未授權存取",
+                Instance = HttpContext.Request.Path
+            });
         }
 
         string deviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "UNKNOWN-DEVICE";
@@ -521,7 +534,8 @@ public sealed class AuthController(
             {
                 Status = StatusCodes.Status500InternalServerError,
                 Title = "伺服器內部錯誤",
-                Detail = "登出程序執行失敗。"
+                Detail = "登出程序執行失敗。",
+                Instance = HttpContext.Request.Path
             });
         }
     }
@@ -537,10 +551,15 @@ public sealed class AuthController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> LogoutAllAsync(CancellationToken cancellationToken = default)
     {
-        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        string? userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(userId))
         {
-            return Unauthorized(new ProblemDetails { Status = StatusCodes.Status401Unauthorized, Title = "未授權存取" });
+            return Unauthorized(new ProblemDetails
+            {
+                Status = StatusCodes.Status401Unauthorized,
+                Title = "未授權存取",
+                Instance = HttpContext.Request.Path
+            });
         }
 
         try
@@ -565,8 +584,20 @@ public sealed class AuthController(
             {
                 Status = StatusCodes.Status500InternalServerError,
                 Title = "伺服器內部錯誤",
-                Detail = "全裝置登出程序執行失敗。"
+                Detail = "全裝置登出程序執行失敗。",
+                Instance = HttpContext.Request.Path
             });
         }
+    }
+
+    private UnauthorizedObjectResult BuildUnauthorizedResult(string detailMessage)
+    {
+        return Unauthorized(new ProblemDetails
+        {
+            Status = StatusCodes.Status401Unauthorized,
+            Title = "身分驗證失敗",
+            Detail = detailMessage,
+            Instance = HttpContext.Request.Path
+        });
     }
 }

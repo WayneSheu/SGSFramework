@@ -61,6 +61,8 @@ namespace SGS.Modules.ORG.Infrastructure.Dbcontexts
 
         public DbSet<UserLaboratory> UserLaboratories { get; set; }
 
+        public DbSet<UserAccessibleLabReadModel> UserAccessibleLabReadModels { get; set; }
+
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
             base.OnConfiguring(optionsBuilder);
@@ -103,7 +105,12 @@ namespace SGS.Modules.ORG.Infrastructure.Dbcontexts
             modelBuilder.Entity<Organization>()
                 .ToTable("Organization", "org");
 
-
+            //
+            modelBuilder.Entity<UserAccessibleLabReadModel>(eb =>
+            {
+                eb.HasNoKey();
+                eb.ToView("vw_UserAccessibleLabs");
+            });
 
         }
     }

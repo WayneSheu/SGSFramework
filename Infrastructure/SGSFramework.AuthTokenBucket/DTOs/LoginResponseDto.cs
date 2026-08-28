@@ -5,38 +5,38 @@ using SGSFramework.Core.DTOs;
 namespace SGSFramework.AuthTokenBucket.DTOs
 {
     /// <summary>
-    /// 登入回應 DTO
+    /// 身份驗證登入成功回應 DTO
     /// </summary>
     public class LoginResponseDto
     {
         /// <summary>
-        /// 權杖資料（Access Token & Refresh Token）
+        /// 存取憑證與刷新權牌資料
         /// </summary>
-        public TokenResult TokenData { get; set; }
+        public required object TokenData { get; set; }
 
         /// <summary>
-        /// 依據使用者權限過濾後的動態選單樹
+        /// 使用者選單結構
         /// </summary>
-        public IEnumerable<MenuSectionDto> Menus { get; set; }
+        public IEnumerable<object> Menus { get; set; } = [];
 
         /// <summary>
-        /// 當前登入的裝置識別碼
+        /// 裝置唯一識別碼
         /// </summary>
-        public string DeviceId { get; set; }
+        public string DeviceId { get; set; } = string.Empty;
 
         /// <summary>
-        /// 當前生效的實驗室 ID
+        /// 確定鎖定之目標實驗室識別碼
         /// </summary>
-        public string LabId { get; set; }
+        public string TenantLabId { get; set; } = string.Empty;
 
         /// <summary>
-        /// 使用者有權存取的所有實驗室清單 (供前端渲染切換下拉選單)
+        /// 依 Parent 母實驗室分組之可存取實驗室清單
         /// </summary>
-        public IEnumerable<AccessibleLabDto> AccessibleLabs { get; init; } = Array.Empty<AccessibleLabDto>();
+        public List<AccessibleLabGroupDto> GroupedLabs { get; set; } = [];
 
         /// <summary>
-        /// 提示訊息
+        /// 狀態訊息
         /// </summary>
-        public string Message { get; set; }
+        public string Message { get; set; } = string.Empty;
     }
 }

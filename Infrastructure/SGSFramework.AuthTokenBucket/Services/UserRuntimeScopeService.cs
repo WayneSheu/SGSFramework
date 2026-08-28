@@ -1,9 +1,4 @@
-﻿// ==========================================
-// 檔案路徑: src/SGSFramework/Infrastructure/SGSFramework.AuthTokenBucket/Services/UserRuntimeScopeService.cs
-// 架構層級: Infrastructure Layer / Services
-// ==========================================
-
-namespace SGSFramework.AuthTokenBucket.Services;
+﻿namespace SGSFramework.AuthTokenBucket.Services;
 
 using System;
 using System.Collections.Generic;
@@ -26,34 +21,25 @@ using SGSFramework.Core.DTOs;
 /// 多租戶與動態實驗室（Lab/Department/Organization）架構下的核心執行期上下文服務。
 /// 提供 3-Tier 實驗室決策矩陣、無感切換與自我修復退路機制。
 /// </summary>
-public class UserRuntimeScopeService : IUserRuntimeScopeService
+public class UserRuntimeScopeService(
+    IOrganizationIntegrationService orgIntegrationService,
+    IMemoryCache cache,
+    ILogger<UserRuntimeScopeService> logger,
+    UserManager<ApplicationUser> userManager,
+    IDynamicControllerRepository<ControllerMetadata> controllerRepo,
+    IDynamicMenuService menuService)
+    : IUserRuntimeScopeService
 {
-    private readonly IOrganizationIntegrationService _orgIntegrationService;
-    private readonly IMemoryCache _cache;
-    private readonly ILogger<UserRuntimeScopeService> _logger;
-    private readonly UserManager<ApplicationUser> _userManager;
-    private readonly IDynamicControllerRepository<ControllerMetadata> _controllerRepo;
-    private readonly IDynamicMenuService _menuService;
+    private readonly IOrganizationIntegrationService _orgIntegrationService = orgIntegrationService ?? throw new ArgumentNullException(nameof(orgIntegrationService));
+    private readonly IMemoryCache _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+    private readonly ILogger<UserRuntimeScopeService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly UserManager<ApplicationUser> _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
+    private readonly IDynamicControllerRepository<ControllerMetadata> _controllerRepo = controllerRepo ?? throw new ArgumentNullException(nameof(controllerRepo));
+    private readonly IDynamicMenuService _menuService = menuService ?? throw new ArgumentNullException(nameof(menuService));
 
     private static readonly TimeSpan CacheExpiration = TimeSpan.FromMinutes(15);
     private const string SystemAdminRole = "sysadmin";
     private const string SuperAdminRole = "SuperAdmin";
-
-    public UserRuntimeScopeService(
-        IOrganizationIntegrationService orgIntegrationService,
-        IMemoryCache cache,
-        ILogger<UserRuntimeScopeService> logger,
-        UserManager<ApplicationUser> userManager,
-        IDynamicControllerRepository<ControllerMetadata> controllerRepo,
-        IDynamicMenuService menuService)
-    {
-        _orgIntegrationService = orgIntegrationService ?? throw new ArgumentNullException(nameof(orgIntegrationService));
-        _cache = cache ?? throw new ArgumentNullException(nameof(cache));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
-        _controllerRepo = controllerRepo ?? throw new ArgumentNullException(nameof(controllerRepo));
-        _menuService = menuService ?? throw new ArgumentNullException(nameof(menuService));
-    }
 
     /// <summary>
     /// 初始化使用者執行期實驗室作用域 (3-Tier 決策機制: Requested -> Primary -> FirstAvailable)
@@ -65,7 +51,7 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
     {
         ArgumentException.ThrowIfNullOrEmpty(userId);
 
-        var accessibleLabs = await GetAccessibleLabsAsync(userId, cancellationToken);
+        var accessibleLabs = await GetAccessibleLabsAsync(userId, cancellationToken).ConfigureAwait(false);
         if (accessibleLabs == null || !accessibleLabs.Any())
         {
             _logger.LogWarning("[Auth-Scope-Denied] 使用者未授權存取任何啟用的實驗室。UserId: {UserId}, RequestedLabId: {LabId}", userId, requestedLabId);
@@ -74,16 +60,16 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
 
         AccessibleLabDto targetLab = ResolveTargetLab(accessibleLabs, requestedLabId);
 
-        _logger.LogInformation("[Auth-Scope-Resolved] 已成功鎖定執行期實驗室上下文。UserId: {UserId}, TargetLabId: {LabId}, IsPrimary: {IsPrimary}",
-            userId, targetLab.LabId, targetLab.IsPrimary);
+        _logger.LogInformation("[Auth-Scope-Resolved] 已成功鎖定執行期實驗室上下文。UserId: {UserId}, TargetLabId: {LabId}, TenantLabId: {TenantLabId}, IsPrimary: {IsPrimary}",
+            userId, targetLab.LabId, targetLab.TenantLabId, targetLab.IsPrimary);
 
-        var permissions = await GetUserPermissionsAsync(userId, targetLab.LabId, cancellationToken);
-        var menuTree = await _menuService.GetUserMenuAsync(permissions);
+        var permissions = await GetUserPermissionsAsync(userId, targetLab.TenantLabId, cancellationToken).ConfigureAwait(false);
+        var menuTree = await _menuService.GetUserMenuAsync(permissions).ConfigureAwait(false);
 
         return new UserPermissionProfileDto
         {
             UserId = userId,
-            LabId = targetLab.LabId,
+            TenantLabId = targetLab.TenantLabId,
             LabName = targetLab.LabName,
             Menus = menuTree,
             Permissions = permissions
@@ -100,7 +86,7 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
     {
         ArgumentException.ThrowIfNullOrEmpty(userId);
 
-        var accessibleLabs = await GetAccessibleLabsAsync(userId, cancellationToken);
+        var accessibleLabs = await GetAccessibleLabsAsync(userId, cancellationToken).ConfigureAwait(false);
         if (accessibleLabs == null || !accessibleLabs.Any())
         {
             _logger.LogWarning("[ScopeSwitch-Denied] 使用者無可存取實驗室。UserId: {UserId}", userId);
@@ -109,7 +95,7 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
 
         bool isTargetValid = targetLabId.HasValue
             && targetLabId.Value != Guid.Empty
-            && accessibleLabs.Any(l => l.LabId == targetLabId.Value);
+            && accessibleLabs.Any(l => l.TenantLabId == targetLabId.Value);
 
         Guid finalLabId;
         bool isFallback = false;
@@ -123,7 +109,7 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
         {
             // 自動退路機制：優先選擇 IsPrimary == true，次之選擇第一個可用實驗室
             var primaryLab = accessibleLabs.FirstOrDefault(l => l.IsPrimary) ?? accessibleLabs.First();
-            finalLabId = primaryLab.LabId;
+            finalLabId = primaryLab.TenantLabId;
             isFallback = true;
 
             warningMessage = targetLabId.HasValue && targetLabId.Value != Guid.Empty
@@ -134,14 +120,14 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
                 userId, targetLabId, finalLabId);
         }
 
-        var permissions = await GetCachedOrFetchPermissionsAsync(userId, finalLabId, cancellationToken);
-        var menuTree = await _menuService.GetUserMenuAsync(permissions);
-        var targetLabInfo = accessibleLabs.First(l => l.LabId == finalLabId);
+        var permissions = await GetCachedOrFetchPermissionsAsync(userId, finalLabId, cancellationToken).ConfigureAwait(false);
+        var menuTree = await _menuService.GetUserMenuAsync(permissions).ConfigureAwait(false);
+        var targetLabInfo = accessibleLabs.First(l => l.TenantLabId == finalLabId);
 
         var profile = new UserPermissionProfileDto
         {
             UserId = userId,
-            LabId = finalLabId,
+            TenantLabId = finalLabId,
             LabName = targetLabInfo.LabName,
             Permissions = permissions,
             Menus = menuTree
@@ -163,10 +149,9 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
         Guid targetLabId,
         CancellationToken cancellationToken = default)
     {
-
         try
         {
-            var result = await SwitchLaboratoryWithFallbackAsync(userId, targetLabId, cancellationToken);
+            var result = await SwitchLaboratoryWithFallbackAsync(userId, targetLabId, cancellationToken).ConfigureAwait(false);
             return result.Profile;
         }
         catch (Exception ex)
@@ -188,12 +173,12 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
 
         try
         {
-            var user = await _userManager.FindByIdAsync(userId);
-            if (user == null) return Enumerable.Empty<string>();
+            var user = await _userManager.FindByIdAsync(userId).ConfigureAwait(false);
+            if (user == null) return [];
 
-            if (await IsSystemAdminAsync(user))
+            if (await IsSystemAdminAsync(user).ConfigureAwait(false))
             {
-                var allMetas = await _controllerRepo.GetAllActiveAsync();
+                var allMetas = await _controllerRepo.GetAllActiveAsync().ConfigureAwait(false);
                 var allPermissions = allMetas
                     .Where(m => !string.IsNullOrEmpty(m.PermissionKey))
                     .Select(m => m.PermissionKey!)
@@ -206,14 +191,14 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
 
             if (!activeLabId.HasValue)
             {
-                var accessibleLabs = await GetAccessibleLabsAsync(userId, cancellationToken);
+                var accessibleLabs = await GetAccessibleLabsAsync(userId, cancellationToken).ConfigureAwait(false);
                 var defaultLab = accessibleLabs.FirstOrDefault(l => l.IsPrimary) ?? accessibleLabs.FirstOrDefault();
-                if (defaultLab == null) return Enumerable.Empty<string>();
+                if (defaultLab == null) return [];
 
-                activeLabId = defaultLab.LabId;
+                activeLabId = defaultLab.TenantLabId;
             }
 
-            var rawPermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId.Value, cancellationToken);
+            var rawPermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId.Value, cancellationToken).ConfigureAwait(false);
             var permissionKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var permString in rawPermissions)
@@ -241,7 +226,7 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
         catch (Exception ex)
         {
             _logger.LogError(ex, "獲取使用者權限清單時發生異常。UserId: {UserId}, ActiveLabId: {LabId}", userId, activeLabId);
-            return Enumerable.Empty<string>();
+            return [];
         }
     }
 
@@ -266,19 +251,19 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
 
         try
         {
-            var user = await _userManager.FindByIdAsync(userId);
+            var user = await _userManager.FindByIdAsync(userId).ConfigureAwait(false);
             if (user == null) return false;
 
-            if (await IsSystemAdminAsync(user)) return true;
+            if (await IsSystemAdminAsync(user).ConfigureAwait(false)) return true;
 
-            bool isLabScopeValid = await _orgIntegrationService.IsInUserScopeAsync(userId, activeLabId, cancellationToken);
+            bool isLabScopeValid = await _orgIntegrationService.IsInUserScopeAsync(userId, activeLabId, cancellationToken).ConfigureAwait(false);
             if (!isLabScopeValid)
             {
                 _logger.LogWarning("使用者 {UserId} 嘗試越權存取未授權實驗室 {LabId}", userId, activeLabId);
                 return false;
             }
 
-            var userPermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId, cancellationToken);
+            var userPermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId, cancellationToken).ConfigureAwait(false);
             var modulePerm = userPermissions.FirstOrDefault(p => p.StartsWith($"{module}:", StringComparison.OrdinalIgnoreCase));
 
             if (string.IsNullOrEmpty(modulePerm)) return false;
@@ -296,7 +281,7 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
     }
 
     /// <summary>
-    /// 獲取使用者可存取的實驗室清單 (整合 SystemAdmin 與一般使用者對映)
+    /// 獲取使用者可存取的實驗室清單 (整合 SystemAdmin 與一般使用者對映，強型別補齊所有 Required 屬性)
     /// </summary>
     public async Task<List<AccessibleLabDto>> GetAccessibleLabsAsync(
         string userId,
@@ -306,20 +291,26 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
 
         try
         {
-            var user = await _userManager.FindByIdAsync(userId);
-            if (user == null) return new List<AccessibleLabDto>();
+            var user = await _userManager.FindByIdAsync(userId).ConfigureAwait(false);
+            if (user == null) return [];
 
-            if (await IsSystemAdminAsync(user))
+            if (await IsSystemAdminAsync(user).ConfigureAwait(false))
             {
-                var allOrgs = await _orgIntegrationService.GetAllActiveOrganizationsAsync(cancellationToken);
+                var allOrgs = await _orgIntegrationService.GetAllActiveOrganizationsAsync(cancellationToken).ConfigureAwait(false);
 
                 var adminLabs = allOrgs.Select((lab, index) => new AccessibleLabDto
                 {
                     LabId = lab.Id,
+                    TenantLabId = lab.TenantLabId,
+                    LabCode = lab.Code ?? string.Empty,
                     LabName = lab.Name,
                     Path = lab.NodePathString,
                     HierarchyLevel = lab.HierarchyLevel,
-                    IsPrimary = index == 0 // 管理員預設鎖定第一個 Active 實驗室為主節點
+                    IsPrimary = index == 0, // 管理員預設鎖定第一個 Active 實驗室為主節點
+                    ParentLabId = lab.ParentLabId,
+                    ParentTenantLabId = lab.ParentTenantLabId,
+                    ParentLabCode = lab.ParentLabCode,
+                    ParentLabName = lab.ParentLabName
                 }).ToList();
 
                 if (!adminLabs.Any())
@@ -330,21 +321,27 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
                 return adminLabs;
             }
 
-            var orgs = await _orgIntegrationService.GetUserAccessibleOrganizationsAsync(userId, cancellationToken);
+            var orgs = await _orgIntegrationService.GetUserAccessibleOrganizationsAsync(userId, cancellationToken).ConfigureAwait(false);
 
             return orgs.Select(x => new AccessibleLabDto
             {
                 LabId = x.Id,
+                TenantLabId = x.TenantLabId,
+                LabCode = x.Code ?? string.Empty,
                 LabName = x.Name,
                 Path = x.NodePathString,
                 HierarchyLevel = x.HierarchyLevel,
-                IsPrimary = x.IsPrimary
+                IsPrimary = x.IsPrimary,
+                ParentLabId = x.ParentLabId,
+                ParentTenantLabId = x.ParentTenantLabId,
+                ParentLabCode = x.ParentLabCode,
+                ParentLabName = x.ParentLabName
             }).ToList();
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "獲取可存取實驗室清單時發生異常。UserId: {UserId}", userId);
-            return new List<AccessibleLabDto>();
+            return [];
         }
     }
 
@@ -357,7 +354,9 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
         if (!string.IsNullOrWhiteSpace(requestedLabId))
         {
             target = accessibleLabs.FirstOrDefault(l =>
-                l.LabId.ToString().Equals(requestedLabId, StringComparison.OrdinalIgnoreCase));
+                l.LabId.ToString().Equals(requestedLabId, StringComparison.OrdinalIgnoreCase) ||
+                l.TenantLabId.ToString().Equals(requestedLabId, StringComparison.OrdinalIgnoreCase) ||
+                l.LabCode.Equals(requestedLabId, StringComparison.OrdinalIgnoreCase));
         }
 
         // 優先取 IsPrimary == true，次之取第一個可用的啟用實驗室
@@ -371,19 +370,25 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
     {
         if (user == null) return false;
 
-        return await _userManager.IsInRoleAsync(user, SuperAdminRole) ||
-               await _userManager.IsInRoleAsync(user, SystemAdminRole);
+        return await _userManager.IsInRoleAsync(user, SuperAdminRole).ConfigureAwait(false) ||
+               await _userManager.IsInRoleAsync(user, SystemAdminRole).ConfigureAwait(false);
     }
 
     private static AccessibleLabDto CreateFallbackAdminLab()
     {
         return new AccessibleLabDto
         {
-            LabId = Guid.Empty,
+            LabId = 0,
+            TenantLabId = Guid.Empty,
+            LabCode = "GLOBAL",
             LabName = "全域管理員預設實驗室",
             Path = "/GLOBAL",
             HierarchyLevel = 0,
-            IsPrimary = true
+            IsPrimary = true,
+            ParentLabId = null,
+            ParentTenantLabId = null,
+            ParentLabCode = null,
+            ParentLabName = null
         };
     }
 
@@ -397,11 +402,11 @@ public class UserRuntimeScopeService : IUserRuntimeScopeService
         var permissions = await _cache.GetOrCreateAsync(cacheKey, async entry =>
         {
             entry.AbsoluteExpirationRelativeToNow = CacheExpiration;
-            var permissionDict = await FetchUserModulePermissionsFromDbAsync(userId, labId, cancellationToken);
+            var permissionDict = await FetchUserModulePermissionsFromDbAsync(userId, labId, cancellationToken).ConfigureAwait(false);
             return permissionDict.Select(p => $"{p.Key}:{p.Value}").ToList();
-        });
+        }).ConfigureAwait(false);
 
-        return permissions ?? Enumerable.Empty<string>();
+        return permissions ?? [];
     }
 
     private Task<Dictionary<string, long>> FetchUserModulePermissionsFromDbAsync(

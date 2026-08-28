@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Text.Json.Serialization;
 
 namespace SGSFramework.Core.DTOs
 {
@@ -10,37 +11,40 @@ namespace SGSFramework.Core.DTOs
     /// </summary>
     public class AccessibleLabDto
     {
-        /// <summary>
-        /// 實驗室/組織節點唯一識別碼
-        /// </summary>
-        public Guid LabId { get; set; }
+        public required int LabId { get; set; }
+        public required Guid TenantLabId { get; set; }
+        public required string LabCode { get; set; } = string.Empty;
+        public required string LabName { get; set; } = string.Empty;
+        public required string Path { get; set; } = string.Empty;
+        public required int HierarchyLevel { get; set; }
+        public required bool IsPrimary { get; set; }
 
         /// <summary>
-        /// 實驗室/組織節點代碼
+        /// 母實驗室 Int ID（子階自動清空不序列化）
         /// </summary>
-        public string LabCode { get; set; } = string.Empty;
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public int? ParentLabId { get; set; }
 
         /// <summary>
-        /// 實驗室/組織節點名稱 
+        /// 母實驗室 Guid ID（子階自動清空不序列化）
         /// </summary>
-        public string LabName { get; set; } = string.Empty;
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Guid? ParentTenantLabId { get; set; }
 
         /// <summary>
-        /// MSSQL HierarchyId 路徑字串 (例如: "/1/2/" 代表第 1 棵 Root 下的第 2 個子節點)
-        /// 方便前端評估節點間的親緣關係與排序
+        /// 母實驗室代碼（子階自動清空不序列化）
         /// </summary>
-        public string Path { get; set; } = string.Empty;
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? ParentLabCode { get; set; }
 
         /// <summary>
-        /// 組織節點層級深度 (由 HierarchyId.GetLevel() 計算獲得)
-        /// 0 = 總公司/虛擬根, 1 = 獨立實驗室 Root, 2 = 地區/組別
+        /// 母實驗室名稱（子階自動清空不序列化）
         /// </summary>
-        public int HierarchyLevel { get; set; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? ParentLabName { get; set; }
 
-        /// <summary>
-        /// 標記當前使用者是否以此實驗室為預設主要管轄單位
-        /// </summary>
-        public bool IsPrimary { get; set; }
+
+
     }
 
 
