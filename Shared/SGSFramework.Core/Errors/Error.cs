@@ -70,5 +70,6 @@ namespace SGSFramework.Core.Errors
         /// <param name="message"></param>
         /// <returns></returns>
         public static Error Unauthorized(string code, string message) => new(code, message, ErrorType.Unauthorized);
+    
     }
 }

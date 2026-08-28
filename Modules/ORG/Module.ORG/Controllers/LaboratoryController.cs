@@ -1,5 +1,10 @@
-﻿using MediatR;
-using Microsoft.AspNetCore.Authorization;
+﻿namespace SGS.Modules.ORG.Controllers;
+
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -11,9 +16,6 @@ using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Controllers.Base;
 using SGSFramework.Core.Errors;
 using SGSFramework.Core.Results;
-using System.Security.Claims;
-
-namespace SGS.Modules.ORG.Controllers;
 
 /// <summary>
 /// 實驗室維護控制器
@@ -33,7 +35,6 @@ public class LaboratoryController : ApiControllerBase
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
     }
-
 
     /// <summary>
     /// 取得區域實驗室清單
@@ -225,7 +226,6 @@ public class LaboratoryController : ApiControllerBase
 
         try
         {
-            // 強制將 Route 的 ID 與 Body 解構合併為精確指令
             var fullCommand = command with { Id = id };
 
             var result = await _mediator.Send(fullCommand, cancellationToken);
@@ -243,12 +243,84 @@ public class LaboratoryController : ApiControllerBase
         }
     }
 
+    /// <summary>
+    /// 停用指定實驗室
+    /// </summary>
+    [HttpPatch("{id:int}/deactivate")]
+    [Function("DeactivateLaboratory", "停用實驗室", Icon = "fa-solid fa-ban", Order = 7, Description = "停用指定識別碼之實驗室")]
+    [RequiresPermission("ORG_LAB_PUT")]
+    [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> DeactivateLaboratory(
+        [FromRoute] int id,
+        [FromBody] DeactivateLaboratoryRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (id <= 0)
+        {
+            return BadRequest(Result.Failure<bool>(
+                Error.Validation("ORG_INVALID_ID", "實驗室識別碼必須大於 0。")
+            ));
+        }
+
+        try
+        {
+            var command = new DeactivateLaboratoryCommand(id, request.Reason);
+            var result = await _mediator.Send(command, cancellationToken);
+            if (!result.IsSuccess)
+            {
+                _logger.LogError("停用實驗室失敗, ID: {Id}, Error: {Error}", id, result.Error);
+            }
+            return HandleResult(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error executing DeactivateLaboratory for ID: {Id}", id);
+            return StatusCode(StatusCodes.Status500InternalServerError, "An internal server error occurred.");
+        }
+    }
+
+    /// <summary>
+    /// 啟用指定實驗室
+    /// </summary>
+    [HttpPatch("{id:int}/activate")]
+    [Function("ActivateLaboratory", "啟用實驗室", Icon = "fa-solid fa-circle-check", Order = 8, Description = "重新啟用指定識別碼之實驗室")]
+    [RequiresPermission("ORG_LAB_PUT")]
+    [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ActivateLaboratory([FromRoute] int id, CancellationToken cancellationToken)
+    {
+        if (id <= 0)
+        {
+            return BadRequest(Result.Failure<bool>(
+                Error.Validation("ORG_INVALID_ID", "實驗室識別碼必須大於 0。")
+            ));
+        }
+
+        try
+        {
+            var command = new ActivateLaboratoryCommand(id);
+            var result = await _mediator.Send(command, cancellationToken);
+            if (!result.IsSuccess)
+            {
+                _logger.LogError("啟用實驗室失敗, ID: {Id}, Error: {Error}", id, result.Error);
+            }
+            return HandleResult(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error executing ActivateLaboratory for ID: {Id}", id);
+            return StatusCode(StatusCodes.Status500InternalServerError, "An internal server error occurred.");
+        }
+    }
 
     /// <summary>
     /// 刪除實驗室
     /// </summary>
     [HttpDelete("{id:int}")]
-    [Function("DeleteLaboratory", "刪除實驗室", Icon = "fa-solid fa-trash", Order = 7, Description = "刪除指定識別碼之實驗室節點")]
+    [Function("DeleteLaboratory", "刪除實驗室", Icon = "fa-solid fa-trash", Order = 9, Description = "刪除指定識別碼之實驗室節點")]
     [RequiresPermission("ORG_LAB_DELETE")]
     [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
     public async Task<IActionResult> DeleteLaboratory([FromRoute] int id, CancellationToken cancellationToken)
