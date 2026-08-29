@@ -2,11 +2,14 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using SGS.Modules.ORG.Infrastructure.Adapters;
 using SGS.Modules.ORG.Infrastructure.Dbcontexts;
 using SGS.Modules.ORG.Infrastructure.Entities.Org;
 using SGS.Modules.ORG.Infrastructure.Repositories;
 using SGS.Modules.ORG.Infrastructure.Services;
 using SGSFramework.AuditLog.Extensions;
+using SGSFramework.Core.Abstractions.Adapters;
+using SGSFramework.Core.Abstractions.Permissions.Contract;
 using SGSFramework.Core.Migrations;
 using SGSFramework.Persistent.Repositories.Hierarchy;
 
@@ -49,7 +52,8 @@ public static class ServiceCollectionExtensions
 
             // 3. 註冊資料庫遷移服務
             services.AddScoped<IMigrationService, OrgMigrationService>();
-
+            // 註冊介面與實作對應，生命週期為 Scoped
+            services.AddScoped<ILaboratoryMetadataProvider, LaboratoryMetadataProvider>();
             return services;
         }
         catch (Exception ex)

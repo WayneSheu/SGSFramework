@@ -1,12 +1,15 @@
-﻿using System;
-using System.Reflection;
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SGS.Modules.ORG.Application.Abstractions;
 using SGS.Modules.ORG.Application.Services;
 using SGS.Modules.ORG.Infrastructure.Services;
+using SGSFramework.AuthTokenBucket.RuleEngine.Abstractions;
+using SGSFramework.AuthTokenBucket.RuleEngine.Rules.Laboratory;
 using SGSFramework.Core.Abstractions.Adapters;
+using SGSFramework.Core.Abstractions.Permissions.Contract;
+using System;
+using System.Reflection;
 
 namespace SGS.Modules.ORG.Application.Extensions;
 
@@ -33,6 +36,19 @@ public static class ServiceCollectionExtensions
             {
                 cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly());
             });
+
+            // 自動註冊 AuthTokenBucket 內的規則引擎與所有規則實作
+            services.AddScoped<LaboratoryRuleEngine>();
+
+            var ruleInterfaceType = typeof(ILabAuthorizationRule);
+            var ruleImplementations = typeof(LaboratoryCategoryRule).Assembly
+                .GetTypes()
+                .Where(t => ruleInterfaceType.IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract);
+
+            foreach (var ruleType in ruleImplementations)
+            {
+                services.AddScoped(ruleInterfaceType, ruleType);
+            }
 
             return services;
         }

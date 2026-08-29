@@ -5,11 +5,6 @@
 
 namespace SGSFramework.AuthTokenBucket.Extensions;
 
-using System;
-using System.Linq;
-using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -19,10 +14,18 @@ using Microsoft.IdentityModel.Tokens;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.Configurations;
 using SGSFramework.AuthTokenBucket.Repositories;
+using SGSFramework.AuthTokenBucket.RuleEngine.Abstractions;
+using SGSFramework.AuthTokenBucket.RuleEngine.Rules.Laboratory;
 using SGSFramework.AuthTokenBucket.Services;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Permissions;
+using SGSFramework.Core.Abstractions.Permissions.Contract;
+using System;
+using System.Linq;
+using System.Reflection;
+using System.Text;
+using System.Threading.Tasks;
 
 public static class AuthTokenBucketServiceCollectionExtensions
 {
@@ -126,6 +129,8 @@ public static class AuthTokenBucketServiceCollectionExtensions
         services.AddScoped<IPermissionManagementService, PermissionManagementService<TDbContext, TRole, Guid>>();
 
         // 6. 動態權限掃描與註冊
+        // 註冊實驗室存取與權限驗證服務 
+        services.AddScoped<ILaboratoryAccessService, LaboratoryAccessService>();
         var entryAssembly = Assembly.GetEntryAssembly();
         var fullAssembliesToScan = AppDomain.CurrentDomain.GetAssemblies()
             .Where(a => a.FullName != null &&
@@ -148,6 +153,8 @@ public static class AuthTokenBucketServiceCollectionExtensions
                 fullAssembliesToScan,
                 sp.GetRequiredService<ILogger<PermissionSeedService<TDbContext>>>()
             ));
+
+
 
         return services;
     }
