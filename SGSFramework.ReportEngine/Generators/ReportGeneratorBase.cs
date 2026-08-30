@@ -1,13 +1,14 @@
 ﻿using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
+using SGSFramework.ReportEngine.Abstractions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace SGSFramework.Core.Reports
+namespace SGSFramework.ReportEngine.Generators
 {
     public abstract class ReportGeneratorBase<TReportData> where TReportData : IReportData
     {

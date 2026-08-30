@@ -31,6 +31,8 @@
 	</ItemGroup>
 	<ItemGroup>
 
+	  <ProjectReference Include="..\..\..\Infrastructure\SGSFramework.AuthTokenBucket\SGSFramework.AuthTokenBucket.csproj" />
+
 	  <ProjectReference Include="..\Module.ORG.Application\SGS.Modules.ORG.Application.csproj" />
 	  <ProjectReference Include="..\Module.ORG.Infrastructure\SGS.Modules.ORG.Infrastructure.csproj" />
 	</ItemGroup>

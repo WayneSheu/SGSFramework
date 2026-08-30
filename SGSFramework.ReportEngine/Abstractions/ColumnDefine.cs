@@ -1,9 +1,9 @@
 ﻿using QuestPDF.Infrastructure;
 
-namespace SGSFramework.Core.Reports
+namespace SGSFramework.ReportEngine.Abstractions
 {
 
-    /// <summary>  
+    /// <summary>
     /// 報表動態欄位
     /// </summary>
     public class ColumnDefine

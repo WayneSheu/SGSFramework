@@ -50,6 +50,8 @@ public static class ServiceCollectionExtensions
                 services.AddScoped(ruleInterfaceType, ruleType);
             }
 
+            services.AddScoped<ILaboratoryQueryService, LaboratoryQueryService>();
+
             return services;
         }
         catch (Exception ex)

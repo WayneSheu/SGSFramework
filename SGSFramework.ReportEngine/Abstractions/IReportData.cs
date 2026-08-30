@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace SGSFramework.Core.Reports
+namespace SGSFramework.ReportEngine.Abstractions
 {
     /// <summary>
     /// 所有的報表 DTO 都應實作此介面，這讓產生器能以統一的方式處理基本資訊。
