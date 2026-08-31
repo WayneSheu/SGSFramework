@@ -182,99 +182,99 @@ public sealed class UserManagementController(
         }
     }
 
-    /// <summary>
-    /// 登入端點 (支援自訂帳號或 Email 雙軌識別 + 2FA 分流)
-    /// </summary>
-    /// <param name="request">登入請求內容</param>
-    /// <returns>工作階段 Token 憑證或 2FA 挑戰指示</returns>
-    [HttpPost("login")]
-    [Function("Login", "一般帳號登入", Icon = "fa-solid fa-right-to-bracket", Order = 3, Description = "使用者登入驗證，支援帳號/Email 雙軌登入與 2FA 二次驗證流程")]
-    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status423Locked)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> Login([FromBody] ManagementLoginRequest request)
-    {
-        ArgumentNullException.ThrowIfNull(request);
+    ///// <summary>
+    ///// 登入端點 (支援自訂帳號或 Email 雙軌識別 + 2FA 分流)
+    ///// </summary>
+    ///// <param name="request">登入請求內容</param>
+    ///// <returns>工作階段 Token 憑證或 2FA 挑戰指示</returns>
+    //[HttpPost("login")]
+    //[Function("Login", "一般帳號登入", Icon = "fa-solid fa-right-to-bracket", Order = 3, Description = "使用者登入驗證，支援帳號/Email 雙軌登入與 2FA 二次驗證流程")]
+    //[ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    //[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    //[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status423Locked)]
+    //[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    //public async Task<IActionResult> Login([FromBody] ManagementLoginRequest request)
+    //{
+    //    ArgumentNullException.ThrowIfNull(request);
 
-        try
-        {
-            var user = await _userManager.FindByNameAsync(request.AccountIdentifier)
-                       ?? await _userManager.FindByEmailAsync(request.AccountIdentifier);
+    //    try
+    //    {
+    //        var user = await _userManager.FindByNameAsync(request.AccountIdentifier)
+    //                   ?? await _userManager.FindByEmailAsync(request.AccountIdentifier);
 
-            if (user == null)
-            {
-                return Unauthorized(new ProblemDetails
-                {
-                    Status = StatusCodes.Status401Unauthorized,
-                    Title = "身份驗證失敗",
-                    Detail = "帳號、Email 或密碼錯誤。",
-                    Instance = HttpContext.Request.Path
-                });
-            }
+    //        if (user == null)
+    //        {
+    //            return Unauthorized(new ProblemDetails
+    //            {
+    //                Status = StatusCodes.Status401Unauthorized,
+    //                Title = "身份驗證失敗",
+    //                Detail = "帳號、Email 或密碼錯誤。",
+    //                Instance = HttpContext.Request.Path
+    //            });
+    //        }
 
-            if (await _userManager.IsLockedOutAsync(user))
-            {
-                return StatusCode(StatusCodes.Status423Locked, new ProblemDetails
-                {
-                    Status = StatusCodes.Status423Locked,
-                    Title = "帳號已鎖定",
-                    Detail = "帳號因連續登入失敗已被系統鎖定，請稍後再試。",
-                    Instance = HttpContext.Request.Path
-                });
-            }
+    //        if (await _userManager.IsLockedOutAsync(user))
+    //        {
+    //            return StatusCode(StatusCodes.Status423Locked, new ProblemDetails
+    //            {
+    //                Status = StatusCodes.Status423Locked,
+    //                Title = "帳號已鎖定",
+    //                Detail = "帳號因連續登入失敗已被系統鎖定，請稍後再試。",
+    //                Instance = HttpContext.Request.Path
+    //            });
+    //        }
 
-            var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
+    //        var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
 
-            if (result.IsLockedOut)
-            {
-                _logger.LogWarning("用戶 {Account} 觸發連續失敗鎖定。", user.UserName);
-                return StatusCode(StatusCodes.Status423Locked, new ProblemDetails
-                {
-                    Status = StatusCodes.Status423Locked,
-                    Title = "帳號已鎖定",
-                    Detail = "密碼錯誤次數過多，帳號已被暫時鎖定。",
-                    Instance = HttpContext.Request.Path
-                });
-            }
+    //        if (result.IsLockedOut)
+    //        {
+    //            _logger.LogWarning("用戶 {Account} 觸發連續失敗鎖定。", user.UserName);
+    //            return StatusCode(StatusCodes.Status423Locked, new ProblemDetails
+    //            {
+    //                Status = StatusCodes.Status423Locked,
+    //                Title = "帳號已鎖定",
+    //                Detail = "密碼錯誤次數過多，帳號已被暫時鎖定。",
+    //                Instance = HttpContext.Request.Path
+    //            });
+    //        }
 
-            if (result.RequiresTwoFactor)
-            {
-                string code = await _userManager.GenerateTwoFactorTokenAsync(user, "Email");
-                return Ok(new { requiresTwoFactor = true, message = "已啟用雙因子驗證，請輸入郵件驗證碼。", debug2FaCode = code });
-            }
+    //        if (result.RequiresTwoFactor)
+    //        {
+    //            string code = await _userManager.GenerateTwoFactorTokenAsync(user, "Email");
+    //            return Ok(new { requiresTwoFactor = true, message = "已啟用雙因子驗證，請輸入郵件驗證碼。", debug2FaCode = code });
+    //        }
 
-            if (!result.Succeeded)
-            {
-                return Unauthorized(new ProblemDetails
-                {
-                    Status = StatusCodes.Status401Unauthorized,
-                    Title = "身份驗證失敗",
-                    Detail = "帳號、Email 或密碼錯誤。",
-                    Instance = HttpContext.Request.Path
-                });
-            }
+    //        if (!result.Succeeded)
+    //        {
+    //            return Unauthorized(new ProblemDetails
+    //            {
+    //                Status = StatusCodes.Status401Unauthorized,
+    //                Title = "身份驗證失敗",
+    //                Detail = "帳號、Email 或密碼錯誤。",
+    //                Instance = HttpContext.Request.Path
+    //            });
+    //        }
 
-            string deviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "UNKNOWN-DEVICE";
-            string deviceName = Request.Headers["User-Agent"].FirstOrDefault() ?? "Generic Browser";
-            string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+    //        string deviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "UNKNOWN-DEVICE";
+    //        string deviceName = Request.Headers["User-Agent"].FirstOrDefault() ?? "Generic Browser";
+    //        string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
 
-            var tokenResult = await _tokenEngine.IssueInitialSessionAsync(user, deviceId, deviceName, clientIp);
+    //        var tokenResult = await _tokenEngine.IssueInitialSessionAsync(user, deviceId, deviceName, clientIp);
 
-            return Ok(new { message = "登入成功", tokenData = tokenResult });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "登入端點發生未預期異常。");
-            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
-            {
-                Status = StatusCodes.Status500InternalServerError,
-                Title = "伺服器內部錯誤",
-                Detail = "登入處理期間發生系統異常，請聯繫系統管理員。",
-                Instance = HttpContext.Request.Path
-            });
-        }
-    }
+    //        return Ok(new { message = "登入成功", tokenData = tokenResult });
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        _logger.LogError(ex, "登入端點發生未預期異常。");
+    //        return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+    //        {
+    //            Status = StatusCodes.Status500InternalServerError,
+    //            Title = "伺服器內部錯誤",
+    //            Detail = "登入處理期間發生系統異常，請聯繫系統管理員。",
+    //            Instance = HttpContext.Request.Path
+    //        });
+    //    }
+    //}
 
     /// <summary>
     /// 驗證雙因子登入 (2FA)

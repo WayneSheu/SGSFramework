@@ -24,7 +24,7 @@ namespace SGSFramework.Identity.Controllers.v1;
 [Produces(MediaTypeNames.Application.Json)]
 [Consumes(MediaTypeNames.Application.Json)]
 [Authorize]
-[ControllerTitle("角色權限管理", Icon = "fa-solid fa-user-shield", Order = 20, Description = "提供企業級角色 CRUD、AD 網域群組自動對應與使用者角色授權管理")]
+[ControllerTitle("角色管理", Icon = "fa-solid fa-user-shield", Order = 20, Description = "提供企業級角色 CRUD、AD 網域群組自動對應與使用者角色授權管理")]
 [RequiresPermission("SYSTEM.ROLEMANAGEMENT")]
 public sealed class RoleManagementController(
     IRoleManagementService<ApplicationRole, Guid> roleManagementService,
