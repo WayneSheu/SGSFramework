@@ -432,4 +432,53 @@ public sealed class RoleManagementController(
             });
         }
     }
+
+    /// <summary>
+    /// 依指定角色批次指派多位使用者
+    /// </summary>
+    [HttpPost("{roleId}/users/batch")]
+    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.ASSIGN")]
+    [Function("BatchAssignUsersToRole", "批次指派角色使用者", Icon = "fa-solid fa-users-gear", Order = 10, Description = "針對指定角色批次將多位使用者加入或指派關聯")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> BatchAssignUsersToRole(
+        [FromRoute] string roleId,
+        [FromBody] BatchAssignUsersRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(roleId);
+        ArgumentNullException.ThrowIfNull(request);
+
+        try
+        {
+            var (succeeded, message, errors) = await _roleManagementService.BatchAssignUsersToRoleAsync(roleId, request, cancellationToken);
+            if (!succeeded)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Status = StatusCodes.Status400BadRequest,
+                    Title = "批次指派角色使用者失敗",
+                    Detail = message,
+                    Instance = HttpContext.Request.Path
+                });
+            }
+
+            _logger.LogInformation("批次指派執行完畢。目標角色識別碼: {RoleId}", roleId);
+            return Ok(new { message, errors });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "批次指派角色使用者時發生異常。RoleId: {RoleId}", roleId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "批次指派角色使用者時發生系統異常，請聯繫系統管理員。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
 }

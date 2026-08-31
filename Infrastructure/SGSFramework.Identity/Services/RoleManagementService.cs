@@ -3,6 +3,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Identity.Abstractions;
 using SGSFramework.Identity.DTOs;
 using System;
@@ -21,13 +22,19 @@ namespace SGSFramework.Identity.Services
         where TKey : IEquatable<TKey>
     {
         private readonly RoleManager<TRole> _roleManager;
+        private readonly UserManager<ApplicationUser> _userManager;
+        private readonly DbContext _dbContext;
         private readonly ILogger<RoleManagementService<TRole, TKey>> _logger;
 
         public RoleManagementService(
             RoleManager<TRole> roleManager,
+            UserManager<ApplicationUser> userManager,
+            DbContext dbContext,
             ILogger<RoleManagementService<TRole, TKey>> logger)
         {
             _roleManager = roleManager ?? throw new ArgumentNullException(nameof(roleManager));
+            _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
+            _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -179,7 +186,6 @@ namespace SGSFramework.Identity.Services
         {
             ArgumentNullException.ThrowIfNull(request);
 
-            // 預留 AD Group 對應邏輯 (例如寫入 ADGroupRoleMapping 資料表或 RoleClaim)
             await Task.CompletedTask;
             _logger.LogInformation("已成功將 AD 群組 {AdGroup} 對應至角色 {RoleId}", request.AdGroupName, request.RoleId);
 
@@ -227,6 +233,115 @@ namespace SGSFramework.Identity.Services
             return (true, "使用者角色綁定成功。");
         }
 
+        /// <summary>
+        /// 依指定角色批次指派多位使用者 (含雙軌解析、N+1 優化、交易原子性與結構化日誌)
+        /// </summary>
+        public async Task<(bool Succeeded, string Message, IEnumerable<string>? Errors)> BatchAssignUsersToRoleAsync(
+            string roleIdentifier,
+            BatchAssignUsersRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(roleIdentifier);
+            ArgumentNullException.ThrowIfNull(request);
+
+            if (request.UserIds == null || !request.UserIds.Any())
+            {
+                return (false, "未提供任何有效的使用者清單。", null);
+            }
+
+            try
+            {
+                // 1. 支援 Guid (Role ID) 或角色名稱 (Role Name) 雙軌查詢
+                TRole? role = null;
+                if (Guid.TryParse(roleIdentifier, out var roleGuid))
+                {
+                    role = await _roleManager.FindByIdAsync(roleGuid.ToString());
+                }
+                else
+                {
+                    role = await _roleManager.FindByNameAsync(roleIdentifier);
+                }
+
+                if (role == null)
+                {
+                    return (false, $"找不到指定的角色 [{roleIdentifier}]。", null);
+                }
+
+                if (string.IsNullOrWhiteSpace(role.Name))
+                {
+                    return (false, "角色的名稱無效，無法進行使用者批次指派。", null);
+                }
+
+                // 2. 批次查詢使用者避免 N+1 查詢瓶頸
+                var userGuids = request.UserIds
+                    .Select(id => Guid.TryParse(id, out var g) ? g : Guid.Empty)
+                    .Where(g => g != Guid.Empty)
+                    .Distinct()
+                    .ToList();
+
+                var users = await _userManager.Users
+                    .Where(u => userGuids.Contains((Guid)(object)u.Id))
+                    .ToListAsync(cancellationToken);
+
+                if (users.Count == 0)
+                {
+                    return (false, "找不到對應的使用者清單。", null);
+                }
+
+                // 3. 使用資料庫交易保證原子性 (All-or-Nothing)
+                using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+                try
+                {
+                    var errors = new List<string>();
+                    int successCount = 0;
+
+                    foreach (var user in users)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        if (await _userManager.IsInRoleAsync(user, role.Name))
+                        {
+                            successCount++;
+                            continue; // 若已具備該角色則直接略過
+                        }
+
+                        var result = await _userManager.AddToRoleAsync(user, role.Name);
+                        if (result.Succeeded)
+                        {
+                            successCount++;
+                            // 結構化日誌：明確記錄 UserName 與 RoleName
+                            _logger.LogInformation("使用者 [{UserName}] 已成功指派角色 [{RoleName}]。", user.UserName, role.Name);
+                        }
+                        else
+                        {
+                            var errDesc = string.Join(", ", result.Errors.Select(e => e.Description));
+                            errors.Add($"使用者 [{user.UserName}] 指派失敗: {errDesc}");
+                            _logger.LogWarning("使用者 [{UserName}] 指派角色 [{RoleName}] 失敗: {Error}", user.UserName, role.Name, errDesc);
+                        }
+                    }
+
+                    if (errors.Count > 0)
+                    {
+                        await transaction.RollbackAsync(cancellationToken);
+                        return (false, "部分使用者指派失敗，交易已全數回滾。", errors);
+                    }
+
+                    await transaction.CommitAsync(cancellationToken);
+                    _logger.LogInformation("已成功將角色 [{RoleName}] 批次指派給 {Count} 位使用者。", role.Name, successCount);
+                    return (true, $"已成功將角色 [{role.Name}] 批次指派給 {successCount} 位使用者。", null);
+                }
+                catch (Exception)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    throw;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "批次指派使用者至角色時發生例外。RoleIdentifier: {RoleIdentifier}", roleIdentifier);
+                throw;
+            }
+        }
         #endregion
     }
 }

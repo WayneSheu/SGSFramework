@@ -31,5 +31,11 @@ namespace SGSFramework.Identity.Abstractions
 
         // 使用者角色綁定服務介面
         Task<(bool Succeeded, string Message)> AssignUserRolesAsync(AssignUserRolesRequest request, CancellationToken cancellationToken = default);
+
+        // 批次使用者角色解綁服務介面
+        Task<(bool Succeeded, string Message, IEnumerable<string>? Errors)> BatchAssignUsersToRoleAsync(
+          string roleIdentifier,
+          BatchAssignUsersRequest request,
+          CancellationToken cancellationToken = default);
     }
 }

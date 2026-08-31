@@ -14,6 +14,8 @@ using SGSFramework.AuthTokenBucket.Services;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Controllers.Base;
+using SGSFramework.Identity.DTOs;
+using Microsoft.EntityFrameworkCore;
 
 namespace SGSFramework.Identity.Controllers.v1;
 
@@ -551,6 +553,54 @@ public sealed class UserManagementController(
                 Status = StatusCodes.Status500InternalServerError,
                 Title = "伺服器內部錯誤",
                 Detail = "執行登出作業時發生系統異常，請聯繫系統管理員。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
+    /// <summary>
+    /// 取得系統所有使用者清單（含所屬角色）
+    /// </summary>
+    /// <param name="cancellationToken">異步取消權牌</param>
+    /// <returns>系統使用者清單集合，包含其對應角色</returns>
+    [HttpGet]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.READ")]
+    [Function("GetUsers", "查詢使用者列表", Icon = "fa-solid fa-users", Order = 9, Description = "取得系統所有使用者清單，包含帳號、Email、驗證狀態與所屬角色等資訊")]
+    [ProducesResponseType(typeof(IEnumerable<UserDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetUsers(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var users = await _userManager.Users.ToListAsync(cancellationToken);
+            var userDtos = new List<UserDto>();
+
+            foreach (var user in users)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var roles = await _userManager.GetRolesAsync(user);
+
+                userDtos.Add(new UserDto
+                {
+                    Id = user.Id.ToString(),
+                    Username = user.UserName ?? string.Empty,
+                    Email = user.Email ?? string.Empty,
+                    EmailConfirmed = user.EmailConfirmed,
+                    LockoutEnabled = user.LockoutEnabled,
+                    Roles = roles.ToList()
+                });
+            }
+
+            return Ok(userDtos);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "查詢使用者列表與角色時發生未預期異常。");
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "查詢使用者列表時發生系統異常，請聯繫系統管理員。",
                 Instance = HttpContext.Request.Path
             });
         }
