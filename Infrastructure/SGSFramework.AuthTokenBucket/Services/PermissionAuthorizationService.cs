@@ -1,167 +1,119 @@
-﻿// ==========================================
-// 檔案路徑: src/SGSFramework/Infrastructure/SGSFramework.AuthTokenBucket/Services/PermissionAuthorizationService.cs
-// 架構層級: Infrastructure Layer / Services
-// ==========================================
-
-namespace SGSFramework.AuthTokenBucket.Services;
+﻿namespace SGSFramework.AuthTokenBucket.Services;
 
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Abstractions;
-using SGSFramework.Core.Abstractions.Models.Identities;
 
-/// <summary>
-/// 企業級權限授權驗證服務實作（採用策略模式與高效能位元/字串雙軌解析優化版）
-/// </summary>
 public sealed class PermissionAuthorizationService : IPermissionAuthorizationService
 {
     private readonly ILogger<PermissionAuthorizationService> _logger;
-    private readonly IEnumerable<IPermissionEvaluator> _permissionEvaluators;
-
-    private static readonly string[] SuperAdminRoles = ["SystemAdmin", "sysadmin", "Administrator", "Admin"];
-    private static readonly string[] SuperAdminClaimTypes = ["is_admin", "is_sysadmin", "superuser", "role"];
+    private readonly IServiceScopeFactory _serviceScopeFactory;
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
     public PermissionAuthorizationService(
         ILogger<PermissionAuthorizationService> logger,
-        IEnumerable<IPermissionEvaluator> permissionEvaluators)
+        IServiceScopeFactory serviceScopeFactory,
+        IHttpContextAccessor httpContextAccessor)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _permissionEvaluators = permissionEvaluators ?? Enumerable.Empty<IPermissionEvaluator>();
+        _serviceScopeFactory = serviceScopeFactory ?? throw new ArgumentNullException(nameof(serviceScopeFactory));
+        _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
     }
 
-    public Task<bool> HasPermissionAsync(ClaimsPrincipal user, string permissionKey, CancellationToken cancellationToken = default)
+    public async Task<bool> HasPermissionAsync(ClaimsPrincipal user, string permissionKey, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(user);
         ArgumentException.ThrowIfNullOrWhiteSpace(permissionKey);
 
+        if (user.Identity is not { IsAuthenticated: true })
+        {
+            return false;
+        }
+
+        var userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userId))
+        {
+            return false;
+        }
+
         try
         {
-            if (user.Identity is not { IsAuthenticated: true })
+            using var scope = _serviceScopeFactory.CreateScope();
+            var runtimeScopeService = scope.ServiceProvider.GetService<IUserRuntimeScopeService>();
+
+            if (runtimeScopeService == null)
             {
-                return Task.FromResult(false);
+                return false;
             }
 
-            // 特權通道檢查：全域放行超級管理員 / 系統管理員
-            if (IsSuperAdmin(user))
-            {
-                return Task.FromResult(true);
-            }
+            // 1. 嘗試從 Header 或 Claims 解析實驗室 ID
+            Guid? activeLabId = ResolveActiveGuidLabId(user);
 
-            bool hasPermission = false;
-            foreach (var evaluator in _permissionEvaluators)
+            // 2. 若未帶 Header 且 Token 沒記錄，自動強制抓取使用者的第一個有效實驗室（優先 IsPrimary）
+            if (!activeLabId.HasValue || activeLabId == Guid.Empty)
             {
-                if (evaluator.Evaluate(user, permissionKey))
+                var accessibleLabs = await runtimeScopeService.GetAccessibleLabsAsync(userId, cancellationToken);
+                var primaryLab = accessibleLabs.FirstOrDefault(l => l.IsPrimary) ?? accessibleLabs.FirstOrDefault();
+                if (primaryLab != null && primaryLab.TenantLabId != Guid.Empty)
                 {
-                    hasPermission = true;
-                    break;
+                    activeLabId = primaryLab.TenantLabId;
+                    _logger.LogDebug("[PermissionCheck] 未偵測到 Lab Header，已自動鎖定使用者 {UserId} 的預設實驗室: {LabId}", userId, activeLabId);
                 }
             }
 
-            if (!hasPermission)
+            // 3. 帶入鎖定後的 activeLabId 查詢該實驗室下的有效權限清單
+            var userPermissions = await runtimeScopeService.GetUserPermissionsAsync(userId, activeLabId, cancellationToken);
+
+            if (userPermissions == null)
             {
-                hasPermission = EvaluateDefaultPermissions(user, permissionKey);
+                return false;
             }
+
+            bool hasPermission = userPermissions.Contains(permissionKey, StringComparer.OrdinalIgnoreCase);
 
             if (!hasPermission)
             {
-                _logger.LogWarning("[PermissionCheck] 使用者 {UserId} 欠缺所需權限點: {PermissionKey}",
-                    user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "Unknown",
-                    permissionKey);
+                _logger.LogWarning("[PermissionCheck] 使用者 {UserId} 在實驗室 [{LabId}] 下欠缺所需權限點: {PermissionKey}",
+                    userId, activeLabId?.ToString() ?? "None", permissionKey);
             }
 
-            return Task.FromResult(hasPermission);
+            return hasPermission;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[PermissionCheck] 執行權限點 {PermissionKey} 比對時發生內部異常", permissionKey);
-            return Task.FromResult(false);
+            _logger.LogError(ex, "[PermissionCheck] 動態解析使用者 {UserId} 權限 {PermissionKey} 時發生異常", userId, permissionKey);
+            return false;
         }
     }
 
-    private static bool IsSuperAdmin(ClaimsPrincipal user)
+    private Guid? ResolveActiveGuidLabId(ClaimsPrincipal user)
     {
-        foreach (var role in SuperAdminRoles)
+        var httpContext = _httpContextAccessor.HttpContext;
+        if (httpContext != null)
         {
-            if (user.IsInRole(role))
+            var labHeader = httpContext.Request.Headers["TenantLabId"].FirstOrDefault()
+                         ?? httpContext.Request.Headers["X-Target-Lab-Id"].FirstOrDefault()
+                         ?? httpContext.Request.Headers["LabId"].FirstOrDefault();
+            if (Guid.TryParse(labHeader, out Guid headerLabId))
             {
-                return true;
+                return headerLabId;
             }
         }
 
-        foreach (var claimType in SuperAdminClaimTypes)
+        var labClaim = user.FindFirst("TenantLabId")?.Value
+                    ?? user.FindFirst("lab_id")?.Value
+                    ?? user.FindFirst("TargetLabId")?.Value;
+        if (Guid.TryParse(labClaim, out Guid claimLabId))
         {
-            if (user.HasClaim(c => c.Type.Equals(claimType, StringComparison.OrdinalIgnoreCase) &&
-                                   (c.Value.Equals("true", StringComparison.OrdinalIgnoreCase) ||
-                                    c.Value.Equals("1") ||
-                                    SuperAdminRoles.Contains(c.Value, StringComparer.OrdinalIgnoreCase))))
-            {
-                return true;
-            }
+            return claimLabId;
         }
 
-        return false;
+        return null;
     }
-
-    private static bool EvaluateDefaultPermissions(ClaimsPrincipal user, string permissionKey)
-    {
-        foreach (var claim in user.Claims)
-        {
-            // 檢查顯式字串宣告
-            if ((claim.Type.Equals("Permission", StringComparison.OrdinalIgnoreCase) ||
-                 claim.Type.Equals("permission_key", StringComparison.OrdinalIgnoreCase)) &&
-                claim.Value.Equals(permissionKey, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-
-            // 檢查 Bitmask 封裝字串宣告 (permissions)
-            if (claim.Type.Equals("permissions", StringComparison.OrdinalIgnoreCase))
-            {
-                try
-                {
-                    // 修正 1：將 claim.Value 字串正確解析為 IEnumerable<long> 傳入 BigBitmaskPermission
-                    var permissionIds = claim.Value
-                        .Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
-                        .Select(s => long.TryParse(s.Trim(), out var id) ? id : (long?)null)
-                        .Where(id => id.HasValue)
-                        .Select(id => id.Value)
-                        .ToList();
-
-                    var bitmask = new BigBitmaskPermission(permissionIds);
-
-                    // 修正 2：若 permissionKey 為數字 ID，可直接比對清單；若為字串則進行字串相符檢查
-                    if (long.TryParse(permissionKey, out var numericId))
-                    {
-                        if (permissionIds.Contains(numericId))
-                        {
-                            return true;
-                        }
-                    }
-                    else if (claim.Value.Equals(permissionKey, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return true;
-                    }
-                }
-                catch
-                {
-                    if (claim.Value.Equals(permissionKey, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        return false;
-    }
-}
-
-public interface IPermissionEvaluator
-{
-    bool Evaluate(ClaimsPrincipal user, string permissionKey);
 }

@@ -1,7 +1,6 @@
-﻿using SGSFramework.Identity.DTOs;
-using SGSFramework.Identity.DTOs.PermissionGrants;
+﻿using SGSFramework.AuthTokenBucket.DTOs.PermissionGrants;
 
-namespace SGSFramework.Identity.Abstractions
+namespace SGSFramework.AuthTokenBucket.Abstractions
 {
     /// <summary>
     /// 角色實驗室維度 BitMask 權限管理服務介面

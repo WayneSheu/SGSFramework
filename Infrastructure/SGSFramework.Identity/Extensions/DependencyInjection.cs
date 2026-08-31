@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.Core.Abstractions.Adapters;
 using SGSFramework.Core.Abstractions.Entities.Base;
 using SGSFramework.Identity.Abstractions;
@@ -50,8 +51,7 @@ namespace SGSFramework.Identity.Extensions
             // 4. 註冊角色管理服務 (開放泛型與具體泛型介面)
             services.AddScoped(typeof(IRoleManagementService<,>), typeof(RoleManagementService<,>));
             services.AddScoped<IRoleManagementService<TRole, TKey>, RoleManagementService<TRole, TKey>>();
-            // 5. 註冊權限授權服務
-            services.AddScoped<IPermissionGrantService, PermissionGrantService<TContext>>();
+
             return services;
         }
     }

@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace SGSFramework.Identity.DTOs.PermissionGrants
+namespace SGSFramework.AuthTokenBucket.DTOs.PermissionGrants
 {
     /// <summary>
     /// 更新角色在特定實驗室下的權限請求 DTO

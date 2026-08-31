@@ -1,13 +1,17 @@
-﻿using System;
+﻿// 檔案路徑: Presentation/SGSFramework.Identity.Controllers/v1/UserManagementController.cs
+
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Mime;
 using System.Security.Claims;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Models;
 using SGSFramework.AuthTokenBucket.Services;
@@ -15,7 +19,6 @@ using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Controllers.Base;
 using SGSFramework.Identity.DTOs;
-using Microsoft.EntityFrameworkCore;
 
 namespace SGSFramework.Identity.Controllers.v1;
 
@@ -32,11 +35,13 @@ public sealed class UserManagementController(
     UserManager<ApplicationUser> userManager,
     SignInManager<ApplicationUser> signInManager,
     TokenBucketEngine<ApplicationUser> tokenEngine,
+    DbContext dbContext,
     ILogger<UserManagementController> logger) : ApiControllerBase
 {
     private readonly UserManager<ApplicationUser> _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
     private readonly SignInManager<ApplicationUser> _signInManager = signInManager ?? throw new ArgumentNullException(nameof(signInManager));
     private readonly TokenBucketEngine<ApplicationUser> _tokenEngine = tokenEngine ?? throw new ArgumentNullException(nameof(tokenEngine));
+    private readonly DbContext _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
     private readonly ILogger<UserManagementController> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -184,100 +189,6 @@ public sealed class UserManagementController(
         }
     }
 
-    ///// <summary>
-    ///// 登入端點 (支援自訂帳號或 Email 雙軌識別 + 2FA 分流)
-    ///// </summary>
-    ///// <param name="request">登入請求內容</param>
-    ///// <returns>工作階段 Token 憑證或 2FA 挑戰指示</returns>
-    //[HttpPost("login")]
-    //[Function("Login", "一般帳號登入", Icon = "fa-solid fa-right-to-bracket", Order = 3, Description = "使用者登入驗證，支援帳號/Email 雙軌登入與 2FA 二次驗證流程")]
-    //[ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
-    //[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
-    //[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status423Locked)]
-    //[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    //public async Task<IActionResult> Login([FromBody] ManagementLoginRequest request)
-    //{
-    //    ArgumentNullException.ThrowIfNull(request);
-
-    //    try
-    //    {
-    //        var user = await _userManager.FindByNameAsync(request.AccountIdentifier)
-    //                   ?? await _userManager.FindByEmailAsync(request.AccountIdentifier);
-
-    //        if (user == null)
-    //        {
-    //            return Unauthorized(new ProblemDetails
-    //            {
-    //                Status = StatusCodes.Status401Unauthorized,
-    //                Title = "身份驗證失敗",
-    //                Detail = "帳號、Email 或密碼錯誤。",
-    //                Instance = HttpContext.Request.Path
-    //            });
-    //        }
-
-    //        if (await _userManager.IsLockedOutAsync(user))
-    //        {
-    //            return StatusCode(StatusCodes.Status423Locked, new ProblemDetails
-    //            {
-    //                Status = StatusCodes.Status423Locked,
-    //                Title = "帳號已鎖定",
-    //                Detail = "帳號因連續登入失敗已被系統鎖定，請稍後再試。",
-    //                Instance = HttpContext.Request.Path
-    //            });
-    //        }
-
-    //        var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
-
-    //        if (result.IsLockedOut)
-    //        {
-    //            _logger.LogWarning("用戶 {Account} 觸發連續失敗鎖定。", user.UserName);
-    //            return StatusCode(StatusCodes.Status423Locked, new ProblemDetails
-    //            {
-    //                Status = StatusCodes.Status423Locked,
-    //                Title = "帳號已鎖定",
-    //                Detail = "密碼錯誤次數過多，帳號已被暫時鎖定。",
-    //                Instance = HttpContext.Request.Path
-    //            });
-    //        }
-
-    //        if (result.RequiresTwoFactor)
-    //        {
-    //            string code = await _userManager.GenerateTwoFactorTokenAsync(user, "Email");
-    //            return Ok(new { requiresTwoFactor = true, message = "已啟用雙因子驗證，請輸入郵件驗證碼。", debug2FaCode = code });
-    //        }
-
-    //        if (!result.Succeeded)
-    //        {
-    //            return Unauthorized(new ProblemDetails
-    //            {
-    //                Status = StatusCodes.Status401Unauthorized,
-    //                Title = "身份驗證失敗",
-    //                Detail = "帳號、Email 或密碼錯誤。",
-    //                Instance = HttpContext.Request.Path
-    //            });
-    //        }
-
-    //        string deviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "UNKNOWN-DEVICE";
-    //        string deviceName = Request.Headers["User-Agent"].FirstOrDefault() ?? "Generic Browser";
-    //        string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
-
-    //        var tokenResult = await _tokenEngine.IssueInitialSessionAsync(user, deviceId, deviceName, clientIp);
-
-    //        return Ok(new { message = "登入成功", tokenData = tokenResult });
-    //    }
-    //    catch (Exception ex)
-    //    {
-    //        _logger.LogError(ex, "登入端點發生未預期異常。");
-    //        return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
-    //        {
-    //            Status = StatusCodes.Status500InternalServerError,
-    //            Title = "伺服器內部錯誤",
-    //            Detail = "登入處理期間發生系統異常，請聯繫系統管理員。",
-    //            Instance = HttpContext.Request.Path
-    //        });
-    //    }
-    //}
-
     /// <summary>
     /// 驗證雙因子登入 (2FA)
     /// </summary>
@@ -424,7 +335,6 @@ public sealed class UserManagementController(
                 });
             }
 
-            // 雙軌資安聯防：強制登出該用戶全網所有其餘工作階段
             await _tokenEngine.EmergencyFreezeAsync(user.Id.ToString(), "使用者透過忘記密碼功能完成密碼重設，全面肅清舊有憑證軌跡。");
             await _tokenEngine.CompleteRemediationAsync(user.Id.ToString());
 
@@ -498,7 +408,6 @@ public sealed class UserManagementController(
                 });
             }
 
-            // 資安聯防：變更密碼成功後，立使所有舊 JWT 與長效 Refresh Token 失敗，防禦 Session 劫持
             await _tokenEngine.EmergencyFreezeAsync(user.Id.ToString(), "使用者執行線上變更密碼，強制登出全網所有裝置工作階段。");
             await _tokenEngine.CompleteRemediationAsync(user.Id.ToString());
 
@@ -601,6 +510,216 @@ public sealed class UserManagementController(
                 Status = StatusCodes.Status500InternalServerError,
                 Title = "伺服器內部錯誤",
                 Detail = "查詢使用者列表時發生系統異常，請聯繫系統管理員。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
+    /// <summary>
+    /// 指派/更新指定使用者的角色權限清單
+    /// </summary>
+    /// <param name="userId">使用者識別碼</param>
+    /// <param name="request">角色指派請求內容</param>
+    /// <param name="cancellationToken">異步取消權牌</param>
+    /// <returns>操作結果訊息</returns>
+    [HttpPut("{userId:guid}/roles")]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.ASSIGNROLES")]
+    [Function("AssignUserRoles", "指派使用者角色", Icon = "fa-solid fa-user-shield", Order = 10, Description = "更新指定使用者的系統角色權限對應清單")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> AssignUserRoles(
+        [FromRoute] Guid userId,
+        [FromBody] AssignUserRolesRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        try
+        {
+            var user = await _userManager.FindByIdAsync(userId.ToString());
+            if (user == null)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Status = StatusCodes.Status400BadRequest,
+                    Title = "使用者不存在",
+                    Detail = $"找不到識別碼為 '{userId}' 的使用者。",
+                    Instance = HttpContext.Request.Path
+                });
+            }
+
+            var currentRoles = await _userManager.GetRolesAsync(user);
+            var targetRoles = request.RoleNames?.Distinct().ToList() ?? new List<string>();
+
+            var rolesToRemove = currentRoles.Except(targetRoles).ToList();
+            var rolesToAdd = targetRoles.Except(currentRoles).ToList();
+
+            using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                if (rolesToRemove.Count > 0)
+                {
+                    var removeResult = await _userManager.RemoveFromRolesAsync(user, rolesToRemove);
+                    if (!removeResult.Succeeded)
+                    {
+                        await transaction.RollbackAsync(cancellationToken);
+                        return BadRequest(new ProblemDetails
+                        {
+                            Status = StatusCodes.Status400BadRequest,
+                            Title = "角色指派失敗",
+                            Detail = string.Join("; ", removeResult.Errors.Select(e => e.Description)),
+                            Instance = HttpContext.Request.Path
+                        });
+                    }
+                }
+
+                if (rolesToAdd.Count > 0)
+                {
+                    var addResult = await _userManager.AddToRolesAsync(user, rolesToAdd);
+                    if (!addResult.Succeeded)
+                    {
+                        await transaction.RollbackAsync(cancellationToken);
+                        return BadRequest(new ProblemDetails
+                        {
+                            Status = StatusCodes.Status400BadRequest,
+                            Title = "角色指派失敗",
+                            Detail = string.Join("; ", addResult.Errors.Select(e => e.Description)),
+                            Instance = HttpContext.Request.Path
+                        });
+                    }
+                }
+
+                await transaction.CommitAsync(cancellationToken);
+                _logger.LogInformation("成功更新使用者 [{UserId}] 的角色清單: [{Roles}]", userId, string.Join(", ", targetRoles));
+                return Ok(new { message = "使用者角色權限指派成功。" });
+            }
+            catch (Exception)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "更新使用者角色時發生未預期異常。UserId: {UserId}", userId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "更新使用者角色時發生系統異常，請聯繫系統管理員。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
+    /// <summary>
+    /// 指派/更新指定使用者的直接 API 權限清單 (不透過角色)
+    /// </summary>
+    /// <param name="userId">使用者識別碼</param>
+    /// <param name="request">直接權限指派請求內容</param>
+    /// <param name="cancellationToken">異步取消權牌</param>
+    /// <returns>操作結果訊息</returns>
+    [HttpPut("{userId:guid}/permissions")]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.ASSIGNPERMISSIONS")]
+    [Function("AssignUserPermissions", "指派使用者直接權限", Icon = "fa-solid fa-key", Order = 11, Description = "更新指定使用者的直接 API 權限聲明清單，實現不綁定角色即可精準控管 API 存取權限")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> AssignUserPermissions(
+        [FromRoute] Guid userId,
+        [FromBody] AssignUserPermissionsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        try
+        {
+            var user = await _userManager.FindByIdAsync(userId.ToString());
+            if (user == null)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Status = StatusCodes.Status400BadRequest,
+                    Title = "使用者不存在",
+                    Detail = $"找不到識別碼為 '{userId}' 的使用者。",
+                    Instance = HttpContext.Request.Path
+                });
+            }
+
+            const string permissionClaimType = "Permission";
+            var currentClaims = await _userManager.GetClaimsAsync(user);
+            var currentPermissions = currentClaims
+                .Where(c => c.Type == permissionClaimType)
+                .Select(c => c.Value)
+                .ToList();
+
+            var targetPermissions = request.Permissions?.Distinct().ToList() ?? new List<string>();
+
+            var permissionsToRemove = currentPermissions.Except(targetPermissions).ToList();
+            var permissionsToAdd = targetPermissions.Except(currentPermissions).ToList();
+
+            using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                if (permissionsToRemove.Count > 0)
+                {
+                    var claimsToRemove = currentClaims
+                        .Where(c => c.Type == permissionClaimType && permissionsToRemove.Contains(c.Value))
+                        .ToList();
+
+                    var removeResult = await _userManager.RemoveClaimsAsync(user, claimsToRemove);
+                    if (!removeResult.Succeeded)
+                    {
+                        await transaction.RollbackAsync(cancellationToken);
+                        return BadRequest(new ProblemDetails
+                        {
+                            Status = StatusCodes.Status400BadRequest,
+                            Title = "權限指派失敗",
+                            Detail = string.Join("; ", removeResult.Errors.Select(e => e.Description)),
+                            Instance = HttpContext.Request.Path
+                        });
+                    }
+                }
+
+                if (permissionsToAdd.Count > 0)
+                {
+                    var claimsToAdd = permissionsToAdd
+                        .Select(p => new Claim(permissionClaimType, p))
+                        .ToList();
+
+                    var addResult = await _userManager.AddClaimsAsync(user, claimsToAdd);
+                    if (!addResult.Succeeded)
+                    {
+                        await transaction.RollbackAsync(cancellationToken);
+                        return BadRequest(new ProblemDetails
+                        {
+                            Status = StatusCodes.Status400BadRequest,
+                            Title = "權限指派失敗",
+                            Detail = string.Join("; ", addResult.Errors.Select(e => e.Description)),
+                            Instance = HttpContext.Request.Path
+                        });
+                    }
+                }
+
+                await transaction.CommitAsync(cancellationToken);
+                _logger.LogInformation("成功更新使用者 [{UserId}] 的直接權限清單: [{Permissions}]", userId, string.Join(", ", targetPermissions));
+                return Ok(new { message = "使用者直接權限指派成功。" });
+            }
+            catch (Exception)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "更新使用者直接權限時發生未預期異常。UserId: {UserId}", userId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "更新使用者直接權限時發生系統異常，請聯繫系統管理員。",
                 Instance = HttpContext.Request.Path
             });
         }

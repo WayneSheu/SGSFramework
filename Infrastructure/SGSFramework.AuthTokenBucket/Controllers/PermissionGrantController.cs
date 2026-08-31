@@ -1,17 +1,16 @@
-﻿using System;
-using System.Net.Mime;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using SGSFramework.AuthTokenBucket.Abstractions;
+using SGSFramework.AuthTokenBucket.DTOs.PermissionGrants;
 using SGSFramework.Core.Abstractions.Attributes;
+using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Controllers.Base;
-using SGSFramework.Identity.Abstractions;
-using SGSFramework.Identity.DTOs.PermissionGrants;
+using System.Net.Mime;
 
-namespace SGSFramework.Identity.Controllers.v1;
+namespace SGSFramework.AuthTokenBucket.Controllers;
 
 /// <summary>
 /// 跨實驗室角色 BitMask 權限設定控制器
@@ -25,9 +24,11 @@ namespace SGSFramework.Identity.Controllers.v1;
 [RequiresPermission("SYSTEM.PERMISSION_GRANT")]
 public sealed class PermissionGrantController(
     IPermissionGrantService permissionGrantService,
+    UserManager<ApplicationUser> userManager,
     ILogger<PermissionGrantController> logger) : ApiControllerBase
 {
     private readonly IPermissionGrantService _permissionGrantService = permissionGrantService ?? throw new ArgumentNullException(nameof(permissionGrantService));
+    private readonly UserManager<ApplicationUser> _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
     private readonly ILogger<PermissionGrantController> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>

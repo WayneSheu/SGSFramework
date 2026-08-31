@@ -154,7 +154,8 @@ public static class AuthTokenBucketServiceCollectionExtensions
                 sp.GetRequiredService<ILogger<PermissionSeedService<TDbContext>>>()
             ));
 
-
+        // 5. 註冊權限授權服務
+        services.AddScoped<IPermissionGrantService, PermissionGrantService<TDbContext>>();
 
         return services;
     }

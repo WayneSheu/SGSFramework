@@ -1,12 +1,10 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using SGSFramework.Core.Abstractions.Permissions;
+using SGSFramework.AuthTokenBucket.Abstractions;
+using SGSFramework.AuthTokenBucket.DTOs.PermissionGrants;
 using SGSFramework.Core.Abstractions.Permissions.Identities;
-using SGSFramework.Identity.Abstractions;
-using SGSFramework.Identity.DTOs;
-using SGSFramework.Identity.DTOs.PermissionGrants;
 
-namespace SGSFramework.Identity.Services
+namespace SGSFramework.AuthTokenBucket.Services
 {
     /// <summary>
     /// 角色實驗室維度 BitMask 權限管理服務實作 (泛型 DbContext 綁定)

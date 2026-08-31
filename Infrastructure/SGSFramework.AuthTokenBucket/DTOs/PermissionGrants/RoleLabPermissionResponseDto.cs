@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace SGSFramework.Identity.DTOs.PermissionGrants
+namespace SGSFramework.AuthTokenBucket.DTOs.PermissionGrants
 {
     /// <summary>
     /// 角色在特定實驗室下的 BitMask 權限矩陣回應 DTO
