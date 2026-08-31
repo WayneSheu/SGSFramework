@@ -8,6 +8,8 @@ using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.Services;
 using SGSFramework.Core.Controllers.Providers;
 using SGSFramework.Core.Converters; // 引用 NullableGuidJsonConverter 所在的命名空間
+using SGSFramework.Identity.Abstractions;
+using SGSFramework.Identity.Services;
 
 public static class ServiceCollectionExtensions
 {
@@ -43,6 +45,7 @@ public static class ServiceCollectionExtensions
                 options.JsonSerializerOptions.Converters.Add(new NullableGuidJsonConverter());
             });
 
+        services.AddScoped<IControllerMetadataService, ControllerMetadataService>();
         return services;
     }
 }
