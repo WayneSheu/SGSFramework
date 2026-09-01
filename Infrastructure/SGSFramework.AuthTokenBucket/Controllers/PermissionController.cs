@@ -3,21 +3,21 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.DTOs;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Identities;
+using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Controllers.Base;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
 
 namespace SGSFramework.AuthTokenBucket.Controllers.v1;
-
-
 
 /// <summary>
 /// 權限管理控制器
@@ -31,11 +31,13 @@ public sealed class PermissionController(
     IPermissionManagementService permissionService,
     RoleManager<ApplicationRole> roleManager,
     UserManager<ApplicationUser> userManager,
+    IUserPermissionRepository userPermissionRepository,
     ILogger<PermissionController> logger) : ApiControllerBase
 {
     private readonly IPermissionManagementService _permissionService = permissionService ?? throw new ArgumentNullException(nameof(permissionService));
     private readonly RoleManager<ApplicationRole> _roleManager = roleManager ?? throw new ArgumentNullException(nameof(roleManager));
     private readonly UserManager<ApplicationUser> _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
+    private readonly IUserPermissionRepository _userPermissionRepository = userPermissionRepository ?? throw new ArgumentNullException(nameof(userPermissionRepository));
     private readonly ILogger<PermissionController> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -189,7 +191,7 @@ public sealed class PermissionController(
     {
         try
         {
-            var user = await _userManager.FindByIdAsync(userId.ToString());
+            var user = await _userManager.FindByIdAsync(userId.ToString()).ConfigureAwait(false);
             if (user == null)
             {
                 return BadRequest(new ProblemDetails
@@ -201,10 +203,9 @@ public sealed class PermissionController(
                 });
             }
 
-            var roles = await _userManager.GetRolesAsync(user);
-            var claims = await _userManager.GetClaimsAsync(user);
+            var roles = await _userManager.GetRolesAsync(user).ConfigureAwait(false);
+            var claims = await _userManager.GetClaimsAsync(user).ConfigureAwait(false);
 
-            // 1. 取得使用者個人直接指派的權限
             const string permissionClaimType = "Permission";
             var directPermissions = claims
                 .Where(c => c.Type == permissionClaimType)
@@ -212,22 +213,18 @@ public sealed class PermissionController(
                 .Distinct()
                 .ToList();
 
-            // 2. 透過角色名稱查詢 Role ID，再取得該角色的權限矩陣並進行聯集
-            var rolePermissionsList = new List<string>();
-            foreach (var roleName in roles)
+            var rolePermissionTasks = roles.Select(async roleName =>
             {
-                var role = await _roleManager.FindByNameAsync(roleName);
-                if (role != null)
-                {
-                    var roleMatrix = await _permissionService.GetRolePermissionsAsync(role.Id.ToString(), cancellationToken);
-                    if (roleMatrix?.GrantedPermissionKeys != null)
-                    {
-                        rolePermissionsList.AddRange(roleMatrix.GrantedPermissionKeys);
-                    }
-                }
-            }
+                var role = await _roleManager.FindByNameAsync(roleName).ConfigureAwait(false);
+                if (role == null) return Enumerable.Empty<string>();
 
-            // 3. 結合直接權限與角色繼承權限成為最終的有效權限清單
+                var roleMatrix = await _permissionService.GetRolePermissionsAsync(role.Id.ToString(), cancellationToken).ConfigureAwait(false);
+                return roleMatrix?.GrantedPermissionKeys ?? Enumerable.Empty<string>();
+            });
+
+            var rolePermissionResults = await Task.WhenAll(rolePermissionTasks).ConfigureAwait(false);
+            var rolePermissionsList = rolePermissionResults.SelectMany(x => x).ToList();
+
             var effectivePermissions = directPermissions
                 .Union(rolePermissionsList, StringComparer.OrdinalIgnoreCase)
                 .Distinct()
@@ -278,7 +275,6 @@ public sealed class PermissionController(
 
         try
         {
-            // 透過服務取得角色權限設定矩陣
             var rolePermissions = await _permissionService.GetRolePermissionsAsync(roleId, cancellationToken);
             if (rolePermissions == null)
             {
@@ -294,7 +290,6 @@ public sealed class PermissionController(
             string targetRoleName = rolePermissions.RoleName ?? roleId;
             var members = new List<RoleMemberDto>();
 
-            // 取得所有使用者並篩選出屬於該角色的成員清單
             var users = await _userManager.Users.ToListAsync(cancellationToken);
             foreach (var user in users)
             {
@@ -333,5 +328,117 @@ public sealed class PermissionController(
                 Instance = HttpContext.Request.Path
             });
         }
+    }
+
+    /// <summary>
+    /// 指派/更新指定使用者的直接 API 權限清單 (改用 64 位元位元遮罩與資料庫持久化)
+    /// </summary>
+    /// <param name="userId">使用者識別碼</param>
+    /// <param name="tenantLabId">租戶實驗室識別碼 (選填，若有帶入則寫入實驗室隔離權限，否則寫入全域權限)</param>
+    /// <param name="request">直接權限指派請求內容</param>
+    /// <param name="cancellationToken">異步取消權牌</param>
+    /// <returns>操作結果訊息</returns>
+    [HttpPut("user/{userId:guid}/permissions")]
+    [RequiresPermission("SYSTEM_PERMISSION_ASSIGN")]
+    [Function("AssignUserPermissions", "指派使用者直接權限", Icon = "fa-solid fa-key", Order = 11, Description = "更新指定使用者的直接 API 權限，透過 64 位元遮罩與資料庫持久化取代傳統 Claims 肥大化問題")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> AssignUserPermissions(
+        [FromRoute] Guid userId,
+        [FromQuery] Guid? tenantLabId,
+        [FromBody] AssignUserPermissionsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        try
+        {
+            var user = await _userManager.FindByIdAsync(userId.ToString()).ConfigureAwait(false);
+            if (user == null)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Status = StatusCodes.Status400BadRequest,
+                    Title = "使用者不存在",
+                    Detail = $"找不到識別碼為 '{userId}' 的使用者。",
+                    Instance = HttpContext.Request.Path
+                });
+            }
+
+            var targetPermissions = request.Permissions?.Distinct().ToList() ?? new List<string>();
+            var moduleBitmaskDict = GroupPermissionsIntoBitmasks(targetPermissions);
+
+            bool success;
+            if (tenantLabId.HasValue && tenantLabId.Value != Guid.Empty)
+            {
+                success = await _userPermissionRepository.SaveUserLabPermissionsAsync(
+                    userId.ToString(),
+                    tenantLabId.Value,
+                    moduleBitmaskDict,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                success = await _userPermissionRepository.SaveUserGlobalPermissionsAsync(
+                    userId.ToString(),
+                    moduleBitmaskDict,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            if (!success)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Status = StatusCodes.Status400BadRequest,
+                    Title = "權限指派失敗",
+                    Detail = "將使用者權限寫入資料庫時發生錯誤，請稍後再試。",
+                    Instance = HttpContext.Request.Path
+                });
+            }
+
+            _logger.LogInformation("成功更新使用者 [{UserId}] 的直接權限遮罩，影響模組數: [{Count}]", userId, moduleBitmaskDict.Count);
+            return Ok(new { message = "使用者直接權限指派成功。" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "更新使用者直接權限時發生未預期異常。UserId: {UserId}", userId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "更新使用者直接權限時發生系統異常，請聯繫系統管理員。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
+    /// <summary>
+    /// 將權限字串集合轉譯為 64 位元位元遮罩字典
+    /// </summary>
+    private static Dictionary<string, long> GroupPermissionsIntoBitmasks(IEnumerable<string> permissions)
+    {
+        var result = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+
+        var groups = permissions
+            .Where(p => p.Contains('.'))
+            .GroupBy(p => p[..p.LastIndexOf('.')]);
+
+        foreach (var group in groups)
+        {
+            long bitmask = 0;
+            int index = 0;
+            foreach (var _ in group)
+            {
+                if (index < 64)
+                {
+                    bitmask |= (1L << index);
+                }
+                index++;
+            }
+            result[group.Key] = bitmask;
+        }
+
+        return result;
     }
 }

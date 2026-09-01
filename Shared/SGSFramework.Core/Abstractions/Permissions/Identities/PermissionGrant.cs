@@ -11,8 +11,6 @@ namespace SGSFramework.Core.Abstractions.Permissions.Identities
     /// <summary>
     /// 角色權限授權實體，表示特定角色對特定功能或資源的存取權限。
     /// 多維度權限維度矩陣-實驗室隔離維度
-    /// </summary>
-    /// <summary>
     /// 角色於特定實驗室維度下的 BitMask 授權實體
     /// </summary>
     public class PermissionGrant 

@@ -39,5 +39,13 @@ namespace SGSFramework.Core.Abstractions.Permissions
         /// <param name="permission">Permission 實體輸出</param>
         /// <returns>若存在則傳回 true</returns>
         bool TryGetPermission(string permissionKey, out Permission? permission);
+
+        /// <summary>
+        /// 根據位元位置取得單一 Permission 實體
+        /// </summary>
+        /// <param name="moduleName"></param>
+        /// <param name="bitPosition"></param>
+        /// <returns></returns>
+        string? ResolvePermissionKey(string moduleName, int bitPosition);
     }
 }

@@ -1,4 +1,9 @@
-﻿using Microsoft.AspNetCore.Builder;
+﻿// ==========================================
+// 檔案路徑: src/SGSFramework/Infrastructure/SGSFramework.ModulePlugin/Extensions/DynamicControllerLoaderExtensions.cs
+// 架構層級: Presentation / Plugin Extension Layer
+// ==========================================
+
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -106,26 +111,32 @@ public static class DynamicControllerLoaderExtensions
                     int actionOrder = actionFuncAttr?.Order ?? ctrlTitleAttr?.Order ?? 0;
                     string? actionDescription = actionFuncAttr?.Description ?? ctrlTitleAttr?.Description;
 
-                    newMetas.Add(new ControllerMetadata
+                    // 建立實體並透過 AssemblyQualifiedName 確保跨組件型別能被正確解析
+                    var metadata = new ControllerMetadata
                     {
                         Id = Guid.NewGuid(),
                         ModuleName = moduleName,
-                        ModuleTitle = moduleTitle,                  // 寫入 core.ControllerMetadata.ModuleTitle
+                        ModuleTitle = moduleTitle,
                         ControllerName = ctrlType.Name,
-                        ControllerTitle = controllerTitle,          // 寫入 core.ControllerMetadata.ControllerTitle
+                        ControllerTitle = controllerTitle,
                         ActionName = actionName,
-                        DisplayName = actionDisplayName,            // 寫入 DisplayName
+                        DisplayName = actionDisplayName,
                         RouteTemplate = routeTemplate,
                         ParentMenuName = controllerTitle,
-                        Icon = actionIcon,                          // 寫入 Icon
-                        DisplayOrder = actionOrder,                  // 寫入 DisplayOrder
+                        Icon = actionIcon,
+                        DisplayOrder = actionOrder,
                         PermissionKey = actionPermAttr?.PermissionKey ?? string.Empty,
-                        Description = actionDescription,            // 寫入 Description
-                        ControllerTypeName = ctrlType.FullName ?? ctrlType.Name,
+                        Description = actionDescription,
+                        ControllerTypeName = ctrlType.FullName ?? ctrlType.Name,// FullName，避開 AssemblyQualifiedName 帶來的跨 ALC 繫結限制
                         Version = assembly.GetName().Version?.ToString() ?? "1.0.0.0",
                         IsActive = true,
                         CreatedAt = DateTime.UtcNow
-                    });
+                    };
+
+                    // 執行擴充方法，同步解析 BitPosition 與 AttributesJson
+                    metadata.SyncFromAttribute(ctrlType);
+
+                    newMetas.Add(metadata);
                 }
             }
 

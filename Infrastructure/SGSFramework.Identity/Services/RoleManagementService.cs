@@ -6,11 +6,6 @@ using Microsoft.Extensions.Logging;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Identity.Abstractions;
 using SGSFramework.Identity.DTOs;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace SGSFramework.Identity.Services
 {
@@ -18,8 +13,8 @@ namespace SGSFramework.Identity.Services
     /// 企業級泛型角色管理與 AD 整合服務實作
     /// </summary>
     public class RoleManagementService<TRole, TKey> : IRoleManagementService<TRole, TKey>
-        where TRole : IdentityRole<TKey>, new()
-        where TKey : IEquatable<TKey>
+    where TRole : IdentityRole<TKey>, IHasRoleCode, new() // 同時約束 IdentityRole 與介面
+    where TKey : IEquatable<TKey>
     {
         private readonly RoleManager<TRole> _roleManager;
         private readonly UserManager<ApplicationUser> _userManager;
@@ -46,6 +41,7 @@ namespace SGSFramework.Identity.Services
                     .Select(r => new RoleDto
                     {
                         Id = r.Id!.ToString()!,
+                        Code = r.Code!,
                         Name = r.Name!
                     })
                     .ToListAsync(cancellationToken);
@@ -71,6 +67,7 @@ namespace SGSFramework.Identity.Services
                 return new RoleDto
                 {
                     Id = role.Id!.ToString()!,
+                    Code = role.Code!,
                     Name = role.Name!
                 };
             }
@@ -91,6 +88,7 @@ namespace SGSFramework.Identity.Services
             {
                 var role = new TRole
                 {
+                    Code = request.Code!,
                     Name = request.RoleName
                 };
 
@@ -233,9 +231,6 @@ namespace SGSFramework.Identity.Services
             return (true, "使用者角色綁定成功。");
         }
 
-        /// <summary>
-        /// 依指定角色批次指派多位使用者 (含雙軌解析、N+1 優化、交易原子性與結構化日誌)
-        /// </summary>
         public async Task<(bool Succeeded, string Message, IEnumerable<string>? Errors)> BatchAssignUsersToRoleAsync(
             string roleIdentifier,
             BatchAssignUsersRequest request,
@@ -251,7 +246,6 @@ namespace SGSFramework.Identity.Services
 
             try
             {
-                // 1. 支援 Guid (Role ID) 或角色名稱 (Role Name) 雙軌查詢
                 TRole? role = null;
                 if (Guid.TryParse(roleIdentifier, out var roleGuid))
                 {
@@ -272,7 +266,6 @@ namespace SGSFramework.Identity.Services
                     return (false, "角色的名稱無效，無法進行使用者批次指派。", null);
                 }
 
-                // 2. 批次查詢使用者避免 N+1 查詢瓶頸
                 var userGuids = request.UserIds
                     .Select(id => Guid.TryParse(id, out var g) ? g : Guid.Empty)
                     .Where(g => g != Guid.Empty)
@@ -288,7 +281,6 @@ namespace SGSFramework.Identity.Services
                     return (false, "找不到對應的使用者清單。", null);
                 }
 
-                // 3. 使用資料庫交易保證原子性 (All-or-Nothing)
                 using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
                 try
                 {
@@ -302,14 +294,13 @@ namespace SGSFramework.Identity.Services
                         if (await _userManager.IsInRoleAsync(user, role.Name))
                         {
                             successCount++;
-                            continue; // 若已具備該角色則直接略過
+                            continue;
                         }
 
                         var result = await _userManager.AddToRoleAsync(user, role.Name);
                         if (result.Succeeded)
                         {
                             successCount++;
-                            // 結構化日誌：明確記錄 UserName 與 RoleName
                             _logger.LogInformation("使用者 [{UserName}] 已成功指派角色 [{RoleName}]。", user.UserName, role.Name);
                         }
                         else

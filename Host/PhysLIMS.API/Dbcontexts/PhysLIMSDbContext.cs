@@ -39,7 +39,8 @@ public class PhysLIMSDbContext : BaseIdentityDbContext<ApplicationUser, Applicat
     public DbSet<Permission> Permissions { get; set; } = null!;
 
     public DbSet<UserLabMapping> UserLabMappings { get; set; } = null!;
-
+    public DbSet<UserLabPermission> UserLabPermissions { get; set; } = null!;
+    public DbSet<UserGlobalPermission> UserGlobalPermissions { get; set; } = null!;
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {

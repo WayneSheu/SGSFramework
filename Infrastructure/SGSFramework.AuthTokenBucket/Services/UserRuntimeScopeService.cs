@@ -1,10 +1,9 @@
-﻿namespace SGSFramework.AuthTokenBucket.Services;
+﻿// ==========================================
+// 檔案路徑: Infrastructure/SGSFramework.AuthTokenBucket/Services/UserRuntimeScopeService.cs
+// ==========================================
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
+namespace SGSFramework.AuthTokenBucket.Services;
+
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
@@ -14,8 +13,14 @@ using SGSFramework.Core.Abstractions.Adapters;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Menus;
+using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Controllers.Services;
 using SGSFramework.Core.DTOs;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 /// <summary>
 /// 多租戶與動態實驗室（Lab/Department/Organization）架構下的核心執行期上下文服務。
@@ -27,7 +32,9 @@ public class UserRuntimeScopeService(
     ILogger<UserRuntimeScopeService> logger,
     UserManager<ApplicationUser> userManager,
     IDynamicControllerRepository<ControllerMetadata> controllerRepo,
-    IDynamicMenuService menuService)
+    IDynamicMenuService menuService,
+    IPermissionRegistry permissionRegistry,
+    IUserPermissionRepository userPermissionRepository)
     : IUserRuntimeScopeService
 {
     private readonly IOrganizationIntegrationService _orgIntegrationService = orgIntegrationService ?? throw new ArgumentNullException(nameof(orgIntegrationService));
@@ -36,6 +43,8 @@ public class UserRuntimeScopeService(
     private readonly UserManager<ApplicationUser> _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
     private readonly IDynamicControllerRepository<ControllerMetadata> _controllerRepo = controllerRepo ?? throw new ArgumentNullException(nameof(controllerRepo));
     private readonly IDynamicMenuService _menuService = menuService ?? throw new ArgumentNullException(nameof(menuService));
+    private readonly IPermissionRegistry _permissionRegistry = permissionRegistry ?? throw new ArgumentNullException(nameof(permissionRegistry));
+    private readonly IUserPermissionRepository _userPermissionRepository = userPermissionRepository ?? throw new ArgumentNullException(nameof(userPermissionRepository));
 
     private static readonly TimeSpan CacheExpiration = TimeSpan.FromMinutes(15);
     private const string SystemAdminRole = "sysadmin";
@@ -77,7 +86,7 @@ public class UserRuntimeScopeService(
     }
 
     /// <summary>
-    /// 取得使用者的預設主實驗室 TenantLabId (由 user_lab_mappings 中的 isPrimary 判斷)[cite: 8]
+    /// 取得使用者的預設主實驗室 TenantLabId (由 user_lab_mappings 中的 isPrimary 判斷)
     /// </summary>
     public async Task<Guid?> GetPrimaryLabIdAsync(string userId, CancellationToken cancellationToken = default)
     {
@@ -102,7 +111,7 @@ public class UserRuntimeScopeService(
     }
 
     /// <summary>
-    /// 切換作用中實驗室上下文 (具備自我修復退路與警告通知機制)[cite: 8]
+    /// 切換作用中實驗室上下文 (具備自我修復退路與警告通知機制)
     /// </summary>
     public async Task<SwitchLabResultDto> SwitchLaboratoryWithFallbackAsync(
         string userId,
@@ -166,7 +175,7 @@ public class UserRuntimeScopeService(
     }
 
     /// <summary>
-    /// 舊有相容介面切換實作 (內部轉呼叫降級機制)[cite: 8]
+    /// 舊有相容介面切換實作 (內部轉呼叫降級機制)
     /// </summary>
     public async Task<UserPermissionProfileDto?> SwitchLaboratoryAsync(
         string userId,
@@ -186,7 +195,7 @@ public class UserRuntimeScopeService(
     }
 
     /// <summary>
-    /// 獲取使用者在特定實驗室下的最終權限 Key 集合 (支援全域/組織級權限與實驗室層級隔離)[cite: 8]
+    /// 獲取使用者在特定實驗室下的最終權限 Key 集合 (支援全域/組織級權限與實驗室層級隔離，若 activeLabId 為 null，自動降級解析預設主實驗室)
     /// </summary>
     public async Task<IEnumerable<string>> GetUserPermissionsAsync(
         string userId,
@@ -213,16 +222,30 @@ public class UserRuntimeScopeService(
                 return allPermissions;
             }
 
-            // 1. 若 activeLabId 為 null（代表組織/全域層級請求），僅撈取不綁定實驗室的全域/組織級權限
+            // 1. 若 activeLabId 帶入為 null，自動採用與 LoginAsync 相同的策略：取得使用者的預設主實驗室或第一筆可用實驗室
+            if (!activeLabId.HasValue)
+            {
+                var accessibleLabs = await GetAccessibleLabsAsync(userId, cancellationToken).ConfigureAwait(false);
+                if (accessibleLabs != null && accessibleLabs.Any())
+                {
+                    var primaryLab = accessibleLabs.FirstOrDefault(l => l.IsPrimary) ?? accessibleLabs.FirstOrDefault();
+                    if (primaryLab != null)
+                    {
+                        activeLabId = primaryLab.TenantLabId;
+                    }
+                }
+            }
+
+            // 2. 若經過自動解析後仍無任何實驗室上下文，才退化回純全域/組織級權限
             if (!activeLabId.HasValue)
             {
                 var globalRawPermissions = await GetCachedOrFetchGlobalPermissionsAsync(userId, cancellationToken).ConfigureAwait(false);
                 return ParsePermissionKeys(globalRawPermissions);
             }
 
-            // 2. 若帶有特定實驗室 ID，需確保該實驗室在使用者可存取清單或其父組織鏈路範圍內
-            var accessibleLabs = await GetAccessibleLabsAsync(userId, cancellationToken).ConfigureAwait(false);
-            var targetLab = accessibleLabs.FirstOrDefault(l => l.TenantLabId == activeLabId.Value);
+            // 3. 確保該實驗室在使用者可存取清單範圍內
+            var validatedAccessibleLabs = await GetAccessibleLabsAsync(userId, cancellationToken).ConfigureAwait(false);
+            var targetLab = validatedAccessibleLabs.FirstOrDefault(l => l.TenantLabId == activeLabId.Value);
 
             if (targetLab == null)
             {
@@ -230,7 +253,7 @@ public class UserRuntimeScopeService(
                 return [];
             }
 
-            // 3. 組合全域權限 + 該實驗室範圍權限 (包含符合母子組織繼承或指定實驗室的權限集)
+            // 4. 取得該實驗室範圍的權限清單並透過動態註冊表還原
             var rawPermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId.Value, cancellationToken).ConfigureAwait(false);
             return ParsePermissionKeys(rawPermissions);
         }
@@ -242,17 +265,16 @@ public class UserRuntimeScopeService(
     }
 
     /// <summary>
-    /// 驗證使用者於特定實驗室下的特定模組與 Bitmask 權限點[cite: 8]
+    /// 驗證使用者於特定實驗室下的特定 Controller ID 與 BitPosition 權限點（支援 0~63 64位元遮罩與 Controller 級解耦）
     /// </summary>
     public async Task<bool> ValidateRuntimePermissionAsync(
         string userId,
         Guid activeLabId,
-        string module,
+        Guid controllerId,
         int bitPosition,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(userId);
-        ArgumentException.ThrowIfNullOrEmpty(module);
 
         if (bitPosition is < 0 or > 63)
         {
@@ -274,6 +296,48 @@ public class UserRuntimeScopeService(
                 return false;
             }
 
+            // 1. 取得使用者在該 Lab 下的權限清單
+            var userPermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId, cancellationToken).ConfigureAwait(false);
+
+            // 2. 透過 Controller ID 檢索出對應的 64 位元遮罩數值
+            long assignedBitmask = GetUserBitmaskForController(userPermissions, controllerId);
+
+            // 3. 位元運算檢查對應 bitPosition 是否被允許
+            return (assignedBitmask & (1L << bitPosition)) != 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "驗證執行期權限發生異常。UserId: {UserId}, LabId: {LabId}, ControllerId: {ControllerId}, BitPosition: {BitPosition}",
+                userId, activeLabId, controllerId, bitPosition);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 舊有相容多載：透過字串模組名稱驗證執行期權限
+    /// </summary>
+    public async Task<bool> ValidateRuntimePermissionAsync(
+        string userId,
+        Guid activeLabId,
+        string module,
+        int bitPosition,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(userId);
+        ArgumentException.ThrowIfNullOrEmpty(module);
+
+        if (bitPosition is < 0 or > 63) return false;
+
+        try
+        {
+            var user = await _userManager.FindByIdAsync(userId).ConfigureAwait(false);
+            if (user == null) return false;
+
+            if (await IsSystemAdminAsync(user).ConfigureAwait(false)) return true;
+
+            bool isLabScopeValid = await _orgIntegrationService.IsInUserScopeAsync(userId, activeLabId, cancellationToken).ConfigureAwait(false);
+            if (!isLabScopeValid) return false;
+
             var userPermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId, cancellationToken).ConfigureAwait(false);
             var modulePerm = userPermissions.FirstOrDefault(p => p.StartsWith($"{module}:", StringComparison.OrdinalIgnoreCase));
 
@@ -286,13 +350,13 @@ public class UserRuntimeScopeService(
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "驗證執行期權限發生異常。UserId: {UserId}, LabId: {LabId}, Module: {Module}", userId, activeLabId, module);
+            _logger.LogError(ex, "驗證執行期權限(模組字串)發生異常。UserId: {UserId}, LabId: {LabId}, Module: {Module}", userId, activeLabId, module);
             return false;
         }
     }
 
     /// <summary>
-    /// 獲取使用者可存取的實驗室清單 (整合 SystemAdmin 與一般使用者對映，強型別補齊所有 Required 屬性)[cite: 8]
+    /// 獲取使用者可存取的實驗室清單 (整合 SystemAdmin 與一般使用者對映)
     /// </summary>
     public async Task<List<AccessibleLabDto>> GetAccessibleLabsAsync(
         string userId,
@@ -359,12 +423,25 @@ public class UserRuntimeScopeService(
     #region Private Helper Methods
 
     /// <summary>
+    /// 從權限字串集合中解析出特定 Controller ID 所對應的 64 位元遮罩數值
+    /// </summary>
+    private static long GetUserBitmaskForController(IEnumerable<string> rawPermissions, Guid controllerId)
+    {
+        string targetIdStr = controllerId.ToString();
+        foreach (var perm in rawPermissions)
+        {
+            var parts = perm.Split(':');
+            if (parts.Length >= 2 && parts[0].Equals(targetIdStr, StringComparison.OrdinalIgnoreCase))
+            {
+                if (long.TryParse(parts[1], out long mask)) return mask;
+            }
+        }
+        return 0L;
+    }
+
+    /// <summary>
     /// 解析最終作用中實驗室 (Requested -> Primary -> FirstAvailable)
     /// </summary>
-    /// <param name="accessibleLabs"></param>
-    /// <param name="requestedLabId"></param>
-    /// <returns></returns>
-    /// <exception cref="UnauthorizedAccessException"></exception>
     private static AccessibleLabDto ResolveTargetLab(List<AccessibleLabDto> accessibleLabs, string? requestedLabId)
     {
         AccessibleLabDto? target = null;
@@ -380,7 +457,9 @@ public class UserRuntimeScopeService(
         target ??= accessibleLabs.FirstOrDefault(l => l.IsPrimary);
         target ??= accessibleLabs.FirstOrDefault();
 
-        return target ?? throw new UnauthorizedAccessException("無法解析有效的實驗室節點。");
+        return target ?? baseResult();
+
+        AccessibleLabDto baseResult() => throw new UnauthorizedAccessException("無法解析有效的實驗室節點。");
     }
 
     private async Task<bool> IsSystemAdminAsync(ApplicationUser? user)
@@ -409,13 +488,6 @@ public class UserRuntimeScopeService(
         };
     }
 
-    /// <summary>
-    /// 嘗試從快取中取得使用者在特定實驗室下的權限，若不存在則從資料庫撈取並快取結果  
-    /// </summary>
-    /// <param name="userId"></param>
-    /// <param name="labId"></param>
-    /// <param name="cancellationToken"></param>
-    /// <returns></returns>
     private async Task<IEnumerable<string>> GetCachedOrFetchPermissionsAsync(
         string userId,
         Guid labId,
@@ -450,44 +522,52 @@ public class UserRuntimeScopeService(
     }
 
     /// <summary>
-    /// 從資料庫中取得使用者在特定實驗室下的模組權限點對應 (實際專案中請結合使用者角色與 labId 查詢)
+    /// 從真實資料庫倉儲獲取使用者在特定實驗室下的模組/Controller 權限 64 位元遮罩對應表
     /// </summary>
-    /// <param name="userId"></param>
-    /// <param name="labId"></param>
-    /// <param name="cancellationToken"></param>
-    /// <returns></returns>
-    private Task<Dictionary<string, long>> FetchUserModulePermissionsFromDbAsync(
+    private async Task<Dictionary<string, long>> FetchUserModulePermissionsFromDbAsync(
         string userId,
         Guid labId,
         CancellationToken cancellationToken)
     {
-        // 實際專案中請在此處實作：結合使用者角色權限、指定 labId 及其父組織層級 (Parent TenantLabId) 的資料庫查詢邏輯
-        var mockPermissions = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
+        try
         {
-            { "ReportManagement", 15L },
-            { "UserManagement", 3L },
-            { "LabConfiguration", 1L },
-            { "ORG", 7L } // 包含 ORG_LAB_READ 等位元遮罩或對應權限
-        };
+            ArgumentException.ThrowIfNullOrEmpty(userId);
 
-        return Task.FromResult(mockPermissions);
+            var permissions = await _userPermissionRepository.GetPermissionsByLabAsync(userId, labId, cancellationToken).ConfigureAwait(false);
+            return permissions ?? new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "從資料庫獲取使用者實驗室模組權限發生異常。UserId: {UserId}, LabId: {LabId}", userId, labId);
+            return new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        }
     }
 
-    private Task<Dictionary<string, long>> FetchUserGlobalPermissionsFromDbAsync(
+    /// <summary>
+    /// 從真實資料庫倉儲獲取使用者的全域/組織級權限 64 位元遮罩對應表
+    /// </summary>
+    private async Task<Dictionary<string, long>> FetchUserGlobalPermissionsFromDbAsync(
         string userId,
         CancellationToken cancellationToken)
     {
-        // 實際專案中請在此處實作：僅查詢 LabId 為 null (全域/組織級) 的權限點對應
-        var mockGlobalPermissions = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
+        try
         {
-            { "ORG", 4L }, // 對應 ORG_LAB_READ 或全域組織管理權限
-            { "SYSTEM.ROLEMANAGEMENT", 3L }
-        };
+            ArgumentException.ThrowIfNullOrEmpty(userId);
 
-        return Task.FromResult(mockGlobalPermissions);
+            var globalPermissions = await _userPermissionRepository.GetGlobalPermissionsAsync(userId, cancellationToken).ConfigureAwait(false);
+            return globalPermissions ?? new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "從資料庫獲取使用者全域權限發生異常。UserId: {UserId}", userId);
+            return new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        }
     }
 
-    private static HashSet<string> ParsePermissionKeys(IEnumerable<string> rawPermissions)
+    /// <summary>
+    /// 解析原始權限字串，透過 IPermissionRegistry 將位元遮罩動態還原為具體的業務權限 Key
+    /// </summary>
+    private HashSet<string> ParsePermissionKeys(IEnumerable<string> rawPermissions)
     {
         var permissionKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -501,7 +581,12 @@ public class UserRuntimeScopeService(
                 {
                     if ((mask & (1L << bit)) != 0)
                     {
-                        permissionKeys.Add($"{module}.Bit{bit}");
+                        // 透過動態註冊表反向解析出具體權限字串（例如 ORG_LAB_READ）
+                        var resolvedKey = _permissionRegistry.ResolvePermissionKey(module, bit);
+                        if (!string.IsNullOrEmpty(resolvedKey))
+                        {
+                            permissionKeys.Add(resolvedKey);
+                        }
                     }
                 }
             }
@@ -511,7 +596,6 @@ public class UserRuntimeScopeService(
             }
         }
 
-        // 同時也將原始字串加入（相容字串型態的 PermissionKey，例如 "ORG_LAB_READ"）
         foreach (var permString in rawPermissions)
         {
             var parts = permString.Split(':');

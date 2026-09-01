@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace SGSFramework.Identity.DTOs
+namespace SGSFramework.AuthTokenBucket.DTOs
 {
     public sealed class AssignUserPermissionsRequest
     {

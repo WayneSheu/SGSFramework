@@ -120,6 +120,8 @@ public class DynamicControllerRepository<T>(
                             metaExisting.DisplayOrder = metaNew.DisplayOrder;
                             metaExisting.Icon = metaNew.Icon;
                             metaExisting.Description = metaNew.Description;
+                            metaExisting.BitPosition = metaNew.BitPosition;           // 同步 BitPosition 欄位
+                            metaExisting.AttributesJson = metaNew.AttributesJson;     // 同步 AttributesJson 欄位
 
                             if (!string.IsNullOrEmpty(metaNew.DisplayName))
                             {
@@ -230,7 +232,21 @@ public class DynamicControllerRepository<T>(
     private static Type? GetCachedType(string typeName)
     {
         if (string.IsNullOrWhiteSpace(typeName)) return null;
-        return TypeCache.GetOrAdd(typeName, name => Type.GetType(name));
+
+        return TypeCache.GetOrAdd(typeName, name =>
+        {
+            // 走訪所有 AssemblyLoadContext（包含可回收外掛載入器），避開跨 ALC 繫結例外
+            foreach (var alc in System.Runtime.Loader.AssemblyLoadContext.All)
+            {
+                foreach (var assembly in alc.Assemblies)
+                {
+                    var type = assembly.GetType(name, false, true);
+                    if (type != null) return type;
+                }
+            }
+
+            return null;
+        });
     }
 
     public async Task UnregisterByModuleAsync(string moduleName)

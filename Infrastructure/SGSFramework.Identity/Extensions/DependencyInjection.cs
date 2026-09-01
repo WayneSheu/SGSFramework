@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.Core.Abstractions.Adapters;
 using SGSFramework.Core.Abstractions.Entities.Base;
+using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Identity.Abstractions;
 using SGSFramework.Identity.Repositories;
 using SGSFramework.Identity.Services;
@@ -19,13 +20,14 @@ namespace SGSFramework.Identity.Extensions
         /// 註冊擴充的泛型 Identity 套件服務
         /// </summary>
         public static IServiceCollection AddGenericIdentityPackage<TContext, TUser, TRole, TKey>(
-            this IServiceCollection services,
-            Action<IdentityOptions>? setupAction = null)
-            where TContext : DbContext
-            where TUser : IdentityUser<TKey>, IBaseUser, new()
-            where TRole : IdentityRole<TKey>, new()
-            where TKey : IEquatable<TKey>
+           this IServiceCollection services,
+           Action<IdentityOptions>? setupAction = null)
+           where TContext : DbContext
+           where TUser : IdentityUser<TKey>, IBaseUser, new()
+           where TRole : IdentityRole<TKey>, IHasRoleCode, new() // <-- 在這裡補上 IHasRoleCode 約束
+           where TKey : IEquatable<TKey>
         {
+            
             // 1. 確保註冊 HttpContextAccessor (SignInManager 必備依賴)
             services.AddHttpContextAccessor();
 

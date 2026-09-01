@@ -1,12 +1,5 @@
 ﻿// 檔案路徑: Presentation/SGSFramework.Identity.Controllers/v1/UserManagementController.cs
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.Mime;
-using System.Security.Claims;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
@@ -17,8 +10,16 @@ using SGSFramework.AuthTokenBucket.Models;
 using SGSFramework.AuthTokenBucket.Services;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Identities;
+using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Controllers.Base;
 using SGSFramework.Identity.DTOs;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net.Mime;
+using System.Security.Claims;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace SGSFramework.Identity.Controllers.v1;
 
@@ -613,117 +614,10 @@ public sealed class UserManagementController(
         }
     }
 
-    /// <summary>
-    /// 指派/更新指定使用者的直接 API 權限清單 (不透過角色)
-    /// </summary>
-    /// <param name="userId">使用者識別碼</param>
-    /// <param name="request">直接權限指派請求內容</param>
-    /// <param name="cancellationToken">異步取消權牌</param>
-    /// <returns>操作結果訊息</returns>
-    [HttpPut("{userId:guid}/permissions")]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.ASSIGNPERMISSIONS")]
-    [Function("AssignUserPermissions", "指派使用者直接權限", Icon = "fa-solid fa-key", Order = 11, Description = "更新指定使用者的直接 API 權限聲明清單，實現不綁定角色即可精準控管 API 存取權限")]
-    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> AssignUserPermissions(
-        [FromRoute] Guid userId,
-        [FromBody] AssignUserPermissionsRequest request,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(request);
+    
 
-        try
-        {
-            var user = await _userManager.FindByIdAsync(userId.ToString());
-            if (user == null)
-            {
-                return BadRequest(new ProblemDetails
-                {
-                    Status = StatusCodes.Status400BadRequest,
-                    Title = "使用者不存在",
-                    Detail = $"找不到識別碼為 '{userId}' 的使用者。",
-                    Instance = HttpContext.Request.Path
-                });
-            }
+    
 
-            const string permissionClaimType = "Permission";
-            var currentClaims = await _userManager.GetClaimsAsync(user);
-            var currentPermissions = currentClaims
-                .Where(c => c.Type == permissionClaimType)
-                .Select(c => c.Value)
-                .ToList();
-
-            var targetPermissions = request.Permissions?.Distinct().ToList() ?? new List<string>();
-
-            var permissionsToRemove = currentPermissions.Except(targetPermissions).ToList();
-            var permissionsToAdd = targetPermissions.Except(currentPermissions).ToList();
-
-            using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-            try
-            {
-                if (permissionsToRemove.Count > 0)
-                {
-                    var claimsToRemove = currentClaims
-                        .Where(c => c.Type == permissionClaimType && permissionsToRemove.Contains(c.Value))
-                        .ToList();
-
-                    var removeResult = await _userManager.RemoveClaimsAsync(user, claimsToRemove);
-                    if (!removeResult.Succeeded)
-                    {
-                        await transaction.RollbackAsync(cancellationToken);
-                        return BadRequest(new ProblemDetails
-                        {
-                            Status = StatusCodes.Status400BadRequest,
-                            Title = "權限指派失敗",
-                            Detail = string.Join("; ", removeResult.Errors.Select(e => e.Description)),
-                            Instance = HttpContext.Request.Path
-                        });
-                    }
-                }
-
-                if (permissionsToAdd.Count > 0)
-                {
-                    var claimsToAdd = permissionsToAdd
-                        .Select(p => new Claim(permissionClaimType, p))
-                        .ToList();
-
-                    var addResult = await _userManager.AddClaimsAsync(user, claimsToAdd);
-                    if (!addResult.Succeeded)
-                    {
-                        await transaction.RollbackAsync(cancellationToken);
-                        return BadRequest(new ProblemDetails
-                        {
-                            Status = StatusCodes.Status400BadRequest,
-                            Title = "權限指派失敗",
-                            Detail = string.Join("; ", addResult.Errors.Select(e => e.Description)),
-                            Instance = HttpContext.Request.Path
-                        });
-                    }
-                }
-
-                await transaction.CommitAsync(cancellationToken);
-                _logger.LogInformation("成功更新使用者 [{UserId}] 的直接權限清單: [{Permissions}]", userId, string.Join(", ", targetPermissions));
-                return Ok(new { message = "使用者直接權限指派成功。" });
-            }
-            catch (Exception)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                throw;
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "更新使用者直接權限時發生未預期異常。UserId: {UserId}", userId);
-            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
-            {
-                Status = StatusCodes.Status500InternalServerError,
-                Title = "伺服器內部錯誤",
-                Detail = "更新使用者直接權限時發生系統異常，請聯繫系統管理員。",
-                Instance = HttpContext.Request.Path
-            });
-        }
-    }
 }
 
 #region DTO 模型定義載體

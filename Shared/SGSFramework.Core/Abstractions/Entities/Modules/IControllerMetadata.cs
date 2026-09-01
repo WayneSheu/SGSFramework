@@ -26,5 +26,18 @@ namespace SGSFramework.Core.Abstractions.Entities.Modules
         string? ParentMenuName { get; set; }
         bool IsActive { get; set; }
 
+        // === 新增：位元遮罩解耦與 Attributes 中繼資料 ===
+        /// <summary>
+        /// 該 Action 在模組內對應的位元位置 (0 ~ 63)，用於 Bitmask 快速運算
+        /// </summary>
+        public int? BitPosition { get; set; }
+
+        /// <summary>
+        /// 儲存該 Controller 或 Action 上掃描到的完整 Attributes 集合 (JSON 格式)
+        /// </summary>
+        public string? AttributesJson { get; set; }
+
+
+
     }
 }

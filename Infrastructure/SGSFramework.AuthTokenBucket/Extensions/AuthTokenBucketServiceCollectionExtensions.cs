@@ -156,7 +156,8 @@ public static class AuthTokenBucketServiceCollectionExtensions
 
         // 5. 註冊權限授權服務
         services.AddScoped<IPermissionGrantService, PermissionGrantService<TDbContext>>();
-
+        // 由於 UserPermissionRepository 依賴 DbContext（其預設為 Scoped），因此必須註冊為 Scoped
+        services.AddScoped<IUserPermissionRepository, UserPermissionRepository>();
         return services;
     }
 

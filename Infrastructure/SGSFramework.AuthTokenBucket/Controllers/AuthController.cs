@@ -15,6 +15,7 @@ using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Logings;
 using SGSFramework.Core.Abstractions.Menus;
+using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Controllers.Base;
 using SGSFramework.Core.DTOs;
 using SGSFramework.Core.HttpAuditProviders;
@@ -56,7 +57,8 @@ public sealed class AuthController(
     private readonly IUserRuntimeScopeService _runtimeScopeService = runtimeScopeService ?? throw new ArgumentNullException(nameof(runtimeScopeService));
     private readonly ISender _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
 
-    /// <summary>
+
+    /// <summary>   
     /// 標準帳密登入
     /// </summary>
     /// <param name="request">登入憑證資訊</param>
@@ -121,7 +123,6 @@ public sealed class AuthController(
  
             // 執行階層分組並自動淨化子階層 Parent 屬性
             var groupedLabs = AccessibleLabGroupDto.CreateGroupedList(flatLabs);
-
 
             // 4. 簽發 Token
             var tokenResult = await _tokenEngine.IssueInitialSessionAsync(user, deviceId, deviceName, clientIp);

@@ -11,216 +11,222 @@ using SGSFramework.ModulePlugin.Systems.Controller.Repositories;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Reflection;
+using System.Text.Json;
 
 namespace SGSFramework.ModulePlugin.Systems.Controller.Services
 {
     /// <summary>
-    /// 泛型控制器掃描服務，使用泛型 DbContext 以支援不同的資料庫上下文
+    /// 泛型控制器掃描服務，支援 Attributes 收集與 BitPosition（0~63）位元遮罩解耦
     /// </summary>
-    /// <typeparam name="TDbContext"></typeparam>
+    /// <typeparam name="TDbContext">目標 EF Core DbContext 類型</typeparam>
     public class ControllerScannerService<TDbContext> : IControllerScannerService<TDbContext>
         where TDbContext : DbContext
     {
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<ControllerScannerService<TDbContext>> _logger;
 
-        public ControllerScannerService(IServiceProvider serviceProvider,ILogger<ControllerScannerService<TDbContext>> logger)
+        public ControllerScannerService(IServiceProvider serviceProvider, ILogger<ControllerScannerService<TDbContext>> logger)
         {
-            _serviceProvider = serviceProvider;
-            _logger = logger;
+            _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         /// <summary>
         /// 掃描指定組件集中的控制器並註冊到 DbContext 中
         /// </summary>
-        /// <param name="assemblies"></param>
-        /// <returns></returns>
+        /// <param name="assemblies">組件集合</param>
         public async Task ScanAndRegisterAsync(IEnumerable<Assembly> assemblies)
         {
+            ArgumentNullException.ThrowIfNull(assemblies);
+
             using var scope = _serviceProvider.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<TDbContext>();
-            var dbSet = dbContext.Set<ControllerMetadata>();
-
-        
+            var dynamicRepo = scope.ServiceProvider.GetRequiredService<IDynamicControllerRepository<ControllerMetadata>>();
 
             foreach (var assembly in assemblies)
             {
-                //每個 Assembly 必須擁有獨立的 metadataList，避免跨組件汙染與累積
-                var metadataList = new List<ControllerMetadata>();
-
-                //只要是實作 ControllerBase 或名稱結尾為 Controller、且帶有 [ApiController] 屬性」的類別皆可納入。
-                var controllers = assembly.GetTypes()
-                    .Where(t => t.IsClass && !t.IsAbstract &&
-                                (t.IsSubclassOf(typeof(ControllerBase)) || t.Name.EndsWith("Controller")) &&
-                                t.GetCustomAttribute<ApiControllerAttribute>() != null);
-
-                foreach (var ctrl in controllers)
+                try
                 {
-                    var menuAttr = ctrl.GetCustomAttribute<MenuAttribute>();
-                    var routeAttr = ctrl.GetCustomAttributes<RouteAttribute>().FirstOrDefault();
-                    var descAttr = ctrl.GetCustomAttribute<DescriptionAttribute>(); 
-                    var orderAttr = ctrl.GetCustomAttribute<OrderAttribute>();
-                    var permAttr = ctrl.GetCustomAttribute<RequiresPermissionAttribute>();
-                    var versionAttr = ctrl.GetCustomAttribute<ApiVersionAttribute>();
+                    var metadataList = new List<ControllerMetadata>();
+                    string moduleName = assembly.GetName().Name ?? "Unknown";
 
-                    string version = versionAttr?.Version ?? "v1";
-                    var rawRoute = routeAttr?.Template ?? $"api/{ctrl.Name.Replace("Controller", "")}";
-                    var cleanRoute = rawRoute.TrimStart('/');
+                    var controllers = assembly.GetTypes()
+                        .Where(t => t.IsClass && !t.IsAbstract &&
+                                    (t.IsSubclassOf(typeof(ControllerBase)) || t.Name.EndsWith("Controller", StringComparison.OrdinalIgnoreCase)) &&
+                                    t.GetCustomAttribute<ApiControllerAttribute>() != null);
 
-                    var versionPrefixes = Enumerable.Range(1, 20).Select(i => $"v{i}/").ToArray();
-                    if (versionPrefixes.Any(prefix => cleanRoute.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+                    foreach (var ctrl in controllers)
                     {
-                        cleanRoute = string.Join('/', cleanRoute.Split('/').Skip(1));
-                    }
+                        var menuAttr = ctrl.GetCustomAttribute<MenuAttribute>();
+                        var routeAttr = ctrl.GetCustomAttributes<RouteAttribute>().FirstOrDefault();
+                        var descAttr = ctrl.GetCustomAttribute<DescriptionAttribute>();
+                        var orderAttr = ctrl.GetCustomAttribute<OrderAttribute>();
+                        var permAttr = ctrl.GetCustomAttribute<RequiresPermissionAttribute>();
+                        var versionAttr = ctrl.GetCustomAttribute<ApiVersionAttribute>();
+                        var bitPosAttr = ctrl.GetCustomAttribute<BitPositionAttribute>();
 
-                    var controllerBaseRoute = $"{version}/{cleanRoute}";
+                        string version = versionAttr?.Version ?? "v1";
+                        var rawRoute = routeAttr?.Template ?? $"api/{ctrl.Name.Replace("Controller", "", StringComparison.OrdinalIgnoreCase)}";
+                        var cleanRoute = rawRoute.TrimStart('/');
 
-                    // 註冊 Controller 本身 (母節點 / Index)
-                    var parent = new ControllerMetadata
-                    {
-                        Id = Guid.NewGuid(),
-                        ModuleName = assembly.GetName().Name ?? "Unknown",
-                        ControllerName = ctrl.Name,
-                        ControllerTypeName = ctrl.AssemblyQualifiedName ?? ctrl.FullName ?? ctrl.Name,
-                        ActionName = "INDEX",
-                        DisplayName = menuAttr?.Name ?? ctrl.Name,
-                        Description = descAttr?.Description ?? "無描述",
-                        RouteTemplate = controllerBaseRoute,
-                        DisplayOrder = orderAttr?.Order ?? menuAttr?.Order ?? 10,
-                        ParentMenuName = menuAttr?.Parent,
-                        PermissionKey = permAttr?.PermissionKey ?? $"{ctrl.Name}_READ".ToUpper(),
-                        IsActive = true,
-                        Version = version,
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    metadataList.Add(parent);
-
-                    // 註冊所有 Action (子節點)
-                    var methods = ctrl.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
-                    foreach (var method in methods)
-                    {
-                        var httpAttr = method.GetCustomAttributes().FirstOrDefault(a => a is HttpMethodAttribute);
-                        if (httpAttr == null) continue;
-
-                        var actionMenuAttr = method.GetCustomAttribute<MenuAttribute>();
-                        var actionRouteAttr = method.GetCustomAttribute<RouteAttribute>();
-                        var actionPerm = method.GetCustomAttribute<RequiresPermissionAttribute>();
-                        var actionDesc = method.GetCustomAttribute<DescriptionAttribute>();
-                        var actionOrder = method.GetCustomAttribute<OrderAttribute>();
-                        var actionDisplayAttr = method.GetCustomAttribute<DisplayAttribute>();
-
-                        // 名稱解析
-                        string displayName = actionMenuAttr?.Name ?? actionDisplayAttr?.Name ?? method.Name;
-
-                        // 父選單階層精確對齊邏輯
-                        string parentMenuName = null;
-                        if (actionMenuAttr != null && !string.IsNullOrEmpty(actionMenuAttr.Parent))
+                        var versionPrefixes = Enumerable.Range(1, 20).Select(i => $"v{i}/").ToArray();
+                        if (versionPrefixes.Any(prefix => cleanRoute.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
                         {
-                            parentMenuName = actionMenuAttr.Parent;
-                        }
-                        else if (string.Equals(method.Name, "Index", StringComparison.OrdinalIgnoreCase))
-                        {
-                            parentMenuName = menuAttr?.Parent;
-                        }
-                        else
-                        {
-                            parentMenuName = menuAttr?.Name;
+                            cleanRoute = string.Join('/', cleanRoute.Split('/').Skip(1));
                         }
 
-                        // 排序對齊
-                        int displayOrder = actionOrder?.Order ?? actionMenuAttr?.Order ?? menuAttr?.Order ?? 10;
+                        var controllerBaseRoute = $"{version}/{cleanRoute}";
 
-                        var actionRoute = actionRouteAttr?.Template ?? method.Name;
+                        // 收集 Controller 層級的 Attributes
+                        var ctrlAttributes = ctrl.GetCustomAttributes(true)
+                            .Select(attr => attr.GetType().Name)
+                            .Distinct()
+                            .ToList();
+                        string ctrlAttributesJson = JsonSerializer.Serialize(ctrlAttributes);
 
-                        metadataList.Add(new ControllerMetadata
+                        // 註冊 Controller 本身 (母節點 / Index)
+                        var parent = new ControllerMetadata
                         {
                             Id = Guid.NewGuid(),
-                            ModuleName = parent.ModuleName,
+                            ModuleName = moduleName,
                             ControllerName = ctrl.Name,
                             ControllerTypeName = ctrl.AssemblyQualifiedName ?? ctrl.FullName ?? ctrl.Name,
-                            ActionName = method.Name,
-                            DisplayName = displayName,
-                            Description = actionDesc?.Description ?? "無描述",
-                            RouteTemplate = $"{controllerBaseRoute}/{actionRoute}".Replace("//", "/"),
-                            DisplayOrder = displayOrder,
-                            ParentMenuName = parentMenuName,
-                            PermissionKey = actionPerm?.PermissionKey ?? $"{ctrl.Name}_{method.Name}".ToUpper(),
+                            ActionName = "INDEX",
+                            DisplayName = menuAttr?.Name ?? ctrl.Name,
+                            Description = descAttr?.Description ?? "無描述",
+                            RouteTemplate = controllerBaseRoute,
+                            DisplayOrder = orderAttr?.Order ?? menuAttr?.Order ?? 10,
+                            ParentMenuName = menuAttr?.Parent,
+                            PermissionKey = permAttr?.PermissionKey ?? $"{ctrl.Name}_READ".ToUpper(),
+                            BitPosition = bitPosAttr?.Position,
+                            AttributesJson = ctrlAttributesJson,
                             IsActive = true,
                             Version = version,
                             CreatedAt = DateTime.UtcNow
-                        });
+                        };
+                        metadataList.Add(parent);
+
+                        // 註冊所有 Action (子節點)
+                        var methods = ctrl.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+                        foreach (var method in methods)
+                        {
+                            var httpAttr = method.GetCustomAttributes().FirstOrDefault(a => a is HttpMethodAttribute);
+                            if (httpAttr == null) continue;
+
+                            var actionMenuAttr = method.GetCustomAttribute<MenuAttribute>();
+                            var actionRouteAttr = method.GetCustomAttribute<RouteAttribute>();
+                            var actionPerm = method.GetCustomAttribute<RequiresPermissionAttribute>();
+                            var actionDesc = method.GetCustomAttribute<DescriptionAttribute>();
+                            var actionOrder = method.GetCustomAttribute<OrderAttribute>();
+                            var actionDisplayAttr = method.GetCustomAttribute<DisplayAttribute>();
+                            var actionBitPosAttr = method.GetCustomAttribute<BitPositionAttribute>();
+
+                            string displayName = actionMenuAttr?.Name ?? actionDisplayAttr?.Name ?? method.Name;
+
+                            string? parentMenuName = null;
+                            if (actionMenuAttr != null && !string.IsNullOrEmpty(actionMenuAttr.Parent))
+                            {
+                                parentMenuName = actionMenuAttr.Parent;
+                            }
+                            else if (string.Equals(method.Name, "Index", StringComparison.OrdinalIgnoreCase))
+                            {
+                                parentMenuName = menuAttr?.Parent;
+                            }
+                            else
+                            {
+                                parentMenuName = menuAttr?.Name;
+                            }
+
+                            int displayOrder = actionOrder?.Order ?? actionMenuAttr?.Order ?? menuAttr?.Order ?? 10;
+                            var actionRoute = actionRouteAttr?.Template ?? method.Name;
+
+                            // 收集 Action 及其繼承自 Controller 的完整 Attributes
+                            var actionAttributes = method.GetCustomAttributes(true)
+                                .Concat(ctrl.GetCustomAttributes(true))
+                                .Select(attr => attr.GetType().Name)
+                                .Distinct()
+                                .ToList();
+                            string actionAttributesJson = JsonSerializer.Serialize(actionAttributes);
+
+                            metadataList.Add(new ControllerMetadata
+                            {
+                                Id = Guid.NewGuid(),
+                                ModuleName = parent.ModuleName,
+                                ControllerName = ctrl.Name,
+                                ControllerTypeName = ctrl.AssemblyQualifiedName ?? ctrl.FullName ?? ctrl.Name,
+                                ActionName = method.Name,
+                                DisplayName = displayName,
+                                Description = actionDesc?.Description ?? "無描述",
+                                RouteTemplate = $"{controllerBaseRoute}/{actionRoute}".Replace("//", "/"),
+                                DisplayOrder = displayOrder,
+                                ParentMenuName = parentMenuName,
+                                PermissionKey = actionPerm?.PermissionKey ?? $"{ctrl.Name}_{method.Name}".ToUpper(),
+                                BitPosition = actionBitPosAttr?.Position ?? bitPosAttr?.Position,
+                                AttributesJson = actionAttributesJson,
+                                IsActive = true,
+                                Version = version,
+                                CreatedAt = DateTime.UtcNow
+                            });
+                        }
                     }
+
+                    await dynamicRepo.RegisterAsync(moduleName, metadataList).ConfigureAwait(false);
                 }
-
-
-                // 呼叫現有 Repository 的強固 Upsert 註冊邏輯
-                var dynamicRepo = scope.ServiceProvider.GetRequiredService<IDynamicControllerRepository<ControllerMetadata>>();
-                await dynamicRepo.RegisterAsync(assembly.GetName().Name, metadataList);
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "掃描組件 {Assembly} 時發生非預期錯誤", assembly.FullName);
+                    throw;
+                }
             }
         }
 
-
         /// <summary>
         /// 基於 Module + Controller 的唯一性更新或停用 Metadata。
-        /// 將掃描到的 ControllerMetadata 與資料庫中的現有資料進行比對，並執行新增、更新或停用操作。
         /// </summary>
-        /// <param name="dbContext"></param>
-        /// <param name="dbSet"></param>
-        /// <param name="newList"></param>
-        /// <returns></returns>
         private async Task UpsertMetadataAsync(
-                            DbContext dbContext,
-                            DbSet<ControllerMetadata> dbSet,
-                            List<ControllerMetadata> newList)
+            DbContext dbContext,
+            DbSet<ControllerMetadata> dbSet,
+            List<ControllerMetadata> newList)
         {
-            // 取得該模組現有資料 (效能考量：僅拉取該模組)
             var moduleName = newList.FirstOrDefault()?.ModuleName;
+            if (string.IsNullOrEmpty(moduleName)) return;
+
             var existingMetadata = await dbSet
                 .Where(x => x.ModuleName == moduleName)
-                .ToListAsync();
+                .ToListAsync()
+                .ConfigureAwait(false);
 
-            // 建立複合鍵字典 (ControllerName + ActionName)
             var existingDict = existingMetadata.ToDictionary(k => $"{k.ControllerName}|{k.ActionName}");
-            
+
             foreach (var newItem in newList)
             {
                 var key = $"{newItem.ControllerName}|{newItem.ActionName}";
 
                 if (existingDict.TryGetValue(key, out var existingItem))
                 {
-                    // --- 自動化同步點 ---
-                    var type = Type.GetType(newItem.ControllerTypeName);
-                    if (type != null)
-                    {
-                        existingItem.SyncFromAttribute(type);
-                    }
-
-
-                    // 更新現有資料
                     existingItem.DisplayName = newItem.DisplayName;
-                    existingItem.Description = newItem.Description; // 新增欄位
+                    existingItem.Description = newItem.Description;
                     existingItem.RouteTemplate = newItem.RouteTemplate;
                     existingItem.PermissionKey = newItem.PermissionKey;
                     existingItem.DisplayOrder = newItem.DisplayOrder;
                     existingItem.ParentMenuName = newItem.ParentMenuName;
+                    existingItem.BitPosition = newItem.BitPosition;
+                    existingItem.AttributesJson = newItem.AttributesJson;
                     existingItem.IsActive = true;
                 }
                 else
                 {
-                    // 新增資料
                     newItem.Id = Guid.NewGuid();
                     newItem.CreatedAt = DateTime.UtcNow;
-                    await dbSet.AddAsync(newItem);
+                    await dbSet.AddAsync(newItem).ConfigureAwait(false);
                 }
             }
 
-            // 處理「死連結」(軟刪除)
             var newKeys = newList.Select(c => $"{c.ControllerName}|{c.ActionName}").ToHashSet();
             foreach (var oldItem in existingMetadata.Where(x => !newKeys.Contains($"{x.ControllerName}|{x.ActionName}")))
             {
-                oldItem.IsActive = false; // 不直接 Remove，改為停用
+                oldItem.IsActive = false;
             }
         }
-
     }
 }

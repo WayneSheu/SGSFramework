@@ -15,7 +15,7 @@ namespace SGSFramework.Identity.Abstractions
     /// <typeparam name="TRole">角色實體型別，必須繼承自 IdentityRole&lt;TKey&gt;</typeparam>
     /// <typeparam name="TKey">主鍵型別，必須實作 IEquatable&lt;TKey&gt;</typeparam>
     public interface IRoleManagementService<TRole, TKey>
-        where TRole : IdentityRole<TKey>
+        where TRole : IdentityRole<TKey>, new() // 必須加上與實作類別相同的條件約束
         where TKey : IEquatable<TKey>
     {
         Task<List<RoleDto>> GetAllRolesAsync(CancellationToken cancellationToken = default);

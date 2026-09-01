@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using PhysLIMS.API.Dbcontexts;
 
@@ -11,9 +12,11 @@ using PhysLIMS.API.Dbcontexts;
 namespace PhysLIMS.API.Migrations
 {
     [DbContext(typeof(PhysLIMSDbContext))]
-    partial class PhysLIMSDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260901014857_update_controller_metadata")]
+    partial class update_controller_metadata
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -416,17 +419,8 @@ namespace PhysLIMS.API.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .IsUnicode(true)
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Name")
@@ -1031,93 +1025,6 @@ namespace PhysLIMS.API.Migrations
                         .HasDatabaseName("IX_PermissionGrant_Role_Lab");
 
                     b.ToTable("PermissionGrants", "core");
-                });
-
-            modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Identities.UserGlobalPermission", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("id");
-
-                    b.Property<long>("Bitmask")
-                        .HasColumnType("bigint")
-                        .HasColumnName("bitmask");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("created_at");
-
-                    b.Property<string>("PermissionKey")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)")
-                        .HasColumnName("permission_key");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("updated_at");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasMaxLength(450)
-                        .HasColumnType("nvarchar(450)")
-                        .HasColumnName("user_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId", "PermissionKey")
-                        .IsUnique()
-                        .HasDatabaseName("ix_user_global_permissions_user_key");
-
-                    b.ToTable("User_Global_Permissions", "core");
-                });
-
-            modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Identities.UserLabPermission", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("id");
-
-                    b.Property<long>("Bitmask")
-                        .HasColumnType("bigint")
-                        .HasColumnName("bitmask");
-
-                    b.Property<string>("ControllerOrModuleKey")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)")
-                        .HasColumnName("controller_or_module_key");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("created_at");
-
-                    b.Property<Guid>("TenantLabId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("tenant_lab_id");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2")
-                        .HasColumnName("updated_at");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasMaxLength(450)
-                        .HasColumnType("nvarchar(450)")
-                        .HasColumnName("user_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId", "TenantLabId")
-                        .HasDatabaseName("ix_user_lab_permissions_user_tenant");
-
-                    b.HasIndex("UserId", "TenantLabId", "ControllerOrModuleKey")
-                        .IsUnique()
-                        .HasDatabaseName("ix_user_lab_permissions_user_lab_controller");
-
-                    b.ToTable("User_Lab_Permissions", "core");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>

@@ -15,6 +15,12 @@
 	  <PublishRepositoryUrl>true</PublishRepositoryUrl>
 	  <EmbedUntrackedSources>true</EmbedUntrackedSources>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Abstractions\Entities\Permissions\**" />
+    <EmbeddedResource Remove="Abstractions\Entities\Permissions\**" />
+    <None Remove="Abstractions\Entities\Permissions\**" />
+  </ItemGroup>
 	<ItemGroup>
 		<!-- 引用此套件以使用 WebApplicationBuilder -->
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
@@ -51,7 +57,6 @@
   </ItemGroup>
 	
   <ItemGroup>
-    <Folder Include="Abstractions\Entities\Permissions\" />
     <Folder Include="Scripts\" />
   </ItemGroup>
 

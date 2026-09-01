@@ -93,7 +93,7 @@ public sealed class PermissionAuthorizationService : IPermissionAuthorizationSer
             {
                 return false;
             }
-
+            // 4. 檢查使用者是否擁有指定的權限點（忽略大小寫）
             bool hasPermission = userPermissions.Contains(permissionKey, StringComparer.OrdinalIgnoreCase);
 
             if (!hasPermission)
