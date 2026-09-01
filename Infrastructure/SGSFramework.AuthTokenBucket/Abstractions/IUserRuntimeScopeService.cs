@@ -62,5 +62,8 @@ namespace SGSFramework.AuthTokenBucket.Abstractions
         Task<List<AccessibleLabDto>> GetAccessibleLabsAsync(
             string userId,
             CancellationToken cancellationToken = default);
+
+        // 取得使用者的預設主實驗室 TenantLabId
+        Task<Guid?> GetPrimaryLabIdAsync(string userId, CancellationToken cancellationToken = default);
     }
 }

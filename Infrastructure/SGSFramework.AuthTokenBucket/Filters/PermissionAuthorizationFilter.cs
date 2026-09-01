@@ -10,7 +10,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace SGSFramework.ApiInfrastructure.Filters
+namespace SGSFramework.AuthTokenBucket.Filters
 {
     /// <summary>
     /// 全域/區域權限授權過濾器，讀取 Endpoint 上的 RequiresPermissionAttribute 元資料並進行授權比對。
