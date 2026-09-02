@@ -21,7 +21,13 @@ using System.Reflection;
 /// </summary>
 public class DynamicPermissionRegistry : IPermissionRegistry
 {
+    /// <summary>
+    /// 儲存權限字串與對應的 Permission 物件，使用 ConcurrentDictionary 以確保執行緒安全，並使用不區分大小寫的字串比較器。
+    /// </summary>
     private readonly ConcurrentDictionary<string, Permission> _permissions = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// 儲存 BitPosition 與對應的權限字串，使用 ConcurrentDictionary 以確保執行緒安全。
+    /// </summary>
     private readonly ConcurrentDictionary<int, string> _reverseIndex = new();
     private int _currentBitIndex = 0;
     private readonly object _syncRoot = new();
@@ -62,6 +68,8 @@ public class DynamicPermissionRegistry : IPermissionRegistry
                 types = ex.Types.Where(t => t != null).ToArray()!;
             }
 
+
+            // 過濾出所有繼承自 ControllerBase 的類別
             var controllerTypes = types
                 .Where(t => t.IsClass && !t.IsAbstract && typeof(ControllerBase).IsAssignableFrom(t));
 
@@ -109,6 +117,11 @@ public class DynamicPermissionRegistry : IPermissionRegistry
         }
     }
 
+    /// <summary>
+    /// 取得或建立指定權限字串的 BitPosition，若權限字串已存在則回傳現有的 BitPosition，否則分配新的 BitPosition 並註冊該權限。
+    /// </summary>
+    /// <param name="permissionKey"></param>
+    /// <returns></returns>
     public int GetOrCreateBitPosition(string permissionKey)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(permissionKey);
@@ -126,21 +139,44 @@ public class DynamicPermissionRegistry : IPermissionRegistry
             }
 
             int newBitPosition = _currentBitIndex++;
+            var (moduleName, controllerName, actionName) = ParsePermissionKeyStructure(permissionKey);
+
             var permission = new Permission
             {
                 Id = newBitPosition + 1,
                 PermissionKey = permissionKey,
                 BitPosition = newBitPosition,
-                ModuleName = "SGSFramework.System",
-                ControllerName = "Default",
-                ActionName = "Default",
-                Description = string.Empty
+                ModuleName = moduleName,
+                ControllerName = controllerName,
+                ActionName = actionName,
+                // 透過解析 Key 結構自動賦予有意義的預設描述，不再寫死為空字串
+                Description = $"{controllerName} - {actionName} ({permissionKey})"
             };
 
             _permissions[permissionKey] = permission;
             _reverseIndex[newBitPosition] = permissionKey;
             return newBitPosition;
         }
+    }
+
+    /// <summary>
+    /// 依據 PermissionKey 格式（如 Module.Controller.Action）自動解析中繼資料
+    /// </summary>
+    private static (string ModuleName, string ControllerName, string ActionName) ParsePermissionKeyStructure(string permissionKey)
+    {
+        if (string.IsNullOrWhiteSpace(permissionKey))
+        {
+            return ("SGSFramework.System", "Default", "Default");
+        }
+
+        var parts = permissionKey.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length switch
+        {
+            >= 3 => (parts[0], parts[1], string.Join(".", parts.Skip(2))),
+            2 => ("SGSFramework.System", parts[0], parts[1]),
+            1 => ("SGSFramework.System", "Default", parts[0]),
+            _ => ("SGSFramework.System", "Default", permissionKey)
+        };
     }
 
     /// <summary>

@@ -13,7 +13,7 @@ namespace SGSFramework.Identity.Services
     /// 企業級泛型角色管理與 AD 整合服務實作
     /// </summary>
     public class RoleManagementService<TRole, TKey> : IRoleManagementService<TRole, TKey>
-    where TRole : IdentityRole<TKey>, IHasRoleCode, new() // 同時約束 IdentityRole 與介面
+    where TRole : IdentityRole<TKey>, IRoleEntity, new() // 約束 IdentityRole 與介面IRoleEntity
     where TKey : IEquatable<TKey>
     {
         private readonly RoleManager<TRole> _roleManager;
@@ -41,8 +41,8 @@ namespace SGSFramework.Identity.Services
                     .Select(r => new RoleDto
                     {
                         Id = r.Id!.ToString()!,
-                        Code = r.Code!,
-                        Name = r.Name!
+                        Name = r.Name!,
+                        Description = r.Description!
                     })
                     .ToListAsync(cancellationToken);
 
@@ -67,8 +67,8 @@ namespace SGSFramework.Identity.Services
                 return new RoleDto
                 {
                     Id = role.Id!.ToString()!,
-                    Code = role.Code!,
-                    Name = role.Name!
+                    Name = role.Name!,
+                    Description = role.Description!
                 };
             }
             catch (Exception ex)
@@ -88,8 +88,8 @@ namespace SGSFramework.Identity.Services
             {
                 var role = new TRole
                 {
-                    Code = request.Code!,
-                    Name = request.RoleName
+                    Name = request.RoleName,
+                    Description = request.Description!
                 };
 
                 var result = await _roleManager.CreateAsync(role);
@@ -125,6 +125,7 @@ namespace SGSFramework.Identity.Services
                 }
 
                 role.Name = request.NewRoleName;
+                role.Description = request.Description;
                 var result = await _roleManager.UpdateAsync(role);
 
                 if (result.Succeeded)

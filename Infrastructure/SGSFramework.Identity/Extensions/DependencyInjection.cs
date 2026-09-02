@@ -24,7 +24,7 @@ namespace SGSFramework.Identity.Extensions
            Action<IdentityOptions>? setupAction = null)
            where TContext : DbContext
            where TUser : IdentityUser<TKey>, IBaseUser, new()
-           where TRole : IdentityRole<TKey>, IHasRoleCode, new() // <-- 在這裡補上 IHasRoleCode 約束
+           where TRole : IdentityRole<TKey>, IRoleEntity, new() // <--  IRoleEntity 約束
            where TKey : IEquatable<TKey>
         {
             

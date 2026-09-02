@@ -10,14 +10,8 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
     /// <summary>
     /// 自訂應用程式角色實體
     /// </summary>
-    public class ApplicationRole : IdentityRole<Guid>,IHasRoleCode
+    public class ApplicationRole : IdentityRole<Guid>, IRoleEntity
     {
-        /// <summary>
-        /// 角色代碼 (例如: SYS_ADMIN)
-        /// </summary>
-        [Unicode(true)]
-        public string Code { get; set; } = string.Empty;
-
         /// <summary>
         /// 角色描述
         /// </summary>

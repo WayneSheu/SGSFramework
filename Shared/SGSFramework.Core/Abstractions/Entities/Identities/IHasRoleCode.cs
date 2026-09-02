@@ -4,8 +4,10 @@ using System.Text;
 
 namespace SGSFramework.Core.Abstractions.Entities.Identities
 {
-    public interface IHasRoleCode
+    public interface IRoleEntity
     {
-        string Code { get; set; }
+        //string Code { get; set; }
+
+        string Description { get; set; }
     }
 }
