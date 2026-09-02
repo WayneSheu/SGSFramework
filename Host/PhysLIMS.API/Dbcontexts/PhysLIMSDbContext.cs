@@ -9,6 +9,7 @@ using SGSFramework.Core.Abstractions.Entities.Ledgers;
 using SGSFramework.Core.Abstractions.Entities.Modules;
 using SGSFramework.Core.Abstractions.Logings;
 using SGSFramework.Core.Abstractions.Outbox;
+using SGSFramework.Core.Abstractions.Permissions.Entities;
 using SGSFramework.Core.Abstractions.Permissions.Identities;
 using SGSFramework.Core.Identiies.Tenants;
 using SGSFramework.Core.Migrations;
@@ -36,7 +37,7 @@ public class PhysLIMSDbContext : BaseIdentityDbContext<ApplicationUser, Applicat
     public DbSet<MenuItem> MenuItems { get; set; } = null!;
     public DbSet<PermissionGrant> PermissionGrants { get; set; } = null!;
     public DbSet<UserResourceGrant> UserResourceGrants { get; set; } = null!;
-    public DbSet<Permission> Permissions { get; set; } = null!;
+    public DbSet<PermissionMetadata> Permissions { get; set; } = null!;
 
     public DbSet<UserLabMapping> UserLabMappings { get; set; } = null!;
     public DbSet<UserLabPermission> UserLabPermissions { get; set; } = null!;

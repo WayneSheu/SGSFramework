@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.DTOs;
@@ -13,6 +14,7 @@ using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Controllers.Base;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -28,18 +30,20 @@ namespace SGSFramework.AuthTokenBucket.Controllers.v1;
 [Authorize]
 [ControllerTitle("權限管理", Icon = "fa-solid fa-shield-halved", Order = 20, Description = "提供系統權限樹狀圖查詢、角色權限矩陣讀取與更新服務")]
 public sealed class PermissionController(
+    IMemoryCache memoryCache,
     IPermissionManagementService permissionService,
     RoleManager<ApplicationRole> roleManager,
     UserManager<ApplicationUser> userManager,
     IUserPermissionRepository userPermissionRepository,
     ILogger<PermissionController> logger) : ApiControllerBase
 {
+    private readonly IMemoryCache _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
     private readonly IPermissionManagementService _permissionService = permissionService ?? throw new ArgumentNullException(nameof(permissionService));
     private readonly RoleManager<ApplicationRole> _roleManager = roleManager ?? throw new ArgumentNullException(nameof(roleManager));
     private readonly UserManager<ApplicationUser> _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
     private readonly IUserPermissionRepository _userPermissionRepository = userPermissionRepository ?? throw new ArgumentNullException(nameof(userPermissionRepository));
     private readonly ILogger<PermissionController> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-
+    private const string PermissionTreeCacheKey = "Cache_System_Permission_Tree";
     /// <summary>
     /// 取得完整系統與動態模組權限清單 (階層式：Module -> Controller -> Permissions)
     /// </summary>
@@ -52,14 +56,29 @@ public sealed class PermissionController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<List<PermissionModuleDto>>> GetPermissionTree(CancellationToken cancellationToken = default)
     {
+        var stopwatch = Stopwatch.StartNew();
+
         try
         {
-            var tree = await _permissionService.GetPermissionTreeAsync(cancellationToken);
-            return Ok(tree);
+            var tree = await _memoryCache.GetOrCreateAsync(PermissionTreeCacheKey, async entry =>
+            {
+                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10);
+                entry.Priority = CacheItemPriority.High;
+
+                _logger.LogInformation("重新載入系統權限樹狀結構至記憶體快取。");
+                return await _permissionService.GetPermissionTreeAsync(cancellationToken);
+            });
+
+            stopwatch.Stop();
+            _logger.LogDebug("取得權限樹狀結構耗時: {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
+
+            return Ok(tree ?? new List<PermissionModuleDto>());
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "取得權限樹狀結構時發生未預期異常。");
+            stopwatch.Stop();
+            _logger.LogError(ex, "取得權限樹狀結構時發生未預期異常。耗時: {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
+
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
                 Status = StatusCodes.Status500InternalServerError,

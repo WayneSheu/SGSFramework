@@ -145,16 +145,15 @@ public static class AuthTokenBucketServiceCollectionExtensions
         var registry = new DynamicPermissionRegistry();
         registry.ScanAndRegisterAssemblies(fullAssembliesToScan);
         services.AddSingleton<IPermissionRegistry>(registry);
-
+        // 註冊權限同步服務
         services.AddScoped<IPermissionSeedService>(sp =>
             new PermissionSeedService<TDbContext>(
                 sp.GetRequiredService<TDbContext>(),
                 sp.GetRequiredService<IPermissionRegistry>(),
-                fullAssembliesToScan,
                 sp.GetRequiredService<ILogger<PermissionSeedService<TDbContext>>>()
             ));
 
-        // 5. 註冊權限授權服務
+        // 註冊權限授權服務
         services.AddScoped<IPermissionGrantService, PermissionGrantService<TDbContext>>();
         // 由於 UserPermissionRepository 依賴 DbContext（其預設為 Scoped），因此必須註冊為 Scoped
         services.AddScoped<IUserPermissionRepository, UserPermissionRepository>();

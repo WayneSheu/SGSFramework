@@ -5,223 +5,165 @@
 
 namespace SGSFramework.AuthTokenBucket.Services
 {
-    using Microsoft.AspNetCore.Mvc;
     using Microsoft.EntityFrameworkCore;
     using Microsoft.Extensions.Logging;
     using SGSFramework.AuthTokenBucket.Abstractions;
-    using SGSFramework.AuthTokenBucket.Models;
-    using SGSFramework.Core.Abstractions.Attributes;
     using SGSFramework.Core.Abstractions.DbContexts;
+    using SGSFramework.Core.Abstractions.Entities.Controller;
     using SGSFramework.Core.Abstractions.Permissions;
+    using SGSFramework.Core.Abstractions.Permissions.Entities;
     using SGSFramework.Core.Abstractions.Permissions.Identities;
     using System;
-    using System.Collections.Generic;
-    using System.ComponentModel;
     using System.Linq;
-    using System.Reflection;
     using System.Threading;
     using System.Threading.Tasks;
 
     /// <summary>
-    /// PermissionSeedService 類別負責掃描應用程式中的控制器和方法，並將其所需的權限資訊同步到資料庫中。
+    /// PermissionSeedService 類別負責直接承接 IPermissionRegistry 的完整解析與掃描結果，
+    /// 並結合 ControllerMetadata 同步模組中文標題、控制器標題與階層路徑（IHierarchicalEntity），專注執行資料庫的持久化同步作業。
     /// </summary>
-    /// <typeparam name="TDbContext"></typeparam>
+    /// <typeparam name="TDbContext">資料庫上下文型別，需實作 ITokenDbContext</typeparam>
     public class PermissionSeedService<TDbContext> : IPermissionSeedService
         where TDbContext : DbContext, ITokenDbContext
     {
         private readonly TDbContext _dbContext;
         private readonly IPermissionRegistry _permissionRegistry;
-        private readonly IEnumerable<Assembly> _assembliesToScan;
         private readonly ILogger<PermissionSeedService<TDbContext>> _logger;
 
         public PermissionSeedService(
             TDbContext dbContext,
             IPermissionRegistry permissionRegistry,
-            IEnumerable<Assembly> assembliesToScan,
             ILogger<PermissionSeedService<TDbContext>> logger)
         {
             _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
             _permissionRegistry = permissionRegistry ?? throw new ArgumentNullException(nameof(permissionRegistry));
-            _assembliesToScan = assembliesToScan ?? Enumerable.Empty<Assembly>();
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
+        /// <summary>
+        /// 執行權限資料的自動同步與種子化操作，將 DynamicPermissionRegistry 中的權限與 ControllerMetadata 進行比對、階層計算與更新。
+        /// </summary>
         public async Task SeedAndSyncPermissionsAsync(CancellationToken cancellationToken = default)
         {
-            var scannedMappings = _permissionRegistry.GetAllMappings();
-            if (scannedMappings == null || scannedMappings.Count == 0)
+            var registeredPermissions = _permissionRegistry.GetAllPermissions();
+            if (registeredPermissions == null || registeredPermissions.Count == 0)
             {
                 return;
             }
 
-            var allAssemblies = AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => a.FullName != null &&
-                           (a.FullName.StartsWith("SGSFramework") ||
-                            a.FullName.StartsWith("SGS.") ||
-                            a.FullName.StartsWith("PhysLIMS") ||
-                            a == Assembly.GetEntryAssembly()))
-                .Distinct()
-                .Union(_assembliesToScan)
-                .ToArray();
+            var controllerMetadatas = await _dbContext.Set<ControllerMetadata>()
+                .ToListAsync(cancellationToken);
 
-            var metadataMap = ExtractPermissionMetadata(allAssemblies);
-
-            // 迴圈逐筆處理，完美解決 BitPosition 唯一索引 (Unique Index) 碰撞與暫存值衝突問題
-            foreach (var kvp in scannedMappings)
+            foreach (var perm in registeredPermissions)
             {
-                string key = kvp.Key;
-                int bitPosition = kvp.Value;
+                string key = perm.PermissionKey;
+                int bitPosition = perm.BitPosition;
 
-                metadataMap.TryGetValue(key, out var meta);
-                string moduleName = !string.IsNullOrEmpty(meta.ModuleName) ? meta.ModuleName : "SGSFramework.System";
-                string controllerName = meta.ControllerName ?? string.Empty;
-                string actionName = meta.ActionName ?? string.Empty;
-                string description = meta.Description ?? $"Auto-scanned permission: {key}";
+                var matchedMeta = controllerMetadatas.FirstOrDefault(c =>
+                    c.PermissionKey.Equals(key, StringComparison.OrdinalIgnoreCase) ||
+                    (c.ControllerName.Equals(perm.ControllerName, StringComparison.OrdinalIgnoreCase) &&
+                     c.ActionName.Equals(perm.ActionName, StringComparison.OrdinalIgnoreCase)));
 
-                // 1. 先行檢查是否有其他不相關的紀錄佔用了目標 BitPosition
-                var conflictByBit = await _dbContext.Set<Permission>()
+                string moduleName = !string.IsNullOrEmpty(perm.ModuleName) ? perm.ModuleName : "SGSFramework.System";
+                string moduleTitle = matchedMeta?.ModuleTitle ?? moduleName;
+                string controllerTitle = matchedMeta?.ControllerTitle ?? perm.ControllerName;
+                string controllerName = perm.ControllerName ?? string.Empty;
+                string actionName = perm.ActionName ?? string.Empty;
+                string description = !string.IsNullOrEmpty(matchedMeta?.Description)
+                    ? matchedMeta.Description
+                    : (perm.Description ?? $"Auto-scanned permission: {key}");
+
+                // 1. 檢查 BitPosition 唯一性衝突
+                var conflictByBit = await _dbContext.Set<PermissionMetadata>()
                     .FirstOrDefaultAsync(p => p.BitPosition == bitPosition && p.PermissionKey != key, cancellationToken);
 
                 if (conflictByBit != null)
                 {
-                    _logger.LogWarning(
-                        "偵測到 BitPosition 衝突：嘗試指派 BitPosition {BitPosition} 給 Key '{NewKey}'，但已被 Key '{ExistingKey}' 佔用。將暫時釋放衝突項目的 BitPosition。",
-                        bitPosition, key, conflictByBit.PermissionKey);
-
-                    // 暫時將衝突項目的 BitPosition 設為負數並立即寫入，避免後續更新時觸發唯一索引錯誤 (Error 2601)
                     conflictByBit.BitPosition = -Math.Abs(conflictByBit.Id + 10000);
                     await _dbContext.SaveChangesAsync(cancellationToken);
                 }
 
-                // 2. 查詢目前要處理的 Key 是否已經存在
-                var existingByKey = await _dbContext.Set<Permission>()
+                // 2. 查詢現有記錄
+                var existingByKey = await _dbContext.Set<PermissionMetadata>()
                     .FirstOrDefaultAsync(p => p.PermissionKey == key, cancellationToken);
 
                 bool isModified = false;
 
                 if (existingByKey != null)
                 {
-                    if (existingByKey.BitPosition != bitPosition)
-                    {
-                        existingByKey.BitPosition = bitPosition;
-                        isModified = true;
-                    }
-                    if (string.IsNullOrEmpty(existingByKey.ModuleName))
-                    {
-                        existingByKey.ModuleName = moduleName;
-                        isModified = true;
-                    }
-                    if (string.IsNullOrEmpty(existingByKey.ControllerName) && !string.IsNullOrEmpty(controllerName))
-                    {
-                        existingByKey.ControllerName = controllerName;
-                        isModified = true;
-                    }
-                    if (string.IsNullOrEmpty(existingByKey.ActionName) && !string.IsNullOrEmpty(actionName))
-                    {
-                        existingByKey.ActionName = actionName;
-                        isModified = true;
-                    }
-                    if ((string.IsNullOrEmpty(existingByKey.Description) || existingByKey.Description.StartsWith("Auto-scanned permission:")) && !string.IsNullOrEmpty(description))
+                    if (existingByKey.BitPosition != bitPosition) { existingByKey.BitPosition = bitPosition; isModified = true; }
+                    if (existingByKey.ModuleName != moduleName) { existingByKey.ModuleName = moduleName; isModified = true; }
+                    if (existingByKey.ModuleTitle != moduleTitle) { existingByKey.ModuleTitle = moduleTitle; isModified = true; }
+                    if (existingByKey.ControllerTitle != controllerTitle) { existingByKey.ControllerTitle = controllerTitle; isModified = true; }
+                    if (existingByKey.ControllerName != controllerName) { existingByKey.ControllerName = controllerName; isModified = true; }
+                    if (existingByKey.ActionName != actionName) { existingByKey.ActionName = actionName; isModified = true; }
+                    if (string.IsNullOrEmpty(existingByKey.Description) || existingByKey.Description.StartsWith("Auto-scanned permission:"))
                     {
                         existingByKey.Description = description;
                         isModified = true;
                     }
-
-                    if (isModified)
-                    {
-                        _logger.LogInformation("Updated permission metadata for key: {Key}", key);
-                    }
                 }
                 else
                 {
-                    var newPermission = new Permission
+                    var newPermission = new PermissionMetadata
                     {
                         PermissionKey = key,
                         BitPosition = bitPosition,
                         ModuleName = moduleName,
+                        ModuleTitle = moduleTitle,
+                        ControllerTitle = controllerTitle,
                         ControllerName = controllerName,
                         ActionName = actionName,
                         Description = description
                     };
 
-                    _dbContext.Set<Permission>().Add(newPermission);
+                    _dbContext.Set<PermissionMetadata>().Add(newPermission);
                     isModified = true;
-                    _logger.LogInformation("Auto-seeded new permission key: {Key} (BitPosition: {BitPos}, Module: {Mod}, Controller: {Ctrl}, Action: {Act})", key, bitPosition, moduleName, controllerName, actionName);
                 }
 
                 if (isModified)
                 {
-                    try
-                    {
-                        await _dbContext.SaveChangesAsync(cancellationToken);
-                    }
-                    catch (DbUpdateException ex)
-                    {
-                        _logger.LogError(ex, "儲存權限項目失敗 (Key: {Key}, BitPosition: {BitPos})，可能發生唯一索引衝突。", key, bitPosition);
-                        _dbContext.ChangeTracker.Clear();
-                        throw;
-                    }
+                    await _dbContext.SaveChangesAsync(cancellationToken);
                 }
             }
-        }
 
-        private static Dictionary<string, (string ModuleName, string ControllerName, string ActionName, string Description)> ExtractPermissionMetadata(IEnumerable<Assembly> assemblies)
-        {
-            var map = new Dictionary<string, (string, string, string, string)>(StringComparer.OrdinalIgnoreCase);
+            // ==========================================
+            // 3. 自動建立階層關聯：以同一 Controller 且尾綴為 _READ 者作為父節點
+            // ==========================================
+            var allPermissions = await _dbContext.Set<PermissionMetadata>().ToListAsync(cancellationToken);
+            bool hierarchyChanged = false;
 
-            if (assemblies == null) return map;
-
-            foreach (var assembly in assemblies)
+            foreach (var group in allPermissions.GroupBy(p => p.ControllerName))
             {
-                string assemblyName = assembly.GetName().Name ?? string.Empty;
-                string moduleName = assemblyName;
+                if (string.IsNullOrEmpty(group.Key)) continue;
 
-                Type[] types;
-                try
+                // 尋找該 Controller 下尾綴為 _READ 的權限作為父節點
+                var readPermission = group.FirstOrDefault(p => p.PermissionKey.EndsWith("_READ", StringComparison.OrdinalIgnoreCase))
+                                  ?? group.FirstOrDefault(); // 備援：若無 _READ 則取群組內第一筆
+
+                if (readPermission != null)
                 {
-                    types = assembly.GetTypes();
-                }
-                catch (ReflectionTypeLoadException ex)
-                {
-                    types = ex.Types.Where(t => t != null).ToArray()!;
-                }
-
-                var controllerTypes = types
-                    .Where(t => t.IsClass && !t.IsAbstract && typeof(ControllerBase).IsAssignableFrom(t));
-
-                foreach (var ctrlType in controllerTypes)
-                {
-                    string ctrlName = ctrlType.Name;
-                    string ctrlDesc = ctrlType.GetCustomAttribute<DescriptionAttribute>()?.Description ?? string.Empty;
-
-                    var ctrlPermAttr = ctrlType.GetCustomAttribute<RequiresPermissionAttribute>();
-                    if (ctrlPermAttr != null && !string.IsNullOrEmpty(ctrlPermAttr.PermissionKey))
+                    foreach (var perm in group)
                     {
-                        if (!map.ContainsKey(ctrlPermAttr.PermissionKey))
-                        {
-                            map[ctrlPermAttr.PermissionKey] = (moduleName, ctrlName, string.Empty, string.IsNullOrEmpty(ctrlDesc) ? ctrlPermAttr.PermissionKey : ctrlDesc);
-                        }
-                    }
+                        int? targetParentId = (perm.Id == readPermission.Id) ? null : readPermission.Id;
 
-                    var methods = ctrlType.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
-                    foreach (var method in methods)
-                    {
-                        var actionPermAttr = method.GetCustomAttribute<RequiresPermissionAttribute>();
-                        if (actionPermAttr != null && !string.IsNullOrEmpty(actionPermAttr.PermissionKey))
+                        if (perm.ParentId != targetParentId)
                         {
-                            string actionDesc = method.GetCustomAttribute<DescriptionAttribute>()?.Description ?? string.Empty;
-                            if (string.IsNullOrEmpty(actionDesc))
-                            {
-                                actionDesc = ctrlDesc;
-                            }
-
-                            map[actionPermAttr.PermissionKey] = (moduleName, ctrlName, method.Name, string.IsNullOrEmpty(actionDesc) ? actionPermAttr.PermissionKey : actionDesc);
+                            var parentNode = targetParentId.HasValue ? allPermissions.FirstOrDefault(p => p.Id == targetParentId.Value) : null;
+                            perm.AssignParent(parentNode);
+                            perm.RecalculateHierarchy();
+                            hierarchyChanged = true;
                         }
                     }
                 }
             }
 
-            return map;
+            if (hierarchyChanged)
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                _logger.LogInformation("已自動依據 Controller 與 _READ 尾綴更新權限階層樹狀結構。");
+            }
         }
+
     }
 }

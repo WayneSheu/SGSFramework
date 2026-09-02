@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using PhysLIMS.API.Dbcontexts;
 
@@ -11,9 +12,11 @@ using PhysLIMS.API.Dbcontexts;
 namespace PhysLIMS.API.Migrations
 {
     [DbContext(typeof(PhysLIMSDbContext))]
-    partial class PhysLIMSDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260902024423_change_permission_name")]
+    partial class change_permission_name
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -959,72 +962,6 @@ namespace PhysLIMS.API.Migrations
                     b.ToTable("OutboxMessages", "core");
                 });
 
-            modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Entities.PermissionMetadata", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("ActionName")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("BitPosition")
-                        .HasColumnType("int");
-
-                    b.Property<string>("ControllerName")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("ControllerTitle")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<int>("Level")
-                        .HasColumnType("int");
-
-                    b.Property<string>("ModuleName")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("ModuleTitle")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("NodePath")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int?>("ParentId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("PermissionKey")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BitPosition")
-                        .IsUnique();
-
-                    b.HasIndex("ParentId");
-
-                    b.HasIndex("PermissionKey")
-                        .IsUnique();
-
-                    b.ToTable("PermissionMetadata", "core");
-                });
-
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Identities.PermissionGrant", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1048,6 +985,50 @@ namespace PhysLIMS.API.Migrations
                         .HasDatabaseName("IX_PermissionGrant_Role_Lab");
 
                     b.ToTable("PermissionGrants", "core");
+                });
+
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Identities.PermissionMetadata", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ActionName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("BitPosition")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ControllerName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ModuleName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PermissionKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BitPosition")
+                        .IsUnique();
+
+                    b.HasIndex("PermissionKey")
+                        .IsUnique();
+
+                    b.ToTable("PermissionMetadata", "core");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Identities.UserGlobalPermission", b =>
@@ -1221,22 +1202,7 @@ namespace PhysLIMS.API.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Entities.PermissionMetadata", b =>
-                {
-                    b.HasOne("SGSFramework.Core.Abstractions.Permissions.Entities.PermissionMetadata", "Parent")
-                        .WithMany("Children")
-                        .HasForeignKey("ParentId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("Parent");
-                });
-
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Controller.MenuItem", b =>
-                {
-                    b.Navigation("Children");
-                });
-
-            modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Entities.PermissionMetadata", b =>
                 {
                     b.Navigation("Children");
                 });

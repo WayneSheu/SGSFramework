@@ -8,13 +8,8 @@ using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.DTOs;
 using SGSFramework.Core.Abstractions.Permissions;
-using System;
-using System.Collections.Generic;
-using System.Linq;
+using SGSFramework.Core.Abstractions.Permissions.Entities;
 using System.Security.Claims;
-using System.Threading;
-using System.Threading.Tasks;
-
 namespace SGSFramework.AuthTokenBucket.Services
 {
     /// <summary>
@@ -134,42 +129,79 @@ namespace SGSFramework.AuthTokenBucket.Services
         /// </summary>
         public async Task<List<PermissionModuleDto>> GetPermissionTreeAsync(CancellationToken cancellationToken = default)
         {
-            try
-            {
-                // 1. 直接以強型別 IPermissionRegistry 取得已註冊之 Permission 實體集合，徹底剔除反射與 dynamic
-                var registeredPermissions = _permissionRegistry.GetAllPermissions();
+            // 1. 從資料庫讀取已持久化的權限與階層中繼資料
+            var metadataList = await _dbContext.Set<PermissionMetadata>()
+                .OrderBy(p => p.ModuleName)
+                .ThenBy(p => p.ControllerName)
+                .ThenBy(p => p.BitPosition)
+                .ToListAsync(cancellationToken);
 
-                // 2. 進行階層式樹狀結構投影 (Module -> Controller -> Permissions)
-                var result = registeredPermissions
-                    .GroupBy(p => string.IsNullOrWhiteSpace(p.ModuleName) ? "System" : p.ModuleName)
-                    .Select(moduleGroup => new PermissionModuleDto
+            // 2. 取得即時 DynamicPermissionRegistry 中的最新定義作為標題與描述的來源基準
+            var registryPermissions = _permissionRegistry.GetAllPermissions();
+            var registryDict = registryPermissions.ToDictionary(p => p.PermissionKey, StringComparer.OrdinalIgnoreCase);
+
+            var moduleGroups = metadataList.GroupBy(p => p.ModuleName);
+            var result = new List<PermissionModuleDto>();
+
+            foreach (var moduleGroup in moduleGroups)
+            {
+                var firstItem = moduleGroup.First();
+                string moduleName = moduleGroup.Key;
+
+                // 優先從 Registry 或資料庫中取得 ModuleTitle
+                string moduleTitle = !string.IsNullOrEmpty(firstItem.ModuleTitle)
+                    ? firstItem.ModuleTitle
+                    : moduleName;
+
+                var controllerGroups = moduleGroup.GroupBy(p => p.ControllerName);
+                var controllerDtos = new List<PermissionControllerDto>();
+
+                foreach (var ctrlGroup in controllerGroups)
+                {
+                    var firstCtrlItem = ctrlGroup.First();
+                    string controllerName = ctrlGroup.Key;
+
+                    // 優先從資料庫或註冊表取得 ControllerTitle
+                    string controllerTitle = !string.IsNullOrEmpty(firstCtrlItem.ControllerTitle)
+                        ? firstCtrlItem.ControllerTitle
+                        : controllerName;
+
+                    var permissionItems = ctrlGroup.Select(p =>
                     {
-                        ModuleName = moduleGroup.Key,
-                        Controllers = moduleGroup
-                            .GroupBy(p => string.IsNullOrWhiteSpace(p.ControllerName) ? "Default" : p.ControllerName)
-                            .Select(controllerGroup => new PermissionControllerDto
-                            {
-                                ControllerName = controllerGroup.Key,
-                                Permissions = controllerGroup.Select(p => new PermissionItemDto
-                                {
-                                    Id = p.Id,
-                                    PermissionKey = p.PermissionKey,
-                                    BitPosition = p.BitPosition,
-                                    ActionName = p.ActionName,
-                                    Description = p.Description
-                                }).ToList()
-                            }).ToList()
-                    })
-                    .ToList();
+                        // 從 DynamicPermissionRegistry 補齊最新的 Description（若有定義）
+                        registryDict.TryGetValue(p.PermissionKey, out var regItem);
+                        string description = !string.IsNullOrEmpty(regItem?.Description)
+                            ? regItem.Description
+                            : (!string.IsNullOrEmpty(p.Description) ? p.Description : p.PermissionKey);
 
-                await Task.CompletedTask;
-                return result;
+                        return new PermissionItemDto
+                        {
+                            Id = p.Id,
+                            PermissionKey = p.PermissionKey,
+                            BitPosition = p.BitPosition,
+                            ActionName = p.ActionName ?? string.Empty,
+                            Description = description,
+                            ParentId = p.ParentId
+                        };
+                    }).ToList();
+
+                    controllerDtos.Add(new PermissionControllerDto
+                    {
+                        ControllerName = controllerName,
+                        ControllerTitle = controllerTitle,
+                        Permissions = permissionItems
+                    });
+                }
+
+                result.Add(new PermissionModuleDto
+                {
+                    ModuleName = moduleName,
+                    ModuleTitle = moduleTitle,
+                    Controllers = controllerDtos
+                });
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "取得全域動態權限樹狀結構時發生例外。");
-                throw;
-            }
+
+            return result;
         }
 
         /// <summary>

@@ -2,6 +2,8 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using SGSFramework.Core.Abstractions.Entities;
+using SGSFramework.Core.Abstractions.Permissions.Entities;
 
 namespace SGSFramework.Core.Abstractions.Permissions
 {
@@ -24,7 +26,7 @@ namespace SGSFramework.Core.Abstractions.Permissions
         /// 取得所有已註冊之權限 Entity 完整清單
         /// </summary>
         /// <returns>唯讀 Permission 實體集合</returns>
-        IReadOnlyCollection<Permission> GetAllPermissions();
+        IReadOnlyCollection<PermissionMetadata> GetAllPermissions();
 
         /// <summary>
         /// 取得權限代碼 (PermissionKey) 與位元位置 (BitPosition) 之對照字典
@@ -38,7 +40,7 @@ namespace SGSFramework.Core.Abstractions.Permissions
         /// <param name="permissionKey">權限代碼</param>
         /// <param name="permission">Permission 實體輸出</param>
         /// <returns>若存在則傳回 true</returns>
-        bool TryGetPermission(string permissionKey, out Permission? permission);
+        bool TryGetPermission(string permissionKey, out PermissionMetadata? permission);
 
         /// <summary>
         /// 根據位元位置取得單一 Permission 實體
