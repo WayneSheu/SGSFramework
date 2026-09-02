@@ -1,8 +1,9 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SGSFramework.Core.Abstractions.Entities;
-using System.Collections.Generic;
 using SGSFramework.Core.Abstractions.Entities.Hierarchical;
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace SGSFramework.Core.Abstractions.Permissions.Entities
 {
@@ -13,30 +14,43 @@ namespace SGSFramework.Core.Abstractions.Permissions.Entities
     /// </summary>
     public class PermissionMetadata : IHierarchicalEntity
     {
+        [Column(Order = 0)]
         public int Id { get; set; }
-
-        // 階層架構屬性 (IHierarchicalEntity<int>)
-        public int? ParentId { get; set; }
-        public PermissionMetadata? Parent { get; set; }
-        public ICollection<PermissionMetadata> Children { get; set; } = new List<PermissionMetadata>();
-        public string NodePath { get; set; } = string.Empty;
-        public int Level { get; set; }
-
+        // 模組與控制器中繼資料 (對應 ControllerMetadatas)
+        [Column(Order = 1)]
+        public string ModuleName { get; set; } = string.Empty;
+        [Column(Order = 2)]
+        public string? ModuleTitle { get; set; }
+        [Column(Order = 3)]
+        public string ControllerName { get; set; } = string.Empty;
+        [Column(Order = 4)]
+        public string? ControllerTitle { get; set; }
+        [Column(Order = 5)]
+        public string ActionName { get; set; } = string.Empty;
+        [Column(Order = 6)]
+        public string ActionTitle { get; set; } = string.Empty;
+        // 描述，用於後台 UI 顯示
+        [Column(Order = 7)]
+        public string Description { get; set; } = string.Empty;
         // 權限代碼，例如: "ORG_LAB_READ"
+        [Column(Order = 8)]
         public string PermissionKey { get; set; } = string.Empty;
 
         // 位元位置，用於計算 1L << BitPosition
+        [Column(Order = 9)]
         public int BitPosition { get; set; }
 
-        // 模組與控制器中繼資料 (對應 ControllerMetadatas)
-        public string ModuleName { get; set; } = string.Empty;
-        public string? ModuleTitle { get; set; }
-        public string ControllerName { get; set; } = string.Empty;
-        public string? ControllerTitle { get; set; }
-        public string ActionName { get; set; } = string.Empty;
+        // 階層架構屬性 (IHierarchicalEntity<int>)
+        public int? ParentId { get; set; }
 
-        // 描述，用於後台 UI 顯示
-        public string Description { get; set; } = string.Empty;
+        public PermissionMetadata? Parent { get; set; }
+
+        public ICollection<PermissionMetadata> Children { get; set; } = new List<PermissionMetadata>();
+
+        public string NodePath { get; set; } = string.Empty;
+
+        public int Level { get; set; }
+
 
         /// <summary>
         /// 指派或變更父節點，並自動重新計算階層深度與物化路徑

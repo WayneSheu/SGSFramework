@@ -26,6 +26,7 @@ public class PermissionItemDto
     public string PermissionKey { get; set; } = string.Empty;
     public int BitPosition { get; set; }
     public string ActionName { get; set; } = string.Empty;
+    public string ActionTitle { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public int? ParentId { get; set; }
 }

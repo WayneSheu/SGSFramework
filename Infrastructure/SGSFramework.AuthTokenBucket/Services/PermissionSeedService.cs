@@ -20,7 +20,7 @@ namespace SGSFramework.AuthTokenBucket.Services
 
     /// <summary>
     /// PermissionSeedService 類別負責直接承接 IPermissionRegistry 的完整解析與掃描結果，
-    /// 並結合 ControllerMetadata 同步模組中文標題、控制器標題與階層路徑（IHierarchicalEntity），專注執行資料庫的持久化同步作業。
+    /// 並結合 ControllerMetadata 同步模組中文標題、控制器標題、Action中文標題與階層路徑（IHierarchicalEntity），專注執行資料庫的持久化同步作業。
     /// </summary>
     /// <typeparam name="TDbContext">資料庫上下文型別，需實作 ITokenDbContext</typeparam>
     public class PermissionSeedService<TDbContext> : IPermissionSeedService
@@ -65,8 +65,9 @@ namespace SGSFramework.AuthTokenBucket.Services
                      c.ActionName.Equals(perm.ActionName, StringComparison.OrdinalIgnoreCase)));
 
                 string moduleName = !string.IsNullOrEmpty(perm.ModuleName) ? perm.ModuleName : "SGSFramework.System";
-                string moduleTitle = matchedMeta?.ModuleTitle ?? moduleName;
-                string controllerTitle = matchedMeta?.ControllerTitle ?? perm.ControllerName;
+                string moduleTitle = matchedMeta?.ModuleTitle ?? perm.ModuleTitle ?? moduleName;
+                string controllerTitle = matchedMeta?.ControllerTitle ?? perm.ControllerTitle ?? perm.ControllerName;
+                string actionTitle = matchedMeta?.DisplayName ?? perm.ActionTitle ?? perm.ActionName;
                 string controllerName = perm.ControllerName ?? string.Empty;
                 string actionName = perm.ActionName ?? string.Empty;
                 string description = !string.IsNullOrEmpty(matchedMeta?.Description)
@@ -95,6 +96,7 @@ namespace SGSFramework.AuthTokenBucket.Services
                     if (existingByKey.ModuleName != moduleName) { existingByKey.ModuleName = moduleName; isModified = true; }
                     if (existingByKey.ModuleTitle != moduleTitle) { existingByKey.ModuleTitle = moduleTitle; isModified = true; }
                     if (existingByKey.ControllerTitle != controllerTitle) { existingByKey.ControllerTitle = controllerTitle; isModified = true; }
+                    if (existingByKey.ActionTitle != actionTitle) { existingByKey.ActionTitle = actionTitle; isModified = true; }
                     if (existingByKey.ControllerName != controllerName) { existingByKey.ControllerName = controllerName; isModified = true; }
                     if (existingByKey.ActionName != actionName) { existingByKey.ActionName = actionName; isModified = true; }
                     if (string.IsNullOrEmpty(existingByKey.Description) || existingByKey.Description.StartsWith("Auto-scanned permission:"))
@@ -112,6 +114,7 @@ namespace SGSFramework.AuthTokenBucket.Services
                         ModuleName = moduleName,
                         ModuleTitle = moduleTitle,
                         ControllerTitle = controllerTitle,
+                        ActionTitle = actionTitle,
                         ControllerName = controllerName,
                         ActionName = actionName,
                         Description = description
@@ -137,9 +140,8 @@ namespace SGSFramework.AuthTokenBucket.Services
             {
                 if (string.IsNullOrEmpty(group.Key)) continue;
 
-                // 尋找該 Controller 下尾綴為 _READ 的權限作為父節點
                 var readPermission = group.FirstOrDefault(p => p.PermissionKey.EndsWith("_READ", StringComparison.OrdinalIgnoreCase))
-                                  ?? group.FirstOrDefault(); // 備援：若無 _READ 則取群組內第一筆
+                                  ?? group.FirstOrDefault();
 
                 if (readPermission != null)
                 {
@@ -164,6 +166,5 @@ namespace SGSFramework.AuthTokenBucket.Services
                 _logger.LogInformation("已自動依據 Controller 與 _READ 尾綴更新權限階層樹狀結構。");
             }
         }
-
     }
 }

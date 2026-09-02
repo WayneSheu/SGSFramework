@@ -10,7 +10,6 @@ using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Abstractions.Permissions.Entities;
-using SGSFramework.Core.Abstractions.Permissions.Identities;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -19,7 +18,7 @@ using System.Linq;
 using System.Reflection;
 
 /// <summary>
-/// 執行階段動態權限註冊表實作 (Thread-Safe，支援組件自動掃描、ControllerTitle 與 Function 描述對應)
+/// 執行階段動態權限註冊表實作 (Thread-Safe，支援組件自動掃描、ModuleTitle、ControllerTitle 與 Function ActionTitle 對應)
 /// </summary>
 public class DynamicPermissionRegistry : IPermissionRegistry
 {
@@ -41,7 +40,7 @@ public class DynamicPermissionRegistry : IPermissionRegistry
     }
 
     /// <summary>
-    /// 掃描指定組件集合，自動擷取 ControllerTitle、Function 與 RequiresPermission 特性並註冊至 PermissionRegistry
+    /// 掃描指定組件集合，自動擷取 ControllerTitle、Function 特性中的標題與描述，並註冊至 PermissionRegistry
     /// </summary>
     public void ScanAndRegisterAssemblies(IEnumerable<Assembly> assemblies)
     {
@@ -71,7 +70,7 @@ public class DynamicPermissionRegistry : IPermissionRegistry
             {
                 string ctrlName = ctrlType.Name;
 
-                // 優先讀取 ControllerTitleAttribute 取得標題與描述，其次回退至 DescriptionAttribute
+                // 優先讀取 ControllerTitleAttribute 取得標題與描述
                 var ctrlTitleAttr = ctrlType.GetCustomAttribute<ControllerTitleAttribute>();
                 string ctrlTitle = ctrlTitleAttr?.Title ?? ctrlName;
                 string ctrlDesc = ctrlTitleAttr?.Description ?? ctrlType.GetCustomAttribute<DescriptionAttribute>()?.Description ?? string.Empty;
@@ -87,7 +86,8 @@ public class DynamicPermissionRegistry : IPermissionRegistry
                         actionName: string.Empty,
                         description: string.IsNullOrEmpty(ctrlDesc) ? ctrlPermAttr.PermissionKey : ctrlDesc,
                         controllerTitle: ctrlTitle,
-                        moduleTitle: moduleName
+                        moduleTitle: moduleName,
+                        actionTitle: ctrlTitle
                     );
                 }
 
@@ -98,8 +98,9 @@ public class DynamicPermissionRegistry : IPermissionRegistry
                     var actionPermAttr = method.GetCustomAttribute<RequiresPermissionAttribute>();
                     if (actionPermAttr != null && !string.IsNullOrEmpty(actionPermAttr.PermissionKey))
                     {
-                        // 優先讀取 FunctionAttribute 內的 Description，其次回退至 DescriptionAttribute
+                        // 讀取 FunctionAttribute 內的 Title 與 Description
                         var funcAttr = method.GetCustomAttribute<FunctionAttribute>();
+                        string actionTitle = funcAttr?.Title ?? method.Name;
                         string actionDesc = funcAttr?.Description ?? method.GetCustomAttribute<DescriptionAttribute>()?.Description ?? string.Empty;
 
                         if (string.IsNullOrEmpty(actionDesc))
@@ -114,7 +115,8 @@ public class DynamicPermissionRegistry : IPermissionRegistry
                             actionName: method.Name,
                             description: actionDesc,
                             controllerTitle: ctrlTitle,
-                            moduleTitle: moduleName
+                            moduleTitle: moduleName,
+                            actionTitle: actionTitle
                         );
                     }
                 }
@@ -154,7 +156,8 @@ public class DynamicPermissionRegistry : IPermissionRegistry
                 ActionName = actionName,
                 Description = permissionKey,
                 ControllerTitle = controllerName,
-                ModuleTitle = moduleName
+                ModuleTitle = moduleName,
+                ActionTitle = actionName
             };
 
             _permissions[permissionKey] = permission;
@@ -238,7 +241,8 @@ public class DynamicPermissionRegistry : IPermissionRegistry
         string actionName,
         string description,
         string controllerTitle = "",
-        string moduleTitle = "")
+        string moduleTitle = "",
+        string actionTitle = "")
     {
         lock (_syncRoot)
         {
@@ -250,6 +254,7 @@ public class DynamicPermissionRegistry : IPermissionRegistry
                 if (string.IsNullOrEmpty(existing.Description) || existing.Description == permissionKey) existing.Description = description;
                 if (string.IsNullOrEmpty(existing.ControllerTitle)) existing.ControllerTitle = controllerTitle;
                 if (string.IsNullOrEmpty(existing.ModuleTitle)) existing.ModuleTitle = moduleTitle;
+                if (string.IsNullOrEmpty(existing.ActionTitle)) existing.ActionTitle = actionTitle;
 
                 _reverseIndex[existing.BitPosition] = permissionKey;
             }
@@ -266,7 +271,8 @@ public class DynamicPermissionRegistry : IPermissionRegistry
                     ActionName = actionName,
                     Description = description,
                     ControllerTitle = controllerTitle,
-                    ModuleTitle = string.IsNullOrEmpty(moduleTitle) ? moduleName : moduleTitle
+                    ModuleTitle = string.IsNullOrEmpty(moduleTitle) ? moduleName : moduleTitle,
+                    ActionTitle = string.IsNullOrEmpty(actionTitle) ? actionName : actionTitle
                 };
                 _permissions[permissionKey] = permission;
                 _reverseIndex[bitPos] = permissionKey;

@@ -179,6 +179,7 @@ namespace SGSFramework.AuthTokenBucket.Services
                             Id = p.Id,
                             PermissionKey = p.PermissionKey,
                             BitPosition = p.BitPosition,
+                            ActionTitle = !string.IsNullOrEmpty(p.ActionTitle) ? p.ActionTitle : p.PermissionKey,
                             ActionName = p.ActionName ?? string.Empty,
                             Description = description,
                             ParentId = p.ParentId
