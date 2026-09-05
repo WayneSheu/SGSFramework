@@ -20,12 +20,12 @@ namespace SGSFramework.Identity.Controllers.v1;
 /// 系統角色與 AD 群組映射管理控制器
 /// </summary>
 [ApiController]
+[Authorize]
 [Route("api/v1/roles")]
 [Produces(MediaTypeNames.Application.Json)]
 [Consumes(MediaTypeNames.Application.Json)]
-[Authorize]
 [ControllerTitle("角色管理", Icon = "fa-solid fa-user-shield", Order = 20, Description = "提供企業級角色 CRUD、AD 網域群組自動對應與使用者角色授權管理")]
-[RequiresPermission("SYSTEM.ROLEMANAGEMENT")]
+[RequiresPermission("SYSTEM.ROLEMANAGEMENT.READ")]
 public sealed class RoleManagementController(
     IRoleManagementService<ApplicationRole, Guid> roleManagementService,
     ILogger<RoleManagementController> logger) : ApiControllerBase
@@ -39,10 +39,10 @@ public sealed class RoleManagementController(
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>系統角色清單集合</returns>
     [HttpGet]
-    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.READ")]
     [Function("GetAllRoles", "查詢角色列表", Icon = "fa-solid fa-list", Order = 1, Description = "取得系統所有角色清單，包含角色名稱、描述、建立時間等資訊")]
     [ProducesResponseType(typeof(IEnumerable<ApplicationRole>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.GETALLROLES")]
     public async Task<IActionResult> GetAllRoles(CancellationToken cancellationToken = default)
     {
         try
@@ -70,11 +70,11 @@ public sealed class RoleManagementController(
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>指定角色詳細資料</returns>
     [HttpGet("{roleId}")]
-    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.READ")]
     [Function("GetRoleById", "檢視角色細節", Icon = "fa-solid fa-circle-info", Order = 2, Description = "依 Role ID 取得單一角色詳細資訊，包含角色名稱、描述、建立時間、對應的 AD 群組等資訊")]
     [ProducesResponseType(typeof(ApplicationRole), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.GETROLEBYID")]
     public async Task<IActionResult> GetRoleById([FromRoute] string roleId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(roleId);
@@ -115,11 +115,11 @@ public sealed class RoleManagementController(
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>新角色建立結果</returns>
     [HttpPost]
-    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.CREATE")]
     [Function("CreateRole", "新增角色", Icon = "fa-solid fa-plus", Order = 3, Description = "建立新系統角色，需提供角色名稱與描述")]
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.CREATEROLE")]
     public async Task<IActionResult> CreateRole([FromBody] CreateRoleRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -164,11 +164,11 @@ public sealed class RoleManagementController(
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>操作結果訊息</returns>
     [HttpPut]
-    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.UPDATE")]
     [Function("UpdateRole", "編輯角色", Icon = "fa-solid fa-pen-to-square", Order = 4, Description = "更新角色定義，需提供角色 ID、角色名稱與描述")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.UPDATEROLE")]
     public async Task<IActionResult> UpdateRole([FromBody] UpdateRoleRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -210,11 +210,11 @@ public sealed class RoleManagementController(
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>無內容結果</returns>
     [HttpDelete("{roleId}")]
-    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.DELETE")]
     [Function("DeleteRole", "刪除角色", Icon = "fa-solid fa-trash", Order = 5, Description = "刪除角色，需提供角色 ID，刪除後將無法復原")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.DELETEROLE")]
     public async Task<IActionResult> DeleteRole([FromRoute] string roleId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(roleId);
@@ -256,11 +256,11 @@ public sealed class RoleManagementController(
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>操作結果訊息</returns>
     [HttpPost("ad-group/map")]
-    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.ADMAP")]
     [Function("MapAdGroupToRole", "映射 AD 群組", Icon = "fa-solid fa-network-wired", Order = 6, Description = "建立 AD 群組與角色之對應關係，需提供角色 ID 與 AD 群組名稱")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.MAPADGROUPTOROLE")]
     public async Task<IActionResult> MapAdGroupToRole([FromBody] MapAdGroupToRoleRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -302,11 +302,11 @@ public sealed class RoleManagementController(
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>操作結果訊息</returns>
     [HttpPost("ad-group/remove")]
-    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.ADMAP")]
     [Function("RemoveAdGroupFromRole", "解除 AD 群組映射", Icon = "fa-solid fa-link-slash", Order = 7, Description = "解除 AD 群組與角色之對應關係，需提供角色 ID 與 AD 群組名稱")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.REMOVEADGROUPTOROLE")]
     public async Task<IActionResult> RemoveAdGroupFromRole([FromBody] RemoveAdGroupFromRoleRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -348,11 +348,11 @@ public sealed class RoleManagementController(
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>已同步之角色清單與訊息</returns>
     [HttpPost("ad-group/sync")]
-    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.SYNC")]
     [Function("SyncUserRolesFromAdGroups", "同步 AD 使用者角色", Icon = "fa-solid fa-rotate", Order = 8, Description = "根據使用者所屬的 AD 群組，同步其在系統中的角色，需提供使用者帳號與其 AD 群組清單")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.SYNCUSERROLESFROMADGROUPS")]
     public async Task<IActionResult> SyncUserRolesFromAdGroups([FromBody] SyncUserAdRolesRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -394,11 +394,11 @@ public sealed class RoleManagementController(
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>操作結果訊息</returns>
     [HttpPost("user/assign-roles")]
-    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.ASSIGN")]
     [Function("AssignUserRoles", "指派使用者角色", Icon = "fa-solid fa-user-tag", Order = 9, Description = "手動批次指派使用者角色，需提供使用者 ID 與角色清單")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.ASSIGNUSERROLES")]
     public async Task<IActionResult> AssignUserRoles([FromBody] AssignUserRolesRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -437,12 +437,12 @@ public sealed class RoleManagementController(
     /// 依指定角色批次指派多位使用者
     /// </summary>
     [HttpPost("{roleId}/users/batch")]
-    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.ASSIGN")]
     [Function("BatchAssignUsersToRole", "批次指派角色使用者", Icon = "fa-solid fa-users-gear", Order = 10, Description = "針對指定角色批次將多位使用者加入或指派關聯")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.BATCHASSIGNUSERSTOROLE")]
     public async Task<IActionResult> BatchAssignUsersToRole(
         [FromRoute] string roleId,
         [FromBody] BatchAssignUsersRequest request,

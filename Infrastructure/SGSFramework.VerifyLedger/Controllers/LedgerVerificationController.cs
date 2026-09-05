@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -16,9 +17,10 @@ namespace SGSFramework.VerifyLedger.Controllers
     /// 泛型總帳驗證控制器，支援動態路由解析特定 DbContext 與 Entity
     /// </summary>
     [ApiController]
+    [Authorize]
     [Route("api/ledger")]
     [ControllerTitle("總帳驗證管理", Icon = "fa-solid fa-user-shield", Order = 20, Description = "泛型總帳驗證控制器，支援動態路由解析特定 DbContext 與 Entity")]
-    [RequiresPermission("LEDGERVERIFICATION_READ")]
+    [RequiresPermission("SYSTEM.LEDGERVERIFICATION.READ")]
     public class LedgerVerificationController : ControllerBase
     {
         private readonly IServiceProvider _serviceProvider;
@@ -37,7 +39,7 @@ namespace SGSFramework.VerifyLedger.Controllers
         /// </summary>
         [HttpPost("{contextName}/verify/{entityName}")]
         [Function("VerifyLedger", "帳本驗證", Icon = "fa-solid fa-shield-halved", Order = 1, Description = "動態驗證指定資料庫內容與實體的總帳完整性雜湊值")]
-        [RequiresPermission("LEDGERVERIFICATION_VERIFYLEDGER")]
+        [RequiresPermission("SYSTEM.LEDGERVERIFICATION.VERIFYLEDGER")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -121,7 +123,7 @@ namespace SGSFramework.VerifyLedger.Controllers
         /// </summary>
         [HttpGet("{contextName}/report/{entityName}")]
         [Function("DownloadLedgerReport", "帳本驗證報告", Icon = "fa-solid fa-file-pdf", Order = 2, Description = "驗證指定資料庫實體之總帳並直接產生下載 PDF 稽核報告")]
-        [RequiresPermission("LEDGERVERIFICATION_DOWNLOAD_REPORT")]
+        [RequiresPermission("SYSTEM.LEDGERVERIFICATION.DOWNLOADREPORT")]
         [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(FileResult))]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]

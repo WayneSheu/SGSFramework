@@ -24,14 +24,15 @@ using System.Threading.Tasks;
 namespace SGSFramework.Identity.Controllers.v1;
 
 /// <summary>
-/// 使用者身分驗證與帳號管理控制器
+/// 使用者帳號管理控制器
 /// </summary>
 [ApiController]
+[Authorize]
 [Route("api/v1/users")]
 [Produces(MediaTypeNames.Application.Json)]
 [Consumes(MediaTypeNames.Application.Json)]
 [ControllerTitle("使用者管理", Icon = "fa-solid fa-user-gear", Order = 10, Description = "提供使用者註冊、身分驗證、2FA、密碼安全維護與工作階段管理服務")]
-[RequiresPermission("SYSTEM.USERMANAGEMENT")]
+[RequiresPermission("SYSTEM.USERMANAGEMENT.READ")]
 public sealed class UserManagementController(
     UserManager<ApplicationUser> userManager,
     SignInManager<ApplicationUser> signInManager,
@@ -51,11 +52,11 @@ public sealed class UserManagementController(
     /// <param name="request">註冊請求內容</param>
     /// <returns>註冊結果與驗證資訊</returns>
     [HttpPost("register")]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.REGISTER")]
     [Function("Register", "使用者註冊", Icon = "fa-solid fa-user-plus", Order = 1, Description = "進行新使用者帳號註冊並生成電子郵件驗證憑證")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.REGISTER")]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -131,11 +132,11 @@ public sealed class UserManagementController(
     /// <param name="token">驗證記號</param>
     /// <returns>電子郵件驗證結果</returns>
     [HttpGet("confirm-email")]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.CONFIRMEMAIL")]
     [Function("ConfirmEmail", "使用者 Email 驗證", Icon = "fa-solid fa-envelope-circle-check", Order = 2, Description = "檢驗使用者電子郵件驗證碼並啟用帳號")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.CONFIRMEMAIL")]
     public async Task<IActionResult> ConfirmEmail([FromQuery] string email, [FromQuery] string token)
     {
         if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(token))
@@ -196,11 +197,11 @@ public sealed class UserManagementController(
     /// <param name="request">2FA 驗證請求內容</param>
     /// <returns>工作階段 Token 憑證</returns>
     [HttpPost("verify-2fa")]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.VERIFYTWOFACTOR")]
     [Function("VerifyTwoFactor", "雙因子驗證登入", Icon = "fa-solid fa-key", Order = 4, Description = "驗證使用者雙因子驗證碼 (2FA) 並簽發正式工作階段憑證")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.VERIFYTWOFACTOR")]
     public async Task<IActionResult> VerifyTwoFactor([FromBody] TwoFactorVerificationRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -261,10 +262,10 @@ public sealed class UserManagementController(
     /// <param name="request">忘記密碼請求內容</param>
     /// <returns>申請處理訊息</returns>
     [HttpPost("forgot-password")]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.FORGOTPASSWORD")]
     [Function("ForgotPassword", "忘記密碼", Icon = "fa-solid fa-unlock-keyhole", Order = 5, Description = "發送密碼重設郵件與記號至使用者信箱")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [AllowAnonymous]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -301,7 +302,7 @@ public sealed class UserManagementController(
     /// <param name="request">重設密碼請求內容</param>
     /// <returns>重設結果與安全通告</returns>
     [HttpPost("reset-password")]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.RESETPASSWORD")]
+    [AllowAnonymous]
     [Function("ResetPassword", "重設密碼", Icon = "fa-solid fa-shield-cat", Order = 6, Description = "使用重設記號重置密碼，並強制作廢全網歷史 Session 憑證")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -361,7 +362,7 @@ public sealed class UserManagementController(
     /// <returns>變更結果與安全通告</returns>
     [Authorize]
     [HttpPost("change-password")]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.CHANGEPASSWORD")]
+    [AllowAnonymous]
     [Function("ChangePassword", "變更密碼", Icon = "fa-solid fa-lock-rotate", Order = 7, Description = "使用者登入狀態下變更密碼，並觸發資安聯防註銷其他裝置 Session")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -435,7 +436,7 @@ public sealed class UserManagementController(
     /// <returns>登出結果</returns>
     [Authorize]
     [HttpPost("logout")]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.LOGOUT")]
+    [AllowAnonymous]
     [Function("Logout", "安全登出", Icon = "fa-solid fa-right-from-bracket", Order = 8, Description = "安全登出系統並註銷當前裝置之活動工作階段票據")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
@@ -474,10 +475,10 @@ public sealed class UserManagementController(
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>系統使用者清單集合，包含其對應角色</returns>
     [HttpGet]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.READ")]
     [Function("GetUsers", "查詢使用者列表", Icon = "fa-solid fa-users", Order = 9, Description = "取得系統所有使用者清單，包含帳號、Email、驗證狀態與所屬角色等資訊")]
     [ProducesResponseType(typeof(IEnumerable<UserDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.GETUSERS")]
     public async Task<IActionResult> GetUsers(CancellationToken cancellationToken = default)
     {
         try
@@ -524,11 +525,11 @@ public sealed class UserManagementController(
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>操作結果訊息</returns>
     [HttpPut("{userId:guid}/roles")]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.ASSIGNROLES")]
     [Function("AssignUserRoles", "指派使用者角色", Icon = "fa-solid fa-user-shield", Order = 10, Description = "更新指定使用者的系統角色權限對應清單")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.ASSIGNUSERROLES")]
     public async Task<IActionResult> AssignUserRoles(
         [FromRoute] Guid userId,
         [FromBody] AssignUserRolesRequest request,

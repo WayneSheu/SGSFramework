@@ -49,6 +49,7 @@ public sealed class PermissionAuthorizationService : IPermissionAuthorizationSer
         var userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(userId))
         {
+            _logger.LogWarning("[PermissionCheck] 使用者未提供有效的使用者 ID。");
             return false;
         }
 
@@ -59,6 +60,8 @@ public sealed class PermissionAuthorizationService : IPermissionAuthorizationSer
 
             if (runtimeScopeService == null)
             {
+                _logger.LogError("[PermissionCheck] 無法解析 IUserRuntimeScopeService，請確認 DI 設定是否正確。");
+
                 return false;
             }
 
@@ -91,6 +94,8 @@ public sealed class PermissionAuthorizationService : IPermissionAuthorizationSer
 
             if (userPermissions == null)
             {
+                _logger.LogWarning("[PermissionCheck] 無法取得使用者 {UserId} 在範圍 [{LabId}] 下的權限清單，可能是資料庫查詢失敗或使用者不存在。",
+                    userId, activeLabId?.ToString() ?? "Global/Org");
                 return false;
             }
             // 4. 檢查使用者是否擁有指定的權限點（忽略大小寫）

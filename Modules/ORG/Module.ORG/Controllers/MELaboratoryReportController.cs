@@ -19,7 +19,7 @@ namespace SGS.Modules.ORG.Controllers
     [ApiVersion("v1")]
     [Route("api/v1/reports/laboratories")]
     [ControllerTitle("ME實驗室報表管理", Icon = "fa-solid fa-flask", Order = 10, Description = "實驗室報表權限範例。")]
-    [RequiresPermission("ORG_RPT_READ")]
+    [RequiresPermission("ORG.MELABORATORYREPORT.READ")]
     [RequireLaboratory("ME")]
     public class MELaboratoryReportController : ReportDownloadControllerBase<LaboratoryListReportDto>
     {
@@ -72,7 +72,7 @@ namespace SGS.Modules.ORG.Controllers
         /// </summary>
         [HttpGet("category/{categoryCode}")]
         [Function("GetReportsByCategory", "取得指定報表類別清單", Icon = "fa-solid fa-folder-open", Order = 1, Description = "透過動態規則引擎驗證報表類別權限後取得清單")]
-        [RequiresPermission("REPORT_MANAGE_READ")]
+        [RequiresPermission("ORG.MELABORATORYREPORT.GETREPORTSBYCATEGORY")]
         [RequireReportCategory("ENV", "ISO14064", "CARBON")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]

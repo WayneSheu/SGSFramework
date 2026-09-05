@@ -10,6 +10,7 @@ using Serilog;
 using SGSFramework.ApiInfrastructure.Bootstrappers;
 using SGSFramework.ApiInfrastructure.Extensions;
 using SGSFramework.ApiInfrastructure.Filters;
+using SGSFramework.ApiInfrastructure.Middlewares;
 using SGSFramework.ApiInfrastructure.Transformers;
 using SGSFramework.AuditLog.Extensions;
 using SGSFramework.AuthTokenBucket.Abstractions;
@@ -24,9 +25,9 @@ using SGSFramework.Core.Extensions;
 using SGSFramework.Core.Migrations;
 using SGSFramework.Core.SSOs;
 using SGSFramework.Identity.Extensions;
-using SGSFramework.ModulePlugin.Extensions; // 包含 AddModulePlugin, AddControllerScanner, InitializeModularSystemAsync
+using SGSFramework.ModulePlugin.Extensions;
 using SGSFramework.ModulePlugin.Systems.Controller.Providers;
-using SGSFramework.Persistent.Extensions; // 匯入 IScriptExecutionStrategy & DatabaseInitializer DI 註冊擴充
+using SGSFramework.Persistent.Extensions;
 using SGSFramework.Persistent.ScriptRunners;
 using SGSFramework.SystemLog.Extensions;
 using SGSFramework.VerifyLedger.Extensions;
@@ -54,7 +55,6 @@ try
     builder.Services.AddAPIDocServices();
 
     // 2. 資料庫基礎設施與上下文註冊
-    // 使用 Extension 統一註冊 IScriptExecutionStrategy (SqlScriptExecutionStrategy) 與 IDatabaseInitializer (DatabaseInitializer)
     builder.Services.AddPersistentServices();
 
     builder.Services.AddDbContext<PhysLIMSDbContext>(options =>
@@ -91,19 +91,31 @@ try
         options.SignIn.RequireConfirmedAccount = false;
     });
 
-    // 4. 控制器與動態外掛模組註冊 (AddModulePlugin 內部已自動註冊告警基礎設施 AddEnterpriseAlertInfrastructure)
-    // 4. 控制器基礎設施與動態外掛模組註冊
-    builder.Services.AddControllerInfrastructure(config); // 整合 NullableGuidJsonConverter、PermissionFilter 與 Controller 發現機制
+    // 4. 控制器與動態外掛模組註冊
+    builder.Services.AddControllerInfrastructure(config);
     builder.Services.AddModulePlugin<PhysLIMSDbContext>(config);
     builder.Services.AddControllerScanner<PhysLIMSDbContext>();
 
-    // 5. 基礎設施服務
+    // 5. 基礎設施服務與 CORS 企業級策略註冊
     builder.Services.AddAuditLog(config);
     builder.Services.AddCors(options =>
     {
-        options.AddPolicy("AllowAll", policy =>
+        options.AddPolicy("CorsPolicy", policy =>
         {
-            policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+            var allowedOrigins = builder.Configuration
+                .GetSection("CorsSettings:AllowedOrigins")
+                .Get<string[]>();
+
+            // Fail-Fast: 無論哪個環境，只要未設定有效網域即中斷啟動
+            if (allowedOrigins is null || allowedOrigins.Length == 0 || allowedOrigins.All(string.IsNullOrWhiteSpace))
+            {
+                throw new InvalidOperationException("核心資安配置錯誤：未在 appsettings 中找到有效的 'CorsSettings:AllowedOrigins' 設定。");
+            }
+
+            policy.WithOrigins(allowedOrigins)
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();
         });
     });
 
@@ -168,9 +180,10 @@ try
         throw;
     }
 
-    // 中間件管道配置
+    // ----------------------------------------------------
+    // 中間件管道配置 (Middleware Pipeline Execution Order)
+    // ----------------------------------------------------
     app.UseExceptionHandler();
-    app.UseCors("AllowAll");
 
     if (!app.Environment.IsDevelopment())
     {
@@ -215,9 +228,14 @@ try
         await permissionSeeder.SeedAndSyncPermissionsAsync().ConfigureAwait(false);
     }
 
+    // 先進行路由配對
     app.UseRouting();
+    // 1. 在 UseCors 之前加入 CORS Log 攔截器
+    app.UseMiddleware<CorsLoggingMiddleware>();
+    // UseCors 必須放在 UseRouting 之後、UseAuthentication 之前
+    app.UseCors("CorsPolicy");
 
-    // 確保 Validation 與 Challenge 能正確被 JwtBearer 攔截與回應
+    // 驗證與授權中間件
     app.UseAuthentication();
     app.UseAuthorization();
 

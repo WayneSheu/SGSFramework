@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -17,10 +18,11 @@ namespace SGSFramework.ModulePlugin.Controllers.v1;
 /// 商業模組維護與動態載入管理控制器
 /// </summary>
 [ApiController]
+[Authorize]
 [Route("api/v1/system/modules")]
 [Produces("application/json")]
 [ControllerTitle("商業模組管理", Icon = "fa-solid fa-cubes", Order = 100, Description = "商業模組熱插拔維護與動態載入卸載管理")]
-[RequiresPermission("MODULEMANAGEMENT_READ")]
+[RequiresPermission("SYSTEM.MODULEMANAGEMENT.READ")]
 public class ModuleManagementController(
     IModuleManagementApplicationService moduleAppService,
     ILogger<ModuleManagementController> logger) : ApiControllerBase
@@ -35,7 +37,7 @@ public class ModuleManagementController(
     /// <returns>模組詳細資訊列表</returns>
     [HttpGet(Name = "GetActiveModulesDetails")]
     [Function("GetActiveModulesDetails", "查詢已載入模組詳情", Icon = "fa-solid fa-list-check", Order = 1, Description = "查詢目前所有已載入掛載的商務模組完整資訊")]
-    [RequiresPermission("MODULEMANAGEMENT_GETACTIVEMODULESDETAILS")]
+    [RequiresPermission("SYSTEM.MODULEMANAGEMENT.GETACTIVEMODULESDETAILS")]
     [ProducesResponseType(typeof(IEnumerable<ModuleDetailResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<IEnumerable<ModuleDetailResponse>>> GetActiveModulesDetailsAsync(CancellationToken cancellationToken = default)
@@ -67,10 +69,10 @@ public class ModuleManagementController(
     /// <returns>切換後狀態</returns>
     [HttpPatch("{moduleName}/status")]
     [Function("ToggleStatus", "切換模組狀態", Icon = "fa-solid fa-toggle-on", Order = 2, Description = "切換或更新指定模組的熱插拔啟用狀態")]
-    [RequiresPermission("MODULEMANAGEMENT_TOGGLESTATUS")]
     [ProducesResponseType(typeof(ToggleStatusResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [RequiresPermission("SYSTEM.MODULEMANAGEMENT.TOGGLESTATUS")]
     public async Task<IActionResult> ToggleStatusAsync(
         string moduleName,
         [FromBody] ToggleStatusRequest request,
@@ -137,7 +139,7 @@ public class ModuleManagementController(
     [HttpPost]
     [Consumes("multipart/form-data")]
     [Function("UploadModule", "上傳模組", Icon = "fa-solid fa-cloud-arrow-up", Order = 3, Description = "上傳並儲存新的模組 DLL 檔案並動態掛載")]
-    [RequiresPermission("MODULEMANAGEMENT_UPLOADMODULE")]
+    [RequiresPermission("SYSTEM.MODULEMANAGEMENT.UPLOADMODULE")]
     [ProducesResponseType(typeof(ModuleUploadResponseDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
@@ -204,7 +206,7 @@ public class ModuleManagementController(
     /// <returns>操作結果訊息</returns>
     [HttpDelete("{moduleName}")]
     [Function("RemoveModule", "卸載模組", Icon = "fa-solid fa-trash-can", Order = 4, Description = "線上動態卸載指定模組並同步清除資料庫中的控制器與模組元資料")]
-    [RequiresPermission("MODULEMANAGEMENT_REMOVEMODULE")]
+    [RequiresPermission("SYSTEM.MODULEMANAGEMENT.REMOVEMODULE")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> RemoveModuleAsync(string moduleName, CancellationToken cancellationToken = default)

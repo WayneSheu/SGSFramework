@@ -20,7 +20,7 @@ namespace SGSFramework.Identity.Controllers.v1;
 [ApiController]
 [Route("api/v1/auth/sso/windows")]
 [Produces("application/json")]
-[ControllerTitle("Windows 網域單一登入", Icon = "fa-solid fa-windows", Order = 15, Description = "提供內部網路 Windows 網域無感單一登入 (AD SSO) 服務，整合大容量 Bitmask 權限與 TokenManager")]
+[ControllerTitle("Windows 網域登入", Icon = "fa-solid fa-windows", Order = 15, Description = "提供內部網路 Windows 網域無感單一登入 (AD SSO) 服務，整合大容量 Bitmask 權限與 TokenManager")]
 public sealed class WindowsDomainAuthController(
     TokenBucketEngine<ApplicationUser> tokenEngine,
     UserManager<ApplicationUser> userManager,
@@ -37,7 +37,7 @@ public sealed class WindowsDomainAuthController(
     /// <returns>包含簽發 Token 與使用者資訊之登入結果</returns>
     [HttpGet("login")]
     [Authorize(AuthenticationSchemes = "Windows")]
-    [Function("WindowsLogin", "Windows 網域單一登入", Icon = "fa-solid fa-lock", Order = 1, Description = "地端 Windows 網域無感單一登入端點，支援自動 JIT 撥備與 Token 簽發")]
+    [Function("WindowsLogin", "Windows 網域登入", Icon = "fa-solid fa-lock", Order = 1, Description = "地端 Windows 網域無感單一登入端點，支援自動 JIT 撥備與 Token 簽發")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]

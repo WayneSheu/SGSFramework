@@ -18,7 +18,7 @@ namespace SGSFramework.SystemLog.Controllers;
 [ApiVersion("v1")]
 [Route("api/system/log-manager")]
 [ControllerTitle("系統日誌管理", Icon = "fa-solid fa-receipt", Order = 90, Description = "動態調整 Serilog 紀錄層級與線上檢視系統 Log 檔案內容")]
-[RequiresPermission("SYSTEM_LOGMANAGER_READ")]
+[RequiresPermission("SYSTEM.LOGMANAGER.READ")]
 public class LogManagerController : ControllerBase
 {
     private readonly LoggingLevelSwitch _levelSwitch;
@@ -33,7 +33,7 @@ public class LogManagerController : ControllerBase
     /// </summary>
     [HttpGet("current-level")]
     [Function("GetLevel", "取得日誌層級", Icon = "fa-solid fa-gauge-high", Order = 1, Description = "查詢系統當前動態生效中的日誌輸出層級")]
-    [RequiresPermission("SYSTEM_LOGMANAGER_GETLEVEL")]
+    [RequiresPermission("SYSTEM.LOGMANAGER.GETLEVEL")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     public IActionResult GetLevel()
     {
@@ -50,7 +50,7 @@ public class LogManagerController : ControllerBase
     /// </summary>
     [HttpPost("set-level")]
     [Function("SetLevel", "設定日誌層級", Icon = "fa-solid fa-sliders", Order = 2, Description = "即時修改 Serilog 最小日誌輸出層級 (Verbose, Debug, Information, Warning, Error, Fatal)")]
-    [RequiresPermission("SYSTEM_LOGMANAGER_SETLEVEL")]
+    [RequiresPermission("SYSTEM.LOGMANAGER.SETLEVEL")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public IActionResult SetLevel([FromBody] LogEventLevel level)
@@ -74,7 +74,7 @@ public class LogManagerController : ControllerBase
     /// </summary>
     [HttpGet("files")]
     [Function("GetLogFiles", "取得日誌檔案清單", Icon = "fa-solid fa-folder-open", Order = 3, Description = "列出 logs 目錄下所有的實體日誌檔案名稱與檔案大小")]
-    [RequiresPermission("SYSTEM_LOGMANAGER_READ")]
+    [RequiresPermission("SYSTEM.LOGMANAGER.GETLOGFILES")]
     [ProducesResponseType(typeof(List<object>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
@@ -113,7 +113,7 @@ public class LogManagerController : ControllerBase
     /// </summary>
     [HttpGet("files/{fileName}/content")]
     [Function("GetLogContent", "檢視日誌檔內容", Icon = "fa-solid fa-file-code", Order = 4, Description = "檢視指定的日誌檔案內文，可透過 tailLines 參數指定讀取最後幾行內容")]
-    [RequiresPermission("SYSTEM_LOGMANAGER_READ")]
+    [RequiresPermission("SYSTEM.LOGMANAGER.GETLOGCONTENT")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

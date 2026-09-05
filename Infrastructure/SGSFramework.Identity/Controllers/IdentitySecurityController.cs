@@ -22,7 +22,7 @@ namespace SGSFramework.Identity.Controllers.v1;
 [Produces("application/json")]
 [Authorize]
 [ControllerTitle("身份安全管理", Icon = "fa-solid fa-user-shield", Order = 25, Description = "身份安全管理與緊急風險控制機制，支援帳號緊急熔斷與身分補償解凍")]
-[RequiresPermission("IDENTITY_SECURITY_MANAGEMENT")]
+[RequiresPermission("SYSTEM.IDENTITYSECURITY.RED")]
 public sealed class IdentitySecurityController(
     TokenBucketEngine<ApplicationUser> tokenEngine,
     ILogger<IdentitySecurityController> logger) : ApiControllerBase
@@ -37,11 +37,11 @@ public sealed class IdentitySecurityController(
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>熔斷結果資訊</returns>
     [HttpPost("emergency-freezes")]
-    [RequiresPermission("IDENTITY_SECURITY_EMERGENCY_FREEZE")]
     [Function("EmergencyFreeze", "帳號緊急熔斷", Icon = "fa-solid fa-lock", Order = 1, Description = "帳號遭竊緊急熔斷端點，強制銷毀所有工作階段並鎖定")]
     [ProducesResponseType(typeof(EmergencyFreezeResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [RequiresPermission("SYSTEM.IDENTITYSECURITY.EMERGENCYFREEZE")]
     public async Task<IActionResult> EmergencyFreezeAsync(
         [FromBody] AccountRiskRequestDto request,
         CancellationToken cancellationToken = default)
@@ -106,11 +106,12 @@ public sealed class IdentitySecurityController(
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>身分修復與解凍結果</returns>
     [HttpPost("remediations")]
-    [RequiresPermission("IDENTITY_SECURITY_REMEDIATE")]
+
     [Function("RemediateAccount", "身分重設與解凍", Icon = "fa-solid fa-unlock", Order = 2, Description = "身分補償與重設密碼完成端點，安全清理風險 Session 並恢復帳號")]
     [ProducesResponseType(typeof(AccountRemediationResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [RequiresPermission("SYSTEM.IDENTITYSECURITY.REMEDIATE")]
     public async Task<IActionResult> RemediateAccountAsync(
         [FromBody] AccountRemediationRequestDto request,
         CancellationToken cancellationToken = default)

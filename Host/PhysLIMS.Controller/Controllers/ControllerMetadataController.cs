@@ -22,7 +22,7 @@ namespace SGSFramework.ApiInfrastructure.Controllers
     [Consumes(MediaTypeNames.Application.Json)]
     [Authorize]
     [ControllerTitle("系統管理", Icon = "fa-solid fa-server", Order = 22, Description = "提供查詢系統註冊之所有 Controller 與 Function 中繼資料清單")]
-    [RequiresPermission("SYSTEM.METADATA.READ")]
+    [RequiresPermission("SYSTEM.CONTROLLERMETADATA.READ")]
     public sealed class ControllerMetadataController(
         IControllerMetadataService controllerMetadataService,
         ILogger<ControllerMetadataController> logger) : ApiControllerBase
@@ -36,10 +36,10 @@ namespace SGSFramework.ApiInfrastructure.Controllers
         /// <param name="cancellationToken">異步取消權牌</param>
         /// <returns>控制器中繼資料清單集合</returns>
         [HttpGet]
-        [RequiresPermission("SYSTEM.METADATA.READ")]
-        [Function("GetAllControllerMetadatas", "查詢控制器中繼資料列表", Icon = "fa-solid fa-list", Order = 1, Description = "取得系統所有 Controller 與 Function 中繼資料清單")]
+        [Function("GetAllControllerMetadatas", "控制器中繼資料列表", Icon = "fa-solid fa-list", Order = 1, Description = "取得系統所有 Controller 與 Function 中繼資料清單")]
         [ProducesResponseType(typeof(IEnumerable<ControllerMetadataDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+        [RequiresPermission("SYSTEM.CONTROLLERMETADATA.GETALL")]
         public async Task<IActionResult> GetAllControllerMetadatas(CancellationToken cancellationToken = default)
         {
             try

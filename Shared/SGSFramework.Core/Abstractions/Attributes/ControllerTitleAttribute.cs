@@ -16,11 +16,6 @@ public class ControllerTitleAttribute : Attribute
     public string Title { get; }
 
     /// <summary>
-    /// 功能說明或註解 (例如: "維護組織樹狀結構下的各級實驗室資訊")
-    /// </summary>
-    public string? Description { get; set; }
-
-    /// <summary>
     /// 選單圖示 (例如: "fa-solid fa-flask")
     /// </summary>
     public string Icon { get; set; } = "fa-solid fa-folder";
@@ -29,6 +24,11 @@ public class ControllerTitleAttribute : Attribute
     /// 顯示排序 (越小越靠前)
     /// </summary>
     public int Order { get; set; } = 0;
+
+    /// <summary>
+    /// 功能說明或註解 (例如: "維護組織樹狀結構下的各級實驗室資訊")
+    /// </summary>
+    public string? Description { get; set; }
 
     public ControllerTitleAttribute(string title)
     {

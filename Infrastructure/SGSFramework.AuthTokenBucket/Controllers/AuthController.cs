@@ -27,9 +27,11 @@ namespace SGSFramework.AuthTokenBucket.Controllers.v1;
 /// 身份驗證與 Token 管理控制器
 /// </summary>
 [ApiController]
+[Authorize]
 [Route("api/v1/auth")]
 [Produces("application/json")]
 [ControllerTitle("身份驗證", Icon = "fa-solid fa-user-lock", Order = 10, Description = "提供帳密登入、AD SSO 登入、Token 輪轉刷新、動態選單與實驗室上下文切換服務")]
+[RequiresPermission("SYSTEM.AUTH.READ")]
 public sealed class AuthController(
     UserManager<ApplicationUser> userManager,
     TokenManager tokenManager,
@@ -65,6 +67,7 @@ public sealed class AuthController(
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>包含存取權牌、選單結構與分組實驗室集合之登入結果</returns>
     [HttpPost("login")]
+    [AllowAnonymous]
     [Function("Login", "帳密登入", Icon = "fa-solid fa-right-to-bracket", Order = 1, Description = "標準帳密登入端點，整合大容量 Bitmask 權限與 TokenBucketEngine 基礎設施")]
     [ProducesResponseType(typeof(LoginResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -385,6 +388,7 @@ public sealed class AuthController(
     [ProducesResponseType(typeof(OnlineUserCountResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [RequiresPermission("SYSTEM.AUTH.GETONLINEUSERCOUNT")]
     public async Task<IActionResult> GetOnlineUserCountAsync(
         [FromQuery] OnlineUserCountQueryDto query,
         CancellationToken cancellationToken = default)
@@ -501,11 +505,11 @@ public sealed class AuthController(
     /// 取得當前使用者所有已登入的裝置與工作階段清單
     /// </summary>
     [HttpGet("sessions")]
-    [Authorize]
     [Function("GetActiveSessions", "取得線上裝置清單", Icon = "fa-solid fa-laptop-code", Order = 8, Description = "獲取當前使用者所有已登入的裝置與 Session 清單")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [RequiresPermission("SYSTEM.AUTH.GETACTIVESESSIONS")]
     public async Task<IActionResult> GetActiveSessionsAsync(CancellationToken cancellationToken = default)
     {
         string? userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
@@ -556,7 +560,7 @@ public sealed class AuthController(
     /// 單一裝置登出
     /// </summary>
     [HttpPost("logout")]
-    [Authorize]
+    [AllowAnonymous]
     [Function("Logout", "單一登出", Icon = "fa-solid fa-right-from-bracket", Order = 6, Description = "終止當前裝置的工作階段與 Refresh Token")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -600,7 +604,7 @@ public sealed class AuthController(
     /// 所有裝置登出
     /// </summary>
     [HttpPost("logout-all")]
-    [Authorize]
+    [AllowAnonymous]
     [Function("LogoutAll", "所有裝置登出", Icon = "fa-solid fa-power-off", Order = 7, Description = "強制終止該使用者所有裝置的有效 Token 與工作階段")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
