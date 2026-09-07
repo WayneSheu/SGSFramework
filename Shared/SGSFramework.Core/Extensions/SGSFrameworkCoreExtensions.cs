@@ -4,10 +4,12 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SGSFramework.Core.Abstractions.Adapters;
+using SGSFramework.Core.Abstractions.Identities;
 using SGSFramework.Core.FileStorages;
 using SGSFramework.Core.Generators;
 using SGSFramework.Core.Identiies.CurrentUser;
 using SGSFramework.Core.Identiies.Tenants;
+using SGSFramework.Core.Identities.Services;
 using SGSFramework.Core.Services;
 
 namespace SGSFramework.Core.Extensions

@@ -3,6 +3,8 @@
 // 架構層級: Presentation / Plugin Extension Layer
 // ==========================================
 
+namespace SGSFramework.ModulePlugin.Extensions;
+
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Routing;
@@ -19,12 +21,9 @@ using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 
-namespace SGSFramework.ModulePlugin.Extensions;
-
 /// <summary>
 /// 應用程式啟動中介軟體擴充
 /// 掃描與解析 Controller 及其 Action 的中繼資料（路由、選單、權限），並同步至資料庫。
-/// 支援三層 API Menu 結構: ModuleTitle (Section) -> ControllerTitle -> DisplayName (Function)
 /// </summary>
 public static class DynamicControllerLoaderExtensions
 {
@@ -74,13 +73,16 @@ public static class DynamicControllerLoaderExtensions
                 var routeAttr = ctrlType.GetCustomAttributes<RouteAttribute>(inherit: true).FirstOrDefault();
                 string baseRoute = routeAttr?.Template ?? $"api/{ctrlType.Name.Replace("Controller", "", StringComparison.OrdinalIgnoreCase)}";
 
-                // 3. 解析 ControllerTitle
+                // 3. 解析 ControllerTitle 及 Controller 層級選單屬性
                 var ctrlTitleAttr = ctrlType.GetCustomAttribute<ControllerTitleAttribute>();
                 var ctrlPermAttr = ctrlType.GetCustomAttribute<RequiresPermissionAttribute>();
 
                 string controllerTitle = !string.IsNullOrWhiteSpace(ctrlTitleAttr?.Title)
                     ? ctrlTitleAttr.Title
                     : ctrlType.Name.Replace("Controller", "", StringComparison.OrdinalIgnoreCase);
+
+                string controllerIcon = ctrlTitleAttr?.Icon ?? "fa-solid fa-folder";
+                int controllerOrder = ctrlTitleAttr?.Order ?? 0;
 
                 // 4. 解析 Controller 的 Action
                 var actions = ctrlType.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
@@ -101,17 +103,20 @@ public static class DynamicControllerLoaderExtensions
                             : $"{baseRoute}/{relativeOrAbsoluteRoute}";
                     }
 
-                    // 5. 解析 FunctionAttribute (Action 級別)
+                    // 5. 解析 FunctionAttribute (Action 級別選單與權限屬性)
                     var actionFuncAttr = action.GetCustomAttribute<FunctionAttribute>();
                     var actionPermAttr = action.GetCustomAttribute<RequiresPermissionAttribute>() ?? ctrlPermAttr;
 
                     // 各屬性賦值與 Fallback 機制
                     string actionDisplayName = !string.IsNullOrWhiteSpace(actionFuncAttr?.Title) ? actionFuncAttr.Title : actionName;
-                    string actionIcon = actionFuncAttr?.Icon ?? ctrlTitleAttr?.Icon ?? string.Empty;
-                    int actionOrder = actionFuncAttr?.Order ?? ctrlTitleAttr?.Order ?? 0;
+                    string actionIcon = !string.IsNullOrWhiteSpace(actionFuncAttr?.Icon) ? actionFuncAttr.Icon : controllerIcon;
+                    int actionOrder = actionFuncAttr?.Order ?? 0;
                     string? actionDescription = actionFuncAttr?.Description ?? ctrlTitleAttr?.Description;
 
-                    // 建立實體並透過 AssemblyQualifiedName 確保跨組件型別能被正確解析
+                    // 選單標記與自訂路由
+                    bool isMenu = actionFuncAttr?.IsMenu ?? false;
+                    string? customPath = actionFuncAttr?.Path;
+
                     var metadata = new ControllerMetadata
                     {
                         Id = Guid.NewGuid(),
@@ -119,15 +124,19 @@ public static class DynamicControllerLoaderExtensions
                         ModuleTitle = moduleTitle,
                         ControllerName = ctrlType.Name,
                         ControllerTitle = controllerTitle,
+                        ControllerIcon = controllerIcon,
+                        ControllerOrder = controllerOrder,
                         ActionName = actionName,
                         DisplayName = actionDisplayName,
                         RouteTemplate = routeTemplate,
                         ParentMenuName = controllerTitle,
                         Icon = actionIcon,
                         DisplayOrder = actionOrder,
+                        IsMenu = isMenu,
+                        Path = customPath,
                         PermissionKey = actionPermAttr?.PermissionKey ?? string.Empty,
                         Description = actionDescription,
-                        ControllerTypeName = ctrlType.FullName ?? ctrlType.Name,// FullName，避開 AssemblyQualifiedName 帶來的跨 ALC 繫結限制
+                        ControllerTypeName = ctrlType.FullName ?? ctrlType.Name,
                         Version = assembly.GetName().Version?.ToString() ?? "1.0.0.0",
                         IsActive = true,
                         CreatedAt = DateTime.UtcNow

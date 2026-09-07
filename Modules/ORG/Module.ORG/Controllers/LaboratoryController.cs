@@ -42,7 +42,7 @@ public class LaboratoryController : ApiControllerBase
     /// 取得區域實驗室清單
     /// </summary>
     [HttpGet("regional")]
-    [Function("GetRegionalLaboratories", "取得區域實驗室清單", Icon = "fa-solid fa-map-location-dot", Order = 0, Description = "取得頂層或區域層級之實驗室節點清單")]
+    [Function("GetRegionalLaboratories", "取得區域實驗室清單", Icon = "fa-solid fa-map-location-dot", Order = 0, Description = "取得頂層或區域層級之實驗室節點清單", IsMenu = true)]
     [RequiresPermission("ORG.LABORATORY.GETREGIONALLABORATORIES")]
     [ProducesResponseType(typeof(Result<List<LaboratoryDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetRegionalLaboratories(CancellationToken cancellationToken)
@@ -64,7 +64,7 @@ public class LaboratoryController : ApiControllerBase
     /// 取得實驗室清單
     /// </summary>
     [HttpGet]
-    [Function("GetLaboratories", "取得實驗室清單", Icon = "fa-solid fa-list", Order = 1, Description = "取得所有實驗室基本資訊清單")]
+    [Function("GetLaboratories", "取得實驗室清單", Icon = "fa-solid fa-list", Order = 1, Description = "取得所有實驗室基本資訊清單",IsMenu =true)]
     [RequiresPermission("ORG.LABORATORY.GETLABORATORIES")]
     [ProducesResponseType(typeof(Result<List<LaboratoryDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetLaboratories(CancellationToken cancellationToken)

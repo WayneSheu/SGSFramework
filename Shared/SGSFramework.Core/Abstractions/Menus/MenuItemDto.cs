@@ -1,4 +1,5 @@
-﻿using System;
+﻿using SGSFramework.Core.Abstractions.Entities.Controller;
+using System;
 using System.Collections.Generic;
 using System.Text;
 

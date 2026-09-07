@@ -36,7 +36,7 @@ public class ModuleManagementController(
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>模組詳細資訊列表</returns>
     [HttpGet(Name = "GetActiveModulesDetails")]
-    [Function("GetActiveModulesDetails", "查詢已載入模組詳情", Icon = "fa-solid fa-list-check", Order = 1, Description = "查詢目前所有已載入掛載的商務模組完整資訊")]
+    [Function("GetActiveModulesDetails", "查詢模組清單", Icon = "fa-solid fa-list-check", Order = 1, Description = "查詢目前所有已載入掛載的商務模組完整資訊",IsMenu =true)]
     [RequiresPermission("SYSTEM.MODULEMANAGEMENT.GETACTIVEMODULESDETAILS")]
     [ProducesResponseType(typeof(IEnumerable<ModuleDetailResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]

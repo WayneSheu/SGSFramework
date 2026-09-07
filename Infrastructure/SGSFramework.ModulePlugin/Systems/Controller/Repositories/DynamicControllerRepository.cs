@@ -149,6 +149,12 @@ public class DynamicControllerRepository<T>(
 
                             string correctActionDisplayName = actionFuncAttr?.Title ?? metaNewAdd.ActionName;
                             metaNewAdd.DisplayName = correctActionDisplayName;
+                            //
+                            metaNewAdd.IsMenu= actionFuncAttr?.IsMenu ?? false;
+                            metaNewAdd.Path = actionFuncAttr?.Path ?? null;
+                            metaNewAdd.ControllerIcon = controllerTitleAttr?.Icon ?? null;
+                            metaNewAdd.ControllerOrder = controllerTitleAttr?.Order ?? 0;
+
                         }
 
                         controller.IsActive = true;

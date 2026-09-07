@@ -1,11 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿namespace SGSFramework.Core.Abstractions.Attributes;
 
-namespace SGSFramework.Core.Abstractions.Attributes;
+using System;
 
 /// <summary>
-/// 用於標記 Controller 類別，明確指定 API Menu 的第一層標題名稱、圖示、排序與詳細描述。
+/// 用於標記 Controller 類別，明確指定 API Menu 的第一層模組標題名稱、圖示、排序與詳細描述。
 /// </summary>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = true)]
 public class ControllerTitleAttribute : Attribute
@@ -32,8 +30,7 @@ public class ControllerTitleAttribute : Attribute
 
     public ControllerTitleAttribute(string title)
     {
-        if (string.IsNullOrWhiteSpace(title))
-            throw new ArgumentException("Controller Title cannot be empty.", nameof(title));
+        ArgumentException.ThrowIfNullOrWhiteSpace(title);
         Title = title;
     }
 }

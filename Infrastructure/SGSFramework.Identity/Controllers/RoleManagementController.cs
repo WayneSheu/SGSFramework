@@ -39,7 +39,7 @@ public sealed class RoleManagementController(
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>系統角色清單集合</returns>
     [HttpGet]
-    [Function("GetAllRoles", "查詢角色列表", Icon = "fa-solid fa-list", Order = 1, Description = "取得系統所有角色清單，包含角色名稱、描述、建立時間等資訊")]
+    [Function("GetAllRoles", "查詢角色列表", Icon = "fa-solid fa-list", Order = 1, Description = "取得系統所有角色清單，包含角色名稱、描述、建立時間等資訊",IsMenu =true)]
     [ProducesResponseType(typeof(IEnumerable<ApplicationRole>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     [RequiresPermission("SYSTEM.ROLEMANAGEMENT.GETALLROLES")]

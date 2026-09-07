@@ -15,6 +15,7 @@ using SGSFramework.ApiInfrastructure.Transformers;
 using SGSFramework.AuditLog.Extensions;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.Extensions;
+using SGSFramework.AuthTokenBucket.Queries.Menuitems;
 using SGSFramework.CodeSecurity.Extensions;
 using SGSFramework.Core.Abstractions.Database;
 using SGSFramework.Core.Abstractions.DbContexts;
@@ -77,6 +78,7 @@ try
     });
 
     builder.Services.AddScoped<ICoreDbContext>(sp => sp.GetRequiredService<PhysLIMSDbContext>());
+    builder.Services.AddScoped<ITokenDbContext>(sp => sp.GetRequiredService<PhysLIMSDbContext>());
     builder.Services.AddScoped<DbContext>(sp => sp.GetRequiredService<PhysLIMSDbContext>());
 
     // 3. ASP.NET Core Identity 打包註冊
@@ -142,7 +144,12 @@ try
         options.RefreshTokenGracePeriodSeconds = 8;
     },
     scannedAssemblies);
-
+    //註冊 MediatR 服務與 CQRS Handlers 掃描
+    builder.Services.AddMediatR(cfg =>
+    {
+        // 透過強型別指定 Handlers 所在的 Assembly，強制 CLR 載入並自動註冊所有 IRequestHandler<TRequest, TResponse>
+        cfg.RegisterServicesFromAssembly(typeof(GetFullMenuTreeQueryHandler).Assembly);
+    });
     builder.Services.AddSSOServices();
     builder.Services.AddAuthorization();
 
@@ -218,15 +225,24 @@ try
         }
     }
 
-    // 初始化動態控制器與權限
+    // 執行模組載入初始化動態控制器與權限、Menu 種子同步
     await app.InitializeModularSystemAsync().ConfigureAwait(false);
     await app.UseDynamicControllersAsync().ConfigureAwait(false);
 
+    // 執行動態權限與選單樹狀結構種子同步
     using (var scope = app.Services.CreateScope())
     {
-        var permissionSeeder = scope.ServiceProvider.GetRequiredService<IPermissionSeedService>();
+        var services = scope.ServiceProvider;
+
+        // 2.1 同步權限點與 BitPosition
+        var permissionSeeder = services.GetRequiredService<IPermissionSeedService>();
         await permissionSeeder.SeedAndSyncPermissionsAsync().ConfigureAwait(false);
+
+        // 2.2 同步選單樹 (Section -> Group -> Page)
+        var menuSeeder = services.GetRequiredService<IMenuSeedService>();
+        await menuSeeder.SeedAndSyncMenusAsync().ConfigureAwait(false);
     }
+
 
     // 先進行路由配對
     app.UseRouting();

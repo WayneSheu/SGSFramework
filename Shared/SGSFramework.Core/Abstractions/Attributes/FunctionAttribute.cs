@@ -1,11 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿namespace SGSFramework.Core.Abstractions.Attributes;
 
-namespace SGSFramework.Core.Abstractions.Attributes;
+using System;
 
 /// <summary>
-/// 用於標記 Method，明確指定 API Menu 的第二層標題名稱、功能代碼、圖示、排序與詳細描述。
+/// 用於標記 Method，明確指定 API 功能代碼、標題、圖示、排序、是否作為獨立選單 (MenuItem) 以及前端路由路徑。
 /// </summary>
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]
 public class FunctionAttribute : Attribute
@@ -21,12 +19,12 @@ public class FunctionAttribute : Attribute
     public string Title { get; set; }
 
     /// <summary>
-    /// 功能詳細說明或註解 (例如: "查詢使用者權限內可看見的實驗室分頁列表")
+    /// 功能詳細說明或註解
     /// </summary>
     public string? Description { get; set; }
 
     /// <summary>
-    /// 選單圖示 (例如: "fa-solid fa-list")
+    /// 選單圖示
     /// </summary>
     public string Icon { get; set; } = "fa-solid fa-link";
 
@@ -35,11 +33,19 @@ public class FunctionAttribute : Attribute
     /// </summary>
     public int Order { get; set; } = 0;
 
+    /// <summary>
+    /// 是否將此 API 標記為前端可視的選單項目 (MenuItem)
+    /// </summary>
+    public bool IsMenu { get; set; } = false;
+
+    /// <summary>
+    /// 前端對應的路由路徑 (例如: "/org/laboratories")，當 IsMenu 為 true 時指定
+    /// </summary>
+    public string? Path { get; set; }
+
     public FunctionAttribute(string functionName)
     {
-        if (string.IsNullOrWhiteSpace(functionName))
-            throw new ArgumentException("Function Name cannot be empty.", nameof(functionName));
-
+        ArgumentException.ThrowIfNullOrWhiteSpace(functionName);
         FunctionName = functionName;
         Title = functionName;
     }

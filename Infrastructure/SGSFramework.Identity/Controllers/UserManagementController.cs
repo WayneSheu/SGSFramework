@@ -475,7 +475,7 @@ public sealed class UserManagementController(
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>系統使用者清單集合，包含其對應角色</returns>
     [HttpGet]
-    [Function("GetUsers", "查詢使用者列表", Icon = "fa-solid fa-users", Order = 9, Description = "取得系統所有使用者清單，包含帳號、Email、驗證狀態與所屬角色等資訊")]
+    [Function("GetUsers", "查詢使用者列表", Icon = "fa-solid fa-users", Order = 9, Description = "取得系統所有使用者清單，包含帳號、Email、驗證狀態與所屬角色等資訊",IsMenu =true)]
     [ProducesResponseType(typeof(IEnumerable<UserDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     [RequiresPermission("SYSTEM.USERMANAGEMENT.GETUSERS")]

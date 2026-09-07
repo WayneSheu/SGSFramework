@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using PhysLIMS.API.Dbcontexts;
 
@@ -11,9 +12,11 @@ using PhysLIMS.API.Dbcontexts;
 namespace PhysLIMS.API.Migrations
 {
     [DbContext(typeof(PhysLIMSDbContext))]
-    partial class PhysLIMSDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260907032837_update_menuitem")]
+    partial class update_menuitem
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -243,17 +246,10 @@ namespace PhysLIMS.API.Migrations
                     b.Property<int?>("BitPosition")
                         .HasColumnType("int");
 
-                    b.Property<string>("ControllerIcon")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
                     b.Property<string>("ControllerName")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
-
-                    b.Property<int>("ControllerOrder")
-                        .HasColumnType("int");
 
                     b.Property<string>("ControllerTitle")
                         .IsRequired()
@@ -281,18 +277,12 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("int");
 
                     b.Property<string>("Icon")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
                         .HasDefaultValue(true);
-
-                    b.Property<bool>("IsMenu")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(false);
 
                     b.Property<string>("ModuleName")
                         .IsRequired()
@@ -307,14 +297,10 @@ namespace PhysLIMS.API.Migrations
                     b.Property<string>("ParentMenuName")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("Path")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
                     b.Property<string>("PermissionKey")
                         .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("RouteTemplate")
                         .IsRequired()
@@ -327,17 +313,11 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("IsMenu")
-                        .HasDatabaseName("IX_Metadata_IsMenu");
-
                     b.HasIndex("ModuleName")
                         .HasDatabaseName("IX_Metadata_ModuleName");
 
                     b.HasIndex("PermissionKey")
                         .HasDatabaseName("IX_Metadata_PermissionKey");
-
-                    b.HasIndex("IsMenu", "ModuleName")
-                        .HasDatabaseName("IX_Metadata_IsMenu_ModuleName");
 
                     b.HasIndex("ModuleName", "ControllerName", "ActionName")
                         .IsUnique()
@@ -408,8 +388,6 @@ namespace PhysLIMS.API.Migrations
                         .IsUnique();
 
                     b.HasIndex("ParentId");
-
-                    b.HasIndex("IsActive", "IsVisible", "DisplayOrder");
 
                     b.HasIndex("ModuleName", "IsActive", "DisplayOrder");
 
