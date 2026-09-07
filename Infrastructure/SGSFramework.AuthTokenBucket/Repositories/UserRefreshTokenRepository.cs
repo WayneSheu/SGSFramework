@@ -2,12 +2,13 @@
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.Identities;
-using System;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace SGSFramework.AuthTokenBucket.Repositories;
 
+/// <summary>
+/// 使用者刷新權杖資料存取倉儲
+/// </summary>
+/// <typeparam name="TDbContext"></typeparam>
 public sealed class UserRefreshTokenRepository<TDbContext> : IUserRefreshTokenRepository
     where TDbContext : DbContext, ITokenDbContext
 {
@@ -18,9 +19,14 @@ public sealed class UserRefreshTokenRepository<TDbContext> : IUserRefreshTokenRe
         _context = context ?? throw new ArgumentNullException(nameof(context));
     }
 
-    public async Task<int> GetActiveOnlineUserCountAsync(int activityWindowMinutes)
+    /// <summary>
+    /// 依據活動觀測視窗，計算目前系統中的活躍在線不重複人數
+    /// </summary>
+    /// <param name="activityWindowMinutes"></param>
+    /// <returns></returns>
+    public Task<int> GetActiveOnlineUserCountAsync(int activityWindowMinutes)
     {
-        return await GetActiveOnlineUserCountAsync(activityWindowMinutes, default);
+        return GetActiveOnlineUserCountAsync(activityWindowMinutes, CancellationToken.None);
     }
 
     public async Task<int> GetActiveOnlineUserCountAsync(int activityWindowMinutes, CancellationToken cancellationToken)
@@ -43,18 +49,21 @@ public sealed class UserRefreshTokenRepository<TDbContext> : IUserRefreshTokenRe
         }
     }
 
-
-    /// <summary>
-    /// 取得指定用戶的所有活躍會話
-    /// </summary>
-    /// <param name="userId"></param>
-    /// <param name="cancellationToken"></param>
-    /// <returns></returns>
     public async Task<IEnumerable<UserRefreshToken>> GetActiveSessionsAsync(string userId, CancellationToken cancellationToken = default)
     {
-        return await _context.UserRefreshTokens
-            .Where(t => t.UserId == userId && !t.IsDead && !t.IsFrozen && t.ExpiresAt > DateTime.UtcNow)
-            .ToListAsync(cancellationToken);
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
+
+        try
+        {
+            return await _context.UserRefreshTokens
+                .AsNoTracking()
+                .Where(t => t.UserId == userId && !t.IsDead && !t.IsFrozen && t.ExpiresAt > DateTime.UtcNow)
+                .ToListAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new InvalidOperationException($"獲取使用者 {userId} 的活躍工作階段時發生資料庫異常。", ex);
+        }
     }
 
     public async Task RevokeSessionAsync(string userId, string deviceId, CancellationToken cancellationToken = default)
@@ -64,18 +73,10 @@ public sealed class UserRefreshTokenRepository<TDbContext> : IUserRefreshTokenRe
 
         try
         {
-            var tokens = await _context.UserRefreshTokens
+            // 使用 EF Core ExecuteUpdateAsync 直接發送 UPDATE SQL，減少記憶體負擔並增加吞吐量
+            await _context.UserRefreshTokens
                 .Where(t => t.UserId == userId && t.DeviceId == deviceId && !t.IsDead)
-                .ToListAsync(cancellationToken);
-
-            if (tokens.Count != 0)
-            {
-                foreach (var token in tokens)
-                {
-                    token.IsDead = true;
-                }
-                await _context.SaveChangesAsync(cancellationToken);
-            }
+                .ExecuteUpdateAsync(s => s.SetProperty(t => t.IsDead, true), cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -89,18 +90,9 @@ public sealed class UserRefreshTokenRepository<TDbContext> : IUserRefreshTokenRe
 
         try
         {
-            var tokens = await _context.UserRefreshTokens
+            await _context.UserRefreshTokens
                 .Where(t => t.UserId == userId && !t.IsDead)
-                .ToListAsync(cancellationToken);
-
-            if (tokens.Count != 0)
-            {
-                foreach (var token in tokens)
-                {
-                    token.IsDead = true;
-                }
-                await _context.SaveChangesAsync(cancellationToken);
-            }
+                .ExecuteUpdateAsync(s => s.SetProperty(t => t.IsDead, true), cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

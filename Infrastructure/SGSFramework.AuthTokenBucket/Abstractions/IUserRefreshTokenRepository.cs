@@ -12,7 +12,7 @@ namespace SGSFramework.AuthTokenBucket.Abstractions
         /// </summary>
         /// <param name="activityWindowMinutes">活動時間觀測視窗（分鐘）</param>
         /// <returns>活躍在線人數</returns>
-        Task<int> GetActiveOnlineUserCountAsync(int activityWindowMinutes);
+        Task<int> GetActiveOnlineUserCountAsync(int activityWindowMinutes, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// 取得指定使用者所有目前有效的工作階段與裝置清單

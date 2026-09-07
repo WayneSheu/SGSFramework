@@ -1,4 +1,5 @@
-﻿using MediatR;
+﻿using System.Security.Claims;
+using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
@@ -19,7 +20,6 @@ using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Controllers.Base;
 using SGSFramework.Core.DTOs;
 using SGSFramework.Core.HttpAuditProviders;
-using System.Security.Claims;
 
 namespace SGSFramework.AuthTokenBucket.Controllers.v1;
 
@@ -31,7 +31,6 @@ namespace SGSFramework.AuthTokenBucket.Controllers.v1;
 [Route("api/v1/auth")]
 [Produces("application/json")]
 [ControllerTitle("身份驗證", Icon = "fa-solid fa-user-lock", Order = 10, Description = "提供帳密登入、AD SSO 登入、Token 輪轉刷新、動態選單與實驗室上下文切換服務")]
-[RequiresPermission("SYSTEM.AUTH.READ")]
 public sealed class AuthController(
     UserManager<ApplicationUser> userManager,
     TokenManager tokenManager,
@@ -59,16 +58,12 @@ public sealed class AuthController(
     private readonly IUserRuntimeScopeService _runtimeScopeService = runtimeScopeService ?? throw new ArgumentNullException(nameof(runtimeScopeService));
     private readonly ISender _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
 
-
     /// <summary>   
     /// 標準帳密登入
     /// </summary>
-    /// <param name="request">登入憑證資訊</param>
-    /// <param name="cancellationToken">異步取消權牌</param>
-    /// <returns>包含存取權牌、選單結構與分組實驗室集合之登入結果</returns>
     [HttpPost("login")]
     [AllowAnonymous]
-    [Function("Login", "帳密登入", Icon = "fa-solid fa-right-to-bracket", Order = 1, Description = "標準帳密登入端點，整合大容量 Bitmask 權限與 TokenBucketEngine 基礎設施")]
+    [Function("Login", "帳密登入", Icon = "fa-solid fa-right-to-bracket", Order = 1, Description = "標準帳密登入端點")]
     [ProducesResponseType(typeof(LoginResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -95,14 +90,12 @@ public sealed class AuthController(
         string deviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "UNKNOWN-DEVICE";
         string deviceName = Request.Headers["User-Agent"].FirstOrDefault() ?? "Generic Browser";
 
-        // 優先從 Body 取得 requestedLabId，若無則降級讀取 Header
         string? targetRequestedLabId = !string.IsNullOrWhiteSpace(request.RequestedLabId)
             ? request.RequestedLabId
             : Request.Headers["X-Lab-Id"].FirstOrDefault();
 
         try
         {
-            // 1. 身分與密碼驗證
             var user = await _userManager.FindByNameAsync(request.NameOrEmail)
                        ?? await _userManager.FindByEmailAsync(request.NameOrEmail);
 
@@ -114,23 +107,17 @@ public sealed class AuthController(
 
             await _userManager.ResetAccessFailedCountAsync(user);
 
-            // 2. 透過 Service 統一進行 3-Tier 實驗室上下文初始化 (Requested -> Primary -> Active First)
             var runtimeProfile = await _runtimeScopeService.InitializeUserScopeAsync(
                 user.Id.ToString(),
                 targetRequestedLabId,
                 cancellationToken);
 
-            // 3. 取得可存取實驗室清單並執行 Parent 分組轉譯
             var accessibleLabsResult = await _mediator.Send(new GetAccessibleLaboratoriesQuery(user.Id.ToString()), cancellationToken);
             var flatLabs = accessibleLabsResult.IsSuccess ? accessibleLabsResult.Value : [];
- 
-            // 執行階層分組並自動淨化子階層 Parent 屬性
             var groupedLabs = AccessibleLabGroupDto.CreateGroupedList(flatLabs);
 
-            // 4. 簽發 Token
             var tokenResult = await _tokenEngine.IssueInitialSessionAsync(user, deviceId, deviceName, clientIp);
 
-            // 5. 紀錄 Security Log
             _securityLogger.LogSecurity(
                 eventCode: "SEC-200-LOGIN-SUCCESS",
                 eventCategory: "Auth.Login",
@@ -179,6 +166,7 @@ public sealed class AuthController(
     /// 地端 Windows 網域單一登入
     /// </summary>
     [HttpGet("adlogin")]
+    [AllowAnonymous]
     [Authorize(AuthenticationSchemes = "Windows")]
     [Function("WindowsLogin", "AD單一登入", Icon = "fa-solid fa-windows", Order = 2, Description = "內部網路 Windows 網域無感單一登入端點")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -284,6 +272,7 @@ public sealed class AuthController(
     /// 雙向權限票據高併發輪轉刷新
     /// </summary>
     [HttpPost("refresh")]
+    [AllowAnonymous]
     [Function("RefreshToken", "刷新Token", Icon = "fa-solid fa-arrows-rotate", Order = 3, Description = "雙向權限票據高併發輪轉刷新端點")]
     [ProducesResponseType(typeof(TokenResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -410,7 +399,7 @@ public sealed class AuthController(
 
         try
         {
-            int activeUsers = await _tokenRepository.GetActiveOnlineUserCountAsync(finalWindow);
+            int activeUsers = await _tokenRepository.GetActiveOnlineUserCountAsync(finalWindow, cancellationToken);
 
             return Ok(new OnlineUserCountResponseDto
             {
@@ -444,10 +433,10 @@ public sealed class AuthController(
     }
 
     /// <summary>
-    /// 切換作用中的實驗室上下文 (支援自動退路與通知)
+    /// 切換作用中的實驗室上下文
     /// </summary>
     [HttpPost("switch-context")]
-    [Function("SwitchContext", "切換實驗室", Icon = "fa-solid fa-right-left", Order = 5, Description = "切換作用中的實驗室上下文，若權限不足將自動切換至主要實驗室並提醒")]
+    [Function("SwitchContext", "切換實驗室", Icon = "fa-solid fa-right-left", Order = 5, Description = "切換作用中的實驗室上下文")]
     [ProducesResponseType(typeof(SwitchLabResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
@@ -458,16 +447,10 @@ public sealed class AuthController(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        string? userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
+        string? userId = ResolveUserIdFromContextOrHeader();
         if (string.IsNullOrEmpty(userId))
         {
-            return Unauthorized(new ProblemDetails
-            {
-                Status = StatusCodes.Status401Unauthorized,
-                Title = "身份驗證失敗",
-                Detail = "無法識別當前使用者的身份上下文。",
-                Instance = HttpContext.Request.Path
-            });
+            return BuildUnauthorizedResult("無法識別當前使用者的身份上下文。");
         }
 
         try
@@ -512,22 +495,16 @@ public sealed class AuthController(
     [RequiresPermission("SYSTEM.AUTH.GETACTIVESESSIONS")]
     public async Task<IActionResult> GetActiveSessionsAsync(CancellationToken cancellationToken = default)
     {
-        string? userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
+        string? userId = ResolveUserIdFromContextOrHeader();
         if (string.IsNullOrEmpty(userId))
         {
-            return Unauthorized(new ProblemDetails
-            {
-                Status = StatusCodes.Status401Unauthorized,
-                Title = "未授權存取",
-                Instance = HttpContext.Request.Path
-            });
+            return BuildUnauthorizedResult("未授權存取。");
         }
 
         string currentDeviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "UNKNOWN-DEVICE";
 
         try
         {
-            // 呼叫 Repository 取得目前使用者的所有 Active Sessions
             var sessions = await _tokenRepository.GetActiveSessionsAsync(userId, cancellationToken);
 
             var sessionDtos = sessions.Select(s => new
@@ -555,37 +532,43 @@ public sealed class AuthController(
         }
     }
 
-
     /// <summary>
     /// 單一裝置登出
     /// </summary>
     [HttpPost("logout")]
-    [AllowAnonymous]
+    [AllowAnonymous] // 允許過期或未認證請求進入，由內部自行解析 Token
     [Function("Logout", "單一登出", Icon = "fa-solid fa-right-from-bracket", Order = 6, Description = "終止當前裝置的工作階段與 Refresh Token")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> LogoutAsync(CancellationToken cancellationToken = default)
     {
-        string? userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        string? userId = ResolveUserIdFromContextOrHeader();
+
         if (string.IsNullOrEmpty(userId))
         {
-            return Unauthorized(new ProblemDetails
-            {
-                Status = StatusCodes.Status401Unauthorized,
-                Title = "未授權存取",
-                Instance = HttpContext.Request.Path
-            });
+            _logger.LogWarning("[Logout] 無法從請求中解析有效的 UserId，直接回應成功以利前端進行本地清理。");
+            return Ok(new MessageResponseDto { Message = "憑證無效或已過期，已完成前端登出清理。" });
         }
 
         string deviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "UNKNOWN-DEVICE";
+        string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "0.0.0.0";
 
         try
         {
-            await _tokenRepository.RevokeSessionAsync(userId, deviceId);
-            _logger.LogInformation("使用者 {UserId} 在裝置 {DeviceId} 執行單一登出成功。", userId, deviceId);
+            // 撤銷當前裝置的工作階段與 Refresh Token
+            await _tokenRepository.RevokeSessionAsync(userId, deviceId, cancellationToken);
 
-            return Ok(new { Message = "單一裝置登出成功。" });
+            _securityLogger.LogSecurity(
+                eventCode: "SEC-200-LOGOUT-SINGLE",
+                eventCategory: "Auth.Logout",
+                userId: userId,
+                clientIp: clientIp,
+                messageTemplate: "使用者在裝置 {DeviceId} 上執行單一登出成功。用戶識別碼: {UserId}",
+                deviceId,
+                userId
+            );
+
+            return Ok(new MessageResponseDto { Message = "單一裝置登出成功。" });
         }
         catch (Exception ex)
         {
@@ -604,33 +587,31 @@ public sealed class AuthController(
     /// 所有裝置登出
     /// </summary>
     [HttpPost("logout-all")]
-    [AllowAnonymous]
+    [AllowAnonymous] // 允許過期或未認證請求進入，由內部自行解析 Token
     [Function("LogoutAll", "所有裝置登出", Icon = "fa-solid fa-power-off", Order = 7, Description = "強制終止該使用者所有裝置的有效 Token 與工作階段")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> LogoutAllAsync(CancellationToken cancellationToken = default)
     {
-        string? userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        string? userId = ResolveUserIdFromContextOrHeader();
+
         if (string.IsNullOrEmpty(userId))
         {
-            return Unauthorized(new ProblemDetails
-            {
-                Status = StatusCodes.Status401Unauthorized,
-                Title = "未授權存取",
-                Instance = HttpContext.Request.Path
-            });
+            _logger.LogWarning("[LogoutAll] 無法從請求中解析有效的 UserId，直接回應成功以利前端進行本地清理。");
+            return Ok(new MessageResponseDto { Message = "憑證無效或已過期，已完成前端全裝置登出清理。" });
         }
+
+        string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "0.0.0.0";
 
         try
         {
-            await _tokenRepository.RevokeAllUserSessionsAsync(userId);
+            await _tokenRepository.RevokeAllUserSessionsAsync(userId, cancellationToken);
 
             _securityLogger.LogSecurity(
                 eventCode: "SEC-200-LOGOUT-ALL",
                 eventCategory: "Auth.Logout",
                 userId: userId,
-                clientIp: HttpContext.Connection.RemoteIpAddress?.ToString() ?? "0.0.0.0",
+                clientIp: clientIp,
                 messageTemplate: "使用者強制終止所有裝置工作階段。用戶識別碼: {UserId}",
                 userId
             );
@@ -650,6 +631,41 @@ public sealed class AuthController(
         }
     }
 
+    /// <summary>
+    /// 從 Context 或 Request Header 安全解析當前使用者的識別碼
+    /// </summary>
+    private string? ResolveUserIdFromContextOrHeader()
+    {
+        // 1. 優先嘗試從已通過管道驗證的 ClaimsPrincipal 讀取
+        if (User.Identity?.IsAuthenticated == true)
+        {
+            string? authenticatedUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                                        ?? User.FindFirst("sub")?.Value;
+            if (!string.IsNullOrEmpty(authenticatedUserId))
+            {
+                return authenticatedUserId;
+            }
+        }
+
+        // 2. 若為 [AllowAnonymous] 或 Token 已過期，手動從 Authorization Header 提取（保持簽章驗證，僅忽略 Expiry）
+        string? authHeader = Request.Headers.Authorization.FirstOrDefault();
+        if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            string token = authHeader["Bearer ".Length..].Trim();
+            if (!string.IsNullOrEmpty(token))
+            {
+                var principal = _tokenManager.GetPrincipalFromExpiredToken(token);
+                return principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    ?? principal?.FindFirst("sub")?.Value;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 建立未授權的回應結果
+    /// </summary>
     private UnauthorizedObjectResult BuildUnauthorizedResult(string detailMessage)
     {
         return Unauthorized(new ProblemDetails
