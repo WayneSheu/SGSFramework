@@ -18,8 +18,11 @@ using SGSFramework.AuthTokenBucket.Repositories;
 using SGSFramework.AuthTokenBucket.RuleEngine.Abstractions;
 using SGSFramework.AuthTokenBucket.RuleEngine.Rules.Laboratory;
 using SGSFramework.AuthTokenBucket.Services;
+using SGSFramework.AuthTokenBucket.Services.Factories;
+using SGSFramework.AuthTokenBucket.Services.Strategies;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.Identities;
+using SGSFramework.Core.Abstractions.Menus;
 using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Abstractions.Permissions.Contract;
 using System;
@@ -126,7 +129,6 @@ public static class AuthTokenBucketServiceCollectionExtensions
         services.AddScoped<TokenBucketEngine<TUser>>();
         services.AddScoped<ITokenStorageProvider, SqlTokenStorageProvider<TDbContext>>();
         services.AddScoped<IUserRefreshTokenRepository, UserRefreshTokenRepository<TDbContext>>();
-        services.AddScoped<IUserRuntimeScopeService, UserRuntimeScopeService>();
         services.AddScoped<IPermissionManagementService, PermissionManagementService<TDbContext, TRole, Guid>>();
 
         // 6. 動態權限掃描與註冊
@@ -160,6 +162,13 @@ public static class AuthTokenBucketServiceCollectionExtensions
         services.AddScoped<IUserPermissionRepository, UserPermissionRepository>();
         // 註冊獨立的動態選單種子服務
         services.AddScoped<IMenuSeedService, MenuSeedService<TDbContext>>();
+        // 註冊所有選單解析策略實作
+        services.AddScoped<IMenuResolutionStrategy, DatabaseMenuResolutionStrategy>();
+        // 註冊選單策略工廠
+        services.AddScoped<IMenuStrategyFactory, MenuStrategyFactory>();
+        // 註冊執行期作用域服務
+        services.AddScoped<IUserRuntimeScopeService, UserRuntimeScopeService>();
+
 
         return services;
     }

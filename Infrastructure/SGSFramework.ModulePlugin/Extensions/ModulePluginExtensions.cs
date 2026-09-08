@@ -16,14 +16,12 @@ using Serilog;
 using SGSFramework.Alert.Extensions;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Controllers.Services;
-using SGSFramework.Core.Extensions;
 using SGSFramework.Core.Migrations;
 using SGSFramework.ModulePlugin.Abstractions;
 using SGSFramework.ModulePlugin.Services;
 using SGSFramework.ModulePlugin.Systems.Controller.Providers;
 using SGSFramework.ModulePlugin.Systems.Controller.Repositories;
 using SGSFramework.ModulePlugin.Systems.Controller.Services;
-using SGSFramework.ModulePlugin.Systems.Menu.Extensions;
 using SGSFramework.ModulePlugin.Systems.Module;
 using SGSFramework.ModulePlugin.Systems.Module.Containers;
 using SGSFramework.ModulePlugin.Systems.Module.Extensions;
@@ -94,8 +92,6 @@ public static class ModulePluginExtensions
         // 8. 系統核心模組與內建控制器自動同步初始化服務
         services.AddHostedService<SystemModuleDatabaseInitializerHostedService>();
 
-        // 9. 註冊動態選單擴充
-        services.AddDynamicMenu();
 
         return services;
     }
@@ -131,7 +127,7 @@ public static class ModulePluginExtensions
         services.AddHostedService<ModuleFileWatcherService>();
         services.AddHostedService<SystemModuleDatabaseInitializerHostedService>();
 
-        services.AddDynamicMenu();
+    
 
         return services;
     }

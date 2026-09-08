@@ -15,7 +15,6 @@ using SGSFramework.AuthTokenBucket.Services;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Logings;
-using SGSFramework.Core.Abstractions.Menus;
 using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Controllers.Base;
 using SGSFramework.Core.DTOs;
@@ -41,7 +40,6 @@ public sealed class AuthController(
     ILogger<AuthController> logger,
     IAuditProvider auditProvider,
     ISecurityLogger securityLogger,
-    IDynamicMenuService menuService,
     IUserRuntimeScopeService runtimeScopeService,
     ISender mediator) : ApiControllerBase
 {
@@ -54,7 +52,6 @@ public sealed class AuthController(
     private readonly ILogger<AuthController> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly IAuditProvider _auditProvider = auditProvider ?? throw new ArgumentNullException(nameof(auditProvider));
     private readonly ISecurityLogger _securityLogger = securityLogger ?? throw new ArgumentNullException(nameof(securityLogger));
-    private readonly IDynamicMenuService _menuService = menuService ?? throw new ArgumentNullException(nameof(menuService));
     private readonly IUserRuntimeScopeService _runtimeScopeService = runtimeScopeService ?? throw new ArgumentNullException(nameof(runtimeScopeService));
     private readonly ISender _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
 
@@ -107,6 +104,7 @@ public sealed class AuthController(
 
             await _userManager.ResetAccessFailedCountAsync(user);
 
+            // 初始化使用者的實驗室上下文與動態選單
             var runtimeProfile = await _runtimeScopeService.InitializeUserScopeAsync(
                 user.Id.ToString(),
                 targetRequestedLabId,

@@ -3,8 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace SGSFramework.AuthTokenBucket.DTOs.MenuItems
-{
+namespace SGSFramework.Core.Abstractions.Menus;
+
     /// <summary>
     /// 選單項目詳細資料傳輸物件 (供後台管理系統編輯與詳細資訊檢視使用)
     /// </summary>
@@ -89,6 +89,5 @@ namespace SGSFramework.AuthTokenBucket.DTOs.MenuItems
         /// 最後更新時間 (UTC)
         /// </summary>
         public DateTime? LastModifiedAtUtc { get; init; }
-    }
-   
-}
+    } 
+

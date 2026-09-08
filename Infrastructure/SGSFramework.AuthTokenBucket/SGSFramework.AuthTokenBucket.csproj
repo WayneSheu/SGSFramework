@@ -45,4 +45,8 @@
     <ProjectReference Include="..\..\SGS.Modules.ORG.Contracts\SGS.Modules.ORG.Contracts.csproj" />
     <ProjectReference Include="..\..\Shared\SGSFramework.Core\SGSFramework.Core.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="DTOs\MenuItems\" />
+  </ItemGroup>
 </Project>
