@@ -371,7 +371,7 @@ public sealed class AuthController(
     /// 獲取線上即時活動用戶數觀測
     /// </summary>
     [HttpGet("online-count")]
-    [Function("GetOnlineUserCount", "線上人數統計", Icon = "fa-solid fa-users", Order = 4, Description = "獲取線上即時活動用戶數觀測端點")]
+    [Function("GetOnlineUserCount", "線上人數統計", Icon = "fa-solid fa-users", Order = 4, Description = "獲取線上即時活動用戶數觀測端點", IsMenu = true)]
     [ProducesResponseType(typeof(OnlineUserCountResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
