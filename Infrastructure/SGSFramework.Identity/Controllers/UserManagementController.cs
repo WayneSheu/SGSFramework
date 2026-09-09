@@ -1,6 +1,4 @@
-﻿// 檔案路徑: Presentation/SGSFramework.Identity.Controllers/v1/UserManagementController.cs
-
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -11,6 +9,7 @@ using SGSFramework.AuthTokenBucket.Services;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Permissions;
+using SGSFramework.Core.Abstractions.Transactions;
 using SGSFramework.Core.Controllers.Base;
 using SGSFramework.Identity.DTOs;
 using System;
@@ -37,13 +36,13 @@ public sealed class UserManagementController(
     UserManager<ApplicationUser> userManager,
     SignInManager<ApplicationUser> signInManager,
     TokenBucketEngine<ApplicationUser> tokenEngine,
-    DbContext dbContext,
+    IUnitOfWork unitOfWork,
     ILogger<UserManagementController> logger) : ApiControllerBase
 {
     private readonly UserManager<ApplicationUser> _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
     private readonly SignInManager<ApplicationUser> _signInManager = signInManager ?? throw new ArgumentNullException(nameof(signInManager));
     private readonly TokenBucketEngine<ApplicationUser> _tokenEngine = tokenEngine ?? throw new ArgumentNullException(nameof(tokenEngine));
-    private readonly DbContext _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+    private readonly IUnitOfWork _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
     private readonly ILogger<UserManagementController> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -475,7 +474,7 @@ public sealed class UserManagementController(
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>系統使用者清單集合，包含其對應角色</returns>
     [HttpGet]
-    [Function("GetUsers", "查詢使用者列表", Icon = "fa-solid fa-users", Order = 9, Description = "取得系統所有使用者清單，包含帳號、Email、驗證狀態與所屬角色等資訊",IsMenu =true)]
+    [Function("GetUsers", "查詢使用者列表", Icon = "fa-solid fa-users", Order = 9, Description = "取得系統所有使用者清單，包含帳號、Email、驗證狀態與所屬角色等資訊", IsMenu = true)]
     [ProducesResponseType(typeof(IEnumerable<UserDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     [RequiresPermission("SYSTEM.USERMANAGEMENT.GETUSERS")]
@@ -557,7 +556,8 @@ public sealed class UserManagementController(
             var rolesToRemove = currentRoles.Except(targetRoles).ToList();
             var rolesToAdd = targetRoles.Except(currentRoles).ToList();
 
-            using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+            // 使用抽象化的 IUnitOfWork 進行異步事務控管
+            await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
             try
             {
                 if (rolesToRemove.Count > 0)
@@ -614,50 +614,4 @@ public sealed class UserManagementController(
             });
         }
     }
-
-    
-
-    
-
 }
-
-#region DTO 模型定義載體
-
-public sealed class RegisterRequest
-{
-    public string Username { get; set; } = string.Empty;
-    public string Email { get; set; } = string.Empty;
-    public string Password { get; set; } = string.Empty;
-}
-
-public sealed class ManagementLoginRequest
-{
-    public string AccountIdentifier { get; set; } = string.Empty;
-    public string Password { get; set; } = string.Empty;
-}
-
-public sealed class TwoFactorVerificationRequest
-{
-    public string Email { get; set; } = string.Empty;
-    public string Code { get; set; } = string.Empty;
-}
-
-public sealed class ForgotPasswordRequest
-{
-    public string Email { get; set; } = string.Empty;
-}
-
-public sealed class ResetPasswordRequest
-{
-    public string Email { get; set; } = string.Empty;
-    public string Token { get; set; } = string.Empty;
-    public string NewPassword { get; set; } = string.Empty;
-}
-
-public sealed class ChangePasswordRequest
-{
-    public string CurrentPassword { get; set; } = string.Empty;
-    public string NewPassword { get; set; } = string.Empty;
-}
-
-#endregion

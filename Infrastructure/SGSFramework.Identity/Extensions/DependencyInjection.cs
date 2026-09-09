@@ -5,9 +5,11 @@ using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.Core.Abstractions.Adapters;
 using SGSFramework.Core.Abstractions.Entities.Base;
 using SGSFramework.Core.Abstractions.Entities.Identities;
+using SGSFramework.Core.Abstractions.Transactions;
 using SGSFramework.Identity.Abstractions;
 using SGSFramework.Identity.Repositories;
 using SGSFramework.Identity.Services;
+using SGSFramework.Identity.Transactions;
 
 namespace SGSFramework.Identity.Extensions
 {
@@ -53,7 +55,9 @@ namespace SGSFramework.Identity.Extensions
             // 4. 註冊角色管理服務 (開放泛型與具體泛型介面)
             services.AddScoped(typeof(IRoleManagementService<,>), typeof(RoleManagementService<,>));
             services.AddScoped<IRoleManagementService<TRole, TKey>, RoleManagementService<TRole, TKey>>();
-
+            //
+            // 註冊抽象化 UnitOfWork
+            services.AddScoped<IUnitOfWork, UnitOfWork>();
             return services;
         }
     }
