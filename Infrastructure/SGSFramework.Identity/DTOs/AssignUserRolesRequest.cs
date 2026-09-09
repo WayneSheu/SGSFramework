@@ -7,9 +7,9 @@ namespace SGSFramework.Identity.DTOs
 {
     public sealed class AssignUserRolesRequest
     {
-        [Required(ErrorMessage = "使用者 ID 為必填項目")]
-        public string UserId { get; set; } = string.Empty;
-
-        public List<string> RoleNames { get; set; } = new();
+        /// <summary>
+        /// 欲指派的角色名稱清單
+        /// </summary>
+        public List<string> RoleNames { get; set; } = [];
     }
 }

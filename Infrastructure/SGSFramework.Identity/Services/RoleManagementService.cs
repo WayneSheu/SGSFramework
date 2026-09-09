@@ -221,15 +221,39 @@ namespace SGSFramework.Identity.Services
         #region 使用者角色綁定服務
 
         public async Task<(bool Succeeded, string Message)> AssignUserRolesAsync(
+            string userId,
             AssignUserRolesRequest request,
             CancellationToken cancellationToken = default)
         {
+            ArgumentException.ThrowIfNullOrWhiteSpace(userId);
             ArgumentNullException.ThrowIfNull(request);
 
-            await Task.CompletedTask;
-            _logger.LogInformation("成功綁定使用者 {UserId} 之角色清單", request.UserId);
+            // 解決第 230 行錯誤：原 request.UserId 改為直接存取參數 userId
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null)
+            {
+                return (false, $"找不到識別碼為 '{userId}' 的使用者。");
+            }
 
-            return (true, "使用者角色綁定成功。");
+            var currentRoles = await _userManager.GetRolesAsync(user);
+            var targetRoles = request.RoleNames?.Distinct().ToList() ?? [];
+
+            var rolesToRemove = currentRoles.Except(targetRoles);
+            var rolesToAdd = targetRoles.Except(currentRoles);
+
+            var removeResult = await _userManager.RemoveFromRolesAsync(user, rolesToRemove);
+            if (!removeResult.Succeeded)
+            {
+                return (false, string.Join("; ", removeResult.Errors.Select(e => e.Description)));
+            }
+
+            var addResult = await _userManager.AddToRolesAsync(user, rolesToAdd);
+            if (!addResult.Succeeded)
+            {
+                return (false, string.Join("; ", addResult.Errors.Select(e => e.Description)));
+            }
+
+            return (true, "使用者角色更新成功。");
         }
 
         public async Task<(bool Succeeded, string Message, IEnumerable<string>? Errors)> BatchAssignUsersToRoleAsync(

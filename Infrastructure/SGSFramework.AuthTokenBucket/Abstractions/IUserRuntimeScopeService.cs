@@ -7,48 +7,47 @@ using System.Text;
 namespace SGSFramework.AuthTokenBucket.Abstractions
 {
     /// <summary>
-    /// 使用者執行期範疇與動態權限運算服務
+    /// 執行期使用者作用域與動態權限管理服務介面
     /// </summary>
     public interface IUserRuntimeScopeService
     {
-        /// <summary>
-        /// 初始化使用者運行時範疇：登入時呼叫，回傳預設實驗室的權限配置與環境參數
-        /// </summary>
         Task<UserPermissionProfileDto> InitializeUserScopeAsync(
             string userId,
-            string? requestedLabId = null,
+            string? requestedLabId,
             CancellationToken cancellationToken = default);
 
+        Task<Guid?> GetPrimaryLabIdAsync(
+            string userId,
+            CancellationToken cancellationToken = default);
 
-        /// <summary>
-        /// 獲取使用者在當前上下文/實驗室下持有的所有權限 Key 集合 (用於動態選單與權限過濾)
-        /// </summary>
-        /// <param name="userId">使用者識別碼</param>
-        /// <param name="activeLabId">當前實驗室 Guid (可選)</param>
-        /// <param name="cancellationToken">取消權杖</param>
+        Task<SwitchLabResultDto> SwitchLaboratoryWithFallbackAsync(
+            string userId,
+            Guid? targetLabId,
+            CancellationToken cancellationToken = default);
+
+        Task<UserPermissionProfileDto?> SwitchLaboratoryAsync(
+            string userId,
+            Guid targetLabId,
+            CancellationToken cancellationToken = default);
+
         Task<IEnumerable<string>> GetUserPermissionsAsync(
             string userId,
             Guid? activeLabId = null,
             CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// 切換作用中實驗室 (具備主實驗室自動退路與訊息通知能力)
+        /// 驗證使用者於特定實驗室下的 Controller 與動態 BitPosition 權限點（支援超過 64 位元）
         /// </summary>
-        Task<SwitchLabResultDto> SwitchLaboratoryWithFallbackAsync(
-            string userId, 
-            Guid? targetLabId, 
-            CancellationToken ct = default
-        );
-
+        Task<bool> ValidateRuntimePermissionAsync(
+            string userId,
+            Guid activeLabId,
+            Guid controllerId,
+            int bitPosition,
+            CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// 後端 API 執行期驗證：檢查使用者在指定實驗室下，是否具備特定模組的指定位元權限
+        /// 透過模組代碼與動態 BitPosition 驗證執行期權限（支援超過 64 位元）
         /// </summary>
-        /// <param name="userId">使用者識別碼</param>
-        /// <param name="activeLabId">當前作用中的實驗室 Guid (來自 X-Active-Lab-Id)</param>
-        /// <param name="module">系統模組名稱 (如 "ReportManagement")</param>
-        /// <param name="bitPosition">權限位元位置 (0~63)</param>
-        /// <param name="cancellationToken">取消權杖</param>
         Task<bool> ValidateRuntimePermissionAsync(
             string userId,
             Guid activeLabId,
@@ -57,13 +56,13 @@ namespace SGSFramework.AuthTokenBucket.Abstractions
             CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// 獲取使用者當前具備管轄權的所有實驗室清單 (供前端下拉選單渲染)
+        /// 取得使用者可存取的實驗室清單
         /// </summary>
+        /// <param name="userId"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
         Task<List<AccessibleLabDto>> GetAccessibleLabsAsync(
             string userId,
             CancellationToken cancellationToken = default);
-
-        // 取得使用者的預設主實驗室 TenantLabId
-        Task<Guid?> GetPrimaryLabIdAsync(string userId, CancellationToken cancellationToken = default);
     }
 }

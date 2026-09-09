@@ -68,7 +68,10 @@ public sealed class TokenManager : ITokenManager
                 new(ClaimTypes.Name, user.UserName ?? string.Empty),
                 new("device_id", deviceId),
                 new("permissions", bitmaskString ?? string.Empty),
-                new("is_admin", isSystemAdmin ? "true" : "false")
+                new("perm_bits", bitmaskString ?? string.Empty), //確保 Filter 讀取權限位元遮罩
+                new("perm_mask", bitmaskString ?? string.Empty),
+                new("is_admin", isSystemAdmin ? "true" : "false"), // 確保寫入管理員宣告
+                new("IsSuperAdmin", isSystemAdmin ? "true" : "false")// 確保寫入管理員宣告
             };
 
             if (roles != null)
@@ -89,6 +92,7 @@ public sealed class TokenManager : ITokenManager
                 ["kid"] = DefaultKeyId
             };
 
+            // 設定 Access Token 過期時間，若組態未設定或小於等於 0，則預設為 15 分鐘
             var expirationMinutes = _options.AccessTokenExpirationMinutes <= 0 ? 15 : _options.AccessTokenExpirationMinutes;
 
             var payload = new JwtPayload(

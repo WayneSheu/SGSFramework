@@ -28,9 +28,17 @@ namespace SGSFramework.Identity.Abstractions
         Task<(bool Succeeded, string Message)> MapAdGroupToRoleAsync(MapAdGroupToRoleRequest request, CancellationToken cancellationToken = default);
         Task<(bool Succeeded, string Message)> RemoveAdGroupFromRoleAsync(RemoveAdGroupFromRoleRequest request, CancellationToken cancellationToken = default);
         Task<(bool Succeeded, List<string> SyncedRoles, string Message)> SyncUserRolesFromAdGroupsAsync(SyncUserAdRolesRequest request, CancellationToken cancellationToken = default);
-
-        // 使用者角色綁定服務介面
-        Task<(bool Succeeded, string Message)> AssignUserRolesAsync(AssignUserRolesRequest request, CancellationToken cancellationToken = default);
+   
+        /// <summary>
+        /// 指派指定使用者的角色清單
+        /// </summary>
+        /// <param name="userId">使用者識別碼</param>
+        /// <param name="request">角色指派內容</param>
+        /// <param name="cancellationToken">異步取消權牌</param>
+        Task<(bool Succeeded, string Message)> AssignUserRolesAsync(
+            string userId,
+            AssignUserRolesRequest request,
+            CancellationToken cancellationToken = default);
 
         // 批次使用者角色解綁服務介面
         Task<(bool Succeeded, string Message, IEnumerable<string>? Errors)> BatchAssignUsersToRoleAsync(

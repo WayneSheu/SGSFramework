@@ -538,7 +538,18 @@ public sealed class UserManagementController(
 
         try
         {
+            // 直接使用 Route 傳入的 userId 作為唯一操作目標
             var user = await _userManager.FindByIdAsync(userId.ToString());
+            if (user == null)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Status = StatusCodes.Status400BadRequest,
+                    Title = "使用者不存在",
+                    Detail = $"找不到識別碼為 '{userId}' 的使用者。",
+                    Instance = HttpContext.Request.Path
+                });
+            }
             if (user == null)
             {
                 return BadRequest(new ProblemDetails

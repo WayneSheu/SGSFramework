@@ -388,24 +388,30 @@ public sealed class RoleManagementController(
     }
 
     /// <summary>
-    /// 手動批次指派使用者角色
+    /// 手動指派使用者角色
     /// </summary>
-    /// <param name="request">指派使用者角色請求內容</param>
+    /// <param name="userId">使用者識別碼（從路由取得）</param>
+    /// <param name="request">指派角色請求內容</param>
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>操作結果訊息</returns>
-    [HttpPost("user/assign-roles")]
-    [Function("AssignUserRoles", "指派使用者角色", Icon = "fa-solid fa-user-tag", Order = 9, Description = "手動批次指派使用者角色，需提供使用者 ID 與角色清單")]
+    [HttpPut("users/{userId}/roles")]
+    [Function("AssignUserRoles", "指派使用者角色", Icon = "fa-solid fa-user-tag", Order = 9, Description = "手動指派指定使用者的系統角色清單")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     [RequiresPermission("SYSTEM.ROLEMANAGEMENT.ASSIGNUSERROLES")]
-    public async Task<IActionResult> AssignUserRoles([FromBody] AssignUserRolesRequest request, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> AssignUserRoles(
+        [FromRoute] string userId,
+        [FromBody] AssignUserRolesRequest request,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
         ArgumentNullException.ThrowIfNull(request);
 
         try
         {
-            var (succeeded, message) = await _roleManagementService.AssignUserRolesAsync(request, cancellationToken);
+            // 傳入 route 取得的 userId 與 payload request
+            var (succeeded, message) = await _roleManagementService.AssignUserRolesAsync(userId, request, cancellationToken);
             if (!succeeded)
             {
                 return BadRequest(new ProblemDetails
@@ -417,12 +423,13 @@ public sealed class RoleManagementController(
                 });
             }
 
-            _logger.LogInformation("已成功指派角色予使用者 [{UserId}]。", request.UserId);
+            // 解決第 420、425 行錯誤：日誌變更為直接記錄 userId
+            _logger.LogInformation("已成功指派角色予使用者 [{UserId}]。", userId);
             return Ok(new { message });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "指派使用者角色時發生異常。UserId: {UserId}", request.UserId);
+            _logger.LogError(ex, "指派使用者角色時發生異常。UserId: {UserId}", userId);
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
                 Status = StatusCodes.Status500InternalServerError,

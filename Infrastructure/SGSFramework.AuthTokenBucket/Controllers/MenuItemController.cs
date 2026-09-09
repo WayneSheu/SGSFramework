@@ -49,7 +49,6 @@ public class MenuItemController : ApiControllerBase
     /// </summary>
     [HttpGet("user-tree")]
     [Function("GetUserMenuTree", "取得使用者動態選單", Icon = "fa-solid fa-sitemap", Order = 1, Description = "依據當前使用者權限過濾後回傳三層選單樹")]
-    [RequiresPermission("SYS.MENU.GETUSERMENUTREE")]
     [ProducesResponseType(typeof(Result<List<MenuItemDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetUserMenuTree(CancellationToken cancellationToken)
     {

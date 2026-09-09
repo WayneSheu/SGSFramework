@@ -126,7 +126,7 @@ public static class AuthTokenBucketServiceCollectionExtensions
         // 5. 註冊核心服務（解決 ITokenManager 抽象介面無法被 TokenBucketEngine 解析之問題）
         services.AddScoped<ITokenManager, TokenManager>();
         services.AddScoped<TokenManager>(sp => (TokenManager)sp.GetRequiredService<ITokenManager>());
-        services.AddScoped<TokenBucketEngine<TUser>>();
+   
         services.AddScoped<ITokenStorageProvider, SqlTokenStorageProvider<TDbContext>>();
         services.AddScoped<IUserRefreshTokenRepository, UserRefreshTokenRepository<TDbContext>>();
         services.AddScoped<IPermissionManagementService, PermissionManagementService<TDbContext, TRole, Guid>>();
@@ -160,6 +160,11 @@ public static class AuthTokenBucketServiceCollectionExtensions
         services.AddScoped<IPermissionGrantService, PermissionGrantService<TDbContext>>();
         // 由於 UserPermissionRepository 依賴 DbContext（其預設為 Scoped），因此必須註冊為 Scoped
         services.AddScoped<IUserPermissionRepository, UserPermissionRepository>();
+
+        // 註冊動態權限解析策略
+        services.AddScoped<IPermissionResolver, DefaultPermissionResolver>();
+        services.AddScoped<TokenBucketEngine<TUser>>();
+
         // 註冊獨立的動態選單種子服務
         services.AddScoped<IMenuSeedService, MenuSeedService<TDbContext>>();
         // 註冊所有選單解析策略實作
@@ -168,7 +173,6 @@ public static class AuthTokenBucketServiceCollectionExtensions
         services.AddScoped<IMenuStrategyFactory, MenuStrategyFactory>();
         // 註冊執行期作用域服務
         services.AddScoped<IUserRuntimeScopeService, UserRuntimeScopeService>();
-
 
         return services;
     }

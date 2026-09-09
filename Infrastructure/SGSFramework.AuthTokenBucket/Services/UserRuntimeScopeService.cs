@@ -19,8 +19,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 /// <summary>
-/// 多租戶與動態實驗室（Lab/Department/Organization）架構下的核心執行期上下文服務。
-/// 提供 3-Tier 實驗室決策矩陣、無感切換與自我修復退路機制。
+/// 多租戶與動態實驗室架構下的核心執行期上下文服務 (重構版：支援無限位元權限點與特權繞過)
 /// </summary>
 public class UserRuntimeScopeService(
     IOrganizationIntegrationService orgIntegrationService,
@@ -46,9 +45,6 @@ public class UserRuntimeScopeService(
     private const string SystemAdminRole = "sysadmin";
     private const string SuperAdminRole = "SuperAdmin";
 
-    /// <summary>
-    /// 初始化使用者執行期實驗室作用域 (3-Tier 決策機制: Requested -> Primary -> FirstAvailable)
-    /// </summary>
     public async Task<UserPermissionProfileDto> InitializeUserScopeAsync(
         string userId,
         string? requestedLabId,
@@ -56,7 +52,6 @@ public class UserRuntimeScopeService(
     {
         ArgumentException.ThrowIfNullOrEmpty(userId, nameof(userId));
 
-        // 1. 取得使用者可存取的實驗室清單
         var accessibleLabs = await GetAccessibleLabsAsync(userId, cancellationToken).ConfigureAwait(false);
         if (accessibleLabs == null || accessibleLabs.Count == 0)
         {
@@ -64,16 +59,13 @@ public class UserRuntimeScopeService(
             throw new UnauthorizedAccessException("您未獲得任何實驗室的存取權限。");
         }
 
-        // 2. 決策最終作用中實驗室 (Requested -> Primary -> FirstAvailable)
         AccessibleLabDto targetLab = ResolveTargetLab(accessibleLabs, requestedLabId);
 
         _logger.LogInformation("[Auth-Scope-Resolved] 已成功鎖定執行期實驗室上下文。UserId: {UserId}, TargetLabId: {LabId}, TenantLabId: {TenantLabId}, IsPrimary: {IsPrimary}",
             userId, targetLab.LabId, targetLab.TenantLabId, targetLab.IsPrimary);
 
-        // 3. 獲取特定實驗室上下文下的權限清單
         var permissions = await GetUserPermissionsAsync(userId, targetLab.TenantLabId, cancellationToken).ConfigureAwait(false);
 
-        // 4. 透過選單策略工廠進行選單解析與裁切
         var user = await _userManager.FindByIdAsync(userId).ConfigureAwait(false);
         bool isAdmin = user != null && await IsSystemAdminAsync(user).ConfigureAwait(false);
         var menuStrategy = _menuStrategyFactory.GetStrategy(MenuStrategyType.DatabaseDriven);
@@ -89,9 +81,6 @@ public class UserRuntimeScopeService(
         };
     }
 
-    /// <summary>
-    /// 取得使用者的預設主實驗室 TenantLabId
-    /// </summary>
     public async Task<Guid?> GetPrimaryLabIdAsync(string userId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(userId, nameof(userId));
@@ -99,10 +88,7 @@ public class UserRuntimeScopeService(
         try
         {
             var accessibleLabs = await GetAccessibleLabsAsync(userId, cancellationToken).ConfigureAwait(false);
-            if (accessibleLabs == null || accessibleLabs.Count == 0)
-            {
-                return null;
-            }
+            if (accessibleLabs == null || accessibleLabs.Count == 0) return null;
 
             var primaryLab = accessibleLabs.FirstOrDefault(l => l.IsPrimary) ?? accessibleLabs.FirstOrDefault();
             return primaryLab?.TenantLabId;
@@ -114,9 +100,6 @@ public class UserRuntimeScopeService(
         }
     }
 
-    /// <summary>
-    /// 切換作用中實驗室上下文 (具備自我修復退路與警告通知機制)
-    /// </summary>
     public async Task<SwitchLabResultDto> SwitchLaboratoryWithFallbackAsync(
         string userId,
         Guid? targetLabId,
@@ -159,7 +142,6 @@ public class UserRuntimeScopeService(
 
         var permissions = await GetCachedOrFetchPermissionsAsync(userId, finalLabId, cancellationToken).ConfigureAwait(false);
 
-        // 透過選單策略工廠構建切換後的選單樹
         var user = await _userManager.FindByIdAsync(userId).ConfigureAwait(false);
         bool isAdmin = user != null && await IsSystemAdminAsync(user).ConfigureAwait(false);
         var menuStrategy = _menuStrategyFactory.GetStrategy(MenuStrategyType.DatabaseDriven);
@@ -184,9 +166,6 @@ public class UserRuntimeScopeService(
         };
     }
 
-    /// <summary>
-    /// 舊有相容介面切換實作
-    /// </summary>
     public async Task<UserPermissionProfileDto?> SwitchLaboratoryAsync(
         string userId,
         Guid targetLabId,
@@ -204,9 +183,6 @@ public class UserRuntimeScopeService(
         }
     }
 
-    /// <summary>
-    /// 獲取使用者在特定實驗室下的最終權限 Key 集合
-    /// </summary>
     public async Task<IEnumerable<string>> GetUserPermissionsAsync(
         string userId,
         Guid? activeLabId = null,
@@ -238,10 +214,7 @@ public class UserRuntimeScopeService(
                 if (accessibleLabs != null && accessibleLabs.Count > 0)
                 {
                     var primaryLab = accessibleLabs.FirstOrDefault(l => l.IsPrimary) ?? accessibleLabs.FirstOrDefault();
-                    if (primaryLab != null)
-                    {
-                        activeLabId = primaryLab.TenantLabId;
-                    }
+                    if (primaryLab != null) activeLabId = primaryLab.TenantLabId;
                 }
             }
 
@@ -271,7 +244,7 @@ public class UserRuntimeScopeService(
     }
 
     /// <summary>
-    /// 驗證使用者於特定實驗室下的特定 Controller ID 與 BitPosition 權限點
+    /// 驗證特定 Controller ID 與 BitPosition 權限點（支援超過 64 位元之延伸索引）
     /// </summary>
     public async Task<bool> ValidateRuntimePermissionAsync(
         string userId,
@@ -281,18 +254,14 @@ public class UserRuntimeScopeService(
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(userId, nameof(userId));
-
-        if (bitPosition is < 0 or > 63)
-        {
-            _logger.LogWarning("權限 Bit 位元位置 {BitPosition} 超過 64 位元長整型邊界 (0-63)。", bitPosition);
-            return false;
-        }
+        if (bitPosition < 0) return false;
 
         try
         {
             var user = await _userManager.FindByIdAsync(userId).ConfigureAwait(false);
             if (user == null) return false;
 
+            // 特權過濾：系統管理員全域放行
             if (await IsSystemAdminAsync(user).ConfigureAwait(false)) return true;
 
             bool isLabScopeValid = await _orgIntegrationService.IsInUserScopeAsync(userId, activeLabId, cancellationToken).ConfigureAwait(false);
@@ -303,9 +272,7 @@ public class UserRuntimeScopeService(
             }
 
             var userPermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId, cancellationToken).ConfigureAwait(false);
-            long assignedBitmask = GetUserBitmaskForController(userPermissions, controllerId);
-
-            return (assignedBitmask & (1L << bitPosition)) != 0;
+            return ValidateBitPositionPermission(userPermissions, controllerId.ToString(), bitPosition);
         }
         catch (Exception ex)
         {
@@ -316,7 +283,7 @@ public class UserRuntimeScopeService(
     }
 
     /// <summary>
-    /// 透過字串模組名稱驗證執行期權限 (舊有相容)
+    /// 透過模組代碼驗證動態位元權限點（支援超過 64 位元之延伸索引）
     /// </summary>
     public async Task<bool> ValidateRuntimePermissionAsync(
         string userId,
@@ -327,39 +294,30 @@ public class UserRuntimeScopeService(
     {
         ArgumentException.ThrowIfNullOrEmpty(userId, nameof(userId));
         ArgumentException.ThrowIfNullOrEmpty(module, nameof(module));
-
-        if (bitPosition is < 0 or > 63) return false;
+        if (bitPosition < 0) return false;
 
         try
         {
             var user = await _userManager.FindByIdAsync(userId).ConfigureAwait(false);
             if (user == null) return false;
 
+            // 特權過濾：系統管理員全域放行
             if (await IsSystemAdminAsync(user).ConfigureAwait(false)) return true;
 
             bool isLabScopeValid = await _orgIntegrationService.IsInUserScopeAsync(userId, activeLabId, cancellationToken).ConfigureAwait(false);
             if (!isLabScopeValid) return false;
 
             var userPermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId, cancellationToken).ConfigureAwait(false);
-            var modulePerm = userPermissions.FirstOrDefault(p => p.StartsWith($"{module}:", StringComparison.OrdinalIgnoreCase));
-
-            if (string.IsNullOrEmpty(modulePerm)) return false;
-
-            var parts = modulePerm.Split(':');
-            if (parts.Length < 2 || !long.TryParse(parts[1], out long bitmask)) return false;
-
-            return (bitmask & (1L << bitPosition)) != 0;
+            return ValidateBitPositionPermission(userPermissions, module, bitPosition);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "驗證執行期權限(模組字串)發生異常。UserId: {UserId}, LabId: {LabId}, Module: {Module}", userId, activeLabId, module);
+            _logger.LogError(ex, "驗證執行期權限(模組字串)發生異常。UserId: {UserId}, LabId: {LabId}, Module: {Module}, BitPosition: {BitPosition}",
+                userId, activeLabId, module, bitPosition);
             return false;
         }
     }
 
-    /// <summary>
-    /// 獲取使用者可存取的實驗室清單
-    /// </summary>
     public async Task<List<AccessibleLabDto>> GetAccessibleLabsAsync(
         string userId,
         CancellationToken cancellationToken = default)
@@ -390,11 +348,7 @@ public class UserRuntimeScopeService(
                     ParentLabName = lab.ParentLabName
                 }).ToList();
 
-                if (adminLabs.Count == 0)
-                {
-                    adminLabs.Add(CreateFallbackAdminLab());
-                }
-
+                if (adminLabs.Count == 0) adminLabs.Add(CreateFallbackAdminLab());
                 return adminLabs;
             }
 
@@ -422,20 +376,37 @@ public class UserRuntimeScopeService(
         }
     }
 
-    #region Private Helper Methods
+    #region Private Helpers
 
-    private static long GetUserBitmaskForController(IEnumerable<string> rawPermissions, Guid controllerId)
+    /// <summary>
+    /// 解析位元位置授權：支援 Bitmask (0-63) 或 延伸 BitPosition 陣列清單[cite: 11]
+    /// </summary>
+    private static bool ValidateBitPositionPermission(IEnumerable<string> rawPermissions, string targetKey, int bitPosition)
     {
-        string targetIdStr = controllerId.ToString();
         foreach (var perm in rawPermissions)
         {
             var parts = perm.Split(':');
-            if (parts.Length >= 2 && parts[0].Equals(targetIdStr, StringComparison.OrdinalIgnoreCase))
+            if (parts.Length < 2 || !parts[0].Equals(targetKey, StringComparison.OrdinalIgnoreCase)) continue;
+
+            string bitValue = parts[1];
+
+            // 模式 A: 舊有 64 位元 Bitmask (例: "MODULE:18446744073709551615")[cite: 11, 13]
+            if (bitPosition < 64 && long.TryParse(bitValue, out long bitmask))
             {
-                if (long.TryParse(parts[1], out long mask)) return mask;
+                if ((bitmask & (1L << bitPosition)) != 0) return true;
+            }
+
+            // 模式 B: 擴充超大位元陣列清單 (例: "MODULE:0,1,5,65,128")[cite: 11]
+            var grantedBits = bitValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            foreach (var bitStr in grantedBits)
+            {
+                if (int.TryParse(bitStr, out int grantedBit) && grantedBit == bitPosition)
+                {
+                    return true;
+                }
             }
         }
-        return 0L;
+        return false;
     }
 
     private static AccessibleLabDto ResolveTargetLab(List<AccessibleLabDto> accessibleLabs, string? requestedLabId)
@@ -453,9 +424,7 @@ public class UserRuntimeScopeService(
         target ??= accessibleLabs.FirstOrDefault(l => l.IsPrimary);
         target ??= accessibleLabs.FirstOrDefault();
 
-        return target ?? baseResult();
-
-        AccessibleLabDto baseResult() => throw new UnauthorizedAccessException("無法解析有效的實驗室節點。");
+        return target ?? throw new UnauthorizedAccessException("無法解析有效的實驗室節點。");
     }
 
     private async Task<bool> IsSystemAdminAsync(ApplicationUser? user)
@@ -525,7 +494,6 @@ public class UserRuntimeScopeService(
         try
         {
             ArgumentException.ThrowIfNullOrEmpty(userId, nameof(userId));
-
             var permissions = await _userPermissionRepository.GetPermissionsByLabAsync(userId, labId, cancellationToken).ConfigureAwait(false);
             return permissions ?? new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         }
@@ -543,7 +511,6 @@ public class UserRuntimeScopeService(
         try
         {
             ArgumentException.ThrowIfNullOrEmpty(userId, nameof(userId));
-
             var globalPermissions = await _userPermissionRepository.GetGlobalPermissionsAsync(userId, cancellationToken).ConfigureAwait(false);
             return globalPermissions ?? new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         }
@@ -561,31 +528,37 @@ public class UserRuntimeScopeService(
         foreach (var permString in rawPermissions)
         {
             var parts = permString.Split(':');
-            if (parts.Length >= 2 && long.TryParse(parts[1], out long mask))
+            if (parts.Length >= 2)
             {
                 string module = parts[0];
-                for (int bit = 0; bit < 64; bit++)
+                string bitValue = parts[1];
+
+                // 解析 64 位元 Bitmask[cite: 11, 13]
+                if (long.TryParse(bitValue, out long mask))
                 {
-                    if ((mask & (1L << bit)) != 0)
+                    for (int bit = 0; bit < 64; bit++)
                     {
-                        var resolvedKey = _permissionRegistry.ResolvePermissionKey(module, bit);
-                        if (!string.IsNullOrEmpty(resolvedKey))
+                        if ((mask & (1L << bit)) != 0)
                         {
-                            permissionKeys.Add(resolvedKey);
+                            var resolvedKey = _permissionRegistry.ResolvePermissionKey(module, bit);
+                            if (!string.IsNullOrEmpty(resolvedKey)) permissionKeys.Add(resolvedKey);
+                        }
+                    }
+                }
+                else // 解析延伸 BitPositions (例: "0,1,78,128")[cite: 11]
+                {
+                    var bitArray = bitValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    foreach (var bitStr in bitArray)
+                    {
+                        if (int.TryParse(bitStr, out int bitPosition))
+                        {
+                            var resolvedKey = _permissionRegistry.ResolvePermissionKey(module, bitPosition);
+                            if (!string.IsNullOrEmpty(resolvedKey)) permissionKeys.Add(resolvedKey);
                         }
                     }
                 }
             }
-            else
-            {
-                permissionKeys.Add(permString);
-            }
-        }
-
-        foreach (var permString in rawPermissions)
-        {
-            var parts = permString.Split(':');
-            if (parts.Length == 1)
+            else if (parts.Length == 1)
             {
                 permissionKeys.Add(parts[0]);
             }
