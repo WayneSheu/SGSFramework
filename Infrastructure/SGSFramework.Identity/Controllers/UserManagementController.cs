@@ -1,4 +1,14 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿#nullable enable
+namespace SGSFramework.Identity.Controllers.v1;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net.Mime;
+using System.Security.Claims;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -12,15 +22,6 @@ using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Abstractions.Transactions;
 using SGSFramework.Core.Controllers.Base;
 using SGSFramework.Identity.DTOs;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.Mime;
-using System.Security.Claims;
-using System.Threading;
-using System.Threading.Tasks;
-
-namespace SGSFramework.Identity.Controllers.v1;
 
 /// <summary>
 /// 使用者帳號管理控制器
@@ -32,24 +33,34 @@ namespace SGSFramework.Identity.Controllers.v1;
 [Consumes(MediaTypeNames.Application.Json)]
 [ControllerTitle("使用者管理", Icon = "fa-solid fa-user-gear", Order = 10, Description = "提供使用者註冊、身分驗證、2FA、密碼安全維護與工作階段管理服務")]
 [RequiresPermission("SYSTEM.USERMANAGEMENT.READ")]
-public sealed class UserManagementController(
-    UserManager<ApplicationUser> userManager,
-    SignInManager<ApplicationUser> signInManager,
-    TokenBucketEngine<ApplicationUser> tokenEngine,
-    IUnitOfWork unitOfWork,
-    ILogger<UserManagementController> logger) : ApiControllerBase
+public sealed class UserManagementController : ApiControllerBase
 {
-    private readonly UserManager<ApplicationUser> _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
-    private readonly SignInManager<ApplicationUser> _signInManager = signInManager ?? throw new ArgumentNullException(nameof(signInManager));
-    private readonly TokenBucketEngine<ApplicationUser> _tokenEngine = tokenEngine ?? throw new ArgumentNullException(nameof(tokenEngine));
-    private readonly IUnitOfWork _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
-    private readonly ILogger<UserManagementController> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly UserManager<ApplicationUser> _userManager;
+    private readonly RoleManager<ApplicationRole> _roleManager;
+    private readonly SignInManager<ApplicationUser> _signInManager;
+    private readonly TokenBucketEngine<ApplicationUser> _tokenEngine;
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly ILogger<UserManagementController> _logger;
+
+    public UserManagementController(
+        UserManager<ApplicationUser> userManager,
+        RoleManager<ApplicationRole> roleManager,
+        SignInManager<ApplicationUser> signInManager,
+        TokenBucketEngine<ApplicationUser> tokenEngine,
+        IUnitOfWork unitOfWork,
+        ILogger<UserManagementController> logger)
+    {
+        _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
+        _roleManager = roleManager ?? throw new ArgumentNullException(nameof(roleManager));
+        _signInManager = signInManager ?? throw new ArgumentNullException(nameof(signInManager));
+        _tokenEngine = tokenEngine ?? throw new ArgumentNullException(nameof(tokenEngine));
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
 
     /// <summary>
     /// 使用者註冊 (支援自訂帳號與 Email 雙重唯一性校驗)
     /// </summary>
-    /// <param name="request">註冊請求內容</param>
-    /// <returns>註冊結果與驗證資訊</returns>
     [HttpPost("register")]
     [Function("Register", "使用者註冊", Icon = "fa-solid fa-user-plus", Order = 1, Description = "進行新使用者帳號註冊並生成電子郵件驗證憑證")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
@@ -127,9 +138,6 @@ public sealed class UserManagementController(
     /// <summary>
     /// 驗證使用者電子郵件
     /// </summary>
-    /// <param name="email">電子郵件</param>
-    /// <param name="token">驗證記號</param>
-    /// <returns>電子郵件驗證結果</returns>
     [HttpGet("confirm-email")]
     [Function("ConfirmEmail", "使用者 Email 驗證", Icon = "fa-solid fa-envelope-circle-check", Order = 2, Description = "檢驗使用者電子郵件驗證碼並啟用帳號")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
@@ -193,8 +201,6 @@ public sealed class UserManagementController(
     /// <summary>
     /// 驗證雙因子登入 (2FA)
     /// </summary>
-    /// <param name="request">2FA 驗證請求內容</param>
-    /// <returns>工作階段 Token 憑證</returns>
     [HttpPost("verify-2fa")]
     [Function("VerifyTwoFactor", "雙因子驗證登入", Icon = "fa-solid fa-key", Order = 4, Description = "驗證使用者雙因子驗證碼 (2FA) 並簽發正式工作階段憑證")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
@@ -258,8 +264,6 @@ public sealed class UserManagementController(
     /// <summary>
     /// 忘記密碼 - 申請重設權限 (產生加密重設記號)
     /// </summary>
-    /// <param name="request">忘記密碼請求內容</param>
-    /// <returns>申請處理訊息</returns>
     [HttpPost("forgot-password")]
     [Function("ForgotPassword", "忘記密碼", Icon = "fa-solid fa-unlock-keyhole", Order = 5, Description = "發送密碼重設郵件與記號至使用者信箱")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
@@ -298,8 +302,6 @@ public sealed class UserManagementController(
     /// <summary>
     /// 重設密碼執行 (忘記密碼情境，使用 Token 換新密碼)
     /// </summary>
-    /// <param name="request">重設密碼請求內容</param>
-    /// <returns>重設結果與安全通告</returns>
     [HttpPost("reset-password")]
     [AllowAnonymous]
     [Function("ResetPassword", "重設密碼", Icon = "fa-solid fa-shield-cat", Order = 6, Description = "使用重設記號重置密碼，並強制作廢全網歷史 Session 憑證")]
@@ -357,8 +359,6 @@ public sealed class UserManagementController(
     /// <summary>
     /// 變更密碼 (登入狀態情境：驗證舊密碼並換新密碼，強制執行登出聯防)
     /// </summary>
-    /// <param name="request">變更密碼請求內容</param>
-    /// <returns>變更結果與安全通告</returns>
     [Authorize]
     [HttpPost("change-password")]
     [AllowAnonymous]
@@ -432,7 +432,6 @@ public sealed class UserManagementController(
     /// <summary>
     /// 安全登出 (註銷當前裝置之活動軌跡)
     /// </summary>
-    /// <returns>登出結果</returns>
     [Authorize]
     [HttpPost("logout")]
     [AllowAnonymous]
@@ -471,8 +470,6 @@ public sealed class UserManagementController(
     /// <summary>
     /// 取得系統所有使用者清單（含所屬角色）
     /// </summary>
-    /// <param name="cancellationToken">異步取消權牌</param>
-    /// <returns>系統使用者清單集合，包含其對應角色</returns>
     [HttpGet]
     [Function("GetUsers", "查詢使用者列表", Icon = "fa-solid fa-users", Order = 9, Description = "取得系統所有使用者清單，包含帳號、Email、驗證狀態與所屬角色等資訊", IsMenu = true)]
     [ProducesResponseType(typeof(IEnumerable<UserDto>), StatusCodes.Status200OK)]
@@ -482,12 +479,15 @@ public sealed class UserManagementController(
     {
         try
         {
-            var users = await _userManager.Users.ToListAsync(cancellationToken);
-            var userDtos = new List<UserDto>();
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var users = await _userManager.Users.AsNoTracking().ToListAsync(cancellationToken);
+            var userDtos = new List<UserDto>(users.Count);
 
             foreach (var user in users)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+
                 var roles = await _userManager.GetRolesAsync(user);
 
                 userDtos.Add(new UserDto
@@ -503,9 +503,14 @@ public sealed class UserManagementController(
 
             return Ok(userDtos);
         }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("[UserManagementController] 查詢使用者列表作業已被用戶端取消 (Client Closed Request)。");
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "查詢使用者列表與角色時發生未預期異常。");
+            _logger.LogError(ex, "[UserManagementController] 查詢使用者列表時發生系統異常。");
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
                 Status = StatusCodes.Status500InternalServerError,
@@ -517,14 +522,78 @@ public sealed class UserManagementController(
     }
 
     /// <summary>
+    /// 取得指定使用者的完整角色指派狀態 (包含未繫結角色)
+    /// </summary>
+    [HttpGet("{userId:guid}/roles")]
+    [Function("GetUserRoleAssignment", "查詢使用者角色設定", Icon = "fa-solid fa-user-tag", Order = 10, Description = "取得特定使用者包含已指派與未指派的全系統角色狀態")]
+    [ProducesResponseType(typeof(UserRoleAssignmentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.READ")]
+    public async Task<IActionResult> GetUserRoleAssignment(
+        [FromRoute] Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var user = await _userManager.FindByIdAsync(userId.ToString());
+            if (user == null)
+            {
+                return NotFound(new ProblemDetails
+                {
+                    Status = StatusCodes.Status404NotFound,
+                    Title = "查無使用者",
+                    Detail = $"找不到識別碼為 '{userId}' 的使用者。",
+                    Instance = HttpContext.Request.Path
+                });
+            }
+
+            var allRoles = await _roleManager.Roles.AsNoTracking().ToListAsync(cancellationToken);
+            var userRoleNames = await _userManager.GetRolesAsync(user);
+            var assignedSet = new HashSet<string>(userRoleNames, StringComparer.OrdinalIgnoreCase);
+
+            var roleSelectionItems = allRoles.Select(r => new RoleSelectionItemDto
+            {
+                RoleId = r.Id.ToString(),
+                RoleName = r.Name ?? string.Empty,
+                Description = r.Name,
+                IsAssigned = r.Name != null && assignedSet.Contains(r.Name)
+            }).ToList();
+
+            var result = new UserRoleAssignmentDto
+            {
+                UserId = user.Id.ToString(),
+                Username = user.UserName ?? string.Empty,
+                Roles = roleSelectionItems
+            };
+
+            return Ok(result);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("[UserManagementController] 查詢使用者角色狀態作業已被用戶端取消。UserId: {UserId}", userId);
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[UserManagementController] 查詢使用者角色狀態時發生異常。UserId: {UserId}", userId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "讀取使用者角色設定時發生系統異常。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
+    /// <summary>
     /// 指派/更新指定使用者的角色權限清單
     /// </summary>
-    /// <param name="userId">使用者識別碼</param>
-    /// <param name="request">角色指派請求內容</param>
-    /// <param name="cancellationToken">異步取消權牌</param>
-    /// <returns>操作結果訊息</returns>
     [HttpPut("{userId:guid}/roles")]
-    [Function("AssignUserRoles", "指派使用者角色", Icon = "fa-solid fa-user-shield", Order = 10, Description = "更新指定使用者的系統角色權限對應清單")]
+    [Function("AssignUserRoles", "指派使用者角色", Icon = "fa-solid fa-user-shield", Order = 11, Description = "更新指定使用者的系統角色權限對應清單")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
@@ -538,18 +607,7 @@ public sealed class UserManagementController(
 
         try
         {
-            // 直接使用 Route 傳入的 userId 作為唯一操作目標
             var user = await _userManager.FindByIdAsync(userId.ToString());
-            if (user == null)
-            {
-                return BadRequest(new ProblemDetails
-                {
-                    Status = StatusCodes.Status400BadRequest,
-                    Title = "使用者不存在",
-                    Detail = $"找不到識別碼為 '{userId}' 的使用者。",
-                    Instance = HttpContext.Request.Path
-                });
-            }
             if (user == null)
             {
                 return BadRequest(new ProblemDetails
@@ -567,7 +625,6 @@ public sealed class UserManagementController(
             var rolesToRemove = currentRoles.Except(targetRoles).ToList();
             var rolesToAdd = targetRoles.Except(currentRoles).ToList();
 
-            // 使用抽象化的 IUnitOfWork 進行異步事務控管
             await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
             try
             {
@@ -612,6 +669,11 @@ public sealed class UserManagementController(
                 await transaction.RollbackAsync(cancellationToken);
                 throw;
             }
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("[UserManagementController] 指派角色作業已被用戶端取消。UserId: {UserId}", userId);
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
         catch (Exception ex)
         {
