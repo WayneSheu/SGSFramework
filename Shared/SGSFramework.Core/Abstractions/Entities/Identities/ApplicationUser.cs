@@ -23,5 +23,10 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
         /// </summary>
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
+        public bool IsDeleted { get; set; } = false;
+
+        public string DeletedBy { get; set; } = string.Empty;
+
+        public DateTimeOffset? DeletedAt { get; set; } 
     }
 }

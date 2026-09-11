@@ -18,6 +18,7 @@ using SGSFramework.AuthTokenBucket.Models;
 using SGSFramework.AuthTokenBucket.Services;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Identities;
+using SGSFramework.Core.Abstractions.Logings;
 using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Abstractions.Transactions;
 using SGSFramework.Core.Controllers.Base;
@@ -41,6 +42,7 @@ public sealed class UserManagementController : ApiControllerBase
     private readonly TokenBucketEngine<ApplicationUser> _tokenEngine;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<UserManagementController> _logger;
+    private readonly ISecurityLogger _securityLogger;
 
     public UserManagementController(
         UserManager<ApplicationUser> userManager,
@@ -48,7 +50,8 @@ public sealed class UserManagementController : ApiControllerBase
         SignInManager<ApplicationUser> signInManager,
         TokenBucketEngine<ApplicationUser> tokenEngine,
         IUnitOfWork unitOfWork,
-        ILogger<UserManagementController> logger)
+        ILogger<UserManagementController> logger,
+        ISecurityLogger securityLogger)
     {
         _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
         _roleManager = roleManager ?? throw new ArgumentNullException(nameof(roleManager));
@@ -56,6 +59,7 @@ public sealed class UserManagementController : ApiControllerBase
         _tokenEngine = tokenEngine ?? throw new ArgumentNullException(nameof(tokenEngine));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _securityLogger = securityLogger ?? throw new ArgumentNullException(nameof(securityLogger));
     }
 
     /// <summary>
@@ -70,6 +74,8 @@ public sealed class UserManagementController : ApiControllerBase
     public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
 
         try
         {
@@ -118,7 +124,16 @@ public sealed class UserManagementController : ApiControllerBase
             }
 
             string emailToken = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-            _logger.LogInformation("用戶 [{Username}] 註冊成功，已生成驗證信憑證。", user.UserName);
+
+            _securityLogger.LogSecurity(
+                eventCode: "SEC-200-USER-REGISTER",
+                eventCategory: "UserManagement.Register",
+                userId: user.Id.ToString(),
+                clientIp: clientIp,
+                messageTemplate: "使用者註冊成功。帳號: {Username}, Email: {Email}",
+                user.UserName ?? string.Empty,
+                user.Email ?? string.Empty
+            );
 
             return Ok(new { message = "註冊成功，請至電子郵件信箱查收驗證信。", debugToken = emailToken });
         }
@@ -157,6 +172,8 @@ public sealed class UserManagementController : ApiControllerBase
             });
         }
 
+        string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+
         try
         {
             var user = await _userManager.FindByEmailAsync(email);
@@ -174,6 +191,15 @@ public sealed class UserManagementController : ApiControllerBase
             var result = await _userManager.ConfirmEmailAsync(user, token);
             if (!result.Succeeded)
             {
+                _securityLogger.LogSecurity(
+                    eventCode: "SEC-400-EMAIL-CONFIRM-FAILED",
+                    eventCategory: "UserManagement.ConfirmEmail",
+                    userId: user.Id.ToString(),
+                    clientIp: clientIp,
+                    messageTemplate: "使用者 Email 驗證失敗。Email: {Email}",
+                    email
+                );
+
                 return BadRequest(new ProblemDetails
                 {
                     Status = StatusCodes.Status400BadRequest,
@@ -182,6 +208,15 @@ public sealed class UserManagementController : ApiControllerBase
                     Instance = HttpContext.Request.Path
                 });
             }
+
+            _securityLogger.LogSecurity(
+                eventCode: "SEC-200-EMAIL-CONFIRMED",
+                eventCategory: "UserManagement.ConfirmEmail",
+                userId: user.Id.ToString(),
+                clientIp: clientIp,
+                messageTemplate: "使用者 Email 驗證成功，帳號已啟用。Email: {Email}",
+                email
+            );
 
             return Ok(new { message = "電子郵件驗證成功！帳號已正式啟用。" });
         }
@@ -211,6 +246,10 @@ public sealed class UserManagementController : ApiControllerBase
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        string deviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "UNKNOWN-DEVICE";
+        string deviceName = Request.Headers["User-Agent"].FirstOrDefault() ?? "Generic Browser";
+        string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+
         try
         {
             var user = await _userManager.FindByEmailAsync(request.Email) ?? await _userManager.FindByNameAsync(request.Email);
@@ -229,6 +268,17 @@ public sealed class UserManagementController : ApiControllerBase
             if (!isValid)
             {
                 await _userManager.AccessFailedAsync(user);
+
+                _securityLogger.LogSecurity(
+                    eventCode: "SEC-401-2FA-FAILED",
+                    eventCategory: "UserManagement.Verify2FA",
+                    userId: user.Id.ToString(),
+                    clientIp: clientIp,
+                    messageTemplate: "雙因子驗證失敗。帳號: {Email}, 裝置: {DeviceId}",
+                    user.Email ?? string.Empty,
+                    deviceId
+                );
+
                 return Unauthorized(new ProblemDetails
                 {
                     Status = StatusCodes.Status401Unauthorized,
@@ -240,11 +290,17 @@ public sealed class UserManagementController : ApiControllerBase
 
             await _userManager.ResetAccessFailedCountAsync(user);
 
-            string deviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "UNKNOWN-DEVICE";
-            string deviceName = Request.Headers["User-Agent"].FirstOrDefault() ?? "Generic Browser";
-            string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
-
             var tokenResult = await _tokenEngine.IssueInitialSessionAsync(user, deviceId, deviceName, clientIp);
+
+            _securityLogger.LogSecurity(
+                eventCode: "SEC-200-2FA-SUCCESS",
+                eventCategory: "UserManagement.Verify2FA",
+                userId: user.Id.ToString(),
+                clientIp: clientIp,
+                messageTemplate: "雙因子認證成功並簽發憑證。帳號: {Email}, 裝置: {DeviceId}",
+                user.Email ?? string.Empty,
+                deviceId
+            );
 
             return Ok(new { message = "雙因子認證成功", tokenData = tokenResult });
         }
@@ -273,6 +329,8 @@ public sealed class UserManagementController : ApiControllerBase
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+
         try
         {
             var user = await _userManager.FindByEmailAsync(request.Email);
@@ -282,7 +340,15 @@ public sealed class UserManagementController : ApiControllerBase
             }
 
             string resetToken = await _userManager.GeneratePasswordResetTokenAsync(user);
-            _logger.LogInformation("用戶 {Email} 申請密碼重設記號成功。", request.Email);
+
+            _securityLogger.LogSecurity(
+                eventCode: "SEC-200-FORGOT-PASSWORD-REQUEST",
+                eventCategory: "UserManagement.ForgotPassword",
+                userId: user.Id.ToString(),
+                clientIp: clientIp,
+                messageTemplate: "使用者申請密碼重設憑證。Email: {Email}",
+                request.Email
+            );
 
             return Ok(new { message = "重設密碼信件已發送。", debugResetToken = resetToken });
         }
@@ -312,6 +378,8 @@ public sealed class UserManagementController : ApiControllerBase
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+
         try
         {
             var user = await _userManager.FindByEmailAsync(request.Email);
@@ -329,6 +397,15 @@ public sealed class UserManagementController : ApiControllerBase
             var result = await _userManager.ResetPasswordAsync(user, request.Token, request.NewPassword);
             if (!result.Succeeded)
             {
+                _securityLogger.LogSecurity(
+                    eventCode: "SEC-400-PASSWORD-RESET-FAILED",
+                    eventCategory: "UserManagement.ResetPassword",
+                    userId: user.Id.ToString(),
+                    clientIp: clientIp,
+                    messageTemplate: "使用者密碼重設失敗。Email: {Email}",
+                    request.Email
+                );
+
                 return BadRequest(new ProblemDetails
                 {
                     Status = StatusCodes.Status400BadRequest,
@@ -340,6 +417,15 @@ public sealed class UserManagementController : ApiControllerBase
 
             await _tokenEngine.EmergencyFreezeAsync(user.Id.ToString(), "使用者透過忘記密碼功能完成密碼重設，全面肅清舊有憑證軌跡。");
             await _tokenEngine.CompleteRemediationAsync(user.Id.ToString());
+
+            _securityLogger.LogSecurity(
+                eventCode: "SEC-200-PASSWORD-RESET-SUCCESS",
+                eventCategory: "UserManagement.ResetPassword",
+                userId: user.Id.ToString(),
+                clientIp: clientIp,
+                messageTemplate: "使用者透過 Token 重設密碼成功，並已強制作廢全網 Session。Email: {Email}",
+                request.Email
+            );
 
             return Ok(new { message = "密碼重設成功，已強制終止其餘裝置連線，請使用新密碼重新登入。" });
         }
@@ -361,7 +447,6 @@ public sealed class UserManagementController : ApiControllerBase
     /// </summary>
     [Authorize]
     [HttpPost("change-password")]
-    [AllowAnonymous]
     [Function("ChangePassword", "變更密碼", Icon = "fa-solid fa-lock-rotate", Order = 7, Description = "使用者登入狀態下變更密碼，並觸發資安聯防註銷其他裝置 Session")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -370,6 +455,8 @@ public sealed class UserManagementController : ApiControllerBase
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
 
         try
         {
@@ -400,6 +487,15 @@ public sealed class UserManagementController : ApiControllerBase
             var result = await _userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
             if (!result.Succeeded)
             {
+                _securityLogger.LogSecurity(
+                    eventCode: "SEC-400-PASSWORD-CHANGE-FAILED",
+                    eventCategory: "UserManagement.ChangePassword",
+                    userId: userId,
+                    clientIp: clientIp,
+                    messageTemplate: "使用者線上變更密碼失敗。用戶識別碼: {UserId}",
+                    userId
+                );
+
                 return BadRequest(new ProblemDetails
                 {
                     Status = StatusCodes.Status400BadRequest,
@@ -412,7 +508,14 @@ public sealed class UserManagementController : ApiControllerBase
             await _tokenEngine.EmergencyFreezeAsync(user.Id.ToString(), "使用者執行線上變更密碼，強制登出全網所有裝置工作階段。");
             await _tokenEngine.CompleteRemediationAsync(user.Id.ToString());
 
-            _logger.LogInformation("用戶 [{Username}] 已成功在線上變更密碼並肅清全網 Session。", user.UserName);
+            _securityLogger.LogSecurity(
+                eventCode: "SEC-200-PASSWORD-CHANGED",
+                eventCategory: "UserManagement.ChangePassword",
+                userId: userId,
+                clientIp: clientIp,
+                messageTemplate: "使用者線上變更密碼成功，並已肅清全網 Session。帳號: {Username}",
+                user.UserName ?? string.Empty
+            );
 
             return Ok(new { message = "密碼變更成功，其餘裝置連線已被安全強制切斷，請使用新密碼重新登入。" });
         }
@@ -434,12 +537,13 @@ public sealed class UserManagementController : ApiControllerBase
     /// </summary>
     [Authorize]
     [HttpPost("logout")]
-    [AllowAnonymous]
     [Function("Logout", "安全登出", Icon = "fa-solid fa-right-from-bracket", Order = 8, Description = "安全登出系統並註銷當前裝置之活動工作階段票據")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Logout()
     {
+        string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+
         try
         {
             string userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
@@ -449,7 +553,16 @@ public sealed class UserManagementController : ApiControllerBase
             {
                 await _tokenEngine.EmergencyFreezeAsync(userId, $"用戶主動執行安全登出。裝置識別: {deviceId}");
                 await _tokenEngine.CompleteRemediationAsync(userId);
-                _logger.LogInformation("用戶 {UserId} 自裝置 {DeviceId} 安全登出。", userId, deviceId);
+
+                _securityLogger.LogSecurity(
+                    eventCode: "SEC-200-LOGOUT",
+                    eventCategory: "UserManagement.Logout",
+                    userId: userId,
+                    clientIp: clientIp,
+                    messageTemplate: "使用者安全登出成功。用戶識別碼: {UserId}, 裝置: {DeviceId}",
+                    userId,
+                    deviceId
+                );
             }
 
             return Ok(new { message = "已安全登出並註銷工作階段票據。" });
@@ -468,10 +581,10 @@ public sealed class UserManagementController : ApiControllerBase
     }
 
     /// <summary>
-    /// 取得系統所有使用者清單（含所屬角色）
+    /// 取得系統所有使用者清單（含所屬角色，自動過濾已軟刪除項目）
     /// </summary>
     [HttpGet]
-    [Function("GetUsers", "查詢使用者列表", Icon = "fa-solid fa-users", Order = 9, Description = "取得系統所有使用者清單，包含帳號、Email、驗證狀態與所屬角色等資訊", IsMenu = true)]
+    [Function("GetUsers", "查詢使用者列表", Icon = "fa-solid fa-users", Order = 9, Description = "取得系統所有有效使用者清單，包含帳號、Email、驗證狀態與所屬角色等資訊", IsMenu = true)]
     [ProducesResponseType(typeof(IEnumerable<UserDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     [RequiresPermission("SYSTEM.USERMANAGEMENT.GETUSERS")]
@@ -481,7 +594,11 @@ public sealed class UserManagementController : ApiControllerBase
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var users = await _userManager.Users.AsNoTracking().ToListAsync(cancellationToken);
+            var users = await _userManager.Users
+                .AsNoTracking()
+                .Where(u => !u.IsDeleted)
+                .ToListAsync(cancellationToken);
+
             var userDtos = new List<UserDto>(users.Count);
 
             foreach (var user in users)
@@ -539,13 +656,13 @@ public sealed class UserManagementController : ApiControllerBase
             cancellationToken.ThrowIfCancellationRequested();
 
             var user = await _userManager.FindByIdAsync(userId.ToString());
-            if (user == null)
+            if (user == null || user.IsDeleted)
             {
                 return NotFound(new ProblemDetails
                 {
                     Status = StatusCodes.Status404NotFound,
                     Title = "查無使用者",
-                    Detail = $"找不到識別碼為 '{userId}' 的使用者。",
+                    Detail = $"找不到識別碼為 '{userId}' 的有效使用者。",
                     Instance = HttpContext.Request.Path
                 });
             }
@@ -605,16 +722,19 @@ public sealed class UserManagementController : ApiControllerBase
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        string currentUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "SYSTEM";
+        string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+
         try
         {
             var user = await _userManager.FindByIdAsync(userId.ToString());
-            if (user == null)
+            if (user == null || user.IsDeleted)
             {
                 return BadRequest(new ProblemDetails
                 {
                     Status = StatusCodes.Status400BadRequest,
                     Title = "使用者不存在",
-                    Detail = $"找不到識別碼為 '{userId}' 的使用者。",
+                    Detail = $"找不到識別碼為 '{userId}' 的有效使用者。",
                     Instance = HttpContext.Request.Path
                 });
             }
@@ -661,7 +781,18 @@ public sealed class UserManagementController : ApiControllerBase
                 }
 
                 await transaction.CommitAsync(cancellationToken);
-                _logger.LogInformation("成功更新使用者 [{UserId}] 的角色清單: [{Roles}]", userId, string.Join(", ", targetRoles));
+
+                _securityLogger.LogSecurity(
+                    eventCode: "SEC-200-ROLE-ASSIGNMENT-UPDATED",
+                    eventCategory: "UserManagement.AssignRoles",
+                    userId: currentUserId,
+                    clientIp: clientIp,
+                    messageTemplate: "管理員 [{AdminId}] 更新使用者 [{TargetUserId}] 角色清單: [{Roles}]",
+                    currentUserId,
+                    userId.ToString(),
+                    string.Join(", ", targetRoles)
+                );
+
                 return Ok(new { message = "使用者角色權限指派成功。" });
             }
             catch (Exception)
@@ -683,6 +814,145 @@ public sealed class UserManagementController : ApiControllerBase
                 Status = StatusCodes.Status500InternalServerError,
                 Title = "伺服器內部錯誤",
                 Detail = "更新使用者角色時發生系統異常，請聯繫系統管理員。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
+    /// <summary>
+    /// 刪除指定使用者帳號 (採用軟刪除、PII 匿名化與 Token 全網肅清)
+    /// </summary>
+    [HttpDelete("{userId:guid}")]
+    [Function("DeleteUser", "刪除使用者帳號", Icon = "fa-solid fa-user-minus", Order = 12, Description = "軟刪除指定使用者帳號、抹除敏感個資並強制肅清其全網活動 Session")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.DELETEUSER")]
+    public async Task<IActionResult> DeleteUser([FromRoute] Guid userId, CancellationToken cancellationToken = default)
+    {
+        string currentUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "SYSTEM";
+        string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+
+        try
+        {
+            if (string.Equals(currentUserId, userId.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Status = StatusCodes.Status400BadRequest,
+                    Title = "操作受限",
+                    Detail = "系統禁止管理員執行刪除自身的帳號動作。",
+                    Instance = HttpContext.Request.Path
+                });
+            }
+
+            var user = await _userManager.FindByIdAsync(userId.ToString());
+            if (user == null || user.IsDeleted)
+            {
+                return NotFound(new ProblemDetails
+                {
+                    Status = StatusCodes.Status404NotFound,
+                    Title = "查無使用者",
+                    Detail = $"找不到識別碼為 '{userId}' 的有效使用者。",
+                    Instance = HttpContext.Request.Path
+                });
+            }
+
+            string originalUserName = user.UserName ?? string.Empty;
+            string originalEmail = user.Email ?? string.Empty;
+
+            await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                // 1. 軟刪除狀態註記與 PII 個資抹除 (Anonymization)
+                string anonymizedTag = user.Id.ToString("N")[..8];
+                user.IsDeleted = true;
+                user.DeletedAt = DateTimeOffset.UtcNow;
+                user.DeletedBy = currentUserId;
+
+                // 移除可識別個人資訊 (PII)，解決 Unique Index 衝突並符合 GDPR 規範
+                user.UserName = $"deleted_user_{anonymizedTag}";
+                user.NormalizedUserName = $"DELETED_USER_{anonymizedTag.ToUpperInvariant()}";
+                user.Email = $"deleted_{anonymizedTag}@anonymized.local";
+                user.NormalizedEmail = $"DELETED_{anonymizedTag.ToUpperInvariant()}@ANONYMIZED.LOCAL";
+                user.PhoneNumber = null;
+                user.EmailConfirmed = false;
+                user.PhoneNumberConfirmed = false;
+                user.TwoFactorEnabled = false;
+                user.LockoutEnd = DateTimeOffset.MaxValue; // 永久封鎖
+
+                // 解除所有已綁定角色
+                var currentRoles = await _userManager.GetRolesAsync(user);
+                if (currentRoles.Count > 0)
+                {
+                    var removeRoleResult = await _userManager.RemoveFromRolesAsync(user, currentRoles);
+                    if (!removeRoleResult.Succeeded)
+                    {
+                        await transaction.RollbackAsync(cancellationToken);
+                        return BadRequest(new ProblemDetails
+                        {
+                            Status = StatusCodes.Status400BadRequest,
+                            Title = "刪除使用者失敗",
+                            Detail = string.Join("; ", removeRoleResult.Errors.Select(e => e.Description)),
+                            Instance = HttpContext.Request.Path
+                        });
+                    }
+                }
+
+                var updateResult = await _userManager.UpdateAsync(user);
+                if (!updateResult.Succeeded)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return BadRequest(new ProblemDetails
+                    {
+                        Status = StatusCodes.Status400BadRequest,
+                        Title = "刪除使用者失敗",
+                        Detail = string.Join("; ", updateResult.Errors.Select(e => e.Description)),
+                        Instance = HttpContext.Request.Path
+                    });
+                }
+
+                await transaction.CommitAsync(cancellationToken);
+
+                // 2. 資安聯防：肅清被刪除使用者的所有 Token 憑證與 Redis 工作階段
+                await _tokenEngine.EmergencyFreezeAsync(user.Id.ToString(), "使用者帳號已執行軟刪除與個資抹除，全面作廢憑證。");
+                await _tokenEngine.CompleteRemediationAsync(user.Id.ToString());
+
+                // 3. 寫入不可否認性資安稽核日誌 (SecurityAuditLog)
+                _securityLogger.LogSecurity(
+                    eventCode: "SEC-200-USER-DELETED",
+                    eventCategory: "UserManagement.DeleteUser",
+                    userId: currentUserId,
+                    clientIp: clientIp,
+                    messageTemplate: "管理員 [{AdminId}] 軟刪除並匿名化使用者帳號。目標識別碼: {TargetUserId}, 原帳號: {OriginalUserName}, 原 Email: {OriginalEmail}",
+                    currentUserId,
+                    userId.ToString(),
+                    originalUserName,
+                    originalEmail
+                );
+
+                return Ok(new { message = "使用者帳號已成功執行軟刪除與個資匿名化處理。" });
+            }
+            catch (Exception)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("[UserManagementController] 刪除使用者作業已被用戶端取消。UserId: {UserId}", userId);
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[UserManagementController] 軟刪除使用者時發生系統異常。UserId: {UserId}", userId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "執行刪除使用者作業時發生系統異常，請聯繫系統管理員。",
                 Instance = HttpContext.Request.Path
             });
         }
