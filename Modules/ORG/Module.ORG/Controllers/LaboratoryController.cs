@@ -82,6 +82,29 @@ public class LaboratoryController : ApiControllerBase
         }
     }
 
+
+    /// <summary>
+    /// 取得所有實驗室完整樹狀結構
+    /// </summary>
+    [HttpGet("tree")]
+    [Function("GetAllLaboratoryTree", "取得所有實驗室樹狀結構", Icon = "fa-solid fa-diagram-project", Order = 3, Description = "取得系統中所有實驗室之完整階層樹狀結構")]
+    [RequiresPermission("ORG.LABORATORY.GETALLLABORATORYTREE")]
+    [ProducesResponseType(typeof(Result<List<LaboratoryTreeDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAllLaboratoryTree(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var query = new GetAllLaboratoryTreeQuery();
+            var result = await _mediator.Send(query, cancellationToken);
+            return HandleResult(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving all laboratory tree.");
+            return StatusCode(StatusCodes.Status500InternalServerError, "An internal server error occurred.");
+        }
+    }
+
     /// <summary>
     /// 依據 Id 取得單一實驗室基本資訊
     /// </summary>

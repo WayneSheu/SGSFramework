@@ -15,6 +15,8 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Dtos
         /// </summary>
         public int Id { get; init; }
 
+        public Guid? TenantLabId { get; init; }
+
         /// <summary>
         /// 實驗室代碼
         /// </summary>
@@ -24,6 +26,11 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Dtos
         /// 實驗室顯示名稱
         /// </summary>
         public string Name { get; init; } = string.Empty;
+
+        /// <summary>
+        /// 實驗室位置/地址
+        /// </summary>
+        public string Location { get; init; } = string.Empty;
 
         /// <summary>
         /// 實驗室描述/備註
@@ -50,11 +57,13 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Dtos
         /// </summary>
         public string? NodePath { get; init; }
 
-        /// <summary>
-        /// 當前節點所屬的樹狀深度階層 (Root 為 0 或 1)
-        /// </summary>
-        public int Depth { get; init; }
 
+        /// <summary>
+        /// 當前節點所屬的樹狀階層層級 (Root 為 0 或 1)
+        /// </summary>
+        public int Level { get; init; }
+
+        
         /// <summary>
         /// 建立時間 (UTC)
         /// </summary>

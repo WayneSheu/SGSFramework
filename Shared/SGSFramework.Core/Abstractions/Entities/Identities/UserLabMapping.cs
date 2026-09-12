@@ -1,8 +1,12 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿// 檔案路徑：src/SGSFramework.Core/Entities/Identities/UserLabMapping.cs
+
+#nullable enable
+namespace SGSFramework.Core.Abstractions.Entities.Identities;
+
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SGSFramework.Core.Abstractions.Entities.AuditLogs;
-
-namespace SGSFramework.Core.Abstractions.Entities.Identities;
+using System;
 
 /// <summary>
 /// UserLabMapping 用於管理用戶與實驗室之間的關聯，包括用戶的主要實驗室和職位標題等信息。
@@ -41,7 +45,8 @@ public class UserLabMapping : IAuditable
         DateTime? expiryDate = null,
         string? operatorId = null)
     {
-        ValidateInputs(userId, labId, tenantLabId);
+        var resolvedEffectiveDate = effectiveDate ?? DateTime.UtcNow;
+        ValidateInputs(userId, labId, tenantLabId, resolvedEffectiveDate, expiryDate);
 
         var nowUtc = DateTimeOffset.UtcNow;
         return new UserLabMapping
@@ -51,7 +56,7 @@ public class UserLabMapping : IAuditable
             TenantLabId = tenantLabId,
             IsPrimary = isPrimary,
             JobTitle = jobTitle?.Trim(),
-            EffectiveDate = effectiveDate ?? nowUtc.UtcDateTime,
+            EffectiveDate = resolvedEffectiveDate,
             ExpiryDate = expiryDate,
             IsActive = true,
             CreatedAtUtc = nowUtc,
@@ -67,9 +72,11 @@ public class UserLabMapping : IAuditable
         int labId,
         Guid tenantLabId,
         string? jobTitle = null,
+        DateTime? effectiveDate = null,
+        DateTime? expiryDate = null,
         string? operatorId = null)
     {
-        return Create(userId, labId, tenantLabId, isPrimary: true, jobTitle: jobTitle, operatorId: operatorId);
+        return Create(userId, labId, tenantLabId, isPrimary: true, jobTitle: jobTitle, effectiveDate: effectiveDate, expiryDate: expiryDate, operatorId: operatorId);
     }
 
     /// <summary>
@@ -80,9 +87,11 @@ public class UserLabMapping : IAuditable
         int labId,
         Guid tenantLabId,
         string? jobTitle = null,
+        DateTime? effectiveDate = null,
+        DateTime? expiryDate = null,
         string? operatorId = null)
     {
-        return Create(userId, labId, tenantLabId, isPrimary: false, jobTitle: jobTitle, operatorId: operatorId);
+        return Create(userId, labId, tenantLabId, isPrimary: false, jobTitle: jobTitle, effectiveDate: effectiveDate, expiryDate: expiryDate, operatorId: operatorId);
     }
 
     /// <summary>
@@ -97,6 +106,7 @@ public class UserLabMapping : IAuditable
         string? operatorId = null)
     {
         if (tenantLabId == Guid.Empty) throw new ArgumentException("TenantLabId 不能為 Empty Guid。", nameof(tenantLabId));
+        if (expiryDate.HasValue && effectiveDate > expiryDate.Value) throw new ArgumentException("生效起始日不得大於生效結束日。");
 
         TenantLabId = tenantLabId;
         IsPrimary = isPrimary;
@@ -132,11 +142,12 @@ public class UserLabMapping : IAuditable
         UpdatedBy = operatorId;
     }
 
-    private static void ValidateInputs(Guid userId, int labId, Guid tenantLabId)
+    private static void ValidateInputs(Guid userId, int labId, Guid tenantLabId, DateTime effectiveDate, DateTime? expiryDate)
     {
         if (userId == Guid.Empty) throw new ArgumentException("UserId 不能為 Empty Guid。", nameof(userId));
         if (labId <= 0) throw new ArgumentOutOfRangeException(nameof(labId), "LabId 必須大於 0。");
         if (tenantLabId == Guid.Empty) throw new ArgumentException("TenantLabId 不能為 Empty Guid。", nameof(tenantLabId));
+        if (expiryDate.HasValue && effectiveDate > expiryDate.Value) throw new ArgumentException("生效起始日不得大於生效結束日。");
     }
 
     public bool IsValidAt(DateTime referenceTime)
@@ -232,5 +243,9 @@ public class UserLabMappingConfiguration : IEntityTypeConfiguration<UserLabMappi
         // 兼任與時效過濾檢索索引
         builder.HasIndex(x => new { x.UserId, x.IsActive, x.EffectiveDate, x.ExpiryDate })
             .HasDatabaseName("IX_UserLabMappings_EffectiveRange");
+
+        // 新增優化索引：加速前端列表依使用者狀態與主實驗室排序的檢索效能
+        builder.HasIndex(x => new { x.UserId, x.IsActive, x.IsPrimary })
+            .HasDatabaseName("IX_UserLabMappings_User_Active_Primary");
     }
 }
