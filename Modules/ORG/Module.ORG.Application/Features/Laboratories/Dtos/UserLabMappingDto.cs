@@ -16,6 +16,12 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Dtos
         public Guid UserId { get; init; }
 
         /// <summary>
+        /// 實驗室類別名稱 (string)
+        /// </summary>
+        public string CategoryName { get; set; } = string.Empty;
+
+
+        /// <summary>
         /// 實驗室識別碼 (int)
         /// </summary>
         public int LabId { get; init; }

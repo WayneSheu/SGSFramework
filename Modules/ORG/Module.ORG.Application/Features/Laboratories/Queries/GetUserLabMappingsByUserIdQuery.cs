@@ -1,4 +1,6 @@
-﻿using MediatR;
+﻿// 檔案路徑：src/SGS.Modules.ORG/Application/Features/Laboratories/Queries/GetUserLabMappingsByUserIdQuery.cs
+
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SGS.Modules.ORG.Application.Features.Laboratories.Dtos;
 using SGS.Modules.ORG.Infrastructure.Dbcontexts;
@@ -9,7 +11,9 @@ using SGSFramework.Core.Errors;
 using SGSFramework.Core.Results;
 using System;
 using System.Collections.Generic;
-using System.Text;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace SGS.Modules.ORG.Application.Features.Laboratories.Queries
 {
@@ -23,7 +27,7 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Queries
     /// 依循 Clean Architecture 規範，透過 DbContext / IQueryable 進行高效率 Read-Only 查詢與 DTO 投影
     /// </summary>
     public sealed class GetUserLabMappingsByUserIdQueryHandler
-    : IRequestHandler<GetUserLabMappingsByUserIdQuery, Result<List<UserLabMappingDto>>>
+        : IRequestHandler<GetUserLabMappingsByUserIdQuery, Result<List<UserLabMappingDto>>>
     {
         private readonly ICoreDbContext _coreContext;
         private readonly ORGDbContext _orgContext;
@@ -40,7 +44,7 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Queries
             GetUserLabMappingsByUserIdQuery request,
             CancellationToken cancellationToken)
         {
-            // 1. 從 ICoreDbContext 撈取 UserLabMapping[cite: 6]
+            // 1. 從 ICoreDbContext 撈取 UserLabMapping
             var mappings = await _coreContext.UserLabMappings
                 .AsNoTracking()
                 .Where(m => m.UserId == request.UserId)
@@ -48,10 +52,11 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Queries
 
             if (!mappings.Any()) return Result.Success(new List<UserLabMappingDto>());
 
-            // 2. 從 ORGDbContext 撈取 Organization 並於記憶體組裝[cite: 6, 8]
+            // 2. 從 ORGDbContext 撈取 Organization 並加入 .Include(o => o.Parent) 預先載入父階組織
             var labIds = mappings.Select(m => m.LabId).Distinct().ToList();
             var labs = await _orgContext.Organizations
                 .AsNoTracking()
+                .Include(o => o.Parent)// 預先載入父階組織
                 .Where(o => labIds.Contains(o.Id))
                 .ToDictionaryAsync(o => o.Id, cancellationToken);
 
@@ -60,6 +65,7 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Queries
                 return new UserLabMappingDto
                 {
                     UserId = m.UserId,
+                    CategoryName = lab?.Parent?.Name ?? string.Empty,
                     LabId = m.LabId,
                     TenantLabId = m.TenantLabId,
                     LabName = lab?.Name ?? string.Empty,
