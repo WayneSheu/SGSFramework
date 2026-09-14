@@ -200,6 +200,9 @@ public sealed class PermissionController(
     /// <summary>
     /// 取得指定使用者的所有權限總覽（含直接權限與透過角色繼承的有效權限，供資安稽核時察看）
     /// </summary>
+    /// <summary>
+    /// 取得指定使用者的所有權限總覽（含直接權限與透過角色繼承的有效權限，供資安稽核時察看）
+    /// </summary>
     [HttpGet("user/{userId:guid}/audit-permissions")]
     [Function("GetUserAllPermissions", "檢視使用者權限", Icon = "fa-solid fa-user-shield", Order = 3, Description = "取得指定使用者的直接權限與透過角色繼承的有效權限總覽，供資安稽核使用。", IsMenu = false)]
     [ProducesResponseType(typeof(UserAuditPermissionsResponseDto), StatusCodes.Status200OK)]
@@ -234,17 +237,21 @@ public sealed class PermissionController(
                 .Distinct()
                 .ToList();
 
-            var rolePermissionTasks = roles.Select(async roleName =>
+            // 【修正關鍵】改為序列化 (Sequential) 查詢，避免 Task.WhenAll 造成 DbContext 多執行緒併發衝突
+            var rolePermissionsList = new List<string>();
+            foreach (var roleName in roles)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var role = await _roleManager.FindByNameAsync(roleName).ConfigureAwait(false);
-                if (role == null) return Enumerable.Empty<string>();
-
-                var roleMatrix = await _permissionService.GetRolePermissionsAsync(role.Id.ToString(), cancellationToken).ConfigureAwait(false);
-                return roleMatrix?.GrantedPermissionKeys ?? Enumerable.Empty<string>();
-            });
-
-            var rolePermissionResults = await Task.WhenAll(rolePermissionTasks).ConfigureAwait(false);
-            var rolePermissionsList = rolePermissionResults.SelectMany(x => x).ToList();
+                if (role != null)
+                {
+                    var roleMatrix = await _permissionService.GetRolePermissionsAsync(role.Id.ToString(), cancellationToken).ConfigureAwait(false);
+                    if (roleMatrix?.GrantedPermissionKeys is { Count: > 0 })
+                    {
+                        rolePermissionsList.AddRange(roleMatrix.GrantedPermissionKeys);
+                    }
+                }
+            }
 
             var effectivePermissions = directPermissions
                 .Union(rolePermissionsList, StringComparer.OrdinalIgnoreCase)
@@ -262,6 +269,11 @@ public sealed class PermissionController(
             };
 
             return Ok(response);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("查詢使用者權限稽核資料作業已取消。UserId: {UserId}", userId);
+            throw;
         }
         catch (Exception ex)
         {
