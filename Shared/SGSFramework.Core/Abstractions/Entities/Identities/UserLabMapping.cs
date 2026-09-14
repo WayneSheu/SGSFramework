@@ -13,13 +13,16 @@ using System;
 /// </summary>
 public class UserLabMapping : IAuditable
 {
+    private static readonly TimeZoneInfo TaiwanTimeZone = TimeZoneInfo.FindSystemTimeZoneById(
+        OperatingSystem.IsWindows() ? "Taipei Standard Time" : "Asia/Taipei");
+
     public Guid UserId { get; private set; }
     public int LabId { get; private set; }
     public Guid TenantLabId { get; private set; }
     public bool IsPrimary { get; private set; }
     public string? JobTitle { get; private set; }
-    public DateTime EffectiveDate { get; private set; }
-    public DateTime? ExpiryDate { get; private set; }
+    public DateTimeOffset EffectiveDate { get; private set; }
+    public DateTimeOffset? ExpiryDate { get; private set; }
     public bool IsActive { get; private set; }
 
     // --- IAuditable 實作 ---
@@ -41,12 +44,19 @@ public class UserLabMapping : IAuditable
         Guid tenantLabId,
         bool isPrimary,
         string? jobTitle = null,
-        DateTime? effectiveDate = null,
-        DateTime? expiryDate = null,
+        DateTimeOffset? effectiveDate = null,
+        DateTimeOffset? expiryDate = null,
         string? operatorId = null)
     {
-        var resolvedEffectiveDate = effectiveDate ?? DateTime.UtcNow;
-        ValidateInputs(userId, labId, tenantLabId, resolvedEffectiveDate, expiryDate);
+        var resolvedEffectiveDate = effectiveDate.HasValue
+            ? TimeZoneInfo.ConvertTime(effectiveDate.Value, TaiwanTimeZone)
+            : GetCurrentTaiwanDateTimeOffset();
+
+        DateTimeOffset? resolvedExpiryDate = expiryDate.HasValue
+            ? TimeZoneInfo.ConvertTime(expiryDate.Value, TaiwanTimeZone)
+            : null;
+
+        ValidateInputs(userId, labId, tenantLabId, resolvedEffectiveDate, resolvedExpiryDate);
 
         var nowUtc = DateTimeOffset.UtcNow;
         return new UserLabMapping
@@ -57,7 +67,7 @@ public class UserLabMapping : IAuditable
             IsPrimary = isPrimary,
             JobTitle = jobTitle?.Trim(),
             EffectiveDate = resolvedEffectiveDate,
-            ExpiryDate = expiryDate,
+            ExpiryDate = resolvedExpiryDate,
             IsActive = true,
             CreatedAtUtc = nowUtc,
             CreatedBy = operatorId
@@ -72,8 +82,8 @@ public class UserLabMapping : IAuditable
         int labId,
         Guid tenantLabId,
         string? jobTitle = null,
-        DateTime? effectiveDate = null,
-        DateTime? expiryDate = null,
+        DateTimeOffset? effectiveDate = null,
+        DateTimeOffset? expiryDate = null,
         string? operatorId = null)
     {
         return Create(userId, labId, tenantLabId, isPrimary: true, jobTitle: jobTitle, effectiveDate: effectiveDate, expiryDate: expiryDate, operatorId: operatorId);
@@ -87,8 +97,8 @@ public class UserLabMapping : IAuditable
         int labId,
         Guid tenantLabId,
         string? jobTitle = null,
-        DateTime? effectiveDate = null,
-        DateTime? expiryDate = null,
+        DateTimeOffset? effectiveDate = null,
+        DateTimeOffset? expiryDate = null,
         string? operatorId = null)
     {
         return Create(userId, labId, tenantLabId, isPrimary: false, jobTitle: jobTitle, effectiveDate: effectiveDate, expiryDate: expiryDate, operatorId: operatorId);
@@ -101,18 +111,25 @@ public class UserLabMapping : IAuditable
         Guid tenantLabId,
         bool isPrimary,
         string? jobTitle,
-        DateTime effectiveDate,
-        DateTime? expiryDate,
+        DateTimeOffset effectiveDate,
+        DateTimeOffset? expiryDate,
         string? operatorId = null)
     {
         if (tenantLabId == Guid.Empty) throw new ArgumentException("TenantLabId 不能為 Empty Guid。", nameof(tenantLabId));
-        if (expiryDate.HasValue && effectiveDate > expiryDate.Value) throw new ArgumentException("生效起始日不得大於生效結束日。");
+
+        var resolvedEffectiveDate = TimeZoneInfo.ConvertTime(effectiveDate, TaiwanTimeZone);
+        DateTimeOffset? resolvedExpiryDate = expiryDate.HasValue
+            ? TimeZoneInfo.ConvertTime(expiryDate.Value, TaiwanTimeZone)
+            : null;
+
+        if (resolvedExpiryDate.HasValue && resolvedEffectiveDate > resolvedExpiryDate.Value)
+            throw new ArgumentException("生效起始日不得大於生效結束日。");
 
         TenantLabId = tenantLabId;
         IsPrimary = isPrimary;
         JobTitle = jobTitle?.Trim();
-        EffectiveDate = effectiveDate;
-        ExpiryDate = expiryDate;
+        EffectiveDate = resolvedEffectiveDate;
+        ExpiryDate = resolvedExpiryDate;
         IsActive = true;
 
         SetUpdated(operatorId);
@@ -142,7 +159,7 @@ public class UserLabMapping : IAuditable
         UpdatedBy = operatorId;
     }
 
-    private static void ValidateInputs(Guid userId, int labId, Guid tenantLabId, DateTime effectiveDate, DateTime? expiryDate)
+    private static void ValidateInputs(Guid userId, int labId, Guid tenantLabId, DateTimeOffset effectiveDate, DateTimeOffset? expiryDate)
     {
         if (userId == Guid.Empty) throw new ArgumentException("UserId 不能為 Empty Guid。", nameof(userId));
         if (labId <= 0) throw new ArgumentOutOfRangeException(nameof(labId), "LabId 必須大於 0。");
@@ -150,12 +167,20 @@ public class UserLabMapping : IAuditable
         if (expiryDate.HasValue && effectiveDate > expiryDate.Value) throw new ArgumentException("生效起始日不得大於生效結束日。");
     }
 
-    public bool IsValidAt(DateTime referenceTime)
+    public bool IsValidAt(DateTimeOffset referenceTime)
     {
         if (!IsActive) return false;
-        if (referenceTime < EffectiveDate) return false;
-        if (ExpiryDate.HasValue && referenceTime > ExpiryDate.Value) return false;
+        var resolvedReference = TimeZoneInfo.ConvertTime(referenceTime, TaiwanTimeZone);
+        if (resolvedReference < EffectiveDate) return false;
+        if (ExpiryDate.HasValue && resolvedReference > ExpiryDate.Value) return false;
         return true;
+    }
+
+    private static DateTimeOffset GetCurrentTaiwanDateTimeOffset()
+    {
+        var nowUtc = DateTimeOffset.UtcNow;
+        var taiwanDateTime = TimeZoneInfo.ConvertTime(nowUtc, TaiwanTimeZone);
+        return new DateTimeOffset(taiwanDateTime.DateTime, TaiwanTimeZone.GetUtcOffset(taiwanDateTime.DateTime));
     }
 }
 
@@ -192,11 +217,11 @@ public class UserLabMappingConfiguration : IEntityTypeConfiguration<UserLabMappi
             .IsRequired(false);
 
         builder.Property(x => x.EffectiveDate)
-            .HasColumnType("datetime2(7)")
+            .HasColumnType("datetimeoffset(7)")
             .IsRequired();
 
         builder.Property(x => x.ExpiryDate)
-            .HasColumnType("datetime2(7)")
+            .HasColumnType("datetimeoffset(7)")
             .IsRequired(false);
 
         builder.Property(x => x.IsActive)

@@ -1,11 +1,15 @@
-﻿using MediatR;
+﻿// 檔案路徑：src/SGSFramework.Core/Application/Features/Laboratories/Command/AssignUserLabCommand.cs
+
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Errors;
 using SGSFramework.Core.Results;
 using System;
 using System.Collections.Generic;
-using System.Text;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace SGS.Modules.ORG.Application.Features.Laboratories.Command
 {
@@ -30,6 +34,10 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Command
     public sealed class AssignUserLabCommandHandler : IRequestHandler<AssignUserLabCommand, Result<bool>>
     {
         private readonly DbContext _context;
+
+        // 台灣時區定義（相容跨平台 Windows / Linux）
+        private static readonly TimeZoneInfo TaiwanTimeZone = TimeZoneInfo.FindSystemTimeZoneById(
+            OperatingSystem.IsWindows() ? "Taipei Standard Time" : "Asia/Taipei");
 
         public AssignUserLabCommandHandler(DbContext context)
         {
@@ -70,25 +78,38 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Command
 
                 var targetMapping = existingMappings.FirstOrDefault(x => x.LabId == request.LabId);
 
-                // 3. 若指定為主要實驗室 (IsPrimary = true)，需將既有主要實驗室降級為次要
-                if (request.IsPrimary)
+                // 3. 處理台灣時區轉換與 Safe Nullable 日期解析
+                // 使用 DateTime.SpecifyKind 將類型明確為 Unspecified，防止 JSON 反序列化產生的 Local/Utc 狀態引發 TimeZoneInfo 轉譯例外
+                DateTime resolvedEffectiveDate = request.EffectiveDate.HasValue
+                    ? ConvertToTaiwanUtc(request.EffectiveDate.Value)
+                    : ConvertToTaiwanUtc(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TaiwanTimeZone));
+
+                DateTime? resolvedExpiryDate = request.ExpiryDate.HasValue
+                    ? ConvertToTaiwanUtc(request.ExpiryDate.Value)
+                    : null;
+
+                // 4. 判斷是否需要自動設為主要實驗室
+                bool hasAnyActivePrimary = existingMappings.Any(x => x.IsActive && x.IsPrimary);
+                bool shouldBePrimary = request.IsPrimary || !existingMappings.Any() || !hasAnyActivePrimary;
+
+                // 5. 若指定或自動判定為主要實驗室，需將既有其他主要實驗室降級為次要
+                if (shouldBePrimary)
                 {
                     var currentPrimary = existingMappings.FirstOrDefault(x => x.IsPrimary && x.LabId != request.LabId);
                     currentPrimary?.DemoteToSecondary(request.OperatorId);
                 }
 
-                // 4. 新增或更新對應資料
+                // 6. 新增或更新對應資料
                 if (targetMapping is null)
                 {
-                    // 使用 Domain 實體工廠建立新關聯
                     var newMapping = UserLabMapping.Create(
                         userId: request.UserId,
                         labId: request.LabId,
                         tenantLabId: request.TenantLabId,
-                        isPrimary: request.IsPrimary,
+                        isPrimary: shouldBePrimary,
                         jobTitle: request.JobTitle,
-                        effectiveDate: request.EffectiveDate,
-                        expiryDate: request.ExpiryDate,
+                        effectiveDate: resolvedEffectiveDate,
+                        expiryDate: resolvedExpiryDate,
                         operatorId: request.OperatorId
                     );
 
@@ -96,13 +117,12 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Command
                 }
                 else
                 {
-                    // 呼叫 Domain 充血模型方法更新細節
                     targetMapping.UpdateDetails(
                         tenantLabId: request.TenantLabId,
-                        isPrimary: request.IsPrimary,
+                        isPrimary: shouldBePrimary,
                         jobTitle: request.JobTitle,
-                        effectiveDate: request.EffectiveDate ?? targetMapping.EffectiveDate,
-                        expiryDate: request.ExpiryDate,
+                        effectiveDate: resolvedEffectiveDate,
+                        expiryDate: resolvedExpiryDate,
                         operatorId: request.OperatorId
                     );
                 }
@@ -124,6 +144,15 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Command
                 return Result.Failure<bool>(
                     Error.Unexpected("USERLAB_ASSIGN_ERROR", $"執行指派使用者實驗室時發生未預期錯誤：{ex.Message}"));
             }
+        }
+
+        /// <summary>
+        /// 將傳入的 DateTime 轉為 DateTimeKind.Unspecified 並去除非必要的時分秒後，安全轉譯為台灣時區對應的 UTC 時間
+        /// </summary>
+        private static DateTime ConvertToTaiwanUtc(DateTime inputDate)
+        {
+            var unspecifiedDt = DateTime.SpecifyKind(inputDate.Date, DateTimeKind.Unspecified);
+            return TimeZoneInfo.ConvertTimeToUtc(unspecifiedDt, TaiwanTimeZone);
         }
     }
 }

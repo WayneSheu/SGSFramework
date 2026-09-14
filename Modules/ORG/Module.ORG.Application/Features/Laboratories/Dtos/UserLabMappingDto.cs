@@ -48,12 +48,12 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Dtos
         /// <summary>
         /// 生效日期
         /// </summary>
-        public DateTime EffectiveDate { get; init; }
+        public DateTimeOffset EffectiveDate { get; init; }
 
         /// <summary>
         /// 失效日期 (null 代表永久有效)
         /// </summary>
-        public DateTime? ExpiryDate { get; init; }
+        public DateTimeOffset? ExpiryDate { get; init; }
 
         /// <summary>
         /// 帳號/關聯是否啟用
