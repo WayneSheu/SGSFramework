@@ -45,18 +45,18 @@ public sealed class PermissionController(
     private readonly IUserPermissionRepository _userPermissionRepository = userPermissionRepository ?? throw new ArgumentNullException(nameof(userPermissionRepository));
     private readonly ILogger<PermissionController> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private const string PermissionTreeCacheKey = "Cache_System_Permission_Tree";
-    
+
     /// <summary>
     /// 取得完整系統與動態模組權限清單 (階層式：Module -> Controller -> Permissions)
     /// </summary>
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>模組權限樹狀結構清單</returns>
-    [HttpGet("tree")]
-    [Function("GetPermissionTree", "取得權限清單", Icon = "fa-solid fa-sitemap", Order = 1, Description = "取得完整系統與動態模組權限清單 (階層式：Module -> Controller -> Permissions)",IsMenu = false)]
+    [HttpGet("tree")] //HttpGet 路由設定
+    [Function("GetPermissionTree", "取得權限清單", Icon = "fa-solid fa-sitemap", Order = 1, Description = "取得完整系統與動態模組權限清單 (階層式：Module -> Controller -> Permissions)", IsMenu = false)]
     [ProducesResponseType(typeof(List<PermissionModuleDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     [RequiresPermission("SYSTEM.PERMISSION.GETPERMISSIONTREE")]
-    public async Task<ActionResult<List<PermissionModuleDto>>> GetPermissionTree(CancellationToken cancellationToken = default)
+    public async Task<IActionResult> GetPermissionTree(CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
 
@@ -68,12 +68,14 @@ public sealed class PermissionController(
                 entry.Priority = CacheItemPriority.High;
 
                 _logger.LogInformation("重新載入系統權限樹狀結構至記憶體快取。");
-                return await _permissionService.GetPermissionTreeAsync(cancellationToken);
+                var data = await _permissionService.GetPermissionTreeAsync(cancellationToken);
+                return data ?? new List<PermissionModuleDto>();
             });
 
             stopwatch.Stop();
             _logger.LogDebug("取得權限樹狀結構耗時: {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
 
+            // 確保一律回傳 Ok 物件，非 null
             return Ok(tree ?? new List<PermissionModuleDto>());
         }
         catch (Exception ex)
@@ -231,13 +233,14 @@ public sealed class PermissionController(
             var claims = await _userManager.GetClaimsAsync(user).ConfigureAwait(false);
 
             const string permissionClaimType = "Permission";
+          
             var directPermissions = claims
                 .Where(c => c.Type == permissionClaimType)
                 .Select(c => c.Value)
                 .Distinct()
                 .ToList();
 
-            // 【修正關鍵】改為序列化 (Sequential) 查詢，避免 Task.WhenAll 造成 DbContext 多執行緒併發衝突
+            // 序列化 (Sequential) 查詢，避免 Task.WhenAll 造成 DbContext 多執行緒併發衝突
             var rolePermissionsList = new List<string>();
             foreach (var roleName in roles)
             {
@@ -253,6 +256,7 @@ public sealed class PermissionController(
                 }
             }
 
+            // 去重並排序
             var effectivePermissions = directPermissions
                 .Union(rolePermissionsList, StringComparer.OrdinalIgnoreCase)
                 .Distinct()
