@@ -48,7 +48,25 @@ namespace SGSFramework.ModulePlugin.Systems.Controller.Services
                 try
                 {
                     var metadataList = new List<ControllerMetadata>();
-                    string moduleName = assembly.GetName().Name ?? "Unknown";
+
+                    // 1. 解析 Assembly 層級的 ModuleAttribute 與 AssemblyTitleAttribute
+                    var moduleAttr = assembly.GetCustomAttribute<ModuleAttribute>();
+                    var assemblyTitleAttr = assembly.GetCustomAttribute<AssemblyTitleAttribute>();
+
+                    // 取得 fallback 名稱 (移除套件字首以防萬一)
+                    string rawAssemblyName = assembly.GetName().Name ?? "Unknown";
+                    string fallbackName = rawAssemblyName
+                        .Replace("SGSFramework.", "", StringComparison.OrdinalIgnoreCase)
+                        .Replace("PhysLIMS.", "", StringComparison.OrdinalIgnoreCase);
+
+                    // 優先使用 [Module] 宣告的 Name 與 Title，無則依序 Fallback
+                    string moduleName = !string.IsNullOrWhiteSpace(moduleAttr?.Title)
+                        ? moduleAttr.ModuleName
+                        : fallbackName;
+
+                    string moduleTitle = !string.IsNullOrWhiteSpace(moduleAttr?.Title)
+                        ? moduleAttr.Title
+                        : (!string.IsNullOrWhiteSpace(assemblyTitleAttr?.Title) ? assemblyTitleAttr.Title : fallbackName);
 
                     var controllers = assembly.GetTypes()
                         .Where(t => t.IsClass && !t.IsAbstract &&
@@ -89,6 +107,7 @@ namespace SGSFramework.ModulePlugin.Systems.Controller.Services
                         {
                             Id = Guid.NewGuid(),
                             ModuleName = moduleName,
+                            ModuleTitle = moduleTitle,
                             ControllerName = ctrl.Name,
                             ControllerTypeName = ctrl.AssemblyQualifiedName ?? ctrl.FullName ?? ctrl.Name,
                             ActionName = "INDEX",
@@ -152,6 +171,7 @@ namespace SGSFramework.ModulePlugin.Systems.Controller.Services
                             {
                                 Id = Guid.NewGuid(),
                                 ModuleName = parent.ModuleName,
+                                ModuleTitle = parent.ModuleTitle,
                                 ControllerName = ctrl.Name,
                                 ControllerTypeName = ctrl.AssemblyQualifiedName ?? ctrl.FullName ?? ctrl.Name,
                                 ActionName = method.Name,
@@ -204,6 +224,8 @@ namespace SGSFramework.ModulePlugin.Systems.Controller.Services
 
                 if (existingDict.TryGetValue(key, out var existingItem))
                 {
+                    existingItem.ModuleName = newItem.ModuleName;
+                    existingItem.ModuleTitle = newItem.ModuleTitle;
                     existingItem.DisplayName = newItem.DisplayName;
                     existingItem.Description = newItem.Description;
                     existingItem.RouteTemplate = newItem.RouteTemplate;

@@ -64,17 +64,33 @@ namespace SGSFramework.AuthTokenBucket.Services
                     (c.ControllerName.Equals(perm.ControllerName, StringComparison.OrdinalIgnoreCase) &&
                      c.ActionName.Equals(perm.ActionName, StringComparison.OrdinalIgnoreCase)));
 
-                string moduleName = !string.IsNullOrEmpty(perm.ModuleName) ? perm.ModuleName : "SGSFramework.System";
-                string moduleTitle = matchedMeta?.ModuleTitle ?? perm.ModuleTitle ?? moduleName;
-                string controllerTitle = matchedMeta?.ControllerTitle ?? perm.ControllerTitle ?? perm.ControllerName;
-                string actionTitle = matchedMeta?.DisplayName ?? perm.ActionTitle ?? perm.ActionName;
+                // 1. 優先使用匹配到的 ControllerMetadata (來自策略 1 的 [Module] 解析)[cite: 24, 25]
+                // 若無則回退至 IPermissionRegistry 提供者，最後進行 Prefix 剝離備用名稱[cite: 25, 27]
+                string rawModuleName = !string.IsNullOrEmpty(matchedMeta?.ModuleName)
+                    ? matchedMeta.ModuleName
+                    : (!string.IsNullOrEmpty(perm.ModuleName) ? perm.ModuleName : "SGSFramework.System");
+
+                string fallbackModuleName = rawModuleName
+                    .Replace("SGSFramework.", "", StringComparison.OrdinalIgnoreCase)
+                    .Replace("PhysLIMS.", "", StringComparison.OrdinalIgnoreCase);
+
+                string moduleName = !string.IsNullOrEmpty(matchedMeta?.ModuleName)
+                    ? matchedMeta.ModuleName
+                    : (!string.IsNullOrEmpty(perm.ModuleName) ? perm.ModuleName : fallbackModuleName);
+
+                string moduleTitle = !string.IsNullOrEmpty(matchedMeta?.ModuleTitle)
+                    ? matchedMeta.ModuleTitle
+                    : (!string.IsNullOrEmpty(perm.ModuleTitle) ? perm.ModuleTitle : fallbackModuleName);
+
+                string controllerTitle = matchedMeta?.ControllerTitle ?? perm.ControllerTitle ?? perm.ControllerName ?? string.Empty;
+                string actionTitle = matchedMeta?.DisplayName ?? perm.ActionTitle ?? perm.ActionName ?? string.Empty;
                 string controllerName = perm.ControllerName ?? string.Empty;
                 string actionName = perm.ActionName ?? string.Empty;
                 string description = !string.IsNullOrEmpty(matchedMeta?.Description)
                     ? matchedMeta.Description
                     : (perm.Description ?? $"Auto-scanned permission: {key}");
 
-                // 1. 檢查 BitPosition 唯一性衝突
+                // 2. 檢查 BitPosition 唯一性衝突[cite: 27]
                 var conflictByBit = await _dbContext.Set<PermissionMetadata>()
                     .FirstOrDefaultAsync(p => p.BitPosition == bitPosition && p.PermissionKey != key, cancellationToken);
 
@@ -84,7 +100,7 @@ namespace SGSFramework.AuthTokenBucket.Services
                     await _dbContext.SaveChangesAsync(cancellationToken);
                 }
 
-                // 2. 查詢現有記錄
+                // 3. 查詢現有記錄[cite: 27]
                 var existingByKey = await _dbContext.Set<PermissionMetadata>()
                     .FirstOrDefaultAsync(p => p.PermissionKey == key, cancellationToken);
 
@@ -131,7 +147,7 @@ namespace SGSFramework.AuthTokenBucket.Services
             }
 
             // ==========================================
-            // 3. 自動建立階層關聯：以同一 Controller 且尾綴為 _READ 者作為父節點
+            // 4. 自動建立階層關聯：以同一 Controller 且尾綴為 _READ 者作為父節點[cite: 27]
             // ==========================================
             var allPermissions = await _dbContext.Set<PermissionMetadata>().ToListAsync(cancellationToken);
             bool hierarchyChanged = false;
