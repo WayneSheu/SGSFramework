@@ -22,7 +22,7 @@ using SGSFramework.SystemLog.DTOs;
 [Authorize]
 [Route("api/v1/telemetry")]
 [Produces("application/json")]
-[ControllerTitle("遙測與監控", Icon = "fa-solid fa-chart-line", Order = 90, Description = "提供前端 UI/RCL 異常監控、未捕捉 Exception 與遙測日誌上報服務")]
+[ControllerTitle("前端日誌管理", Icon = "fa-solid fa-chart-line", Order = 90, Description = "提供前端 UI/RCL 異常監控、未捕捉 Exception 與遙測日誌上報服務")]
 public sealed class TelemetryController(
     ILogger<TelemetryController> logger,
     ISecurityLogger securityLogger) : ApiControllerBase
@@ -35,7 +35,7 @@ public sealed class TelemetryController(
     /// </summary>
     [HttpPost("logs")]
     [AllowAnonymous] // 允許未驗證或 Token 過期請求上報例外，避免日誌遺失
-    [Function("ReceiveClientLog", "上報前端遙測日誌", Icon = "fa-solid fa-bug", Order = 1, Description = "接收並記錄前端未捕捉 Exception 與應用程式崩潰資訊")]
+    [Function("ReceiveClientLog", "前端日誌", Icon = "fa-solid fa-bug", Order = 1, Description = "接收並記錄前端未捕捉 Exception 與應用程式崩潰資訊")]
     [ProducesResponseType(typeof(MessageResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]

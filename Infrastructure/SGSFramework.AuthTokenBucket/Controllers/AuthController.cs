@@ -61,7 +61,10 @@ public sealed class AuthController(
     /// </summary>
     [HttpPost("login")]
     [AllowAnonymous]
-    [Function("Login", "帳密登入", Icon = "fa-solid fa-right-to-bracket", Order = 1, Description = "標準帳密登入端點")]
+    [Function("Login", "帳密登入", Icon = "fa-solid fa-right-to-bracket", Order = 1, Description = "使用系統標準帳密登入")]
+
+    [EndpointSummary("帳密登入")]
+    [EndpointDescription("使用系統標準帳密登入。")]
     [ProducesResponseType(typeof(LoginResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -167,7 +170,10 @@ public sealed class AuthController(
     [HttpGet("adlogin")]
     [AllowAnonymous]
     [Authorize(AuthenticationSchemes = "Windows")]
-    [Function("WindowsLogin", "AD單一登入", Icon = "fa-solid fa-windows", Order = 2, Description = "內部網路 Windows 網域無感單一登入端點")]
+    [Function("WindowsLogin", "網域AD登入", Icon = "fa-solid fa-windows", Order = 2, Description = "內部網路 Windows 網域無感單一登入端點")]
+
+    [EndpointSummary("網域AD登入")]
+    [EndpointDescription("使用Windows 網域登入。")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -272,7 +278,10 @@ public sealed class AuthController(
     /// </summary>
     [HttpPost("refresh")]
     [AllowAnonymous]
-    [Function("RefreshToken", "刷新Token", Icon = "fa-solid fa-arrows-rotate", Order = 3, Description = "雙向權限票據高併發輪轉刷新端點")]
+    [Function("RefreshToken", "權杖(Token)刷新", Icon = "fa-solid fa-arrows-rotate", Order = 3, Description = "雙向權限票據高併發輪轉刷新")]
+
+    [EndpointSummary("權杖(Token)刷新")]
+    [EndpointDescription("雙向權限票據高併發輪轉刷新端點。")]
     [ProducesResponseType(typeof(TokenResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -373,6 +382,9 @@ public sealed class AuthController(
     /// </summary>
     [HttpGet("online-count")]
     [Function("GetOnlineUserCount", "線上人數統計", Icon = "fa-solid fa-users", Order = 4, Description = "獲取線上即時活動用戶數觀測端點", IsMenu = true)]
+
+    [EndpointSummary("線上人數統計")]
+    [EndpointDescription("獲取線上即時活動用戶數觀測端點端點。")]
     [ProducesResponseType(typeof(OnlineUserCountResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
@@ -436,6 +448,9 @@ public sealed class AuthController(
     /// </summary>
     [HttpPost("switch-context")]
     [Function("SwitchContext", "切換實驗室", Icon = "fa-solid fa-right-left", Order = 5, Description = "切換作用中的實驗室上下文")]
+
+    [EndpointSummary("切換實驗室")]
+    [EndpointDescription("切換作用中的實驗室上下文端點。")]
     [ProducesResponseType(typeof(SwitchLabResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
@@ -487,7 +502,10 @@ public sealed class AuthController(
     /// 取得當前使用者所有已登入的裝置與工作階段清單
     /// </summary>
     [HttpGet("sessions")]
-    [Function("GetActiveSessions", "取得線上裝置清單", Icon = "fa-solid fa-laptop-code", Order = 8, Description = "獲取當前使用者所有已登入的裝置與 Session 清單")]
+    [Function("GetActiveSessions", "線上裝置列表", Icon = "fa-solid fa-laptop-code", Order = 8, Description = "獲取當前使用者所有已登入的裝置與 Session 清單")]
+
+    [EndpointSummary("線上裝置列表")]
+    [EndpointDescription("獲取當前使用者所有已登入的裝置與 Session 清單端點。")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
@@ -536,7 +554,10 @@ public sealed class AuthController(
     /// </summary>
     [HttpPost("logout")]
     [AllowAnonymous] // 允許過期或未認證請求進入，由內部自行解析 Token
-    [Function("Logout", "單一登出", Icon = "fa-solid fa-right-from-bracket", Order = 6, Description = "終止當前裝置的工作階段與 Refresh Token")]
+    [Function("Logout", "單一裝置登出", Icon = "fa-solid fa-right-from-bracket", Order = 6, Description = "終止當前裝置的工作階段與 Refresh Token")]
+
+    [EndpointSummary("單一裝置登出")]
+    [EndpointDescription("終止當前登入裝置的工作階段與Refresh Token。")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> LogoutAsync(CancellationToken cancellationToken = default)
@@ -588,6 +609,9 @@ public sealed class AuthController(
     [HttpPost("logout-all")]
     [AllowAnonymous] // 允許過期或未認證請求進入，由內部自行解析 Token
     [Function("LogoutAll", "所有裝置登出", Icon = "fa-solid fa-power-off", Order = 7, Description = "強制終止該使用者所有裝置的有效 Token 與工作階段")]
+
+    [EndpointSummary("所有裝置登出")]
+    [EndpointDescription("強制終止該使用者所有裝置的有效 Token 與工作階段。")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> LogoutAllAsync(CancellationToken cancellationToken = default)

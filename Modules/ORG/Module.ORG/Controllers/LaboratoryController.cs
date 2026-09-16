@@ -43,7 +43,7 @@ public class LaboratoryController : ApiControllerBase
     /// </summary>
     [HttpGet("regional")]
     [Function("GetRegionalLaboratories", "取得區域實驗室清單", Icon = "fa-solid fa-map-location-dot", Order = 0, Description = "取得頂層或區域層級之實驗室節點清單", IsMenu = true)]
-    [RequiresPermission("ORG.LABORATORY.GETREGIONALLABORATORIES")]
+    [RequiresPermission("ORG.LABORATORY.READ")]
     [ProducesResponseType(typeof(Result<List<LaboratoryDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetRegionalLaboratories(CancellationToken cancellationToken)
     {
@@ -65,7 +65,7 @@ public class LaboratoryController : ApiControllerBase
     /// </summary>
     [HttpGet]
     [Function("GetLaboratories", "取得實驗室清單", Icon = "fa-solid fa-list", Order = 1, Description = "取得所有實驗室基本資訊清單",IsMenu =true)]
-    [RequiresPermission("ORG.LABORATORY.GETLABORATORIES")]
+    [RequiresPermission("ORG.LABORATORY.READ")]
     [ProducesResponseType(typeof(Result<List<LaboratoryDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetLaboratories(CancellationToken cancellationToken)
     {
@@ -88,7 +88,7 @@ public class LaboratoryController : ApiControllerBase
     /// </summary>
     [HttpGet("tree")]
     [Function("GetAllLaboratoryTree", "取得所有實驗室樹狀結構", Icon = "fa-solid fa-diagram-project", Order = 3, Description = "取得系統中所有實驗室之完整階層樹狀結構")]
-    [RequiresPermission("ORG.LABORATORY.GETALLLABORATORYTREE")]
+    [RequiresPermission("ORG.LABORATORY.READ")]
     [ProducesResponseType(typeof(Result<List<LaboratoryTreeDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAllLaboratoryTree(CancellationToken cancellationToken)
     {
@@ -110,7 +110,7 @@ public class LaboratoryController : ApiControllerBase
     /// </summary>
     [HttpGet("{id:int}")]
     [Function("GetLaboratory", "取得特定實驗室資訊", Icon = "fa-solid fa-flask-vial", Order = 2, Description = "依據實驗室識別碼讀取詳細資料")]
-    [RequiresPermission("ORG.LABORATORY.GETLABORATORY")]
+    [RequiresPermission("ORG.LABORATORY.READ")]
     [ProducesResponseType(typeof(Result<LaboratoryDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetLaboratory([FromRoute] int id, CancellationToken cancellationToken)
     {
@@ -132,7 +132,7 @@ public class LaboratoryController : ApiControllerBase
     /// </summary>
     [HttpGet("{id:int}/tree")]
     [Function("GetLaboratoryTree", "取得特定實驗室子樹", Icon = "fa-solid fa-sitemap", Order = 3, Description = "取得特定實驗室之完整下階層樹狀階層結構")]
-    [RequiresPermission("ORG.LABORATORY.GETLABORATORYTREE")]
+    [RequiresPermission("ORG.LABORATORY.READ")]
     [ProducesResponseType(typeof(Result<LaboratoryTreeDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetLaboratoryTree([FromRoute] int id, CancellationToken cancellationToken)
     {
@@ -154,7 +154,7 @@ public class LaboratoryController : ApiControllerBase
     /// </summary>
     [HttpPost]
     [Function("CreateLaboratory", "新增實驗室", Icon = "fa-solid fa-plus", Order = 4, Description = "建立新實驗室節點及其屬性資料")]
-    [RequiresPermission("ORG.LABORATORY.CREATELABORATORY")]
+    [RequiresPermission("ORG.LABORATORY.CREATE")]
     [ProducesResponseType(typeof(Result<LaboratoryDto>), StatusCodes.Status201Created)]
     public async Task<IActionResult> CreateLaboratory([FromBody] AddLaboratoryCommand command, CancellationToken cancellationToken)
     {
@@ -185,7 +185,7 @@ public class LaboratoryController : ApiControllerBase
     /// </summary>
     [HttpPut("{id:int}/move")]
     [Function("MoveOrganizationNode", "搬移實驗室節點", Icon = "fa-solid fa-arrows-up-down-left-right", Order = 5, Description = "變更實驗室節點之父階層並搬移完整子樹關聯")]
-    [RequiresPermission("ORG.LABORATORY.MOVEORGANIZATIONNODE")]
+    [RequiresPermission("ORG.LABORATORY.EDIT")]
     [ProducesResponseType(typeof(Result<LaboratoryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(Result<LaboratoryDto>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(Result<LaboratoryDto>), StatusCodes.Status404NotFound)]
@@ -232,7 +232,7 @@ public class LaboratoryController : ApiControllerBase
     /// </summary>
     [HttpPut("{id:int}")]
     [Function("EditLaboratory", "編輯實驗室", Icon = "fa-solid fa-pen-to-square", Order = 6, Description = "更新既有實驗室之基本屬性資訊")]
-    [RequiresPermission("ORG.LABORATORY.EDITLABORATORY")]
+    [RequiresPermission("ORG.LABORATORY.EDIT")]
     [ProducesResponseType(typeof(Result<LaboratoryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> EditLaboratory(
@@ -273,7 +273,7 @@ public class LaboratoryController : ApiControllerBase
     /// </summary>
     [HttpPatch("{id:int}/deactivate")]
     [Function("DeactivateLaboratory", "停用實驗室", Icon = "fa-solid fa-ban", Order = 7, Description = "停用指定識別碼之實驗室")]
-    [RequiresPermission("ORG.LABORATORY.DEACTIVatelaboratory")]
+    [RequiresPermission("ORG.LABORATORY.DEACTIVATE")]
     [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> DeactivateLaboratory(
@@ -312,7 +312,7 @@ public class LaboratoryController : ApiControllerBase
     /// </summary>
     [HttpPatch("{id:int}/activate")]
     [Function("ActivateLaboratory", "啟用實驗室", Icon = "fa-solid fa-circle-check", Order = 8, Description = "重新啟用指定識別碼之實驗室")]
-    [RequiresPermission("ORG.LABORATORY.ACTIVatelaboratory")]
+    [RequiresPermission("ORG.LABORATORY.ACTIVATE")]
     [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ActivateLaboratory([FromRoute] int id, CancellationToken cancellationToken)
@@ -346,7 +346,7 @@ public class LaboratoryController : ApiControllerBase
     /// </summary>
     [HttpDelete("{id:int}")]
     [Function("DeleteLaboratory", "刪除實驗室", Icon = "fa-solid fa-trash", Order = 9, Description = "刪除指定識別碼之實驗室節點")]
-    [RequiresPermission("ORG.LABORATORY.DELETESLABORATORY")]
+    [RequiresPermission("ORG.LABORATORY.DELETE")]
     [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
     public async Task<IActionResult> DeleteLaboratory([FromRoute] int id, CancellationToken cancellationToken)
     {

@@ -55,6 +55,64 @@ namespace SGSFramework.Identity.Services
             }
         }
 
+        public async Task<ControllerMetadataDto> UpdateFunctionStatusAsync(Guid id, bool isActive, string? reason = null, CancellationToken cancellationToken = default)
+        {
+            if (id == Guid.Empty)
+            {
+                throw new ArgumentException("識別碼不可為空 Guid。", nameof(id));
+            }
+
+            try
+            {
+                var entity = await _dbContext.Set<ControllerMetadata>()
+                    .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
+                if (entity == null)
+                {
+                    throw new KeyNotFoundException($"找不到識別碼為 '{id}' 的功能中繼資料。");
+                }
+
+                if (entity.IsActive == isActive)
+                {
+                    _logger.LogInformation("功能識別碼 '{Id}' 的狀態已為 {IsActive}，無須重複更新。", id, isActive);
+                }
+                else
+                {
+                    entity.IsActive = isActive;
+
+                    _dbContext.Set<ControllerMetadata>().Update(entity);
+                    await _dbContext.SaveChangesAsync(cancellationToken);
+
+                    _logger.LogWarning("功能狀態變更成功。識別碼: {Id}, 新狀態: {IsActive}, 變更原因: {Reason}", id, isActive, reason ?? "未提供");
+                }
+
+                return new ControllerMetadataDto
+                {
+                    Id = entity.Id,
+                    ModuleName = entity.ModuleName,
+                    ModuleTitle = entity.ModuleTitle,
+                    ControllerTitle = entity.ControllerTitle,
+                    ControllerName = entity.ControllerName,
+                    ActionName = entity.ActionName,
+                    DisplayName = entity.DisplayName,
+                    PermissionKey = entity.PermissionKey,
+                    RouteTemplate = entity.RouteTemplate,
+                    IsActive = entity.IsActive
+                };
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogWarning("更新功能狀態之操作已被取消。識別碼: {Id}", id);
+                throw;
+            }
+            catch (Exception ex) when (ex is not KeyNotFoundException && ex is not ArgumentException)
+            {
+                _logger.LogError(ex, "更新功能狀態時發生資料庫異動異常。識別碼: {Id}", id);
+                throw;
+            }
+        }
+
+
         public async Task<IEnumerable<ModulePermissionGroupDto>> GetPermissionTreeAsync(CancellationToken cancellationToken = default)
         {
             var flatList = await GetAllControllerMetadatasAsync(cancellationToken);
@@ -83,5 +141,8 @@ namespace SGSFramework.Identity.Services
 
             return tree;
         }
+
+
+
     }
 }

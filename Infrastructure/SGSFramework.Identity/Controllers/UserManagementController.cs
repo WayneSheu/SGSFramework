@@ -67,10 +67,11 @@ public sealed class UserManagementController : ApiControllerBase
     /// </summary>
     [HttpPost("register")]
     [Function("Register", "使用者註冊", Icon = "fa-solid fa-user-plus", Order = 1, Description = "進行新使用者帳號註冊並生成電子郵件驗證憑證")]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.REGISTER")]
+
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.REGISTER")]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -238,6 +239,8 @@ public sealed class UserManagementController : ApiControllerBase
     /// </summary>
     [HttpPost("verify-2fa")]
     [Function("VerifyTwoFactor", "雙因子驗證登入", Icon = "fa-solid fa-key", Order = 4, Description = "驗證使用者雙因子驗證碼 (2FA) 並簽發正式工作階段憑證")]
+    
+    
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
@@ -537,7 +540,7 @@ public sealed class UserManagementController : ApiControllerBase
     /// </summary>
     [Authorize]
     [HttpPost("logout")]
-    [Function("Logout", "安全登出", Icon = "fa-solid fa-right-from-bracket", Order = 8, Description = "安全登出系統並註銷當前裝置之活動工作階段票據")]
+    [Function("Logout", "登出", Icon = "fa-solid fa-right-from-bracket", Order = 8, Description = "安全登出系統並註銷當前裝置之活動工作階段票據")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Logout()
@@ -584,10 +587,11 @@ public sealed class UserManagementController : ApiControllerBase
     /// 取得系統所有使用者清單（含所屬角色，自動過濾已軟刪除項目）
     /// </summary>
     [HttpGet]
-    [Function("GetUsers", "查詢使用者列表", Icon = "fa-solid fa-users", Order = 9, Description = "取得系統所有有效使用者清單，包含帳號、Email、驗證狀態與所屬角色等資訊", IsMenu = true)]
+    [Function("GetUsers", "使用者列表", Icon = "fa-solid fa-users", Order = 9, Description = "取得系統所有有效使用者清單，包含帳號、Email、驗證狀態與所屬角色等資訊", IsMenu = true)]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.GETUSERS")]
+
     [ProducesResponseType(typeof(IEnumerable<UserDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.GETUSERS")]
     public async Task<IActionResult> GetUsers(CancellationToken cancellationToken = default)
     {
         try
@@ -643,10 +647,11 @@ public sealed class UserManagementController : ApiControllerBase
     /// </summary>
     [HttpGet("{userId:guid}/roles")]
     [Function("GetUserRoleAssignment", "查詢使用者角色設定", Icon = "fa-solid fa-user-tag", Order = 10, Description = "取得特定使用者包含已指派與未指派的全系統角色狀態")]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.READ")]
+
     [ProducesResponseType(typeof(UserRoleAssignmentDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.READ")]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]   
     public async Task<IActionResult> GetUserRoleAssignment(
         [FromRoute] Guid userId,
         CancellationToken cancellationToken = default)

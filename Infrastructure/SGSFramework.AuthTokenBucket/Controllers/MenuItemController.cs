@@ -48,7 +48,9 @@ public class MenuItemController : ApiControllerBase
     /// 取得當前登入使用者權限內之渲染選單樹 (Vue / Blazor 導覽列用)
     /// </summary>
     [HttpGet("user-tree")]
-    [Function("GetUserMenuTree", "取得使用者動態選單", Icon = "fa-solid fa-sitemap", Order = 1, Description = "依據當前使用者權限過濾後回傳三層選單樹")]
+    [Function("GetUserMenuTree", "使用者動態選單", Icon = "fa-solid fa-sitemap", Order = 1, Description = "依據當前使用者權限過濾後回傳選單樹")]
+    [EndpointSummary("使用者動態選單")]
+    [EndpointDescription("依據當前使用者權限過濾後回傳選單樹。")]
     [ProducesResponseType(typeof(Result<List<MenuItemDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetUserMenuTree(CancellationToken cancellationToken)
     {
@@ -69,8 +71,11 @@ public class MenuItemController : ApiControllerBase
     /// 取得完整選單樹結構 (後台選單管理維護用)
     /// </summary>
     [HttpGet("tree")]
-    [Function("GetFullMenuTree", "取得完整選單管理樹", Icon = "fa-solid fa-tree", Order = 2, Description = "取得包含未啟用/隱藏節點之完整選單階層樹", IsMenu = true, Path = "/system/menu-management")]
+    [Function("GetFullMenuTree", "系統選單樹", Icon = "fa-solid fa-tree", Order = 2, Description = "取得包含未啟用/隱藏節點之完整選單階層樹", IsMenu = true, Path = "/system/menu-management")]
     [RequiresPermission("SYS.MENU.GETFULLMENUTREE")]
+
+    [EndpointSummary("系統選單樹")]
+    [EndpointDescription("取得包含未啟用/隱藏節點之完整選單階層樹。")]
     [ProducesResponseType(typeof(Result<List<MenuItemDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetFullMenuTree(CancellationToken cancellationToken)
     {
@@ -91,8 +96,11 @@ public class MenuItemController : ApiControllerBase
     /// 依據識別碼取得單一選單節點詳細資料
     /// </summary>
     [HttpGet("{id:guid}")]
-    [Function("GetMenuItemById", "取得選單節點詳情", Icon = "fa-solid fa-circle-info", Order = 3)]
+    [Function("GetMenuItemById", "選單明細", Icon = "fa-solid fa-circle-info", Order = 3,Description ="依據識別碼取得單一選單節點詳細資料。")]
     [RequiresPermission("SYS.MENU.GETBYID")]
+
+    [EndpointSummary("選單明細")]
+    [EndpointDescription("依據識別碼取得單一選單節點詳細資料。")]
     [ProducesResponseType(typeof(Result<MenuItemDetailDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetMenuItemById([FromRoute] Guid id, CancellationToken cancellationToken)
@@ -120,8 +128,11 @@ public class MenuItemController : ApiControllerBase
     /// 手動新增自訂選單節點
     /// </summary>
     [HttpPost]
-    [Function("CreateMenuItem", "新增選單節點", Icon = "fa-solid fa-plus", Order = 4)]
+    [Function("CreateMenuItem", "新增選單", Icon = "fa-solid fa-plus", Order = 4, Description = "新增自訂選單節點。")]
     [RequiresPermission("SYS.MENU.CREATE")]
+
+    [EndpointSummary("新增選單")]
+    [EndpointDescription("新增自訂選單節點。")]
     [ProducesResponseType(typeof(Result<Guid>), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreateMenuItem([FromBody] CreateMenuItemCommand command, CancellationToken cancellationToken)
@@ -148,8 +159,11 @@ public class MenuItemController : ApiControllerBase
     /// 編輯選單節點屬性
     /// </summary>
     [HttpPut("{id:guid}")]
-    [Function("UpdateMenuItem", "更新選單節點", Icon = "fa-solid fa-pen-to-square", Order = 5)]
+    [Function("UpdateMenuItem", "編輯選單", Icon = "fa-solid fa-pen-to-square", Order = 5,Description = "編輯選單節點屬性。")]
     [RequiresPermission("SYS.MENU.UPDATE")]
+
+    [EndpointSummary("編輯選單")]
+    [EndpointDescription("編輯選單節點屬性。")]
     [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> UpdateMenuItem(
@@ -196,7 +210,10 @@ public class MenuItemController : ApiControllerBase
     /// 調整選單節點階層 (變更 ParentId 與排序)
     /// </summary>
     [HttpPatch("{id:guid}/move")]
-    [Function("MoveMenuItem", "移動選單節點", Icon = "fa-solid fa-arrows-up-down-left-right", Order = 6)]
+    [Function("MoveMenuItem", "移動選單節點", Icon = "fa-solid fa-arrows-up-down-left-right", Order = 6, Description = "調整選單節點階層 (變更 ParentId 與排序)。")]
+
+    [EndpointSummary("移動選單節點")]
+    [EndpointDescription("調整選單節點階層 (變更 ParentId 與排序)。")]
     [RequiresPermission("SYS.MENU.MOVE")]
     [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -230,8 +247,11 @@ public class MenuItemController : ApiControllerBase
     /// 刪除選單節點 (若包含子節點則拒絕刪除)
     /// </summary>
     [HttpDelete("{id:guid}")]
-    [Function("DeleteMenuItem", "刪除選單節點", Icon = "fa-solid fa-trash", Order = 7)]
+    [Function("DeleteMenuItem", "刪除選單節點", Icon = "fa-solid fa-trash", Order = 7, Description = "刪除選單節點 (若包含子節點則拒絕刪除)。")]
     [RequiresPermission("SYS.MENU.DELETE")]
+
+    [EndpointSummary("刪除選單節點")]
+    [EndpointDescription("刪除選單節點 (若包含子節點則拒絕刪除)。")]
     [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> DeleteMenuItem([FromRoute] Guid id, CancellationToken cancellationToken)
@@ -259,7 +279,10 @@ public class MenuItemController : ApiControllerBase
     /// 手動觸發從 API Attributes 自動同步選單種子 (Non-destructive)
     /// </summary>
     [HttpPost("sync-seed")]
-    [Function("SyncMenuSeed", "手動同步選單種子", Icon = "fa-solid fa-rotate", Order = 8)]
+    [Function("SyncMenuSeed", "手動同步選單", Icon = "fa-solid fa-rotate", Order = 8, Description = "手動觸發從 API Attributes 自動同步選單種子 (Non-destructive)。")]
+
+    [EndpointSummary("手動同步選單")]
+    [EndpointDescription("手動觸發從 API Attributes 自動同步選單種子 (Non-destructive)。")]
     [RequiresPermission("SYS.MENU.SYNCSEED")]
     [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
     public async Task<IActionResult> SyncMenuSeed(CancellationToken cancellationToken)

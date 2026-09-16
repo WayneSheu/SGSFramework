@@ -123,7 +123,7 @@ namespace SGSFramework.VerifyLedger.Controllers
         /// </summary>
         [HttpGet("{contextName}/report/{entityName}")]
         [Function("DownloadLedgerReport", "帳本驗證報告", Icon = "fa-solid fa-file-pdf", Order = 2, Description = "驗證指定資料庫實體之總帳並直接產生下載 PDF 稽核報告")]
-        [RequiresPermission("SYSTEM.LEDGERVERIFICATION.DOWNLOADREPORT")]
+        [RequiresPermission("SYSTEM.LEDGERVERIFICATION.DOWNLOAD")]
         [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(FileResult))]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
