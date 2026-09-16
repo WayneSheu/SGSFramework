@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace SGSFramework.Identity.DTOs
+namespace SGSFramework.Identity.DTOs.Users
 {
     public sealed class ResetPasswordRequest
     {

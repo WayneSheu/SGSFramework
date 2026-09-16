@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -23,6 +24,7 @@ using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Abstractions.Transactions;
 using SGSFramework.Core.Controllers.Base;
 using SGSFramework.Identity.DTOs;
+using SGSFramework.Identity.DTOs.Users;
 
 /// <summary>
 /// 使用者帳號管理控制器
@@ -72,7 +74,7 @@ public sealed class UserManagementController : ApiControllerBase
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> Register([FromBody] RegisterRequest request)
+    public async Task<IActionResult> Register([FromBody] CreateUserRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -328,7 +330,7 @@ public sealed class UserManagementController : ApiControllerBase
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     [AllowAnonymous]
-    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
+    public async Task<IActionResult> ForgotPassword([FromBody] SGSFramework.Identity.DTOs.ForgotPasswordRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -377,7 +379,7 @@ public sealed class UserManagementController : ApiControllerBase
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
+    public async Task<IActionResult> ResetPassword([FromBody] SGSFramework.Identity.DTOs.Users.ResetPasswordRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
