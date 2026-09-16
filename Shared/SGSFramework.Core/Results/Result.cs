@@ -1,63 +1,60 @@
-﻿using SGSFramework.Core.Errors;
+﻿
+namespace SGSFramework.Core.Results;
+
+using SGSFramework.Core.Errors;
 using System;
-using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using System.Text;
 
-namespace SGSFramework.Core.Results
+/// <summary>
+/// 表示領域操作之執行狀態容器，明確隔離成功與失敗路徑。
+/// </summary>
+public class Result
 {
-    /// <summary>
-    /// Result 類別用於表示操作的結果狀態，包含成功與失敗兩種情況。
-    /// 它提供了 IsSuccess 和 IsFailure 屬性來判斷操作是否成功，以及一個 Error 屬性來描述失敗的錯誤資訊。
-    /// Error 物件封裝模式，且靜態工廠方法是定義在 Result（非泛型基底類別）上，
-    /// 同時也提供了泛型 Result<TValue> 的隱式轉換糖 (Implicit Conversion)。
-    /// </summary>
-    public class Result
+    protected Result(bool isSuccess, Error error)
     {
-        protected Result(bool isSuccess, Error error)
+        if (isSuccess && error != Error.None || !isSuccess && error == Error.None)
         {
-            if (isSuccess && error != Error.None || !isSuccess && error == Error.None)
-            {
-                throw new ArgumentException("無效的錯誤與成功狀態組合。", nameof(error));
-            }
-
-            IsSuccess = isSuccess;
-            Error = error;
+            throw new ArgumentException("無效之成功狀態與錯誤物件組合。", nameof(error));
         }
 
-        public bool IsSuccess { get; }
-        public bool IsFailure => !IsSuccess;
-        public Error Error { get; }
-
-        public static Result Success() => new(true, Error.None);
-        public static Result Failure(Error error) => new(false, error);
-        public static Result<TValue> Success<TValue>(TValue value) => new(value, true, Error.None);
-        public static Result<TValue> Failure<TValue>(Error error) => new(default, false, error);
+        IsSuccess = isSuccess;
+        Error = error;
     }
 
-    /// <summary>
-    /// Result<TValue> 類別用於表示操作的結果狀態，包含成功與失敗兩種情況。
-    /// </summary>
-    /// <typeparam name="TValue"></typeparam>
-    public class Result<TValue> : Result
+    public bool IsSuccess { get; }
+    public bool IsFailure => !IsSuccess;
+    public Error Error { get; }
+
+    public static Result Success() => new(true, Error.None);
+    public static Result Failure(Error error) => new(false, error);
+    public static Result<TValue> Success<TValue>(TValue value) => new(value, true, Error.None);
+    public static Result<TValue> Failure<TValue>(Error error) => new(default, false, error);
+}
+
+/// <summary>
+/// 表示包含回傳資料之領域操作執行狀態容器。
+/// </summary>
+/// <typeparam name="TValue">資料型別</typeparam>
+public class Result<TValue> : Result
+{
+    private readonly TValue? _value;
+
+    protected internal Result(TValue? value, bool isSuccess, Error error)
+        : base(isSuccess, error)
     {
-        private readonly TValue? _value;
-
-        protected internal Result(TValue? value, bool isSuccess, Error error)
-            : base(isSuccess, error)
-        {
-            _value = value;
-        }
-
-        [NotNull]
-        public TValue Value => IsSuccess
-            ? _value!
-            : throw new InvalidOperationException("無法從失敗的結果中獲取數值。");
-
-        // 生產級關鍵：隱式轉換糖
-        public static implicit operator Result<TValue>(TValue? value) =>
-            value is not null ? Success(value) : Failure<TValue>(Error.NotFound("Value.Null", "回傳的數值為空。"));
-
-        public static implicit operator Result<TValue>(Error error) => Failure<TValue>(error);
+        _value = value;
     }
+
+    [NotNull]
+    public TValue Value => IsSuccess
+        ? _value!
+        : throw new InvalidOperationException("無法從失敗的 Result 中讀取 Value 屬性。");
+
+    // 隱式轉換糖 (Implicit Operators)
+    public static implicit operator Result<TValue>(TValue? value) =>
+        value is not null
+            ? Success(value)
+            : Failure<TValue>(Error.NotFound("Value.Null", "回傳之實體數值為空 (Null)。"));
+
+    public static implicit operator Result<TValue>(Error error) => Failure<TValue>(error);
 }

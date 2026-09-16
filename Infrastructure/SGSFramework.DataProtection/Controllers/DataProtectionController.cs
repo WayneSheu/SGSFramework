@@ -1,88 +1,157 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using System.Net.Mime;
+using System.Security;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using SGSFramework.Core.Abstractions.Attributes;
+using SGSFramework.Core.Controllers.Base;
 using SGSFramework.DataProtection.Abstractions;
 using SGSFramework.DataProtection.DTOS;
-using System.ComponentModel;
-using System.Security;
 
+namespace SGSFramework.ApiInfrastructure.Controllers;
 
-namespace SGSFramework.ApiInfrastructure.Controllers.DiApis
+/// <summary>
+/// 系統資料保護與加解密管理控制器
+/// </summary>
+[ApiController]
+[Authorize]
+[Route("api/v1/data-protections")]
+[RequiresPermission("SYSTEM.DATAPROTECTION.READ")]
+[Produces(MediaTypeNames.Application.Json)]
+[Consumes(MediaTypeNames.Application.Json)]
+[ControllerTitle("資料保護管理", Icon = "fa-solid fa-shield-halved", Order = 23, Description = "提供系統敏感資料之加密與解密安全性服務")]
+public sealed class DataProtectionController : ApiControllerBase
 {
-    [ApiController]
-    [ApiVersion("v1")]
-    [Route("api/system/DataProtectionC")]
-    [Menu("資料保護", "fa-solid fa-flask", order: 10, parent: null)]
-    [RequiresPermission("SYSTEM_DATAPROTECTION_READ")]
-    [Description("資料保護")]
-    public class DataProtectionController : ControllerBase
+    private readonly IDiApi _diApi;
+    private readonly ILogger<DataProtectionController> _logger;
+
+    public DataProtectionController(
+        IDiApi diApi,
+        ILogger<DataProtectionController> logger)
     {
-        private readonly IDiApi _diApi;
-        private readonly ILogger<DataProtectionController> _logger;
+        ArgumentNullException.ThrowIfNull(diApi);
+        ArgumentNullException.ThrowIfNull(logger);
 
-        public DataProtectionController(IDiApi diApi, ILogger<DataProtectionController> logger)
+        _diApi = diApi;
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// 執行敏感資料加密
+    /// </summary>
+    /// <param name="request">加密請求資料內容</param>
+    /// <param name="cancellationToken">非同步取消權牌</param>
+    /// <returns>加密後之資料結果</returns>
+    [HttpPost("encrypt")]
+    [Function("EncryptData", "資料加密", Icon = "fa-solid fa-lock", Order = 1, Description = "根據指定的防護策略對敏感資料進行安全加密")]
+    [RequiresPermission("SYSTEM.DATAPROTECTION.ENCRYPT")]
+    
+    [EndpointSummary("資料加密")]
+    [EndpointDescription("根據傳入的防護策略將敏感資料進行安全加密。")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> Encrypt(
+        [FromBody] EncryptionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        try
         {
-            _diApi = diApi;
-            _logger = logger;
+            var encryptedData = await _diApi.SecureProcessAsync(request.Payload, request.Strategy);
+            _logger.LogInformation("資料加密處理成功。Strategy: {Strategy}", request.Strategy);
+
+            return Ok(new { Data = encryptedData, Status = "Success" });
         }
-
-        [HttpPost("encrypt")]
-        [Menu("資料加密", "fa-solid fa-flask", order: 10, parent: "資料保護")]
-        [RequiresPermission("SYSTEM_DATAPROTECTION_ENCRYPT")]
-        [Description("資料加密")]
-        public async Task<IActionResult> Encrypt([FromBody] EncryptionRequest request)
+        catch (SecurityException ex)
         {
-            // 1. 基本請求驗證 (由 Data Annotation 或 FluentValidation 處理)
-            if (!ModelState.IsValid) return BadRequest(ModelState);
-
-            try
+            _logger.LogWarning(ex, "資料加密安全性驗證失敗。Strategy: {Strategy}", request.Strategy);
+            return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
             {
-                // 2. 委派處理至 DIAPI
-                var encryptedData = await _diApi.SecureProcessAsync(request.Payload, request.Strategy);
-
-                // 3. 回傳標準回應
-                return Ok(new { Data = encryptedData, Status = "Success" });
-            }
-            catch (SecurityException ex)
-            {
-                // 4. 針對安全性異常進行特殊記錄，但不洩漏過多細節給前端
-                _logger.LogWarning("Security violation: {Message}", ex.Message);
-                return StatusCode(StatusCodes.Status403Forbidden, "Secure processing failed.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unexpected error in encryption endpoint.");
-                return StatusCode(StatusCodes.Status500InternalServerError, "Internal system error.");
-            }
+                Status = StatusCodes.Status403Forbidden,
+                Title = "存取被拒絕",
+                Detail = "安全防護處理失敗，存取權限不足或金鑰驗證失敗。",
+                Instance = HttpContext.Request.Path
+            });
         }
-
-        [HttpPost("decrypt")]
-        [Menu("資料解密", "fa-solid fa-flask", order: 10, parent: "資料保護")]
-        [RequiresPermission("SYSTEM_DATAPROTECTION_DECRYPT")]
-        [Description("資料解密")]
-        public async Task<IActionResult> Decrypt([FromBody] DecryptionRequest request)
+        catch (OperationCanceledException)
         {
-            if (!ModelState.IsValid) return BadRequest(ModelState);
+            _logger.LogWarning("資料加密請求已被使用者取消。");
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "執行資料加密時發生非預期錯誤。");
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "執行資料加密時發生系統異常，請聯繫系統管理員。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
 
-            try
-            {
-                // 呼叫 IDiApi 的解密功能
-                // 假設您在 IDiApi 中擴充了 SecureDecryptAsync 方法
-                var decryptedData = await _diApi.SecureDecryptAsync(request.CipherText, request.Strategy);
+    /// <summary>
+    /// 執行密文資料解密
+    /// </summary>
+    /// <param name="request">解密請求資料內容</param>
+    /// <param name="cancellationToken">非同步取消權牌</param>
+    /// <returns>解密後之原始資料結果</returns>
+    [HttpPost("decrypt")]
+    [Function("DecryptData", "資料解密", Icon = "fa-solid fa-key", Order = 2, Description = "根據指定的防護策略將加密文字安全解密")]
+    [RequiresPermission("SYSTEM.DATAPROTECTION.DECRYPT")]
+    
+    [EndpointSummary("資料解密")]
+    [EndpointDescription("根據傳入的防護策略將加密文字安全解密。")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> Decrypt(
+        [FromBody] DecryptionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
 
-                return Ok(new { Data = decryptedData, Status = "Success" });
-            }
-            catch (SecurityException ex)
+        try
+        {
+            var decryptedData = await _diApi.SecureDecryptAsync(request.CipherText, request.Strategy);
+            _logger.LogInformation("資料解密處理成功。Strategy: {Strategy}", request.Strategy);
+
+            return Ok(new { Data = decryptedData, Status = "Success" });
+        }
+        catch (SecurityException ex)
+        {
+            _logger.LogWarning(ex, "資料解密安全性驗證失敗。Strategy: {Strategy}", request.Strategy);
+            return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
             {
-                _logger.LogWarning("Decryption security failure: {Message}", ex.Message);
-                return StatusCode(StatusCodes.Status403Forbidden, "Decryption failed.");
-            }
-            catch (Exception ex)
+                Status = StatusCodes.Status403Forbidden,
+                Title = "存取被拒絕",
+                Detail = "安全解密處理失敗，驗證金鑰不符或解密權限不足。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("資料解密請求已被使用者取消。");
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "執行資料解密時發生非預期錯誤。");
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
-                _logger.LogError(ex, "System error during decryption.");
-                return StatusCode(StatusCodes.Status500InternalServerError, "Internal system error.");
-            }
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "執行資料解密時發生系統異常，請聯繫系統管理員。",
+                Instance = HttpContext.Request.Path
+            });
         }
     }
 }

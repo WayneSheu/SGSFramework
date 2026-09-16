@@ -8,7 +8,7 @@ using PhysLIMS.API.Dbcontexts;
 using Scalar.AspNetCore;
 using Serilog;
 using SGSFramework.ApiInfrastructure.Bootstrappers;
-using SGSFramework.ApiInfrastructure.Extensions;
+using SGSFramework.ApiInfrastructure.DependencyInjection;
 using SGSFramework.ApiInfrastructure.Filters;
 using SGSFramework.ApiInfrastructure.Middlewares;
 using SGSFramework.ApiInfrastructure.Transformers;
@@ -95,6 +95,7 @@ try
 
     // 4. 控制器與動態外掛模組註冊
     builder.Services.AddControllerInfrastructure(config);
+    builder.Services.AddCustomApiBehavior();
     builder.Services.AddModulePlugin<PhysLIMSDbContext>(config);
     builder.Services.AddControllerScanner<PhysLIMSDbContext>();
 

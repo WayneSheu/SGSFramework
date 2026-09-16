@@ -1,4 +1,4 @@
-﻿namespace SGSFramework.ApiInfrastructure.Extensions;
+﻿namespace SGSFramework.ApiInfrastructure.DependencyInjection;
 
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
@@ -48,7 +48,7 @@ public static class ServiceCollectionExtensions
             });
 
         services.AddScoped<IControllerMetadataService, ControllerMetadataService>();
-
+ 
         return services;
     }
 }
