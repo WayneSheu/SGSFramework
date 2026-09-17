@@ -8,6 +8,7 @@ using SGSFramework.Core.Errors;
 using SGSFramework.Core.Results;
 using SGSFramework.Identity.Abstractions.Strategies;
 using SGSFramework.Identity.DTOs;
+using SGSFramework.Identity.DTOs.Strategies;
 using SGSFramework.Identity.DTOs.Users;
 using System;
 using System.Threading;
@@ -60,13 +61,13 @@ public sealed class ActiveDirectoryAuthenticationService
                 _logger.LogInformation("偵測到網域使用者首次登入，開始進行 JIT 配置，使用者名稱: {Username}", username);
 
                 // 3. 透過策略模式 (Strategy Pattern) 委派配置邏輯（指派 PendingUser 角色與未定預設容器）
-                var strategy = _provisioningStrategyFactory.GetStrategy("Atomic");
-
+                var strategy = _provisioningStrategyFactory.GetStrategy(UserProvisioningStrategyType.Atomic);
+         
                 var provisioningContext = new UserProvisioningContext(
                     Username: username,
                     Email: $"{username}@domain.local",
                     Password: null, // 網域帳號不於本機儲存密碼
-                    DefaultLabId: 0, // 0 代表尚未指派實驗室
+                    DefaultLabId: 0,
                     TenantLabId: Guid.Empty, // 待管理員指定
                     RoleName: "PendingUser"
                 );

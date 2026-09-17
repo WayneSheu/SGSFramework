@@ -11,8 +11,8 @@ namespace SGSFramework.Core.Abstractions.Events.Users
     public sealed record UserCreatedEvent(
         Guid UserId,
         string Username,
-        int InitialLabId,
-        Guid TenantLabId,
-        string RoleName
+        int? InitialLabId,
+        Guid? TenantLabId,
+        string? RoleName
     ) : INotification;
 }

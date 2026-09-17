@@ -10,6 +10,8 @@ namespace SGSFramework.Identity.DTOs.Users
     /// </summary> 
     public sealed record UpdateUserRequest
     {
+        public string UserName{ get; init; } = string.Empty;
+
         [Required(ErrorMessage = "電子郵件為必填欄位")]
         [EmailAddress(ErrorMessage = "請輸入有效的電子郵件格式")]
         public string Email { get; init; } = string.Empty;

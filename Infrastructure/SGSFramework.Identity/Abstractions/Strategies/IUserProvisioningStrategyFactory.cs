@@ -1,17 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿using SGSFramework.Identity.Abstractions.Strategies;
 
-namespace SGSFramework.Identity.Abstractions.Strategies
+public interface IUserProvisioningStrategyFactory
 {
     /// <summary>
-    /// 使用者配置策略工廠介面
+    /// 依據策略列舉取得對應的實作策略
     /// </summary>
-    public interface IUserProvisioningStrategyFactory
-    {
-        /// <summary>
-        /// 依據名稱取得對應的配置策略實作
-        /// </summary>
-        IUserProvisioningStrategy GetStrategy(string strategyName);
-    }
+    IUserProvisioningStrategy GetStrategy(UserProvisioningStrategyType strategyType);
 }

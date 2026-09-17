@@ -1,5 +1,5 @@
 ﻿using SGSFramework.Core.Results;
-using SGSFramework.Identity.DTOs.Users;
+using SGSFramework.Identity.DTOs.Strategies;
 using System;
 using System.Collections.Generic;
 using System.Text;

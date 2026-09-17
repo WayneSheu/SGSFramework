@@ -10,8 +10,9 @@ namespace SGSFramework.Identity.DTOs.Users
     public sealed record UserResponse
     {
         public Guid Id { get; init; }
-        public string Username { get; init; } = string.Empty;
+        public string UserName { get; init; } = string.Empty;
         public string Email { get; init; } = string.Empty;
+        public bool EmailConfirmed { get; init; } = false;
         public bool IsActive { get; init; }
         public DateTimeOffset CreatedAt { get; init; }
         public IReadOnlyList<string> Roles { get; init; } = Array.Empty<string>();

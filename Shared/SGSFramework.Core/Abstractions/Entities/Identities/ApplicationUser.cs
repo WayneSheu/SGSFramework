@@ -8,6 +8,8 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
     /// </summary>
     public class ApplicationUser : IdentityUser<Guid>,IBaseUser
     {
+        public bool IsSystemAdmin { get; set; }=false;
+
         /// <summary>
         /// 使用者真實姓名
         /// </summary>
@@ -18,6 +20,7 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
         /// </summary>
         public DateTimeOffset? LastLoginAt { get; set; }
 
+       
         /// <summary>
         /// 帳號建立時間
         /// </summary>
@@ -28,5 +31,7 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
         public string DeletedBy { get; set; } = string.Empty;
 
         public DateTimeOffset? DeletedAt { get; set; } 
+
+
     }
 }

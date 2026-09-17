@@ -7,8 +7,10 @@ using SGSFramework.Core.Abstractions.Entities.Base;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Transactions;
 using SGSFramework.Identity.Abstractions;
+using SGSFramework.Identity.Abstractions.Strategies;
 using SGSFramework.Identity.Repositories;
 using SGSFramework.Identity.Services;
+using SGSFramework.Identity.Strategies;
 using SGSFramework.Identity.Transactions;
 
 namespace SGSFramework.Identity.Extensions
@@ -52,12 +54,23 @@ namespace SGSFramework.Identity.Extensions
             services.AddScoped<IGenericIdentityRepository<TUser, TKey>, GenericIdentityRepository<TContext, TUser, TRole, TKey>>();
             // 註冊 UserLabRepository 介面與實作對應
             services.AddScoped<IUserLabRepository, UserLabRepository>();
-            // 4. 註冊角色管理服務 (開放泛型與具體泛型介面)
+
+            // 4. 註冊角色與使用者管理服務 (同時支援開放泛型與具體對應)
             services.AddScoped(typeof(IRoleManagementService<,>), typeof(RoleManagementService<,>));
             services.AddScoped<IRoleManagementService<TRole, TKey>, RoleManagementService<TRole, TKey>>();
-            //
+
+            // 支援泛型與具體 UserManagementService 註冊
+            services.AddScoped(typeof(IUserManagementService<,,>), typeof(UserManagementService<,,>));
+            services.AddScoped<IUserManagementService, UserManagementService>();
+
+
             // 註冊抽象化 UnitOfWork
             services.AddScoped<IUnitOfWork, UnitOfWork>();
+            // 註冊所有具體的策略實作
+            services.AddScoped<IUserProvisioningStrategy, AtomicUserProvisioningStrategy<TUser, TRole, TKey>>();
+            services.AddScoped<IUserProvisioningStrategy, EventDrivenUserProvisioningStrategy<TUser, TRole, TKey>>();
+            // 註冊工廠，利用 DI 自動收集所有實作項目
+            services.AddScoped<IUserProvisioningStrategyFactory, UserProvisioningStrategyFactory>();
             return services;
         }
     }

@@ -74,7 +74,8 @@ namespace SGSFramework.Identity.Services
                 if (adminUser == null)
                 {
                     adminUser = new ApplicationUser
-                    {
+                    {   
+                        IsSystemAdmin=true,
                         UserName = _options.Username,
                         Email = _options.Email,
                         EmailConfirmed = true,

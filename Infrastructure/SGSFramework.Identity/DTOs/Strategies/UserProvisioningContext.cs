@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace SGSFramework.Identity.DTOs.Users
+namespace SGSFramework.Identity.DTOs.Strategies
 {
     /// <summary>
     /// 使用者配置上下文資料模型
@@ -11,8 +11,8 @@ namespace SGSFramework.Identity.DTOs.Users
         string Username,
         string Email,
         string? Password,
-        int DefaultLabId,
-        Guid TenantLabId,
+        int? DefaultLabId,
+        Guid? TenantLabId,
         string RoleName
     );
 }
