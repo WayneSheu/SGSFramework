@@ -660,6 +660,77 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
             return Result.Failure<bool>(Error.Unexpected("User.Delete.Exception", "執行刪除使用者作業時發生系統異常。"));
         }
     }
+
+    /// <inheritdoc />
+    public async Task<Result<bool>> ChangePasswordAsync(
+        TKey userId,
+        ChangePasswordRequest request,
+        string clientIp = "127.0.0.1",
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (userId is Guid gId && gId == Guid.Empty)
+            {
+                return Result.Failure<bool>(Error.Validation("User.ChangePassword.InvalidId", "必須提供有效的使用者識別碼。"));
+            }
+
+            var user = await _userManager.FindByIdAsync(userId.ToString()!).ConfigureAwait(false);
+            if (user == null || user.IsDeleted)
+            {
+                return Result.Failure<bool>(Error.NotFound("User.NotFound", $"找不到識別碼為 {userId} 的使用者。"));
+            }
+
+            var result = await _userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword).ConfigureAwait(false);
+            if (!result.Succeeded)
+            {
+                string errors = string.Join("; ", result.Errors.Select(e => e.Description));
+
+                _securityLogger.LogSecurity(
+                    eventCode: "SEC-400-PASSWORD-CHANGE-FAILED",
+                    eventCategory: "UserManagement.ChangePassword",
+                    userId: userId.ToString() ?? string.Empty,
+                    clientIp: clientIp,
+                    messageTemplate: "使用者線上變更密碼失敗。用戶識別碼: {UserId}, 原因: {Errors}",
+                    userId.ToString() ?? string.Empty,
+                    errors
+                );
+
+                return Result.Failure<bool>(Error.Validation("User.ChangePassword.Failed", $"變更密碼失敗: {errors}"));
+            }
+
+            await _tokenEngine.EmergencyFreezeAsync(user.Id.ToString() ?? string.Empty, "使用者執行線上變更密碼，強制登出全網所有裝置工作階段。").ConfigureAwait(false);
+            await _tokenEngine.CompleteRemediationAsync(user.Id.ToString() ?? string.Empty).ConfigureAwait(false);
+
+            _securityLogger.LogSecurity(
+                eventCode: "SEC-200-PASSWORD-CHANGED",
+                eventCategory: "UserManagement.ChangePassword",
+                userId: userId.ToString() ?? string.Empty,
+                clientIp: clientIp,
+                messageTemplate: "使用者線上變更密碼成功，並已肅清全網 Session。帳號: {Username}",
+                user.UserName ?? string.Empty
+            );
+
+            _logger.LogInformation("使用者成功變更密碼並重置 Session: {UserId}", userId);
+            return Result.Success(true);
+        }
+         catch(OperationCanceledException)
+        {
+            _logger.LogInformation("[UserManagementService] 變更密碼作業已被取消。UserId: {UserId}", userId);
+            return Result.Failure<bool>(Error.Validation("User.ChangePassword.Cancelled", "變更密碼作業已取消。"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "變更密碼時發生例外。UserId: {UserId}", userId);
+            return Result.Failure<bool>(Error.Unexpected("User.ChangePassword.Exception", "變更密碼時發生內部系統錯誤。"));
+        }
+    }
+
+
 }
 
 /// <summary>

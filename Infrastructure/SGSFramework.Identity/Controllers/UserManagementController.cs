@@ -9,10 +9,12 @@ namespace SGSFramework.Identity.Controllers.v1;
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SGSFramework.Core.Abstractions.Attributes;
+using SGSFramework.Core.Abstractions.Logings;
 using SGSFramework.Core.Controllers.Base;
 using SGSFramework.Core.Paginations;
 using SGSFramework.Core.Results;
@@ -25,6 +27,7 @@ using SGSFramework.Identity.Options;
 using System;
 using System.Collections.Generic;
 using System.Net.Mime;
+using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -549,6 +552,64 @@ public sealed class UserManagementController(
                 Status = StatusCodes.Status500InternalServerError,
                 Title = "伺服器內部錯誤",
                 Detail = "發送重設密碼請求時發生系統異常，請聯繫系統管理員。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
+    /// <summary>
+    /// 變更密碼 (登入狀態情境：驗證舊密碼並換新密碼，強制執行登出聯防)
+    /// </summary>
+    [Authorize]
+    [HttpPost("change-password")]
+    [Function("ChangePassword", "變更密碼", Icon = "fa-solid fa-lock-rotate", Order = 7, Description = "使用者登入狀態下變更密碼，並觸發資安聯防註銷其他裝置 Session")]
+
+    [EndpointSummary("變更密碼")]
+    [EndpointDescription("使用者登入狀態下變更密碼，並觸發資安聯防註銷其他裝置 Session。")]
+    [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> ChangePassword(
+        [FromBody] ChangePasswordRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            string userIdStr = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+            if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
+            {
+                return Unauthorized(new ProblemDetails
+                {
+                    Status = StatusCodes.Status401Unauthorized,
+                    Title = "未授權",
+                    Detail = "無法識別目前的登入身分或識別碼格式無效。",
+                    Instance = HttpContext.Request.Path
+                });
+            }
+
+            var result = await _userService.ChangePasswordAsync(userId, request, clientIp, cancellationToken).ConfigureAwait(false);
+            return HandleResult(result);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("[UserManagementController] 變更密碼作業已被用戶端取消。");
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "變更密碼端點發生未預期異常。");
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "變更密碼時發生系統異常，請聯繫系統管理員。",
                 Instance = HttpContext.Request.Path
             });
         }
