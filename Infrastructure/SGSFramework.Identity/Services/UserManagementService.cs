@@ -1,6 +1,6 @@
 ﻿// ==========================================
 // 檔案路徑: src/Infrastructure/SGSFramework.Identity/Services/UserManagementService.cs
-// 架構層級: Infrastructure / Service Implementation Layer
+// 架構層級: Infrastructure / Service Implementation Layer (Added ConfirmEmailAsync)
 // ==========================================
 
 #nullable enable
@@ -266,7 +266,7 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
     /// <inheritdoc />
     public async Task<Result<string>> RegisterAsync(
         CreateUserRequest request,
-        string clientIp = "127.0.0.1",// 預設值為 "127.0.0.1"，表示本地機器 IP 地址
+        string clientIp = "127.0.0.1",
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -326,6 +326,45 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
         {
             _logger.LogError(ex, "註冊作業發生未預期異常。");
             return Result.Failure<string>(Error.Unexpected("User.Register.Exception", "註冊作業處理期間發生未預期錯誤。"));
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<bool>> ConfirmEmailAsync(
+        TKey userId,
+        string token,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(token);
+
+        try
+        {
+            var user = await _userManager.FindByIdAsync(userId?.ToString() ?? string.Empty).ConfigureAwait(false);
+            if (user == null || user.IsDeleted)
+            {
+                return Result.Failure<bool>(Error.NotFound("User.NotFound", $"找不到識別碼為 {userId} 的使用者。"));
+            }
+
+            if (user.EmailConfirmed)
+            {
+                return Result.Success(true);
+            }
+
+            var result = await _userManager.ConfirmEmailAsync(user, token).ConfigureAwait(false);
+            if (!result.Succeeded)
+            {
+                string errors = string.Join("; ", result.Errors.Select(e => e.Description));
+                _logger.LogWarning("確認電子郵件失敗 {UserId}: {Errors}", userId, errors);
+                return Result.Failure<bool>(Error.Validation("User.ConfirmEmail.Failed", $"電子郵件驗證失敗: {errors}"));
+            }
+
+            _logger.LogInformation("成功確認使用者電子郵件: {UserId}", userId);
+            return Result.Success(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "確認電子郵件時發生例外。UserId: {UserId}", userId);
+            return Result.Failure<bool>(Error.Unexpected("User.ConfirmEmail.Exception", "驗證電子郵件時發生內部系統錯誤。"));
         }
     }
 

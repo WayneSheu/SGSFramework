@@ -102,6 +102,12 @@ public interface IUserManagementService<TUser, TRole, TKey>
     Task<Result<UserRoleAssignmentDto>> GetUserRoleAssignmentAsync(
         TKey userId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 確認使用者電子郵件
+    /// </summary>
+    Task<Result<bool>> ConfirmEmailAsync(TKey userId, string token, CancellationToken cancellationToken = default);
+
 }
 
 /// <summary>

@@ -1,6 +1,6 @@
 ﻿// ==========================================
 // 檔案路徑: src/Presentation/SGSFramework.Identity/Controllers/v1/UserManagementController.cs
-// 架構層級: Presentation / API Controller Layer (Modified to resolve StrategyType from IOptions)
+// 架構層級: Presentation / API Controller Layer (Added ConfirmEmail Endpoint)
 // ==========================================
 
 #nullable enable
@@ -181,7 +181,6 @@ public sealed class UserManagementController(
 
         try
         {
-            // 1. 將 Option 中的字串安全解析為 UserProvisioningStrategyType 列舉
             if (!Enum.TryParse<UserProvisioningStrategyType>(_provisioningOptions.StrategyType, true, out var strategyType))
             {
                 _logger.LogWarning("伺服器端設定的策略類型無效或無法識別: {StrategyType}", _provisioningOptions.StrategyType);
@@ -194,7 +193,6 @@ public sealed class UserManagementController(
                 });
             }
 
-            // 2. 依據解析後的列舉取得對應策略實作
             var strategy = _strategyFactory.GetStrategy(strategyType);
 
             int? defaultLabId = 0;
@@ -239,6 +237,52 @@ public sealed class UserManagementController(
         }
     }
 
+    /// <summary>
+    /// 確認使用者電子郵件
+    /// </summary>
+    [HttpPost("confirm-email")]
+    [Function("ConfirmEmail", "確認電子郵件", Icon = "fa-solid fa-envelope-circle-check", Order = 11, Description = "透過驗證權杖確認使用者的電子郵件地址")]
+    [AllowAnonymous]
+    [EndpointSummary("確認電子郵件")]
+    [EndpointDescription("透過驗證權杖確認使用者的電子郵件地址。")]
+    [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> ConfirmEmail(
+        [FromBody] ConfirmEmailRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        try
+        {
+            if (!Guid.TryParse(request.UserId, out var userId))
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Status = StatusCodes.Status400BadRequest,
+                    Title = "無效的請求參數",
+                    Detail = "必須提供有效的使用者識別碼。",
+                    Instance = HttpContext.Request.Path
+                });
+            }
+
+            var result = await _userService.ConfirmEmailAsync(userId, request.Token, cancellationToken).ConfigureAwait(false);
+            return HandleResult(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "確認電子郵件時發生未預期異常。UserId: {UserId}", request.UserId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "確認電子郵件時發生系統異常。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
 
     /// <summary>
     /// 更新使用者基本資料與角色配置
