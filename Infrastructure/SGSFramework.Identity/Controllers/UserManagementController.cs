@@ -1,6 +1,6 @@
 ﻿// ==========================================
 // 檔案路徑: src/Presentation/SGSFramework.Identity/Controllers/v1/UserManagementController.cs
-// 架構層級: Presentation / API Controller Layer (Added ConfirmEmail Endpoint)
+// 架構層級: Presentation / API Controller Layer (Refactored ForgotPassword Endpoint)
 // ==========================================
 
 #nullable enable
@@ -515,6 +515,44 @@ public sealed class UserManagementController(
                 Status = StatusCodes.Status500InternalServerError,
                 Title = "伺服器內部錯誤",
                 Detail = "讀取使用者角色設定時發生系統異常。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
+    /// <summary>
+    /// 忘記密碼 - 申請重設權限 (產生加密重設記號)
+    /// </summary>
+    [AllowAnonymous]
+    [HttpPost("forgot-password")]
+    [Function("ForgotPassword", "忘記密碼", Icon = "fa-solid fa-unlock-keyhole", Order = 5, Description = "發送密碼重設郵件與記號至使用者信箱")]
+
+    [EndpointSummary("忘記密碼")]
+    [EndpointDescription("發送密碼重設郵件與記號至使用者信箱。")]
+    [ProducesResponseType(typeof(Result<ForgotPasswordResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+  
+    public async Task<IActionResult> ForgotPassword(
+        [FromBody] ForgotPasswordRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+
+        try
+        {
+            var result = await _userService.ForgotPasswordAsync(request, clientIp, cancellationToken).ConfigureAwait(false);
+            return HandleResult(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "忘記密碼端點發生未預期異常。Email: {Email}", request.Email);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "發送重設密碼請求時發生系統異常，請聯繫系統管理員。",
                 Instance = HttpContext.Request.Path
             });
         }

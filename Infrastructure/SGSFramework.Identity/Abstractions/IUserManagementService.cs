@@ -108,6 +108,17 @@ public interface IUserManagementService<TUser, TRole, TKey>
     /// </summary>
     Task<Result<bool>> ConfirmEmailAsync(TKey userId, string token, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// 忘記密碼並發送電子郵件驗證憑證
+    /// </summary>
+    /// <param name="request"></param>
+    /// <param name="clientIp"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    Task<Result<ForgotPasswordResponse>> ForgotPasswordAsync(
+        ForgotPasswordRequest request,
+        string clientIp = "127.0.0.1",
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

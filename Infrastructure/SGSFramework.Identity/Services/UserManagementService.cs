@@ -1,6 +1,6 @@
 ﻿// ==========================================
 // 檔案路徑: src/Infrastructure/SGSFramework.Identity/Services/UserManagementService.cs
-// 架構層級: Infrastructure / Service Implementation Layer (Added ConfirmEmailAsync)
+// 架構層級: Infrastructure / Service Implementation Layer (Added ForgotPasswordAsync)
 // ==========================================
 
 #nullable enable
@@ -369,6 +369,57 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
     }
 
     /// <inheritdoc />
+    public async Task<Result<ForgotPasswordResponse>> ForgotPasswordAsync(
+        ForgotPasswordRequest request,
+        string clientIp = "127.0.0.1",
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var user = await _userManager.FindByEmailAsync(request.Email).ConfigureAwait(false);
+            if (user == null || user.IsDeleted || !await _userManager.IsEmailConfirmedAsync(user).ConfigureAwait(false))
+            {
+                return Result.Success(new ForgotPasswordResponse
+                {
+                    Message = "若帳號存在且已完成啟用，重設密碼信件已發送至您的信箱。",
+                    DebugResetToken = null
+                });
+            }
+
+            string resetToken = await _userManager.GeneratePasswordResetTokenAsync(user).ConfigureAwait(false);
+
+            _securityLogger.LogSecurity(
+                eventCode: "SEC-200-FORGOT-PASSWORD-REQUEST",
+                eventCategory: "UserManagement.ForgotPassword",
+                userId: user.Id.ToString() ?? string.Empty,
+                clientIp: clientIp,
+                messageTemplate: "使用者申請密碼重設憑證。Email: {Email}",
+                request.Email
+            );
+
+            return Result.Success(new ForgotPasswordResponse
+            {
+                Message = "重設密碼信件已發送。",
+                DebugResetToken = resetToken
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("[UserManagementService] 忘記密碼作業已被取消。");
+            return Result.Failure<ForgotPasswordResponse>(Error.Validation("User.ForgotPassword.Cancelled", "忘記密碼作業已取消。"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "忘記密碼服務發生未預期異常。Email: {Email}", request.Email);
+            return Result.Failure<ForgotPasswordResponse>(Error.Unexpected("User.ForgotPassword.Exception", "發送重設密碼請求時發生內部系統錯誤。"));
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<Result<bool>> UpdateUserAsync(
         TKey userId,
         UpdateUserRequest request,
@@ -578,7 +629,7 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
         }
         catch (OperationCanceledException)
         {
-            _logger.LogInformation("[UserManagementService] 刪除使用者作業已被取消。UserId: {UserId}", userId);
+            _logger.LogInformation("[UserManagementService] 軟刪除使用者作業已被取消。UserId: {UserId}", userId);
             return Result.Failure<bool>(Error.Validation("User.Delete.Cancelled", "刪除使用者作業已取消。"));
         }
         catch (Exception ex)
