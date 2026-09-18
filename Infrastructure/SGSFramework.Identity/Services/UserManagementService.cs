@@ -1,6 +1,6 @@
 ﻿// ==========================================
 // 檔案路徑: src/Infrastructure/SGSFramework.Identity/Services/UserManagementService.cs
-// 架構層級: Infrastructure / Service Implementation Layer (Added ForgotPasswordAsync)
+// 架構層級: Infrastructure / Service Implementation Layer (Optimized ResetPasswordAsync)
 // ==========================================
 
 #nullable enable
@@ -460,12 +460,20 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
     public async Task<Result<bool>> ResetPasswordAsync(
         TKey userId,
         ResetPasswordRequest request,
+        string clientIp = "127.0.0.1",
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
 
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (userId is Guid gId && gId == Guid.Empty)
+            {
+                return Result.Failure<bool>(Error.Validation("User.ResetPassword.InvalidId", "必須提供有效的使用者識別碼。"));
+            }
+
             var user = await _userManager.FindByIdAsync(userId.ToString()!).ConfigureAwait(false);
             if (user == null || user.IsDeleted)
             {
@@ -482,8 +490,22 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                 return Result.Failure<bool>(Error.Validation("User.ResetPassword.Failed", $"重設密碼失敗: {errors}"));
             }
 
+            _securityLogger.LogSecurity(
+                eventCode: "SEC-200-PASSWORD-RESET",
+                eventCategory: "UserManagement.ResetPassword",
+                userId: userId.ToString() ?? string.Empty,
+                clientIp: clientIp,
+                messageTemplate: "管理員重設使用者密碼成功。目標使用者: {TargetUserId}",
+                userId.ToString() ?? string.Empty
+            );
+
             _logger.LogInformation("成功重設使用者密碼: {UserId}", userId);
             return Result.Success(true);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("[UserManagementService] 重設密碼作業已被取消。UserId: {UserId}", userId);
+            return Result.Failure<bool>(Error.Validation("User.ResetPassword.Cancelled", "重設密碼作業已取消。"));
         }
         catch (Exception ex)
         {

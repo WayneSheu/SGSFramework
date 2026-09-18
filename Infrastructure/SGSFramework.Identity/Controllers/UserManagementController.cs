@@ -1,6 +1,6 @@
 ﻿// ==========================================
 // 檔案路徑: src/Presentation/SGSFramework.Identity/Controllers/v1/UserManagementController.cs
-// 架構層級: Presentation / API Controller Layer (Refactored ForgotPassword Endpoint)
+// 架構層級: Presentation / API Controller Layer (Thin Controller with ResetPassword delegated to Service)
 // ==========================================
 
 #nullable enable
@@ -351,30 +351,28 @@ public sealed class UserManagementController(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (id == Guid.Empty)
-        {
-            return BadRequest(new ProblemDetails
-            {
-                Status = StatusCodes.Status400BadRequest,
-                Title = "無效的請求參數",
-                Detail = "必須提供有效的使用者識別碼。",
-                Instance = HttpContext.Request.Path
-            });
-        }
+        string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
 
         try
         {
-            var result = await _userService.ResetPasswordAsync(id, request, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var result = await _userService.ResetPasswordAsync(id, request, clientIp, cancellationToken).ConfigureAwait(false);
             return HandleResult(result);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("[UserManagementController] 重設使用者密碼作業已被用戶端取消。UserId: {UserId}", id);
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "重設使用者密碼時發生異常。UserId: {UserId}", id);
+            _logger.LogError(ex, "重設使用者密碼端點發生未預期異常。UserId: {UserId}", id);
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
                 Status = StatusCodes.Status500InternalServerError,
                 Title = "伺服器內部錯誤",
-                Detail = "重設密碼作業期間發生系統異常。",
+                Detail = "重設密碼作業期間發生系統異常，請聯繫系統管理員。",
                 Instance = HttpContext.Request.Path
             });
         }
@@ -526,12 +524,10 @@ public sealed class UserManagementController(
     [AllowAnonymous]
     [HttpPost("forgot-password")]
     [Function("ForgotPassword", "忘記密碼", Icon = "fa-solid fa-unlock-keyhole", Order = 5, Description = "發送密碼重設郵件與記號至使用者信箱")]
-
     [EndpointSummary("忘記密碼")]
     [EndpointDescription("發送密碼重設郵件與記號至使用者信箱。")]
     [ProducesResponseType(typeof(Result<ForgotPasswordResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-  
     public async Task<IActionResult> ForgotPassword(
         [FromBody] ForgotPasswordRequest request,
         CancellationToken cancellationToken = default)
