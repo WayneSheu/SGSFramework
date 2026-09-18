@@ -6,6 +6,7 @@ using Serilog.Events;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.SystemLog.DTOs;
 using SGSFramework.SystemLog.Services;
+using System.Net.Mime;
 
 namespace SGSFramework.SystemLog.Controllers;
 
@@ -16,7 +17,9 @@ namespace SGSFramework.SystemLog.Controllers;
 [ApiVersion("v1")]
 [Route("api/system/log-manager")]
 [ControllerTitle("系統日誌管理", Icon = "fa-solid fa-receipt", Order = 90, Description = "動態調整 Serilog 紀錄層級與線上檢視 core.SystemLogs / core.SecurityLog 資料庫紀錄")]
-[RequiresPermission("SYSTEM.LOGMANAGER.READ")]
+[RequiresPermission("SYSTEM.LOGMANAGER.READ", "系統日誌管理")]
+[Produces(MediaTypeNames.Application.Json)]
+[Consumes(MediaTypeNames.Application.Json)]
 public class LogManagerController : ControllerBase
 {
     private readonly LoggingLevelSwitch _levelSwitch;
@@ -38,7 +41,7 @@ public class LogManagerController : ControllerBase
     /// </summary>
     [HttpGet("current-level")]
     [Function("GetLevel", "取得日誌層級", Icon = "fa-solid fa-gauge-high", Order = 1, Description = "查詢系統當前動態生效中的日誌輸出層級")]
-    [RequiresPermission("SYSTEM.LOGMANAGER.GETLEVEL")]
+    [RequiresPermission("SYSTEM.LOGMANAGER.READ")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     public IActionResult GetLevel()
     {
@@ -54,7 +57,7 @@ public class LogManagerController : ControllerBase
     /// </summary>
     [HttpPost("set-level")]
     [Function("SetLevel", "設定日誌層級", Icon = "fa-solid fa-sliders", Order = 2, Description = "即時修改 Serilog 最小日誌輸出層級 (Verbose, Debug, Information, Warning, Error, Fatal)")]
-    [RequiresPermission("SYSTEM.LOGMANAGER.SETLEVEL")]
+    [RequiresPermission("SYSTEM.LOGMANAGER.SETLEVE", "設定日誌輸出層級")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public IActionResult SetLevel([FromBody] LogEventLevel level)
@@ -84,7 +87,7 @@ public class LogManagerController : ControllerBase
     /// </summary>
     [HttpPost("system-logs/search")]
     [Function("QuerySystemLogs", "查詢系統日誌", Icon = "fa-solid fa-database", Order = 3, Description = "檢索儲存於 core.SystemLogs 表之系統營運日誌")]
-    [RequiresPermission("SYSTEM.LOGMANAGER.GETLOGFILES")]
+    [RequiresPermission("SYSTEM.LOGMANAGER.READ")]
     [ProducesResponseType(typeof(PagedResult<SystemLogDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> QuerySystemLogs([FromBody] SystemLogQueryRequest request, CancellationToken cancellationToken = default)
@@ -112,7 +115,7 @@ public class LogManagerController : ControllerBase
     /// </summary>
     [HttpPost("security-logs/search")]
     [Function("QuerySecurityLogs", "查詢資安總帳日誌", Icon = "fa-solid fa-shield-halved", Order = 4, Description = "檢索儲存於 core.SecurityLog 防篡改總帳表之資安稽核紀錄")]
-    [RequiresPermission("SYSTEM.LOGMANAGER.GETLOGCONTENT")]
+    [RequiresPermission("SYSTEM.LOGMANAGER.READ")]
     [ProducesResponseType(typeof(PagedResult<SecurityLogDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> QuerySecurityLogs([FromBody] SecurityLogQueryRequest request, CancellationToken cancellationToken = default)
@@ -140,7 +143,7 @@ public class LogManagerController : ControllerBase
     /// </summary>
     [HttpGet("system-logs/{id:long}")]
     [Function("GetSystemLogById", "取得系統日誌明細", Icon = "fa-solid fa-file-lines", Order = 5, Description = "依據主鍵 ID 讀取系統日誌完整 Payload 與例外堆疊")]
-    [RequiresPermission("SYSTEM.LOGMANAGER.GETLOGCONTENT")]
+    [RequiresPermission("SYSTEM.LOGMANAGER.READ")]
     [ProducesResponseType(typeof(SystemLogDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetSystemLogById([FromRoute] long id, CancellationToken cancellationToken = default)

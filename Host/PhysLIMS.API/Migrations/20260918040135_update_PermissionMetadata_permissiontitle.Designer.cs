@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using PhysLIMS.API.Dbcontexts;
 
@@ -11,9 +12,11 @@ using PhysLIMS.API.Dbcontexts;
 namespace PhysLIMS.API.Migrations
 {
     [DbContext(typeof(PhysLIMSDbContext))]
-    partial class PhysLIMSDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260918040135_update_PermissionMetadata_permissiontitle")]
+    partial class update_PermissionMetadata_permissiontitle
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1036,7 +1039,7 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<string>("ActionName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(450)")
+                        .HasColumnType("nvarchar(max)")
                         .HasColumnOrder(5);
 
                     b.Property<string>("ActionTitle")
@@ -1046,7 +1049,7 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<int>("BitPosition")
                         .HasColumnType("int")
-                        .HasColumnOrder(10);
+                        .HasColumnOrder(9);
 
                     b.Property<string>("ControllerName")
                         .IsRequired()
@@ -1066,8 +1069,7 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnOrder(7);
 
                     b.Property<int>("Level")
-                        .HasColumnType("int")
-                        .HasColumnOrder(13);
+                        .HasColumnType("int");
 
                     b.Property<string>("ModuleName")
                         .IsRequired()
@@ -1082,12 +1084,10 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<string>("NodePath")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)")
-                        .HasColumnOrder(12);
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int?>("ParentId")
-                        .HasColumnType("int")
-                        .HasColumnOrder(11);
+                        .HasColumnType("int");
 
                     b.Property<string>("PermissionKey")
                         .IsRequired()
@@ -1102,9 +1102,12 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("BitPosition")
+                        .IsUnique();
+
                     b.HasIndex("ParentId");
 
-                    b.HasIndex("PermissionKey", "ControllerName", "ActionName")
+                    b.HasIndex("PermissionKey")
                         .IsUnique();
 
                     b.ToTable("PermissionMetadata", "core");

@@ -38,7 +38,7 @@ using System.Threading.Tasks;
 [Authorize]
 [Route("api/v1/users")]
 [ControllerTitle("使用者管理", Icon = "fa-solid fa-user-gear", Order = 10, Description = "提供使用者分頁查詢、帳號建立、資料更新、密碼重設與生命週期管理服務")]
-[RequiresPermission("SYSTEM.USERMANAGEMENT.READ")]
+[RequiresPermission("SYSTEM.USERMANAGEMENT.READ", "使用者管理")]
 [Produces(MediaTypeNames.Application.Json)]
 [Consumes(MediaTypeNames.Application.Json)]
 public sealed class UserManagementController(
@@ -57,11 +57,12 @@ public sealed class UserManagementController(
     /// </summary>
     [HttpGet]
     [Function("GetUsers", "查詢使用者列表", Icon = "fa-solid fa-users", Order = 9, Description = "取得系統所有有效使用者清單，包含帳號、Email、驗證狀態與所屬角色等資訊", IsMenu = true)]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.READ")]
     [EndpointSummary("查詢使用者列表")]
     [EndpointDescription("取得系統所有有效使用者清單，包含帳號、Email、驗證狀態與所屬角色等資訊")]
     [ProducesResponseType(typeof(Result<List<UserDto>>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.READ")]
+
     public async Task<IActionResult> GetUsers(CancellationToken cancellationToken = default)
     {
         try
@@ -170,7 +171,7 @@ public sealed class UserManagementController(
 
     [HttpPost("register")]
     [Function("Register", "建立使用者", Icon = "fa-solid fa-user-gear", Order = 3, Description = "透過指定的策略模式建立新使用者帳號(支援自訂帳號與 Email 雙重唯一性校驗)並指派實驗室與角色")]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.CREATE")]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.CREATE", "建立使用者")]
     [EndpointSummary("建立使用者")]
     [EndpointDescription("透過指定的策略模式建立新使用者帳號(支援自訂帳號與 Email 雙重唯一性校驗)並指派實驗室與角色。")]
     [ProducesResponseType(typeof(Result<Guid>), StatusCodes.Status201Created)]
@@ -243,6 +244,7 @@ public sealed class UserManagementController(
     /// <summary>
     /// 確認使用者電子郵件
     /// </summary>
+    
     [HttpPost("confirm-email")]
     [Function("ConfirmEmail", "確認電子郵件", Icon = "fa-solid fa-envelope-circle-check", Order = 11, Description = "透過驗證權杖確認使用者的電子郵件地址")]
     [AllowAnonymous]
@@ -292,7 +294,7 @@ public sealed class UserManagementController(
     /// </summary>
     [HttpPut("{id:guid}")]
     [Function("UpdateUser", "更新使用者", Icon = "fa-solid fa-user-pen", Order = 4, Description = "更新指定使用者的基本屬性及角色授權配置")]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.UPDATE")]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.UPDATE","編輯使用者")]
     [EndpointSummary("更新使用者")]
     [EndpointDescription("更新指定使用者的基本屬性及角色授權配置。")]
     [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
@@ -340,7 +342,7 @@ public sealed class UserManagementController(
     /// </summary>
     [HttpPost("{id:guid}/reset-password")]
     [Function("ResetPassword", "重設密碼", Icon = "fa-solid fa-key", Order = 5, Description = "管理員主動重設指定使用者的密碼並重置憑證")]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.RESETPASSWORD")]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.RESETPASSWORD", "重設密碼")]
     [EndpointSummary("重設密碼")]
     [EndpointDescription("管理員主動重設指定使用者的密碼並重置憑證。")]
     [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
@@ -386,7 +388,7 @@ public sealed class UserManagementController(
     /// </summary>
     [HttpPatch("{id:guid}/status")]
     [Function("ToggleUserStatus", "切換使用者狀態", Icon = "fa-solid fa-user-lock", Order = 6, Description = "啟用或停用指定使用者的系統存取權限")]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.UPDATE")]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.UPDATE","編輯使用者")]
     [EndpointSummary("切換使用者狀態")]
     [EndpointDescription("啟用或停用指定使用者的系統存取權限。")]
     [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
@@ -431,7 +433,7 @@ public sealed class UserManagementController(
     /// </summary>
     [HttpDelete("{id:guid}")]
     [Function("DeleteUser", "刪除使用者", Icon = "fa-solid fa-user-slash", Order = 7, Description = "刪除指定使用者帳號並清理相關關聯與權限")]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.DELETE")]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.DELETE", "刪除使用者")]
     [EndpointSummary("刪除使用者")]
     [EndpointDescription("刪除指定使用者帳號並清理相關關聯與權限。")]
     [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
@@ -475,12 +477,13 @@ public sealed class UserManagementController(
     /// </summary>
     [HttpGet("{userId:guid}/roles")]
     [Function("GetUserRoleAssignment", "查詢使用者角色設定", Icon = "fa-solid fa-user-tag", Order = 10, Description = "取得特定使用者包含已指派與未指派的全系統角色")]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.READ")]
     [EndpointSummary("查詢使用者角色設定")]
     [EndpointDescription("取得特定使用者包含已指派與未指派的全系統角色。")]
     [ProducesResponseType(typeof(Result<UserRoleAssignmentDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.READ")]
+ 
     public async Task<IActionResult> GetUserRoleAssignment(
         [FromRoute] Guid userId,
         CancellationToken cancellationToken = default)
@@ -563,7 +566,6 @@ public sealed class UserManagementController(
     [Authorize]
     [HttpPost("change-password")]
     [Function("ChangePassword", "變更密碼", Icon = "fa-solid fa-lock-rotate", Order = 7, Description = "使用者登入狀態下變更密碼，並觸發資安聯防註銷其他裝置 Session")]
-
     [EndpointSummary("變更密碼")]
     [EndpointDescription("使用者登入狀態下變更密碼，並觸發資安聯防註銷其他裝置 Session。")]
     [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]

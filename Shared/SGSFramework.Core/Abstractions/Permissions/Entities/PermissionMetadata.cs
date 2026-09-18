@@ -1,12 +1,15 @@
-﻿using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using SGSFramework.Core.Abstractions.Entities;
-using SGSFramework.Core.Abstractions.Entities.Hierarchical;
-using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations.Schema;
+﻿// ==========================================
+// 檔案路徑: src/SGSFramework/Core/SGSFramework.Core.Abstractions/Permissions/Entities/PermissionMetadata.cs
+// 架構層級: Domain / Abstractions Layer
+// ==========================================
 
 namespace SGSFramework.Core.Abstractions.Permissions.Entities
 {
+    using Microsoft.EntityFrameworkCore;
+    using Microsoft.EntityFrameworkCore.Metadata.Builders;
+    using SGSFramework.Core.Abstractions.Entities.Hierarchical;
+    using System.Collections.Generic;
+    using System.ComponentModel.DataAnnotations.Schema;
 
     /// <summary>
     /// 多維度權限維度矩陣-功能權限維度
@@ -16,41 +19,49 @@ namespace SGSFramework.Core.Abstractions.Permissions.Entities
     {
         [Column(Order = 0)]
         public int Id { get; set; }
-        // 模組與控制器中繼資料 (對應 ControllerMetadatas)
+
         [Column(Order = 1)]
         public string ModuleName { get; set; } = string.Empty;
+
         [Column(Order = 2)]
         public string? ModuleTitle { get; set; }
+
         [Column(Order = 3)]
         public string ControllerName { get; set; } = string.Empty;
+
         [Column(Order = 4)]
         public string? ControllerTitle { get; set; }
+
         [Column(Order = 5)]
         public string ActionName { get; set; } = string.Empty;
+
         [Column(Order = 6)]
         public string ActionTitle { get; set; } = string.Empty;
-        // 描述，用於後台 UI 顯示
+
         [Column(Order = 7)]
         public string Description { get; set; } = string.Empty;
-        // 權限代碼，例如: "ORG_LAB_READ"
+
         [Column(Order = 8)]
+        public string PermissionTitle { get; set; } = string.Empty;
+
+        [Column(Order = 9)]
         public string PermissionKey { get; set; } = string.Empty;
 
-        // 位元位置，用於計算 1L << BitPosition
-        [Column(Order = 9)]
+        [Column(Order = 10)]
         public int BitPosition { get; set; }
 
-        // 階層架構屬性 (IHierarchicalEntity<int>)
+        [Column(Order = 11)]
         public int? ParentId { get; set; }
 
         public PermissionMetadata? Parent { get; set; }
 
         public ICollection<PermissionMetadata> Children { get; set; } = new List<PermissionMetadata>();
 
+        [Column(Order = 12)]
         public string NodePath { get; set; } = string.Empty;
 
+        [Column(Order = 13)]
         public int Level { get; set; }
-
 
         /// <summary>
         /// 指派或變更父節點，並自動重新計算階層深度與物化路徑
@@ -69,7 +80,7 @@ namespace SGSFramework.Core.Abstractions.Permissions.Entities
         {
             if (Parent == null)
             {
-                Level = 0; // 根節點深度為 0 (或 1，視系統定義而定)
+                Level = 0;
                 NodePath = Id > 0 ? Id.ToString() : PermissionKey;
             }
             else
@@ -88,14 +99,14 @@ namespace SGSFramework.Core.Abstractions.Permissions.Entities
 
             builder.HasKey(x => x.Id);
 
-            // 確保權限代碼唯一
-            builder.HasIndex(x => x.PermissionKey).IsUnique();
+            // 調整索引：因為多個 Action 可以共用同一個 PermissionKey，改為複合唯一索引 (PermissionKey + ControllerName + ActionName)
+            builder.HasIndex(x => new { x.PermissionKey, x.ControllerName, x.ActionName }).IsUnique();
+
             builder.Property(x => x.PermissionKey)
                 .IsRequired()
                 .HasMaxLength(128);
 
-            // 確保位元位置唯一
-            builder.HasIndex(x => x.BitPosition).IsUnique();
+            // BitPosition 允許不同權限共用（例如同群組 Action），故移除全域 IsUnique()，改由程式邏輯控管衝突
             builder.Property(x => x.BitPosition)
                 .IsRequired();
 

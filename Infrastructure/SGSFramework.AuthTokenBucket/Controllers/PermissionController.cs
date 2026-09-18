@@ -16,6 +16,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Net.Mime;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -25,11 +26,13 @@ namespace SGSFramework.AuthTokenBucket.Controllers.v1;
 /// 權限管理控制器
 /// </summary>
 [ApiController]
-[Route("api/v1/permissions")]
-[Produces("application/json")]
 [Authorize]
+[Route("api/v1/permissions")]
 [ControllerTitle("權限管理", Icon = "fa-solid fa-shield-halved", Order = 20, Description = "提供系統權限樹狀圖查詢、角色權限矩陣讀取與更新服務")]
-[RequiresPermission("SYSTEM.PERMISSION.READ")]
+[RequiresPermission("SYSTEM.PERMISSION.READ","權限管理")]
+[Produces(MediaTypeNames.Application.Json)]
+[Consumes(MediaTypeNames.Application.Json)]
+
 public sealed class PermissionController(
     IMemoryCache memoryCache,
     IPermissionManagementService permissionService,
@@ -55,8 +58,7 @@ public sealed class PermissionController(
     [Function("GetPermissionTree", "系統權限清單", Icon = "fa-solid fa-sitemap", Order = 1, Description = "取得完整系統與動態模組權限清單 (階層式：Module -> Controller -> Permissions)", IsMenu = false)]
     [ProducesResponseType(typeof(List<PermissionModuleDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    [RequiresPermission("SYSTEM.PERMISSION.GETPERMISSIONTREE")]
-
+    [RequiresPermission("SYSTEM.PERMISSION.RED")]
     [EndpointSummary("系統權限清單")]
     [EndpointDescription("取得完整系統與動態模組權限清單 (階層式：Module -> Controller -> Permissions)")]
     public async Task<IActionResult> GetPermissionTree(CancellationToken cancellationToken = default)
@@ -104,8 +106,7 @@ public sealed class PermissionController(
     /// <returns>指定角色的權限設定矩陣</returns>
     [HttpGet("role/{roleId}")]
     [Function("GetRolePermissions", "角色權限清單", Icon = "fa-solid fa-user-shield", Order = 2, Description = "取得指定角色的權限設定清單與 Bitmask 映射矩陣", IsMenu = false)]
-    [RequiresPermission("SYSTEM.PERMISSION.GETROLEPERMISSIONS")]
-
+    [RequiresPermission("SYSTEM.PERMISSION.READ")]
     [EndpointSummary("角色權限清單")]
     [EndpointDescription("取得指定角色的權限設定清單與 Bitmask 映射矩陣。")]
     [ProducesResponseType(typeof(RolePermissionMatrixDto), StatusCodes.Status200OK)]
@@ -155,7 +156,7 @@ public sealed class PermissionController(
     /// <returns>操作結果訊息</returns>
     [HttpPost("role/update")]
     [Function("UpdateRolePermissions", "更新角色權限", Icon = "fa-solid fa-user-pen", Order = 3, Description = "更新指定角色的權限關聯配置與 Bitmask 設定", IsMenu = false)]
-    [RequiresPermission("SYSTEM.PERMISSION.UPDATEROLEPERMSSIONS")]
+    [RequiresPermission("SYSTEM.PERMISSION.UPDATE", "更新權限")]
 
     [EndpointSummary("更新角色權限")]
     [EndpointDescription("更新指定角色的權限關聯配置與 Bitmask 設定")]
@@ -218,7 +219,7 @@ public sealed class PermissionController(
     /// </summary>
     [HttpGet("user/{userId:guid}/audit-permissions")]
     [Function("GetUserAllPermissions", "檢視使用者權限", Icon = "fa-solid fa-user-shield", Order = 3, Description = "取得指定使用者的直接權限與透過角色繼承的有效權限總覽，供資安稽核使用。", IsMenu = false)]
-    [RequiresPermission("SYSTEM.PERMISSION.GETUSERALLPERMISSIONS")]
+    [RequiresPermission("SYSTEM.PERMISSION.READ")]
 
     [EndpointSummary("檢視使用者權限")]
     [EndpointDescription("取得指定使用者的直接權限與透過角色繼承的有效權限總覽，供資安稽核使用。")]
@@ -315,7 +316,7 @@ public sealed class PermissionController(
     /// <returns>角色成員與權限稽核資料集</returns>
     [HttpGet("role/{roleId}/audit")]
     [Function("GetRoleMemberPermissions", "檢視角色的成員與權限", Icon = "fa-solid fa-users-gear", Order = 4, Description = "取得指定角色的所屬成員清單與對應權限配置，供資安稽核使用。", IsMenu = false)]
-    [RequiresPermission("SYSTEM.PERMISSION.GETROLEMEMBERPERMISSIONS")]
+    [RequiresPermission("SYSTEM.PERMISSION.READ")]
 
     [EndpointSummary("檢視角色的成員與權限")]
     [EndpointDescription("取得指定角色的所屬成員清單與對應權限配置，供資安稽核使用。")]
@@ -396,7 +397,7 @@ public sealed class PermissionController(
     /// <returns>操作結果訊息</returns>
     [HttpPut("user/{userId:guid}/permissions")]
     [Function("AssignUserPermissions", "指派使用者權限", Icon = "fa-solid fa-key", Order = 11, Description = "更新指定使用者的直接 API 權限",IsMenu =false)]
-    [RequiresPermission("SYSTEM.PERMISSION.ASSIGNUSERPERMISSIONS")]
+    [RequiresPermission("SYSTEM.PERMISSION.UPDATE")]
 
     [EndpointSummary("指派使用者權限")]
     [EndpointDescription("更新指定使用者的直接 API 權限。")]

@@ -17,10 +17,10 @@ namespace SGSFramework.ApiInfrastructure.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/v1/data-protections")]
+[ControllerTitle("資料保護管理", Icon = "fa-solid fa-shield-halved", Order = 23, Description = "提供系統敏感資料之加密與解密安全性服務")]
 [RequiresPermission("SYSTEM.DATAPROTECTION.READ")]
 [Produces(MediaTypeNames.Application.Json)]
 [Consumes(MediaTypeNames.Application.Json)]
-[ControllerTitle("資料保護管理", Icon = "fa-solid fa-shield-halved", Order = 23, Description = "提供系統敏感資料之加密與解密安全性服務")]
 public sealed class DataProtectionController : ApiControllerBase
 {
     private readonly IDiApi _diApi;
@@ -45,8 +45,7 @@ public sealed class DataProtectionController : ApiControllerBase
     /// <returns>加密後之資料結果</returns>
     [HttpPost("encrypt")]
     [Function("EncryptData", "資料加密", Icon = "fa-solid fa-lock", Order = 1, Description = "根據指定的防護策略對敏感資料進行安全加密")]
-    [RequiresPermission("SYSTEM.DATAPROTECTION.ENCRYPT")]
-    
+    [RequiresPermission("SYSTEM.DATAPROTECTION.ENCRYPT")]   
     [EndpointSummary("資料加密")]
     [EndpointDescription("根據傳入的防護策略將敏感資料進行安全加密。")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -104,8 +103,7 @@ public sealed class DataProtectionController : ApiControllerBase
     /// <returns>解密後之原始資料結果</returns>
     [HttpPost("decrypt")]
     [Function("DecryptData", "資料解密", Icon = "fa-solid fa-key", Order = 2, Description = "根據指定的防護策略將加密文字安全解密")]
-    [RequiresPermission("SYSTEM.DATAPROTECTION.DECRYPT")]
-    
+    [RequiresPermission("SYSTEM.DATAPROTECTION.DECRYPT")]   
     [EndpointSummary("資料解密")]
     [EndpointDescription("根據傳入的防護策略將加密文字安全解密。")]
     [ProducesResponseType(StatusCodes.Status200OK)]

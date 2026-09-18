@@ -9,6 +9,7 @@ using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.ReportEngine.Abstractions;
 using SGSFramework.ReportEngine.Controllers;
 using SGSFramework.ReportEngine.Security;
+using System.Net.Mime;
 
 namespace SGS.Modules.ORG.Controllers;
 
@@ -18,9 +19,11 @@ namespace SGS.Modules.ORG.Controllers;
 [ApiController]
 [ApiVersion("v1")]
 [Route("api/v1/reports/laboratories")]
-[ControllerTitle("ME實驗室報表管理", Icon = "fa-solid fa-flask", Order = 10, Description = "提供 ME 實驗室相關報表數據準備、分類查詢與 PDF 下載服務。")]
-[RequiresPermission("ORG.MELABORATORYREPORT.READ")]
+[ControllerTitle("ME實驗室報表管理", Icon = "fa-solid fa-flask", Order = 10, Description = "提供ME實驗室相關報表數據準備、分類查詢與 PDF 下載服務。")]
+[RequiresPermission("ORG.MELABORATORYREPORT.READ", "ME實驗室報表檢視")]
 [RequireLaboratory("ME")]
+[Produces(MediaTypeNames.Application.Json)]
+[Consumes(MediaTypeNames.Application.Json)]
 public class MELaboratoryReportController : ReportDownloadControllerBase<LaboratoryListReportDto>
 {
     private readonly ILogger<MELaboratoryReportController> _logger;
@@ -44,7 +47,9 @@ public class MELaboratoryReportController : ReportDownloadControllerBase<Laborat
     /// <param name="request">報表查詢篩選條件</param>
     [HttpPost("prepare-cache")]
     [Function("PrepareReportCache", "準備報表快取資料", Icon = "fa-solid fa-database", Order = 1, Description = "預先查詢實驗室報表數據並寫入快取，回傳快取識別碼以供後續下載使用")]
-    [RequiresPermission("ORG.MELABORATORYREPORT.DOWNLOAD")]
+    [RequiresPermission("ORG.MELABORATORYREPORT.DOWNLOAD", "準備報表快取")]
+    [EndpointSummary("準備報表快取資料")]
+    [EndpointDescription("預先查詢實驗室報表數據並寫入快取，回傳快取識別碼以供後續下載使用。")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -54,7 +59,6 @@ public class MELaboratoryReportController : ReportDownloadControllerBase<Laborat
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // 優先從 HttpContext 取得系統已驗證解析的實驗室 ID，若無才 fallback 到 Header
         string targetLabId = HttpContext.Items["TenantLabId"]?.ToString()
                           ?? Request.Headers["X-Lab-Id"].FirstOrDefault()
                           ?? Request.Headers["TargetLabId"].FirstOrDefault()
@@ -98,8 +102,10 @@ public class MELaboratoryReportController : ReportDownloadControllerBase<Laborat
     /// <param name="cancellationToken">取消權牌</param>
     [HttpGet("category/{categoryCode}")]
     [Function("GetReportsByCategory", "取得指定報表類別清單", Icon = "fa-solid fa-folder-open", Order = 2, Description = "透過動態規則引擎驗證報表類別權限後取得清單")]
-    [RequiresPermission("ORG.MELABORATORYREPORT.READ")]
     [RequireReportCategory("ENV", "ISO14064", "CARBON")]
+    [RequiresPermission("ORG.MELABORATORYREPORT.READ", "ME實驗室報表檢視")]
+    [EndpointSummary("取得指定報表類別清單")]
+    [EndpointDescription("透過動態規則引擎驗證報表類別權限後取得清單。")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
@@ -132,7 +138,9 @@ public class MELaboratoryReportController : ReportDownloadControllerBase<Laborat
     /// <param name="cacheKey">快取識別碼 (前端先行呼叫查詢 API 將資料寫入快取後取得)</param>
     [HttpGet("download")]
     [Function("DownloadLaboratoryListReport", "下載實驗室列表報表", Icon = "fa-solid fa-file-pdf", Order = 3, Description = "依據快取金鑰產生並下載 PDF 格式之實驗室清單報表")]
-    [RequiresPermission("ORG.MELABORATORYREPORT.DOWNLOAD")]
+    [RequiresPermission("ORG.MELABORATORYREPORT.DOWNLOAD", "下載報表")]
+    [EndpointSummary("下載實驗室列表報表")]
+    [EndpointDescription("依據快取金鑰產生並下載 PDF 格式之實驗室清單報表。")]
     [Produces("application/pdf", "application/json")]
     [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]

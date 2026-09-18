@@ -17,9 +17,9 @@ using System.ComponentModel;
 using System.Linq;
 using System.Reflection;
 
-/// <summary>
-/// 執行階段動態權限註冊表實作 (Thread-Safe，支援組件自動掃描、ModuleTitle、ControllerTitle 與 Function ActionTitle 對應)
-/// </summary>
+/// 
+/// 執行階段動態權限註冊表實作 (支援從 RequiresPermissionAttribute 第二個參數提取 PermissionTitle)
+/// 
 public class DynamicPermissionRegistry : IPermissionRegistry
 {
     private readonly ConcurrentDictionary<string, PermissionMetadata> _permissions = new(StringComparer.OrdinalIgnoreCase);
@@ -39,9 +39,6 @@ public class DynamicPermissionRegistry : IPermissionRegistry
         }
     }
 
-    /// <summary>
-    /// 掃描指定組件集合，自動擷取 ControllerTitle、Function 特性中的標題與描述，並註冊至 PermissionRegistry
-    /// </summary>
     public void ScanAndRegisterAssemblies(IEnumerable<Assembly> assemblies)
     {
         if (assemblies == null) return;
@@ -70,12 +67,10 @@ public class DynamicPermissionRegistry : IPermissionRegistry
             {
                 string ctrlName = ctrlType.Name;
 
-                // 優先讀取 ControllerTitleAttribute 取得標題與描述
                 var ctrlTitleAttr = ctrlType.GetCustomAttribute<ControllerTitleAttribute>();
                 string ctrlTitle = ctrlTitleAttr?.Title ?? ctrlName;
                 string ctrlDesc = ctrlTitleAttr?.Description ?? ctrlType.GetCustomAttribute<DescriptionAttribute>()?.Description ?? string.Empty;
 
-                // 掃描 Controller 層級權限
                 var ctrlPermAttr = ctrlType.GetCustomAttribute<RequiresPermissionAttribute>();
                 if (ctrlPermAttr != null && !string.IsNullOrEmpty(ctrlPermAttr.PermissionKey))
                 {
@@ -87,18 +82,17 @@ public class DynamicPermissionRegistry : IPermissionRegistry
                         description: string.IsNullOrEmpty(ctrlDesc) ? ctrlPermAttr.PermissionKey : ctrlDesc,
                         controllerTitle: ctrlTitle,
                         moduleTitle: moduleName,
-                        actionTitle: ctrlTitle
+                        actionTitle: ctrlTitle,
+                        permissionTitle: ctrlPermAttr.PermissionTitle
                     );
                 }
 
-                // 掃描 Action 方法層級權限
                 var methods = ctrlType.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
                 foreach (var method in methods)
                 {
                     var actionPermAttr = method.GetCustomAttribute<RequiresPermissionAttribute>();
                     if (actionPermAttr != null && !string.IsNullOrEmpty(actionPermAttr.PermissionKey))
                     {
-                        // 讀取 FunctionAttribute 內的 Title 與 Description
                         var funcAttr = method.GetCustomAttribute<FunctionAttribute>();
                         string actionTitle = funcAttr?.Title ?? method.Name;
                         string actionDesc = funcAttr?.Description ?? method.GetCustomAttribute<DescriptionAttribute>()?.Description ?? string.Empty;
@@ -116,7 +110,8 @@ public class DynamicPermissionRegistry : IPermissionRegistry
                             description: actionDesc,
                             controllerTitle: ctrlTitle,
                             moduleTitle: moduleName,
-                            actionTitle: actionTitle
+                            actionTitle: actionTitle,
+                            permissionTitle: actionPermAttr.PermissionTitle
                         );
                     }
                 }
@@ -124,27 +119,27 @@ public class DynamicPermissionRegistry : IPermissionRegistry
         }
     }
 
-    /// <summary>
-    /// 取得或建立指定權限字串的 BitPosition
-    /// </summary>
     public int GetOrCreateBitPosition(string permissionKey)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(permissionKey);
 
-        if (_permissions.TryGetValue(permissionKey, out var existing))
+        var existing = _permissions.Values.FirstOrDefault(p => p.PermissionKey.Equals(permissionKey, StringComparison.OrdinalIgnoreCase));
+        if (existing != null)
         {
             return existing.BitPosition;
         }
 
         lock (_syncRoot)
         {
-            if (_permissions.TryGetValue(permissionKey, out existing))
+            existing = _permissions.Values.FirstOrDefault(p => p.PermissionKey.Equals(permissionKey, StringComparison.OrdinalIgnoreCase));
+            if (existing != null)
             {
                 return existing.BitPosition;
             }
 
             int newBitPosition = _currentBitIndex++;
             var (moduleName, controllerName, actionName) = ParsePermissionKeyStructure(permissionKey);
+            string registryKey = $"{controllerName}.{actionName}";
 
             var permission = new PermissionMetadata
             {
@@ -157,10 +152,11 @@ public class DynamicPermissionRegistry : IPermissionRegistry
                 Description = permissionKey,
                 ControllerTitle = controllerName,
                 ModuleTitle = moduleName,
-                ActionTitle = actionName
+                ActionTitle = actionName,
+                PermissionTitle = null
             };
 
-            _permissions[permissionKey] = permission;
+            _permissions[registryKey] = permission;
             _reverseIndex[newBitPosition] = permissionKey;
             return newBitPosition;
         }
@@ -201,10 +197,15 @@ public class DynamicPermissionRegistry : IPermissionRegistry
 
     public IReadOnlyDictionary<string, int> GetAllMappings()
     {
-        return _permissions.ToDictionary(
-            kvp => kvp.Key,
-            kvp => kvp.Value.BitPosition,
-            StringComparer.OrdinalIgnoreCase);
+        var dictionary = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in _permissions.Values)
+        {
+            if (!dictionary.ContainsKey(p.PermissionKey))
+            {
+                dictionary[p.PermissionKey] = p.BitPosition;
+            }
+        }
+        return dictionary;
     }
 
     public bool TryGetPermission(string permissionKey, out PermissionMetadata? permission)
@@ -215,7 +216,8 @@ public class DynamicPermissionRegistry : IPermissionRegistry
             return false;
         }
 
-        return _permissions.TryGetValue(permissionKey, out permission);
+        permission = _permissions.Values.FirstOrDefault(p => p.PermissionKey.Equals(permissionKey, StringComparison.OrdinalIgnoreCase));
+        return permission != null;
     }
 
     public void Register(PermissionMetadata permission)
@@ -223,13 +225,15 @@ public class DynamicPermissionRegistry : IPermissionRegistry
         ArgumentNullException.ThrowIfNull(permission);
         ArgumentException.ThrowIfNullOrWhiteSpace(permission.PermissionKey);
 
+        string registryKey = $"{permission.ControllerName}.{permission.ActionName}";
+
         lock (_syncRoot)
         {
-            if (!_permissions.ContainsKey(permission.PermissionKey))
+            if (!_permissions.ContainsKey(registryKey))
             {
                 permission.BitPosition = _currentBitIndex++;
             }
-            _permissions[permission.PermissionKey] = permission;
+            _permissions[registryKey] = permission;
             _reverseIndex[permission.BitPosition] = permission.PermissionKey;
         }
     }
@@ -242,11 +246,14 @@ public class DynamicPermissionRegistry : IPermissionRegistry
         string description,
         string controllerTitle = "",
         string moduleTitle = "",
-        string actionTitle = "")
+        string actionTitle = "",
+        string? permissionTitle = null)
     {
+        string registryKey = $"{controllerName}.{actionName}";
+
         lock (_syncRoot)
         {
-            if (_permissions.TryGetValue(permissionKey, out var existing))
+            if (_permissions.TryGetValue(registryKey, out var existing))
             {
                 if (string.IsNullOrEmpty(existing.ModuleName)) existing.ModuleName = moduleName;
                 if (string.IsNullOrEmpty(existing.ControllerName)) existing.ControllerName = controllerName;
@@ -255,6 +262,7 @@ public class DynamicPermissionRegistry : IPermissionRegistry
                 if (string.IsNullOrEmpty(existing.ControllerTitle)) existing.ControllerTitle = controllerTitle;
                 if (string.IsNullOrEmpty(existing.ModuleTitle)) existing.ModuleTitle = moduleTitle;
                 if (string.IsNullOrEmpty(existing.ActionTitle)) existing.ActionTitle = actionTitle;
+                if (!string.IsNullOrEmpty(permissionTitle)) existing.PermissionTitle = permissionTitle;
 
                 _reverseIndex[existing.BitPosition] = permissionKey;
             }
@@ -272,9 +280,10 @@ public class DynamicPermissionRegistry : IPermissionRegistry
                     Description = description,
                     ControllerTitle = controllerTitle,
                     ModuleTitle = string.IsNullOrEmpty(moduleTitle) ? moduleName : moduleTitle,
-                    ActionTitle = string.IsNullOrEmpty(actionTitle) ? actionName : actionTitle
+                    ActionTitle = string.IsNullOrEmpty(actionTitle) ? actionName : actionTitle,
+                    PermissionTitle = permissionTitle
                 };
-                _permissions[permissionKey] = permission;
+                _permissions[registryKey] = permission;
                 _reverseIndex[bitPos] = permissionKey;
             }
         }

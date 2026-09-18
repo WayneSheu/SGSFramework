@@ -17,11 +17,10 @@ namespace SGSFramework.ApiInfrastructure.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/v1/function-managements")]
-[RequiresPermission("SYSTEM.FUNCTIONMANAGEMENT.READ")]
-
+[ControllerTitle("系統功能管理", Icon = "fa-solid fa-gears", Order = 22, Description = "提供查詢與管理系統註冊之所有 Controller 與 Function 中繼資料清單與狀態維護")]
+[RequiresPermission("SYSTEM.FUNCTIONMANAGEMENT.READ", "系統功能管理")]
 [Produces(MediaTypeNames.Application.Json)]
 [Consumes(MediaTypeNames.Application.Json)]
-[ControllerTitle("系統功能管理", Icon = "fa-solid fa-gears", Order = 22, Description = "提供查詢與管理系統註冊之所有 Controller 與 Function 中繼資料清單與狀態維護")]
 public sealed class FunctionManagementController : ApiControllerBase
 {
     private readonly IControllerMetadataService _controllerMetadataService;
@@ -45,8 +44,7 @@ public sealed class FunctionManagementController : ApiControllerBase
     /// <returns>控制器與功能中繼資料清單集合</returns>
     [HttpGet]
     [Function("GetAllFunctionMetadatas", "系統功能列表", Icon = "fa-solid fa-list", Order = 1, Description = "取得系統所有 Controller 與 Function 中繼資料清單")]
-    [RequiresPermission("SYSTEM.FUNCTIONMANAGEMENT.GETALL")]
-
+    [RequiresPermission("SYSTEM.FUNCTIONMANAGEMENT.READ")]
     [EndpointSummary("系統功能列表")]
     [EndpointDescription("取得系統內所有已加載的功能相關資料。")]
     [ProducesResponseType(typeof(IEnumerable<ControllerMetadataDto>), StatusCodes.Status200OK)]
@@ -90,8 +88,7 @@ public sealed class FunctionManagementController : ApiControllerBase
     /// <returns>更新後的功能中繼資料</returns>
     [HttpPatch("functions/{id:guid}/status")]
     [Function("UpdateFunctionStatus", "更新功能狀態", Icon = "fa-solid fa-toggle-on", Order = 2, Description = "指定系統功能動態停用或啟用。")]
-    [RequiresPermission("SYSTEM.FUNCTIONMANAGEMENT.UPDATESTATUS")]
-
+    [RequiresPermission("SYSTEM.FUNCTIONMANAGEMENT.UPDATESTATUS","更新功能狀態")]
     [EndpointSummary("更新功能狀態")]
     [EndpointDescription("指定系統功能停用或啟用。")]
     [ProducesResponseType(typeof(ControllerMetadataDto), StatusCodes.Status200OK)]

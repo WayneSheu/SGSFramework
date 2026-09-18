@@ -22,7 +22,7 @@ namespace SGS.Modules.ORG.Controllers;
 [Authorize]
 [Route("api/org/user-labs")]
 [ControllerTitle("用戶歸屬實驗室", Icon = "fa-solid fa-user-gear", Order = 11, Description = "管理使用者於各實驗室之主要/兼任歸屬與職位標題")]
-[RequiresPermission("ORG.USERLABMAPPING.READ")]
+[RequiresPermission("ORG.USERLABMAPPING.READ", "用戶歸屬實驗室檢視")]
 public class UserLabMappingController : ApiControllerBase
 {
     private readonly ILogger<UserLabMappingController> _logger;
@@ -39,7 +39,9 @@ public class UserLabMappingController : ApiControllerBase
     /// </summary>
     [HttpGet("users/{userId:guid}")]
     [Function("GetUserLabMappings", "取得用戶歸屬實驗室", Icon = "fa-solid fa-id-card", Order = 1, Description = "查詢特定使用者之主要與兼任實驗室清單")]
-    [RequiresPermission("ORG.USERLABMAPPING.READ")]
+    [RequiresPermission("ORG.USERLABMAPPING.READ", "用戶歸屬實驗室檢視")]
+    [EndpointSummary("取得用戶歸屬實驗室")]
+    [EndpointDescription("查詢特定使用者之主要與兼任實驗室清單。")]
     [ProducesResponseType(typeof(Result<List<UserLabMappingDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetUserLabMappings([FromRoute] Guid userId, CancellationToken cancellationToken)
     {
@@ -66,8 +68,10 @@ public class UserLabMappingController : ApiControllerBase
     /// 設定或新增使用者的實驗室歸屬 (主要/次要)
     /// </summary>
     [HttpPost]
-    [Function("AssignUserLab", "指派使用者實驗室", Icon = "fa-solid fa-user-plus", Order = 2, Description = "為使用者建立新的實驗室歸屬關係")]
-    [RequiresPermission("ORG.USERLABMAPPING.ASSIGN")]
+    [Function("AssignUserLab", "指派使用者歸屬實驗室", Icon = "fa-solid fa-user-plus", Order = 2, Description = "設定或新增使用者的實驗室歸屬 (主要/次要)。")]
+    [RequiresPermission("ORG.USERLABMAPPING.ASSIGN", "指派使用者歸屬實驗室")]
+    [EndpointSummary("指派使用者歸屬實驗室")]
+    [EndpointDescription("設定或新增使用者的實驗室歸屬 (主要/次要)。")]
     [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> AssignUserLab([FromBody] AssignUserLabCommand command, CancellationToken cancellationToken)
@@ -98,7 +102,9 @@ public class UserLabMappingController : ApiControllerBase
     /// </summary>
     [HttpPut("users/{userId:guid}/primary/{labId:int}")]
     [Function("SetPrimaryLab", "設定主要實驗室", Icon = "fa-solid fa-star", Order = 3, Description = "將指定實驗室升級為主要歸屬，並自動將舊主要實驗室降級")]
-    [RequiresPermission("ORG.USERLABMAPPING.EDIT")]
+    [RequiresPermission("ORG.USERLABMAPPING.ASSIGN", "指派使用者歸屬實驗室")]
+    [EndpointSummary("設定主要實驗室")]
+    [EndpointDescription("切換/設定使用者之主要實驗室 (Primary Lab)")]
     [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> SetPrimaryLab([FromRoute] Guid userId, [FromRoute] int labId, CancellationToken cancellationToken)
@@ -129,7 +135,9 @@ public class UserLabMappingController : ApiControllerBase
     /// </summary>
     [HttpDelete("users/{userId:guid}/labs/{labId:int}")]
     [Function("DeactivateUserLab", "停用使用者實驗室", Icon = "fa-solid fa-user-slash", Order = 4, Description = "停用使用者於指定實驗室之存取權限")]
-    [RequiresPermission("ORG.USERLABMAPPING.DEACTIVATE")]
+    [RequiresPermission("ORG.USERLABMAPPING.DEACTIVATE", "停用使用者實驗室")]
+    [EndpointSummary("停用使用者實驗室")]
+    [EndpointDescription("停用使用者於指定實驗室之存取權限")]
     [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
     public async Task<IActionResult> DeactivateUserLab([FromRoute] Guid userId, [FromRoute] int labId, CancellationToken cancellationToken)
     {

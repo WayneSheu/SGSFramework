@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -11,6 +6,12 @@ using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Controllers.Base;
 using SGSFramework.ModulePlugin.Abstractions;
 using SGSFramework.ModulePlugin.DTOs;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Net.Mime;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace SGSFramework.ModulePlugin.Controllers.v1;
 
@@ -20,9 +21,11 @@ namespace SGSFramework.ModulePlugin.Controllers.v1;
 [ApiController]
 [Authorize]
 [Route("api/v1/system/modules")]
-[Produces("application/json")]
-[ControllerTitle("商業模組管理", Icon = "fa-solid fa-cubes", Order = 100, Description = "商業模組熱插拔維護與動態載入卸載管理")]
+[ControllerTitle("模組管理", Icon = "fa-solid fa-cubes", Order = 100, Description = "商業模組熱插拔維護與動態載入卸載管理")]
 [RequiresPermission("SYSTEM.MODULEMANAGEMENT.READ")]
+[Produces(MediaTypeNames.Application.Json)]
+[Consumes(MediaTypeNames.Application.Json)]
+
 public class ModuleManagementController(
     IModuleManagementApplicationService moduleAppService,
     ILogger<ModuleManagementController> logger) : ApiControllerBase
@@ -37,7 +40,7 @@ public class ModuleManagementController(
     /// <returns>模組詳細資訊列表</returns>
     [HttpGet(Name = "GetActiveModulesDetails")]
     [Function("GetActiveModulesDetails", "查詢模組清單", Icon = "fa-solid fa-list-check", Order = 1, Description = "查詢目前所有已載入掛載的商務模組完整資訊",IsMenu =true)]
-    [RequiresPermission("SYSTEM.MODULEMANAGEMENT.GETACTIVEMODULESDETAILS")]
+    [RequiresPermission("SYSTEM.MODULEMANAGEMENT.READ")]
     [ProducesResponseType(typeof(IEnumerable<ModuleDetailResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<IEnumerable<ModuleDetailResponse>>> GetActiveModulesDetailsAsync(CancellationToken cancellationToken = default)
@@ -72,7 +75,7 @@ public class ModuleManagementController(
     [ProducesResponseType(typeof(ToggleStatusResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    [RequiresPermission("SYSTEM.MODULEMANAGEMENT.TOGGLESTATUS")]
+    [RequiresPermission("SYSTEM.MODULEMANAGEMENT.UPDATE", "切換模組狀態")]
     public async Task<IActionResult> ToggleStatusAsync(
         string moduleName,
         [FromBody] ToggleStatusRequest request,
@@ -139,7 +142,7 @@ public class ModuleManagementController(
     [HttpPost]
     [Consumes("multipart/form-data")]
     [Function("UploadModule", "上傳模組", Icon = "fa-solid fa-cloud-arrow-up", Order = 3, Description = "上傳並儲存新的模組 DLL 檔案並動態掛載")]
-    [RequiresPermission("SYSTEM.MODULEMANAGEMENT.UPLOADMODULE")]
+    [RequiresPermission("SYSTEM.MODULEMANAGEMENT.UPLOADMODULE", "上傳模組")]
     [ProducesResponseType(typeof(ModuleUploadResponseDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
@@ -206,7 +209,7 @@ public class ModuleManagementController(
     /// <returns>操作結果訊息</returns>
     [HttpDelete("{moduleName}")]
     [Function("RemoveModule", "卸載模組", Icon = "fa-solid fa-trash-can", Order = 4, Description = "線上動態卸載指定模組並同步清除資料庫中的控制器與模組元資料")]
-    [RequiresPermission("SYSTEM.MODULEMANAGEMENT.REMOVEMODULE")]
+    [RequiresPermission("SYSTEM.MODULEMANAGEMENT.REMOVEMODULE", "卸載模組")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> RemoveModuleAsync(string moduleName, CancellationToken cancellationToken = default)

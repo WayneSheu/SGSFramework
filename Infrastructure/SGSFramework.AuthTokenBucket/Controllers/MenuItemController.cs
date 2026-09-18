@@ -16,6 +16,7 @@ using SGSFramework.Core.Errors;
 using SGSFramework.Core.Results;
 using System;
 using System.Collections.Generic;
+using System.Net.Mime;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -27,7 +28,9 @@ using System.Threading.Tasks;
 [ApiVersion("v1")]
 [Route("api/core/menu-items")]
 [ControllerTitle("選單管理", Icon = "fa-solid fa-bars-staggered", Order = 90, Description = "維護系統三層動態導覽選單 (Section -> Group -> Page) 與權限綁定")]
-[RequiresPermission("SYS.MENU.READ")]
+[RequiresPermission("SYSTEM.MENU.READ", "選單管理")]
+[Produces(MediaTypeNames.Application.Json)]
+[Consumes(MediaTypeNames.Application.Json)]
 public class MenuItemController : ApiControllerBase
 {
     private readonly ILogger<MenuItemController> _logger;
@@ -72,7 +75,7 @@ public class MenuItemController : ApiControllerBase
     /// </summary>
     [HttpGet("tree")]
     [Function("GetFullMenuTree", "系統選單樹", Icon = "fa-solid fa-tree", Order = 2, Description = "取得包含未啟用/隱藏節點之完整選單階層樹", IsMenu = true, Path = "/system/menu-management")]
-    [RequiresPermission("SYS.MENU.GETFULLMENUTREE")]
+    [RequiresPermission("SYSTEM.MENU.RED")]
 
     [EndpointSummary("系統選單樹")]
     [EndpointDescription("取得包含未啟用/隱藏節點之完整選單階層樹。")]
@@ -97,8 +100,8 @@ public class MenuItemController : ApiControllerBase
     /// </summary>
     [HttpGet("{id:guid}")]
     [Function("GetMenuItemById", "選單明細", Icon = "fa-solid fa-circle-info", Order = 3,Description ="依據識別碼取得單一選單節點詳細資料。")]
-    [RequiresPermission("SYS.MENU.GETBYID")]
-
+    [RequiresPermission("SYSTEM.MENU.RED")]
+    
     [EndpointSummary("選單明細")]
     [EndpointDescription("依據識別碼取得單一選單節點詳細資料。")]
     [ProducesResponseType(typeof(Result<MenuItemDetailDto>), StatusCodes.Status200OK)]
@@ -129,7 +132,7 @@ public class MenuItemController : ApiControllerBase
     /// </summary>
     [HttpPost]
     [Function("CreateMenuItem", "新增選單", Icon = "fa-solid fa-plus", Order = 4, Description = "新增自訂選單節點。")]
-    [RequiresPermission("SYS.MENU.CREATE")]
+    [RequiresPermission("SYSTEM.MENU.CREATE","新增選單")]
 
     [EndpointSummary("新增選單")]
     [EndpointDescription("新增自訂選單節點。")]
@@ -160,7 +163,7 @@ public class MenuItemController : ApiControllerBase
     /// </summary>
     [HttpPut("{id:guid}")]
     [Function("UpdateMenuItem", "編輯選單", Icon = "fa-solid fa-pen-to-square", Order = 5,Description = "編輯選單節點屬性。")]
-    [RequiresPermission("SYS.MENU.UPDATE")]
+    [RequiresPermission("SYSTEM.MENU.UPDATE", "編輯選單")]
 
     [EndpointSummary("編輯選單")]
     [EndpointDescription("編輯選單節點屬性。")]
@@ -214,7 +217,7 @@ public class MenuItemController : ApiControllerBase
 
     [EndpointSummary("調整選單節點")]
     [EndpointDescription("調整選單節點階層 (變更 ParentId 與排序)。")]
-    [RequiresPermission("SYS.MENU.MOVE")]
+    [RequiresPermission("SYSTEM.MENU.UPDATE", "編輯選單")]
     [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> MoveMenuItem(
@@ -248,7 +251,7 @@ public class MenuItemController : ApiControllerBase
     /// </summary>
     [HttpDelete("{id:guid}")]
     [Function("DeleteMenuItem", "刪除選單節點", Icon = "fa-solid fa-trash", Order = 7, Description = "刪除選單節點 (若包含子節點則拒絕刪除)。")]
-    [RequiresPermission("SYS.MENU.DELETE")]
+    [RequiresPermission("SYSTEM.MENU.DELETE", "刪除選單節點")]
 
     [EndpointSummary("刪除選單節點")]
     [EndpointDescription("刪除選單節點 (若包含子節點則拒絕刪除)。")]
@@ -280,10 +283,9 @@ public class MenuItemController : ApiControllerBase
     /// </summary>
     [HttpPost("sync-seed")]
     [Function("SyncMenuSeed", "手動同步選單", Icon = "fa-solid fa-rotate", Order = 8, Description = "手動觸發從 API Attributes 自動同步選單種子 (Non-destructive)。")]
-
+    [RequiresPermission("SYSTEM.MENU.SYNCSEED", "手動同步選單")]
     [EndpointSummary("手動同步選單")]
     [EndpointDescription("手動觸發從 API Attributes 自動同步選單種子 (Non-destructive)。")]
-    [RequiresPermission("SYS.MENU.SYNCSEED")]
     [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
     public async Task<IActionResult> SyncMenuSeed(CancellationToken cancellationToken)
     {

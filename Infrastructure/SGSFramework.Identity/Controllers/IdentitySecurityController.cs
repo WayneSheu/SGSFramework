@@ -17,10 +17,10 @@ namespace SGSFramework.Identity.Controllers.v1;
 [ApiController]
 [Authorize]
 [Route("api/v1/identity-security")]
-[RequiresPermission("SYSTEM.IDENTITYSECURITY.READ")]
+[ControllerTitle("身分安全管理", Icon = "fa-solid fa-user-shield", Order = 25, Description = "身分安全管理與緊急風險控制機制，支援帳號緊急熔斷與身分補償解凍")]
+[RequiresPermission("SYSTEM.IDENTITYSECURITY.READ", "身分安全管理")]
 [Produces(MediaTypeNames.Application.Json)]
 [Consumes(MediaTypeNames.Application.Json)]
-[ControllerTitle("身分安全管理", Icon = "fa-solid fa-user-shield", Order = 25, Description = "身分安全管理與緊急風險控制機制，支援帳號緊急熔斷與身分補償解凍")]
 public sealed class IdentitySecurityController : ApiControllerBase
 {
     private readonly TokenBucketEngine<ApplicationUser> _tokenEngine;
@@ -45,7 +45,7 @@ public sealed class IdentitySecurityController : ApiControllerBase
     /// <returns>熔斷結果資訊</returns>
     [HttpPost("emergency-freezes")]
     [Function("EmergencyFreeze", "帳號緊急熔斷", Icon = "fa-solid fa-lock", Order = 1, Description = "帳號遭竊緊急熔斷端點，強制銷毀所有工作階段並鎖定帳號")]
-    [RequiresPermission("SYSTEM.IDENTITYSECURITY.EMERGENCYFREEZE")]
+    [RequiresPermission("SYSTEM.IDENTITYSECURITY.EMERGENCYFREEZE", "帳號緊急熔斷")]
     
     [EndpointSummary("帳號緊急熔斷")]
     [EndpointDescription("強制銷毀指定使用者的所有 active session 並即刻進行鎖定處置。")]
@@ -125,7 +125,7 @@ public sealed class IdentitySecurityController : ApiControllerBase
     /// <returns>身分修復與解凍結果</returns>
     [HttpPost("remediations")]
     [Function("RemediateAccount", "身分重設與解凍", Icon = "fa-solid fa-unlock", Order = 2, Description = "身分補償與重設密碼完成端點，安全清理風險 Session 並恢復帳號權限")]
-    [RequiresPermission("SYSTEM.IDENTITYSECURITY.REMEDIATE")]
+    [RequiresPermission("SYSTEM.IDENTITYSECURITY.REMEDIATE", "身分重設與解凍")]
     [EndpointSummary("身分重設與解凍")]
     [EndpointDescription("驗證與重建使用者身分憑證，完成風險 Session 清理並恢復帳號正常訪問狀態。")]
     [ProducesResponseType(typeof(AccountRemediationResponseDto), StatusCodes.Status200OK)]

@@ -1,5 +1,4 @@
-﻿using System.Security.Claims;
-using MediatR;
+﻿using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
@@ -19,18 +18,22 @@ using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Controllers.Base;
 using SGSFramework.Core.DTOs;
 using SGSFramework.Core.HttpAuditProviders;
+using System.Net.Mime;
+using System.Security.Claims;
 
 
 namespace SGSFramework.AuthTokenBucket.Controllers.v1;
 
 /// <summary>
-/// 身份驗證與 Token 管理控制器
+/// 身分驗證與 Token 管理控制器
 /// </summary>
 [ApiController]
 [Authorize]
 [Route("api/v1/auth")]
-[Produces("application/json")]
 [ControllerTitle("身份驗證", Icon = "fa-solid fa-user-lock", Order = 10, Description = "提供帳密登入、AD SSO 登入、Token 輪轉刷新、動態選單與實驗室上下文切換服務")]
+[RequiresPermission("SYSTEM.AUTH.READ", "身分驗證")]
+[Produces(MediaTypeNames.Application.Json)]
+[Consumes(MediaTypeNames.Application.Json)]
 public sealed class AuthController(
     UserManager<ApplicationUser> userManager,
     TokenManager tokenManager,
@@ -469,13 +472,12 @@ public sealed class AuthController(
     /// </summary>
     [HttpGet("online-count")]
     [Function("GetOnlineUserCount", "線上人數統計", Icon = "fa-solid fa-users", Order = 4, Description = "獲取線上即時活動用戶數觀測端點", IsMenu = true)]
-
+    [RequiresPermission("SYSTEM.AUTH.GETONLINEUSERCOUNT", "線上人數統計")]
     [EndpointSummary("線上人數統計")]
     [EndpointDescription("獲取線上即時活動用戶數觀測端點端點。")]
     [ProducesResponseType(typeof(OnlineUserCountResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    [RequiresPermission("SYSTEM.AUTH.GETONLINEUSERCOUNT")]
     public async Task<IActionResult> GetOnlineUserCountAsync(
         [FromQuery] OnlineUserCountQueryDto query,
         CancellationToken cancellationToken = default)
@@ -535,7 +537,6 @@ public sealed class AuthController(
     /// </summary>
     [HttpPost("switch-context")]
     [Function("SwitchContext", "切換實驗室", Icon = "fa-solid fa-right-left", Order = 5, Description = "切換作用中的實驗室上下文")]
-
     [EndpointSummary("切換實驗室")]
     [EndpointDescription("切換作用中的實驗室上下文端點。")]
     [ProducesResponseType(typeof(SwitchLabResultDto), StatusCodes.Status200OK)]
@@ -590,13 +591,12 @@ public sealed class AuthController(
     /// </summary>
     [HttpGet("sessions")]
     [Function("GetActiveSessions", "線上裝置列表", Icon = "fa-solid fa-laptop-code", Order = 8, Description = "獲取當前使用者所有已登入的裝置與 Session 清單")]
-
+    [RequiresPermission("SYSTEM.AUTH.GETACTIVESESSIONS", "線上裝置列表")]
     [EndpointSummary("線上裝置列表")]
     [EndpointDescription("獲取當前使用者所有已登入的裝置與 Session 清單端點。")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    [RequiresPermission("SYSTEM.AUTH.GETACTIVESESSIONS")]
     public async Task<IActionResult> GetActiveSessionsAsync(CancellationToken cancellationToken = default)
     {
         string? userId = ResolveUserIdFromContextOrHeader();
@@ -642,7 +642,6 @@ public sealed class AuthController(
     [HttpPost("logout")]
     [AllowAnonymous] // 允許過期或未認證請求進入，由內部自行解析 Token
     [Function("Logout", "單一裝置登出", Icon = "fa-solid fa-right-from-bracket", Order = 6, Description = "終止當前裝置的工作階段與 Refresh Token")]
-
     [EndpointSummary("單一裝置登出")]
     [EndpointDescription("終止當前登入裝置的工作階段與Refresh Token。")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -696,7 +695,6 @@ public sealed class AuthController(
     [HttpPost("logout-all")]
     [AllowAnonymous] // 允許過期或未認證請求進入，由內部自行解析 Token
     [Function("LogoutAll", "所有裝置登出", Icon = "fa-solid fa-power-off", Order = 7, Description = "強制終止該使用者所有裝置的有效 Token 與工作階段")]
-
     [EndpointSummary("所有裝置登出")]
     [EndpointDescription("強制終止該使用者所有裝置的有效 Token 與工作階段。")]
     [ProducesResponseType(StatusCodes.Status200OK)]
