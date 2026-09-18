@@ -164,6 +164,93 @@ public sealed class AuthController(
         }
     }
 
+
+    /// <summary>
+    /// 驗證雙因子登入 (2FA)
+    /// </summary>
+    [AllowAnonymous]
+    [HttpPost("verify-2fa")]
+    [Function("VerifyTwoFactor", "雙因子驗證登入", Icon = "fa-solid fa-key", Order = 4, Description = "驗證使用者雙因子驗證碼 (2FA) 並簽發正式工作階段憑證")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [EndpointSummary("驗證雙因子登入 (2FA)")]
+    [EndpointDescription("驗證使用者雙因子驗證碼 (2FA) 並簽發正式工作階段憑證。")]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> VerifyTwoFactor([FromBody] TwoFactorVerificationRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        string deviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "UNKNOWN-DEVICE";
+        string deviceName = Request.Headers["User-Agent"].FirstOrDefault() ?? "Generic Browser";
+        string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+
+        try
+        {
+            var user = await _userManager.FindByEmailAsync(request.Email) ?? await _userManager.FindByNameAsync(request.Email);
+            if (user == null)
+            {
+                return Unauthorized(new ProblemDetails
+                {
+                    Status = StatusCodes.Status401Unauthorized,
+                    Title = "認證失敗",
+                    Detail = "找不到對應的使用者資訊。",
+                    Instance = HttpContext.Request.Path
+                });
+            }
+
+            var isValid = await _userManager.VerifyTwoFactorTokenAsync(user, "Email", request.Code);
+            if (!isValid)
+            {
+                await _userManager.AccessFailedAsync(user);
+
+                _securityLogger.LogSecurity(
+                    eventCode: "SEC-401-2FA-FAILED",
+                    eventCategory: "UserManagement.Verify2FA",
+                    userId: user.Id.ToString(),
+                    clientIp: clientIp,
+                    messageTemplate: "雙因子驗證失敗。帳號: {Email}, 裝置: {DeviceId}",
+                    user.Email ?? string.Empty,
+                    deviceId
+                );
+
+                return Unauthorized(new ProblemDetails
+                {
+                    Status = StatusCodes.Status401Unauthorized,
+                    Title = "驗證碼無效",
+                    Detail = "雙因子驗證碼不正確或已逾期。",
+                    Instance = HttpContext.Request.Path
+                });
+            }
+
+            await _userManager.ResetAccessFailedCountAsync(user);
+
+            var tokenResult = await _tokenEngine.IssueInitialSessionAsync(user, deviceId, deviceName, clientIp);
+
+            _securityLogger.LogSecurity(
+                eventCode: "SEC-200-2FA-SUCCESS",
+                eventCategory: "UserManagement.Verify2FA",
+                userId: user.Id.ToString(),
+                clientIp: clientIp,
+                messageTemplate: "雙因子認證成功並簽發憑證。帳號: {Email}, 裝置: {DeviceId}",
+                user.Email ?? string.Empty,
+                deviceId
+            );
+
+            return Ok(new { message = "雙因子認證成功", tokenData = tokenResult });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "2FA 驗證端點發生未預期異常。");
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "二次驗證處理期間發生系統異常，請聯繫系統管理員。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
     /// <summary>
     /// 地端 Windows 網域單一登入
     /// </summary>
