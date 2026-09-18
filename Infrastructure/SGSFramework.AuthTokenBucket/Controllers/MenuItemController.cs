@@ -210,9 +210,9 @@ public class MenuItemController : ApiControllerBase
     /// 調整選單節點階層 (變更 ParentId 與排序)
     /// </summary>
     [HttpPatch("{id:guid}/move")]
-    [Function("MoveMenuItem", "移動選單節點", Icon = "fa-solid fa-arrows-up-down-left-right", Order = 6, Description = "調整選單節點階層 (變更 ParentId 與排序)。")]
+    [Function("MoveMenuItem", "調整選單節點", Icon = "fa-solid fa-arrows-up-down-left-right", Order = 6, Description = "調整選單節點階層 (變更 ParentId 與排序)。")]
 
-    [EndpointSummary("移動選單節點")]
+    [EndpointSummary("調整選單節點")]
     [EndpointDescription("調整選單節點階層 (變更 ParentId 與排序)。")]
     [RequiresPermission("SYS.MENU.MOVE")]
     [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]

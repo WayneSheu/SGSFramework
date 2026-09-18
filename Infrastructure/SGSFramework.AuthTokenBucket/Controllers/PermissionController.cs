@@ -217,10 +217,10 @@ public sealed class PermissionController(
     /// 取得指定使用者的所有權限總覽（含直接權限與透過角色繼承的有效權限，供資安稽核時察看）
     /// </summary>
     [HttpGet("user/{userId:guid}/audit-permissions")]
-    [Function("GetUserAllPermissions", "使用者權限", Icon = "fa-solid fa-user-shield", Order = 3, Description = "取得指定使用者的直接權限與透過角色繼承的有效權限總覽，供資安稽核使用。", IsMenu = false)]
+    [Function("GetUserAllPermissions", "檢視使用者權限", Icon = "fa-solid fa-user-shield", Order = 3, Description = "取得指定使用者的直接權限與透過角色繼承的有效權限總覽，供資安稽核使用。", IsMenu = false)]
     [RequiresPermission("SYSTEM.PERMISSION.GETUSERALLPERMISSIONS")]
 
-    [EndpointSummary("使用者權限")]
+    [EndpointSummary("檢視使用者權限")]
     [EndpointDescription("取得指定使用者的直接權限與透過角色繼承的有效權限總覽，供資安稽核使用。")]
     [ProducesResponseType(typeof(UserAuditPermissionsResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]

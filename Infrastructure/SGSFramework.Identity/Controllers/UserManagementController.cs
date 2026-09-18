@@ -165,61 +165,15 @@ public sealed class UserManagementController(
         }
     }
 
-    /// <summary>
-    /// 使用者註冊 (支援自訂帳號與 Email 雙重唯一性校驗)
-    /// </summary>
     [HttpPost("register")]
-    [Function("Register", "使用者註冊", Icon = "fa-solid fa-user-plus", Order = 1, Description = "進行新使用者帳號註冊並生成電子郵件驗證憑證")]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.REGISTER")]
-    [EndpointSummary("使用者註冊")]
-    [EndpointDescription("進行新使用者帳號註冊並生成電子郵件驗證憑證。")]
-    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> Register([FromBody] CreateUserRequest request, CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-
-        string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
-
-        try
-        {
-            var result = await _userService.RegisterAsync(request, clientIp, cancellationToken).ConfigureAwait(false);
-            if (!result.IsSuccess)
-            {
-                return BadRequest(new ProblemDetails
-                {
-                    Status = StatusCodes.Status400BadRequest,
-                    Title = "註冊失敗",
-                    Detail = result.Error.Message,
-                    Instance = HttpContext.Request.Path
-                });
-            }
-
-            return Ok(new { message = "註冊成功，請至電子郵件信箱查收驗證信。", debugToken = result.Value });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "註冊端點發生未預期異常。");
-            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
-            {
-                Status = StatusCodes.Status500InternalServerError,
-                Title = "伺服器內部錯誤",
-                Detail = "註冊作業處理期間發生未預期錯誤，請聯繫系統管理員。",
-                Instance = HttpContext.Request.Path
-            });
-        }
-    }
-
-    [HttpPost("provision")]
-    [Function("ProvisionUserByStrategy", "依策略建立使用者", Icon = "fa-solid fa-user-gear", Order = 3, Description = "透過指定的策略模式建立全新使用者帳號並指派實驗室與角色")]
+    [Function("Register", "建立使用者", Icon = "fa-solid fa-user-gear", Order = 3, Description = "透過指定的策略模式建立新使用者帳號(支援自訂帳號與 Email 雙重唯一性校驗)並指派實驗室與角色")]
     [RequiresPermission("SYSTEM.USERMANAGEMENT.CREATE")]
-    [EndpointSummary("依策略建立使用者")]
-    [EndpointDescription("透過指定的策略模式建立全新使用者帳號並指派實驗室與角色。")]
+    [EndpointSummary("建立使用者")]
+    [EndpointDescription("透過指定的策略模式建立新使用者帳號(支援自訂帳號與 Email 雙重唯一性校驗)並指派實驗室與角色。")]
     [ProducesResponseType(typeof(Result<Guid>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> ProvisionUserByStrategy(
+    public async Task<IActionResult> Register(
          [FromBody] UserProvisioningRequest request,
          CancellationToken cancellationToken = default)
     {
@@ -285,46 +239,6 @@ public sealed class UserManagementController(
         }
     }
 
-    /// <summary>
-    /// 建立全新使用者
-    /// </summary>
-    [HttpPost("create")]
-    [Function("CreateUser", "建立使用者", Icon = "fa-solid fa-user-plus", Order = 3, Description = "建立全新使用者帳號並指派預設角色與權限向量")]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.REGISTER")]
-    [EndpointSummary("建立使用者")]
-    [EndpointDescription("建立全新使用者帳號並指派預設角色與權限向量。")]
-    [ProducesResponseType(typeof(Result<Guid>), StatusCodes.Status201Created)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> CreateUser(
-        [FromBody] CreateUserRequest request,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-
-        try
-        {
-            var result = await _userService.CreateUserAsync(request, cancellationToken).ConfigureAwait(false);
-            if (result.IsSuccess)
-            {
-                return CreatedAtAction(nameof(GetUserById), new { id = result.Value }, result);
-            }
-
-            return HandleResult(result);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "建立使用者時發生未預期異常。Username: {Username}", request.UserName);
-            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
-            {
-                Status = StatusCodes.Status500InternalServerError,
-                Title = "伺服器內部錯誤",
-                Detail = "建立使用者作業處理期間發生未預期錯誤。",
-                Instance = HttpContext.Request.Path
-            });
-        }
-    }
 
     /// <summary>
     /// 更新使用者基本資料與角色配置
