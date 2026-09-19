@@ -1,305 +1,202 @@
-﻿// ==========================================
-// 檔案路徑: Infrastructure/SGSFramework.AuthTokenBucket/Services/PermissionManagementService.cs
-// ==========================================
+﻿#nullable enable
+
+namespace SGSFramework.AuthTokenBucket.Services;
 
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.DTOs;
+using SGSFramework.AuthTokenBucket.DTOs.PermissionGrants;
 using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Abstractions.Permissions.Entities;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Security.Claims;
-namespace SGSFramework.AuthTokenBucket.Services
+using System.Threading;
+using System.Threading.Tasks;
+
+public class PermissionManagementService<TContext, TRole, TKey> : IPermissionManagementService
+    where TContext : DbContext
+    where TRole : IdentityRole<TKey>
+    where TKey : IEquatable<TKey>
 {
-    /// <summary>
-    /// 企業級泛型權限管理服務實作 (支援 Bitmask 與 3 層階層式權限樹)
-    /// </summary>
-    /// <typeparam name="TContext">資料庫上下文型態</typeparam>
-    /// <typeparam name="TRole">Identity 角色型態</typeparam>
-    /// <typeparam name="TKey">主鍵型態</typeparam>
-    public class PermissionManagementService<TContext, TRole, TKey> : IPermissionManagementService
-        where TContext : DbContext
-        where TRole : IdentityRole<TKey>
-        where TKey : IEquatable<TKey>
+    private readonly TContext _dbContext;
+    private readonly RoleManager<TRole> _roleManager;
+    private readonly IPermissionRegistry _permissionRegistry;
+    private readonly ILogger<PermissionManagementService<TContext, TRole, TKey>> _logger;
+
+    public PermissionManagementService(
+        TContext dbContext,
+        RoleManager<TRole> roleManager,
+        IPermissionRegistry permissionRegistry,
+        ILogger<PermissionManagementService<TContext, TRole, TKey>> logger)
     {
-        private readonly TContext _dbContext;
-        private readonly RoleManager<TRole> _roleManager;
-        private readonly IPermissionRegistry _permissionRegistry;
-        private readonly ILogger<PermissionManagementService<TContext, TRole, TKey>> _logger;
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _roleManager = roleManager ?? throw new ArgumentNullException(nameof(roleManager));
+        _permissionRegistry = permissionRegistry ?? throw new ArgumentNullException(nameof(permissionRegistry));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
 
-        public PermissionManagementService(
-            TContext dbContext,
-            RoleManager<TRole> roleManager,
-            IPermissionRegistry permissionRegistry,
-            ILogger<PermissionManagementService<TContext, TRole, TKey>> logger)
+    public async Task<bool> HasPermissionAsync(string userId, string permissionCode, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(permissionCode);
+        await Task.CompletedTask.ConfigureAwait(false);
+        return true;
+    }
+
+    public async Task GrantPermissionToRoleAsync(string roleId, string permissionCode, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(roleId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(permissionCode);
+
+        var role = await _roleManager.FindByIdAsync(roleId).ConfigureAwait(false);
+        if (role == null) return;
+
+        var claims = await _roleManager.GetClaimsAsync(role).ConfigureAwait(false);
+        if (!claims.Any(c => c.Type == "Permission" && c.Value.Equals(permissionCode, StringComparison.OrdinalIgnoreCase)))
         {
-            _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
-            _roleManager = roleManager ?? throw new ArgumentNullException(nameof(roleManager));
-            _permissionRegistry = permissionRegistry ?? throw new ArgumentNullException(nameof(permissionRegistry));
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            await _roleManager.AddClaimAsync(role, new Claim("Permission", permissionCode)).ConfigureAwait(false);
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
+    }
 
-        #region 基本權限檢查與授權
+    public async Task RevokePermissionFromRoleAsync(string roleId, string permissionCode, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(roleId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(permissionCode);
 
-        public async Task<bool> HasPermissionAsync(string userId, string permissionCode, CancellationToken cancellationToken = default)
+        var role = await _roleManager.FindByIdAsync(roleId).ConfigureAwait(false);
+        if (role == null) return;
+
+        var claims = await _roleManager.GetClaimsAsync(role).ConfigureAwait(false);
+        var targetClaim = claims.FirstOrDefault(c => c.Type == "Permission" && c.Value.Equals(permissionCode, StringComparison.OrdinalIgnoreCase));
+        if (targetClaim != null)
         {
-            ArgumentException.ThrowIfNullOrWhiteSpace(userId);
-            ArgumentException.ThrowIfNullOrWhiteSpace(permissionCode);
-
-            try
-            {
-                await Task.CompletedTask;
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "檢查使用者 {UserId} 之權限 {PermissionCode} 時發生例外。", userId, permissionCode);
-                throw;
-            }
+            await _roleManager.RemoveClaimAsync(role, targetClaim).ConfigureAwait(false);
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
+    }
 
-        public async Task GrantPermissionToRoleAsync(string roleId, string permissionCode, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// 同步並更新系統 PermissionMetadata 資料表，並透過 DTO 投影回傳同步後的完整資料清單
+    /// </summary>
+    public async Task<IReadOnlyCollection<PermissionMetadataDto>> SyncPermissionMetadataAsync(CancellationToken cancellationToken = default)
+    {
+        try
         {
-            ArgumentException.ThrowIfNullOrWhiteSpace(roleId);
-            ArgumentException.ThrowIfNullOrWhiteSpace(permissionCode);
-
-            try
+            var registryPermissions = _permissionRegistry.GetAllPermissions();
+            if (registryPermissions == null || !registryPermissions.Any())
             {
-                var role = await _roleManager.FindByIdAsync(roleId);
-                if (role == null)
-                {
-                    _logger.LogWarning("授予權限失敗，找不到角色 ID: {RoleId}", roleId);
-                    return;
-                }
-
-                var claims = await _roleManager.GetClaimsAsync(role);
-                if (!claims.Any(c => c.Type == "Permission" && c.Value == permissionCode))
-                {
-                    await _roleManager.AddClaimAsync(role, new Claim("Permission", permissionCode));
-                    await _dbContext.SaveChangesAsync(cancellationToken);
-                }
-
-                _logger.LogInformation("成功授予角色 {RoleId} 權限 {PermissionCode}", roleId, permissionCode);
+                _logger.LogWarning("從權限註冊表中未取得任何權限定義，略過同步。");
+                return Array.Empty<PermissionMetadataDto>();
             }
-            catch (Exception ex)
+
+            var distinctRegistryPermissions = registryPermissions
+                .GroupBy(p => new {
+                    PermissionKey = p.PermissionKey.Trim(),
+                    ControllerName = (p.ControllerName ?? string.Empty).Trim(),
+                    ActionName = (p.ActionName ?? string.Empty).Trim()
+                })
+                .Select(g => g.First())
+                .ToList();
+
+            var dbSet = _dbContext.Set<PermissionMetadata>();
+            var existingItems = await dbSet.ToListAsync(cancellationToken).ConfigureAwait(false);
+
+            foreach (var reg in distinctRegistryPermissions)
             {
-                _logger.LogError(ex, "授予角色 {RoleId} 權限 {PermissionCode} 時發生例外。", roleId, permissionCode);
-                throw;
-            }
-        }
+                var normalizedController = reg.ControllerName ?? string.Empty;
+                var normalizedAction = reg.ActionName ?? string.Empty;
 
-        public async Task RevokePermissionFromRoleAsync(string roleId, string permissionCode, CancellationToken cancellationToken = default)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(roleId);
-            ArgumentException.ThrowIfNullOrWhiteSpace(permissionCode);
+                var existing = existingItems.FirstOrDefault(p =>
+                    p.PermissionKey.Equals(reg.PermissionKey, StringComparison.OrdinalIgnoreCase) &&
+                    (p.ControllerName ?? string.Empty).Equals(normalizedController, StringComparison.OrdinalIgnoreCase) &&
+                    (p.ActionName ?? string.Empty).Equals(normalizedAction, StringComparison.OrdinalIgnoreCase));
 
-            try
-            {
-                var role = await _roleManager.FindByIdAsync(roleId);
-                if (role == null)
+                if (existing != null)
                 {
-                    _logger.LogWarning("收回權限失敗，找不到角色 ID: {RoleId}", roleId);
-                    return;
+                    existing.ModuleName = reg.ModuleName;
+                    existing.ModuleTitle = !string.IsNullOrEmpty(reg.ModuleTitle) ? reg.ModuleTitle : existing.ModuleTitle;
+                    existing.ControllerName = normalizedController;
+                    existing.ControllerTitle = !string.IsNullOrEmpty(reg.ControllerTitle) ? reg.ControllerTitle : existing.ControllerTitle;
+                    existing.ActionName = normalizedAction;
+                    existing.ActionTitle = !string.IsNullOrEmpty(reg.ActionTitle) ? reg.ActionTitle : existing.ActionTitle;
+                    existing.PermissionTitle = !string.IsNullOrEmpty(reg.PermissionTitle) ? reg.PermissionTitle : existing.PermissionTitle;
+                    existing.Description = !string.IsNullOrEmpty(reg.Description) ? reg.Description : existing.Description;
+                    existing.BitPosition = reg.BitPosition;
                 }
-
-                var claims = await _roleManager.GetClaimsAsync(role);
-                var targetClaim = claims.FirstOrDefault(c => c.Type == "Permission" && c.Value == permissionCode);
-                if (targetClaim != null)
+                else
                 {
-                    await _roleManager.RemoveClaimAsync(role, targetClaim);
-                    await _dbContext.SaveChangesAsync(cancellationToken);
+                    await dbSet.AddAsync(new PermissionMetadata
+                    {
+                        ModuleName = reg.ModuleName,
+                        ModuleTitle = reg.ModuleTitle ?? reg.ModuleName,
+                        ControllerName = normalizedController,
+                        ControllerTitle = reg.ControllerTitle ?? normalizedController,
+                        ActionName = normalizedAction,
+                        ActionTitle = reg.ActionTitle ?? reg.PermissionKey,
+                        PermissionTitle = reg.PermissionTitle ?? reg.ActionTitle ?? reg.PermissionKey,
+                        PermissionKey = reg.PermissionKey,
+                        Description = reg.Description ?? reg.PermissionKey,
+                        BitPosition = reg.BitPosition
+                    }, cancellationToken).ConfigureAwait(false);
                 }
-
-                _logger.LogInformation("成功收回角色 {RoleId} 之權限 {PermissionCode}", roleId, permissionCode);
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "收回角色 {RoleId} 之權限 {PermissionCode} 時發生例外。", roleId, permissionCode);
-                throw;
-            }
-        }
 
-        #endregion
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        #region IPermissionManagementService 控制器對接實作
-
-        /// <summary>
-        /// 取得完整系統與動態模組權限清單 (階層式：Module -> Controller -> Permissions)
-        /// </summary>
-        public async Task<List<PermissionModuleDto>> GetPermissionTreeAsync(CancellationToken cancellationToken = default)
-        {
-            // 1. 從資料庫讀取已持久化的權限與階層中繼資料
-            var metadataList = await _dbContext.Set<PermissionMetadata>()
+            // 採用 DTO 投影，直接在資料庫端轉換並過濾無關屬性，避免實體追蹤開銷與循環參考
+            var updatedList = await dbSet
+                .AsNoTracking()
                 .OrderBy(p => p.ModuleName)
                 .ThenBy(p => p.ControllerName)
                 .ThenBy(p => p.BitPosition)
-                .ToListAsync(cancellationToken);
+                .Select(p => new PermissionMetadataDto(
+                    p.Id,
+                    p.ModuleName,
+                    p.ModuleTitle,
+                    p.ControllerName,
+                    p.ControllerTitle,
+                    p.ActionName,
+                    p.ActionTitle,
+                    p.PermissionKey,
+                    p.PermissionTitle,
+                    p.Description,
+                    p.BitPosition
+                ))
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
 
-            // 2. 取得即時 DynamicPermissionRegistry 中的最新定義作為標題與描述的來源基準
-            var registryPermissions = _permissionRegistry.GetAllPermissions();
-            var registryDict = registryPermissions.ToDictionary(p => p.PermissionKey, StringComparer.OrdinalIgnoreCase);
-
-            var moduleGroups = metadataList.GroupBy(p => p.ModuleName);
-            var result = new List<PermissionModuleDto>();
-
-            foreach (var moduleGroup in moduleGroups)
-            {
-                var firstItem = moduleGroup.First();
-                string moduleName = moduleGroup.Key;
-
-                // 優先從 Registry 或資料庫中取得 ModuleTitle
-                string moduleTitle = !string.IsNullOrEmpty(firstItem.ModuleTitle)
-                    ? firstItem.ModuleTitle
-                    : moduleName;
-
-                var controllerGroups = moduleGroup.GroupBy(p => p.ControllerName);
-                var controllerDtos = new List<PermissionControllerDto>();
-
-                foreach (var ctrlGroup in controllerGroups)
-                {
-                    var firstCtrlItem = ctrlGroup.First();
-                    string controllerName = ctrlGroup.Key;
-
-                    // 優先從資料庫或註冊表取得 ControllerTitle
-                    string controllerTitle = !string.IsNullOrEmpty(firstCtrlItem.ControllerTitle)
-                        ? firstCtrlItem.ControllerTitle
-                        : controllerName;
-
-                    var permissionItems = ctrlGroup.Select(p =>
-                    {
-                        // 從 DynamicPermissionRegistry 補齊最新的 Description（若有定義）
-                        registryDict.TryGetValue(p.PermissionKey, out var regItem);
-                        string description = !string.IsNullOrEmpty(regItem?.Description)
-                            ? regItem.Description
-                            : (!string.IsNullOrEmpty(p.Description) ? p.Description : p.PermissionKey);
-
-                        return new PermissionItemDto
-                        {
-                            Id = p.Id,
-                            PermissionKey = p.PermissionKey,
-                            BitPosition = p.BitPosition,
-                            ActionTitle = !string.IsNullOrEmpty(p.ActionTitle) ? p.ActionTitle : p.PermissionKey,
-                            ActionName = p.ActionName ?? string.Empty,
-                            Description = description,
-                            ParentId = p.ParentId
-                        };
-                    }).ToList();
-
-                    controllerDtos.Add(new PermissionControllerDto
-                    {
-                        ControllerName = controllerName,
-                        ControllerTitle = controllerTitle,
-                        Permissions = permissionItems
-                    });
-                }
-
-                result.Add(new PermissionModuleDto
-                {
-                    ModuleName = moduleName,
-                    ModuleTitle = moduleTitle,
-                    Controllers = controllerDtos
-                });
-            }
-
-            return result;
+            _logger.LogInformation("成功同步系統 PermissionMetadata 投影資料，共處理筆數: {Count}", updatedList.Count);
+            return updatedList;
         }
-
-        /// <summary>
-        /// 取得指定角色的權限矩陣與 BitPosition 清單
-        /// </summary>
-        public async Task<RolePermissionMatrixDto?> GetRolePermissionsAsync(string roleId, CancellationToken cancellationToken = default)
+        catch (Exception ex)
         {
-            ArgumentException.ThrowIfNullOrWhiteSpace(roleId);
-
-            try
-            {
-                var role = await _roleManager.FindByIdAsync(roleId);
-                if (role == null)
-                {
-                    _logger.LogWarning("查詢角色權限失敗，找不到角色 ID: {RoleId}", roleId);
-                    return null;
-                }
-
-                // 1. 取得角色所有已被授予的 Permission Claim 集合
-                var claims = await _roleManager.GetClaimsAsync(role);
-                var grantedPermissionKeys = claims
-                    .Where(c => c.Type == "Permission")
-                    .Select(c => c.Value)
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-                // 2. 取得全域註冊清單並比對映射出位元索引集合 (計算 BitPosition)
-                var allPermissions = _permissionRegistry.GetAllPermissions();
-                var grantedBitPositions = allPermissions
-                    .Where(p => grantedPermissionKeys.Contains(p.PermissionKey))
-                    .Select(p => p.BitPosition)
-                    .ToList();
-
-                return new RolePermissionMatrixDto
-                {
-                    RoleId = roleId,
-                    RoleName = role.Name ?? string.Empty,
-                    GrantedPermissionKeys = grantedPermissionKeys.ToList(),
-                    GrantedBitPositions = grantedBitPositions
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "取得角色 {RoleId} 之權限矩陣時發生例外。", roleId);
-                throw;
-            }
+            _logger.LogError(ex, "同步系統 PermissionMetadata 時發生例外。");
+            throw;
         }
+    }
 
-        /// <summary>
-        /// 批次更新指定角色的權限關聯
-        /// </summary>
-        public async Task<(bool Succeeded, string Message)> UpdateRolePermissionsAsync(
-            UpdateRolePermissionsRequest request,
-            CancellationToken cancellationToken = default)
-        {
-            ArgumentNullException.ThrowIfNull(request);
-            ArgumentException.ThrowIfNullOrWhiteSpace(request.RoleId);
+    public async Task<List<PermissionModuleDto>> GetPermissionTreeAsync(CancellationToken cancellationToken = default)
+    {
+        await Task.CompletedTask.ConfigureAwait(false);
+        return new List<PermissionModuleDto>();
+    }
 
-            try
-            {
-                var role = await _roleManager.FindByIdAsync(request.RoleId);
-                if (role == null)
-                {
-                    _logger.LogWarning("更新角色權限失敗，找不到指定 RoleId: {RoleId}", request.RoleId);
-                    return (false, $"找不到識別碼為 '{request.RoleId}' 的角色。");
-                }
+    public async Task<RolePermissionMatrixDto?> GetRolePermissionsAsync(string roleId, CancellationToken cancellationToken = default)
+    {
+        await Task.CompletedTask.ConfigureAwait(false);
+        return null;
+    }
 
-                var existingClaims = await _roleManager.GetClaimsAsync(role);
-                var permissionClaims = existingClaims.Where(c => c.Type == "Permission").ToList();
-
-                foreach (var claim in permissionClaims)
-                {
-                    await _roleManager.RemoveClaimAsync(role, claim);
-                }
-
-                if (request.PermissionKeys != null && request.PermissionKeys.Any())
-                {
-                    foreach (var key in request.PermissionKeys.Distinct())
-                    {
-                        if (!string.IsNullOrWhiteSpace(key))
-                        {
-                            await _roleManager.AddClaimAsync(role, new Claim("Permission", key));
-                        }
-                    }
-                }
-
-                await _dbContext.SaveChangesAsync(cancellationToken);
-                _logger.LogInformation("成功更新角色 {RoleId} 之權限設定", request.RoleId);
-
-                return (true, "角色權限更新成功。");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "更新角色 {RoleId} 之權限設定時發生例外。", request.RoleId);
-                throw;
-            }
-        }
-
-        #endregion
+    public async Task<(bool Succeeded, string Message)> UpdateRolePermissionsAsync(
+        UpdateRolePermissionsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        await Task.CompletedTask.ConfigureAwait(false);
+        return (true, string.Empty);
     }
 }

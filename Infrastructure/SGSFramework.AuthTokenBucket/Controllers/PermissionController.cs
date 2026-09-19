@@ -1,4 +1,11 @@
-﻿using GSFramework.AuthTokenBucket.DTOs;
+﻿// ==========================================
+// 檔案路徑: Presentation/SGSFramework.AuthTokenBucket/Controllers/v1/PermissionController.cs
+// 架構層級: Presentation Layer (Controller Implementation)
+// ==========================================
+
+#nullable enable
+
+using GSFramework.AuthTokenBucket.DTOs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
@@ -29,10 +36,9 @@ namespace SGSFramework.AuthTokenBucket.Controllers.v1;
 [Authorize]
 [Route("api/v1/permissions")]
 [ControllerTitle("權限管理", Icon = "fa-solid fa-shield-halved", Order = 20, Description = "提供系統權限樹狀圖查詢、角色權限矩陣讀取與更新服務")]
-[RequiresPermission("SYSTEM.PERMISSION.READ","權限管理")]
+[RequiresPermission("SYSTEM.PERMISSION.READ", "權限管理")]
 [Produces(MediaTypeNames.Application.Json)]
 [Consumes(MediaTypeNames.Application.Json)]
-
 public sealed class PermissionController(
     IMemoryCache memoryCache,
     IPermissionManagementService permissionService,
@@ -50,15 +56,54 @@ public sealed class PermissionController(
     private const string PermissionTreeCacheKey = "Cache_System_Permission_Tree";
 
     /// <summary>
+    /// 同步權限元數據並回傳 DTO 投影資料清單
+    /// </summary>
+    [HttpPost("metadata/sync")]
+    [Function("SyncPermissionMetadata", "同步權限元數據", Icon = "fa-solid fa-sitemap", Order = 1, Description = "同步權限元數據並回傳 DTO 投影資料清單",IsMenu =true)]
+    [RequiresPermission("SYSTEM.PERMISSION.READ", "權限管理")]
+    [EndpointSummary("同步權限元數據")]
+    [EndpointDescription("同步權限元數據並回傳 DTO 投影資料清單")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> SyncPermissionMetadata(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var syncedMetadataList = await _permissionService.SyncPermissionMetadataAsync(cancellationToken).ConfigureAwait(false);
+            int affectedCount = syncedMetadataList.Count;
+
+            _memoryCache.Remove(PermissionTreeCacheKey);
+            _logger.LogInformation("手動觸發同步 PermissionMetadata 成功，影響筆數: {Count}", affectedCount);
+
+            return Ok(new
+            {
+                success = true,
+                message = $"權限元數據同步成功，共更新 {affectedCount} 筆資料。",
+                count = affectedCount,
+                data = syncedMetadataList
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "同步 PermissionMetadata 時發生未預期異常。");
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "同步權限元數據失敗。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
+    /// <summary>
     /// 取得完整系統與動態模組權限清單 (階層式：Module -> Controller -> Permissions)
     /// </summary>
-    /// <param name="cancellationToken">異步取消權牌</param>
-    /// <returns>模組權限樹狀結構清單</returns>
-    [HttpGet("tree")] //HttpGet 路由設定
+    [HttpGet("tree")]
     [Function("GetPermissionTree", "系統權限清單", Icon = "fa-solid fa-sitemap", Order = 1, Description = "取得完整系統與動態模組權限清單 (階層式：Module -> Controller -> Permissions)", IsMenu = false)]
     [ProducesResponseType(typeof(List<PermissionModuleDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    [RequiresPermission("SYSTEM.PERMISSION.RED")]
+    [RequiresPermission("SYSTEM.PERMISSION.READ")]
     [EndpointSummary("系統權限清單")]
     [EndpointDescription("取得完整系統與動態模組權限清單 (階層式：Module -> Controller -> Permissions)")]
     public async Task<IActionResult> GetPermissionTree(CancellationToken cancellationToken = default)
@@ -80,7 +125,6 @@ public sealed class PermissionController(
             stopwatch.Stop();
             _logger.LogDebug("取得權限樹狀結構耗時: {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
 
-            // 確保一律回傳 Ok 物件，非 null
             return Ok(tree ?? new List<PermissionModuleDto>());
         }
         catch (Exception ex)
@@ -101,9 +145,6 @@ public sealed class PermissionController(
     /// <summary>
     /// 取得指定角色的權限設定清單
     /// </summary>
-    /// <param name="roleId">角色識別碼</param>
-    /// <param name="cancellationToken">異步取消權牌</param>
-    /// <returns>指定角色的權限設定矩陣</returns>
     [HttpGet("role/{roleId}")]
     [Function("GetRolePermissions", "角色權限清單", Icon = "fa-solid fa-user-shield", Order = 2, Description = "取得指定角色的權限設定清單與 Bitmask 映射矩陣", IsMenu = false)]
     [RequiresPermission("SYSTEM.PERMISSION.READ")]
@@ -112,7 +153,6 @@ public sealed class PermissionController(
     [ProducesResponseType(typeof(RolePermissionMatrixDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-
     public async Task<ActionResult<RolePermissionMatrixDto>> GetRolePermissions(
         [FromRoute] string roleId,
         CancellationToken cancellationToken = default)
@@ -151,19 +191,14 @@ public sealed class PermissionController(
     /// <summary>
     /// 更新指定角色的權限關聯
     /// </summary>
-    /// <param name="request">角色權限更新請求</param>
-    /// <param name="cancellationToken">異步取消權牌</param>
-    /// <returns>操作結果訊息</returns>
     [HttpPost("role/update")]
     [Function("UpdateRolePermissions", "更新角色權限", Icon = "fa-solid fa-user-pen", Order = 3, Description = "更新指定角色的權限關聯配置與 Bitmask 設定", IsMenu = false)]
     [RequiresPermission("SYSTEM.PERMISSION.UPDATE", "更新權限")]
-
     [EndpointSummary("更新角色權限")]
     [EndpointDescription("更新指定角色的權限關聯配置與 Bitmask 設定")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-
     public async Task<IActionResult> UpdateRolePermissions(
         [FromBody] UpdateRolePermissionsRequest request,
         CancellationToken cancellationToken = default)
@@ -212,21 +247,16 @@ public sealed class PermissionController(
     }
 
     /// <summary>
-    /// 取得指定使用者的所有權限總覽（含直接權限與透過角色繼承的有效權限，供資安稽核時察看）
-    /// </summary>
-    /// <summary>
-    /// 取得指定使用者的所有權限總覽（含直接權限與透過角色繼承的有效權限，供資安稽核時察看）
+    /// 取得指定使用者的所有權限總覽
     /// </summary>
     [HttpGet("user/{userId:guid}/audit-permissions")]
-    [Function("GetUserAllPermissions", "檢視使用者權限", Icon = "fa-solid fa-user-shield", Order = 3, Description = "取得指定使用者的直接權限與透過角色繼承的有效權限總覽，供資安稽核使用。", IsMenu = false)]
+    [Function("GetUserAllPermissions", "檢視使用者權限", Icon = "fa-solid fa-user-shield", Order = 4, Description = "取得指定使用者的直接權限與透過角色繼承的有效權限總覽，供資安稽核使用。", IsMenu = false)]
     [RequiresPermission("SYSTEM.PERMISSION.READ")]
-
     [EndpointSummary("檢視使用者權限")]
     [EndpointDescription("取得指定使用者的直接權限與透過角色繼承的有效權限總覽，供資安稽核使用。")]
     [ProducesResponseType(typeof(UserAuditPermissionsResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-   
     public async Task<IActionResult> GetUserAllPermissions(
         [FromRoute] Guid userId,
         CancellationToken cancellationToken = default)
@@ -249,14 +279,13 @@ public sealed class PermissionController(
             var claims = await _userManager.GetClaimsAsync(user).ConfigureAwait(false);
 
             const string permissionClaimType = "Permission";
-          
+
             var directPermissions = claims
                 .Where(c => c.Type == permissionClaimType)
                 .Select(c => c.Value)
                 .Distinct()
                 .ToList();
 
-            // 序列化 (Sequential) 查詢，避免 Task.WhenAll 造成 DbContext 多執行緒併發衝突
             var rolePermissionsList = new List<string>();
             foreach (var roleName in roles)
             {
@@ -272,7 +301,6 @@ public sealed class PermissionController(
                 }
             }
 
-            // 去重並排序
             var effectivePermissions = directPermissions
                 .Union(rolePermissionsList, StringComparer.OrdinalIgnoreCase)
                 .Distinct()
@@ -309,21 +337,16 @@ public sealed class PermissionController(
     }
 
     /// <summary>
-    /// 取得指定角色的所有成員與權限總覽（供資安稽核時察看）
+    /// 取得指定角色的所有成員與權限總覽
     /// </summary>
-    /// <param name="roleId">角色識別碼或名稱</param>
-    /// <param name="cancellationToken">異步取消權牌</param>
-    /// <returns>角色成員與權限稽核資料集</returns>
     [HttpGet("role/{roleId}/audit")]
-    [Function("GetRoleMemberPermissions", "檢視角色的成員與權限", Icon = "fa-solid fa-users-gear", Order = 4, Description = "取得指定角色的所屬成員清單與對應權限配置，供資安稽核使用。", IsMenu = false)]
+    [Function("GetRoleMemberPermissions", "檢視角色的成員與權限", Icon = "fa-solid fa-users-gear", Order = 5, Description = "取得指定角色的所屬成員清單與對應權限配置，供資安稽核使用。", IsMenu = false)]
     [RequiresPermission("SYSTEM.PERMISSION.READ")]
-
     [EndpointSummary("檢視角色的成員與權限")]
     [EndpointDescription("取得指定角色的所屬成員清單與對應權限配置，供資安稽核使用。")]
     [ProducesResponseType(typeof(RoleAuditDetailsResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-
     public async Task<IActionResult> GetRoleMemberPermissions(
         [FromRoute] string roleId,
         CancellationToken cancellationToken = default)
@@ -388,17 +411,11 @@ public sealed class PermissionController(
     }
 
     /// <summary>
-    /// 指派/更新指定使用者的直接 API 權限清單 (改用 64 位元位元遮罩與資料庫持久化)
+    /// 指派/更新指定使用者的直接 API 權限清單
     /// </summary>
-    /// <param name="userId">使用者識別碼</param>
-    /// <param name="tenantLabId">租戶實驗室識別碼 (選填，若有帶入則寫入實驗室隔離權限，否則寫入全域權限)</param>
-    /// <param name="request">直接權限指派請求內容</param>
-    /// <param name="cancellationToken">異步取消權牌</param>
-    /// <returns>操作結果訊息</returns>
     [HttpPut("user/{userId:guid}/permissions")]
-    [Function("AssignUserPermissions", "指派使用者權限", Icon = "fa-solid fa-key", Order = 11, Description = "更新指定使用者的直接 API 權限",IsMenu =false)]
+    [Function("AssignUserPermissions", "指派使用者權限", Icon = "fa-solid fa-key", Order = 6, Description = "更新指定使用者的直接 API 權限", IsMenu = false)]
     [RequiresPermission("SYSTEM.PERMISSION.UPDATE")]
-
     [EndpointSummary("指派使用者權限")]
     [EndpointDescription("更新指定使用者的直接 API 權限。")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]

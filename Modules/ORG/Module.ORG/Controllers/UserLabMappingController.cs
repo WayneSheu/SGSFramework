@@ -22,7 +22,7 @@ namespace SGS.Modules.ORG.Controllers;
 [Authorize]
 [Route("api/org/user-labs")]
 [ControllerTitle("用戶歸屬實驗室", Icon = "fa-solid fa-user-gear", Order = 11, Description = "管理使用者於各實驗室之主要/兼任歸屬與職位標題")]
-[RequiresPermission("ORG.USERLABMAPPING.READ", "用戶歸屬實驗室檢視")]
+[RequiresPermission("ORG.USERLABMAPPING.READ")]
 public class UserLabMappingController : ApiControllerBase
 {
     private readonly ILogger<UserLabMappingController> _logger;
@@ -39,7 +39,7 @@ public class UserLabMappingController : ApiControllerBase
     /// </summary>
     [HttpGet("users/{userId:guid}")]
     [Function("GetUserLabMappings", "取得用戶歸屬實驗室", Icon = "fa-solid fa-id-card", Order = 1, Description = "查詢特定使用者之主要與兼任實驗室清單")]
-    [RequiresPermission("ORG.USERLABMAPPING.READ", "用戶歸屬實驗室檢視")]
+    [RequiresPermission("ORG.USERLABMAPPING.READ")]
     [EndpointSummary("取得用戶歸屬實驗室")]
     [EndpointDescription("查詢特定使用者之主要與兼任實驗室清單。")]
     [ProducesResponseType(typeof(Result<List<UserLabMappingDto>>), StatusCodes.Status200OK)]

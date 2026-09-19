@@ -1,6 +1,8 @@
 ﻿// 檔案路徑: Abstractions/SGSFramework.AuthTokenBucket.Abstractions/IPermissionManagementService.cs
 
 using SGSFramework.AuthTokenBucket.DTOs;
+using SGSFramework.AuthTokenBucket.DTOs.PermissionGrants;
+using SGSFramework.Core.Abstractions.Permissions.Entities;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,6 +19,10 @@ namespace SGSFramework.AuthTokenBucket.Abstractions
         Task RevokePermissionFromRoleAsync(string roleId, string permissionCode, CancellationToken cancellationToken = default);
 
         //後台 UI 權限矩陣與樹狀結構維護 (Management DTOs)
+        /// <summary>
+        /// 同步並更新系統 PermissionMetadata 資料表，並透過 DTO 投影回傳完整資料清單
+        /// </summary>
+        Task<IReadOnlyCollection<PermissionMetadataDto>> SyncPermissionMetadataAsync(CancellationToken cancellationToken = default);
         Task<List<PermissionModuleDto>> GetPermissionTreeAsync(CancellationToken cancellationToken = default);
         Task<RolePermissionMatrixDto?> GetRolePermissionsAsync(string roleId, CancellationToken cancellationToken = default);
         Task<(bool Succeeded, string Message)> UpdateRolePermissionsAsync(UpdateRolePermissionsRequest request, CancellationToken cancellationToken = default);
