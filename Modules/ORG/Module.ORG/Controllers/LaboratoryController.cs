@@ -45,7 +45,7 @@ public class LaboratoryController : ApiControllerBase
     /// 取得區域實驗室清單
     /// </summary>
     [HttpGet("regional")]
-    [Function("GetRegionalLaboratories", "區域實驗室清單", Icon = "fa-solid fa-map-location-dot", Order = 0, Description = "取得頂層或區域層級之實驗室節點清單", IsMenu = true)]
+    [Function("GetRegionalLaboratories", "區域實驗室", Icon = "fa-solid fa-map-location-dot", Order = 0, Description = "取得頂層或區域層級之實驗室節點清單", IsMenu = true)]
     [RequiresPermission("ORG.LABORATORY.READ")]
     [EndpointSummary("取得區域實驗室清單")]
     [EndpointDescription("取得區域層級之實驗室節點清單。")]
@@ -69,7 +69,7 @@ public class LaboratoryController : ApiControllerBase
     /// 取得實驗室清單
     /// </summary>
     [HttpGet]
-    [Function("GetLaboratories", "實驗室清單", Icon = "fa-solid fa-list", Order = 1, Description = "取得所有實驗室基本資訊清單", IsMenu = true)]
+    [Function("GetLaboratories", "實驗室", Icon = "fa-solid fa-list", Order = 1, Description = "取得所有實驗室基本資訊清單", IsMenu = true)]
     [RequiresPermission("ORG.LABORATORY.READ")]
     [EndpointSummary("取得實驗室清單")]
     [EndpointDescription("取得頂層層級之實驗室節點清單。")]

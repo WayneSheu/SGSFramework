@@ -46,7 +46,7 @@ public static class ServiceCollectionExtensions
                 // 3. 註冊客製化 Nullable Guid 轉譯器，自動將 API Payload 的空字串 "" 轉為 null
                 options.JsonSerializerOptions.Converters.Add(new NullableGuidJsonConverter());
                 // 允許循環參考並自動產生識別碼處理
-                options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.Preserve;
+                //options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.Preserve;
             });
 
         services.AddScoped<IControllerMetadataService, ControllerMetadataService>();
