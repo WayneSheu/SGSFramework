@@ -294,6 +294,9 @@ try
 catch (Exception ex)
 {
     Log.Fatal(ex, "Application start-up failed");
+    // 確保異常能被記錄並讓進程以非零代碼結束，促使 IIS 產生 stdout 錯誤
+    Environment.ExitCode = 1;
+    throw;
 }
 finally
 {
