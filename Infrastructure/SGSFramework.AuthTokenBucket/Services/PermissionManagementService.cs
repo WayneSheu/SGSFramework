@@ -180,10 +180,80 @@ public class PermissionManagementService<TContext, TRole, TKey> : IPermissionMan
         }
     }
 
+    /// <summary>
+    /// 取得完整系統與動態模組權限清單 (階層式：Module -> Controller -> Permissions)，並過濾重複的 PermissionKey
+    /// </summary>
     public async Task<List<PermissionModuleDto>> GetPermissionTreeAsync(CancellationToken cancellationToken = default)
     {
-        await Task.CompletedTask.ConfigureAwait(false);
-        return new List<PermissionModuleDto>();
+        try
+        {
+            var dbSet = _dbContext.Set<PermissionMetadata>();
+
+            var flatMetadata = await dbSet
+                .AsNoTracking()
+                .OrderBy(p => p.ModuleName)
+                .ThenBy(p => p.ControllerName)
+                .ThenBy(p => p.BitPosition)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (flatMetadata == null || !flatMetadata.Any())
+            {
+                _logger.LogWarning("資料庫中無任何 PermissionMetadata 資料，權限樹為空。");
+                return new List<PermissionModuleDto>();
+            }
+
+            var moduleGroups = flatMetadata.GroupBy(p => p.ModuleName);
+            var moduleDtos = new List<PermissionModuleDto>();
+
+            foreach (var modGroup in moduleGroups)
+            {
+                var firstMod = modGroup.First();
+                var controllerGroups = modGroup.GroupBy(p => p.ControllerName);
+                var controllerDtos = new List<PermissionControllerDto>();
+
+                foreach (var ctrlGroup in controllerGroups)
+                {
+                    var firstCtrl = ctrlGroup.First();
+
+                    // 透過 PermissionKey 進行分組過濾，確保不重複輸出相同的 PermissionKey
+                    var permissionItems = ctrlGroup
+                        .GroupBy(p => p.PermissionKey, StringComparer.OrdinalIgnoreCase)
+                        .Select(g => g.First())
+                        .Select(p => new PermissionItemDto
+                        {
+                            PermissionKey = p.PermissionKey,
+                            PermissionTitle = p.PermissionTitle,
+                            ActionName = p.ActionName,
+                            ActionTitle = p.ActionTitle,
+                            Description = p.Description,
+                            BitPosition = p.BitPosition
+                        })
+                        .ToList();
+
+                    controllerDtos.Add(new PermissionControllerDto
+                    {
+                        ControllerName = firstCtrl.ControllerName,
+                        ControllerTitle = firstCtrl.ControllerTitle,
+                        Permissions = permissionItems
+                    });
+                }
+
+                moduleDtos.Add(new PermissionModuleDto
+                {
+                    ModuleName = modGroup.Key,
+                    ModuleTitle = firstMod.ModuleTitle,
+                    Controllers = controllerDtos
+                });
+            }
+
+            return moduleDtos;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "組裝權限樹狀結構時發生未預期例外。");
+            throw;
+        }
     }
 
     public async Task<RolePermissionMatrixDto?> GetRolePermissionsAsync(string roleId, CancellationToken cancellationToken = default)
