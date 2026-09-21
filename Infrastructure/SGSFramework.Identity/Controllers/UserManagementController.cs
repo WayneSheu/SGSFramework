@@ -616,4 +616,59 @@ public sealed class UserManagementController(
             });
         }
     }
+
+    /// <summary>
+    /// 指派或更新指定使用者的角色清單
+    /// </summary>
+    [HttpPut("{userId:guid}/roles")]
+    [Function("AssignUserRoles", "指派使用者角色", Icon = "fa-solid fa-user-tag", Order = 12, Description = "更新指定使用者的系統角色授權歸屬")]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.UPDATE", "編輯使用者")]
+    [EndpointSummary("指派使用者角色")]
+    [EndpointDescription("針對單一指定使用者進行系統角色權限重新指派。")]
+    [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> AssignUserRoles(
+        [FromRoute] Guid userId,
+        [FromBody] AssignUserRolesRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (userId == Guid.Empty)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "無效的請求參數",
+                Detail = "必須提供有效的使用者識別碼。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var result = await _userService.AssignUserRolesAsync(userId, request, cancellationToken).ConfigureAwait(false);
+            return HandleResult(result);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("[UserManagementController] 指派使用者角色作業已被用戶端取消。UserId: {UserId}", userId);
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "指派使用者角色時發生異常。UserId: {UserId}", userId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "指派使用者角色作業時發生系統異常。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
 }

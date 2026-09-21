@@ -1,6 +1,6 @@
 ﻿// ==========================================
 // 檔案路徑: src/Infrastructure/SGSFramework.Identity/Services/UserManagementService.cs
-// 架構層級: Infrastructure / Service Implementation Layer (Optimized ResetPasswordAsync)
+// 架構層級: Infrastructure / Service Implementation Layer (Added AssignUserRolesAsync)
 // ==========================================
 
 #nullable enable
@@ -225,6 +225,93 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
         {
             _logger.LogError(ex, "[UserManagementService] 查詢使用者角色狀態時發生異常。UserId: {UserId}", userId);
             return Result.Failure<UserRoleAssignmentDto>(Error.Unexpected("User.GetRoleAssignment.Exception", "讀取使用者角色設定時發生內部系統錯誤。"));
+        }
+    }
+
+
+    /// <inheritdoc />
+    public async Task<Result<bool>> AssignUserRolesAsync(
+        TKey userId,
+        AssignUserRolesRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (userId is Guid gId && gId == Guid.Empty)
+            {
+                return Result.Failure<bool>(Error.Validation("User.AssignRoles.InvalidId", "必須提供有效的使用者識別碼。"));
+            }
+
+            var user = await _userManager.FindByIdAsync(userId.ToString()!).ConfigureAwait(false);
+            if (user == null || user.IsDeleted)
+            {
+                return Result.Failure<bool>(Error.NotFound("User.NotFound", $"找不到識別碼為 {userId} 的使用者。"));
+            }
+
+            var targetRoles = request.RoleNames ?? new List<string>();
+
+            foreach (var roleName in targetRoles)
+            {
+                if (!await _roleManager.RoleExistsAsync(roleName).ConfigureAwait(false))
+                {
+                    return Result.Failure<bool>(Error.Validation("Role.NotFound", $"找不到指定的角色名稱: {roleName}"));
+                }
+            }
+
+            await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var currentRoles = await _userManager.GetRolesAsync(user).ConfigureAwait(false);
+
+                if (currentRoles.Count > 0)
+                {
+                    var removeResult = await _userManager.RemoveFromRolesAsync(user, currentRoles).ConfigureAwait(false);
+                    if (!removeResult.Succeeded)
+                    {
+                        await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        string errors = string.Join("; ", removeResult.Errors.Select(e => e.Description));
+                        return Result.Failure<bool>(Error.Validation("User.AssignRoles.RemoveFailed", $"移除舊角色失敗: {errors}"));
+                    }
+                }
+
+                if (targetRoles.Count > 0)
+                {
+                    var addResult = await _userManager.AddToRolesAsync(user, targetRoles).ConfigureAwait(false);
+                    if (!addResult.Succeeded)
+                    {
+                        await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        string errors = string.Join("; ", addResult.Errors.Select(e => e.Description));
+                        return Result.Failure<bool>(Error.Validation("User.AssignRoles.AddFailed", $"指派新角色失敗: {errors}"));
+                    }
+                }
+
+                // 【關鍵修正】必須呼叫 SaveChangesAsync 將變更寫入資料庫，交易 Commit 才會生效
+                await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+                _logger.LogInformation("成功更新使用者角色指派。UserId: {UserId}, Roles: {Roles}", userId, string.Join(", ", targetRoles));
+                return Result.Success(true);
+            }
+            catch (Exception)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                throw;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("[UserManagementService] 指派使用者角色作業已被取消。UserId: {UserId}", userId);
+            return Result.Failure<bool>(Error.Validation("User.AssignRoles.Cancelled", "指派使用者角色作業已取消。"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[UserManagementService] 指派使用者角色時發生系統異常。UserId: {UserId}", userId);
+            return Result.Failure<bool>(Error.Unexpected("User.AssignRoles.Exception", "指派使用者角色時發生內部系統錯誤。"));
         }
     }
 
@@ -718,7 +805,7 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
             _logger.LogInformation("使用者成功變更密碼並重置 Session: {UserId}", userId);
             return Result.Success(true);
         }
-         catch(OperationCanceledException)
+        catch (OperationCanceledException)
         {
             _logger.LogInformation("[UserManagementService] 變更密碼作業已被取消。UserId: {UserId}", userId);
             return Result.Failure<bool>(Error.Validation("User.ChangePassword.Cancelled", "變更密碼作業已取消。"));
@@ -729,8 +816,6 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
             return Result.Failure<bool>(Error.Unexpected("User.ChangePassword.Exception", "變更密碼時發生內部系統錯誤。"));
         }
     }
-
-
 }
 
 /// <summary>

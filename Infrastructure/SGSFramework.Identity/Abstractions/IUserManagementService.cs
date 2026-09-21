@@ -51,7 +51,18 @@ public interface IUserManagementService<TUser, TRole, TKey>
     /// <param name="cancellationToken"></param>
     /// <returns></returns>
     Task<Result<UserRoleAssignmentDto>> GetUserRoleAssignmentAsync(TKey userId, CancellationToken cancellationToken = default);
-   
+
+    /// <summary>
+    /// 分配使用者角色
+    /// </summary>
+    /// <param name="userId"></param>
+    /// <param name="request"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    Task<Result<bool>> AssignUserRolesAsync(
+        TKey userId,
+        AssignUserRolesRequest request,
+        CancellationToken cancellationToken = default);
     /// <summary>
     /// 創建新使用者
     /// </summary>
