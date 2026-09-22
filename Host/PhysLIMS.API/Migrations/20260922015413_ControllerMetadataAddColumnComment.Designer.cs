@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using PhysLIMS.API.Dbcontexts;
 
@@ -11,9 +12,11 @@ using PhysLIMS.API.Dbcontexts;
 namespace PhysLIMS.API.Migrations
 {
     [DbContext(typeof(PhysLIMSDbContext))]
-    partial class PhysLIMSDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260922015413_ControllerMetadataAddColumnComment")]
+    partial class ControllerMetadataAddColumnComment
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -365,10 +368,7 @@ namespace PhysLIMS.API.Migrations
                         .IsUnique()
                         .HasDatabaseName("UX_Module_Controller_Action");
 
-                    b.ToTable("ControllerMetadatas", "core", t =>
-                        {
-                            t.HasComment("API 控制器與 Action 中繼資料實體");
-                        });
+                    b.ToTable("ControllerMetadatas", "core");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Controller.MenuItem", b =>
@@ -1055,75 +1055,79 @@ namespace PhysLIMS.API.Migrations
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int")
-                        .HasComment("主鍵");
+                        .HasColumnOrder(0);
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<string>("ActionName")
                         .IsRequired()
                         .HasColumnType("nvarchar(450)")
-                        .HasComment("操作名稱，對應ControllerMetadatas 的ActionName。");
+                        .HasColumnOrder(5);
 
                     b.Property<string>("ActionTitle")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)")
-                        .HasComment("操作標題，對應ControllerMetadatas 的ActionTitle。");
+                        .HasColumnOrder(6);
 
                     b.Property<int>("BitPosition")
                         .HasColumnType("int")
-                        .HasComment("位址權限，對應ControllerMetadatas 的BitPosition。");
+                        .HasColumnOrder(10);
 
                     b.Property<string>("ControllerName")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)")
-                        .HasComment("功能名稱，對應ControllerMetadatas 的ControllerName。");
+                        .HasColumnOrder(3);
 
                     b.Property<string>("ControllerTitle")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)")
-                        .HasComment("功能標題，對應ControllerMetadatas 的ControllerTitle。");
+                        .HasColumnOrder(4);
 
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)")
-                        .HasComment("操作說明，對應ControllerMetadatas 的Description。");
+                        .HasColumnOrder(7);
 
                     b.Property<int>("Level")
                         .HasColumnType("int")
-                        .HasComment("階層深度");
+                        .HasColumnOrder(13);
 
                     b.Property<string>("ModuleName")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)")
-                        .HasComment("模組名稱，對應ControllerMetadatas 的ModuleName，例如SGSFramework.System、SGSFramework.System。");
+                        .HasColumnOrder(1);
 
                     b.Property<string>("ModuleTitle")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)")
-                        .HasComment("模組標題，對應ControllerMetadatas 的ModuleTitle，例如系統管理、組織管理。");
+                        .HasColumnOrder(2);
 
                     b.Property<string>("NodePath")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)")
-                        .HasComment("物化路徑，例如：1/2/3/4/5/");
+                        .HasColumnOrder(12);
 
                     b.Property<int?>("ParentId")
                         .HasColumnType("int")
-                        .HasComment("父節點ID");
+                        .HasColumnOrder(11);
 
                     b.Property<string>("PermissionKey")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)")
-                        .HasComment("權限代碼，對應ControllerMetadatas 的PermissionKey。");
+                        .HasColumnOrder(9);
 
                     b.Property<string>("PermissionTitle")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)")
-                        .HasComment("權限標題，對應ControllerMetadatas 的PermissionTitle。");
+                        .HasColumnOrder(8);
+
+                    b.Property<string>("SectionName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
 
@@ -1132,10 +1136,7 @@ namespace PhysLIMS.API.Migrations
                     b.HasIndex("PermissionKey", "ControllerName", "ActionName")
                         .IsUnique();
 
-                    b.ToTable("PermissionMetadata", "core", t =>
-                        {
-                            t.HasComment("權限中繼資料實體");
-                        });
+                    b.ToTable("PermissionMetadata", "core");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Identities.PermissionGrant", b =>
@@ -1337,7 +1338,7 @@ namespace PhysLIMS.API.Migrations
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Entities.PermissionMetadata", b =>
                 {
                     b.HasOne("SGSFramework.Core.Abstractions.Permissions.Entities.PermissionMetadata", "Parent")
-                        .WithMany("Childrens")
+                        .WithMany("Children")
                         .HasForeignKey("ParentId")
                         .OnDelete(DeleteBehavior.Restrict);
 
@@ -1351,7 +1352,7 @@ namespace PhysLIMS.API.Migrations
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Entities.PermissionMetadata", b =>
                 {
-                    b.Navigation("Childrens");
+                    b.Navigation("Children");
                 });
 #pragma warning restore 612, 618
         }

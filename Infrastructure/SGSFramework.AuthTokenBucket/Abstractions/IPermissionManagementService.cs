@@ -1,7 +1,8 @@
 ﻿// 檔案路徑: Abstractions/SGSFramework.AuthTokenBucket.Abstractions/IPermissionManagementService.cs
 
-using SGSFramework.AuthTokenBucket.DTOs;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionGrants;
+using SGSFramework.AuthTokenBucket.DTOs.PermissionTree;
+using SGSFramework.AuthTokenBucket.DTOs.RolePermissions;
 using SGSFramework.Core.Abstractions.Permissions.Entities;
 using System.Collections.Generic;
 using System.Threading;

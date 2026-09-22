@@ -6,8 +6,9 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Abstractions;
-using SGSFramework.AuthTokenBucket.DTOs;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionGrants;
+using SGSFramework.AuthTokenBucket.DTOs.PermissionTree;
+using SGSFramework.AuthTokenBucket.DTOs.RolePermissions;
 using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Abstractions.Permissions.Entities;
 using System;
@@ -181,7 +182,7 @@ public class PermissionManagementService<TContext, TRole, TKey> : IPermissionMan
     }
 
     /// <summary>
-    /// 取得完整系統與動態模組權限清單 (階層式：Module -> Controller -> Permissions)，並過濾重複的 PermissionKey
+    /// 取得完整系統與動態模組權限清單 (階層式：Section -> Module -> Function(Controller) -> ReadPermission + ActionPermissions)
     /// </summary>
     public async Task<List<PermissionModuleDto>> GetPermissionTreeAsync(CancellationToken cancellationToken = default)
     {
@@ -210,17 +211,49 @@ public class PermissionManagementService<TContext, TRole, TKey> : IPermissionMan
             {
                 var firstMod = modGroup.First();
                 var controllerGroups = modGroup.GroupBy(p => p.ControllerName);
-                var controllerDtos = new List<PermissionControllerDto>();
+                var functionDtos = new List<PermissionFunctionDto>();
 
                 foreach (var ctrlGroup in controllerGroups)
                 {
                     var firstCtrl = ctrlGroup.First();
 
-                    // 透過 PermissionKey 進行分組過濾，確保不重複輸出相同的 PermissionKey
-                    var permissionItems = ctrlGroup
+                    // 1. 濾除重複的 PermissionKey
+                    var distinctPermissions = ctrlGroup
                         .GroupBy(p => p.PermissionKey, StringComparer.OrdinalIgnoreCase)
                         .Select(g => g.First())
-                        .Select(p => new PermissionItemDto
+                        .ToList();
+
+                    // 2. 識別並分離 READ 權限 (依據 Action 名稱慣例或 BitPosition 判定)
+                    var readPermEntity = distinctPermissions.FirstOrDefault(p =>
+                        p.ActionName.StartsWith("Get", StringComparison.OrdinalIgnoreCase) ||
+                        p.ActionName.StartsWith("Read", StringComparison.OrdinalIgnoreCase) ||
+                        p.ActionName.StartsWith("List", StringComparison.OrdinalIgnoreCase) ||
+                        p.ActionName.StartsWith("Query", StringComparison.OrdinalIgnoreCase) ||
+                        p.ActionName.StartsWith("Find", StringComparison.OrdinalIgnoreCase));
+
+                    // 若找不到明顯的 Read 關鍵字，則退而求其次取 BitPosition 最小者作為 Read 權限
+                    readPermEntity ??= distinctPermissions.OrderBy(p => p.BitPosition).FirstOrDefault();
+
+                    PermissionDto? readPermissionDto = null;
+                    var actionPermissionDtos = new List<PermissionDto>();
+
+                    if (readPermEntity != null)
+                    {
+                        readPermissionDto = new PermissionDto
+                        {
+                            PermissionKey = readPermEntity.PermissionKey,
+                            PermissionTitle = readPermEntity.PermissionTitle,
+                            ActionName = readPermEntity.ActionName,
+                            ActionTitle = readPermEntity.ActionTitle,
+                            Description = readPermEntity.Description,
+                            BitPosition = readPermEntity.BitPosition
+                        };
+                    }
+
+                    // 3. 其餘權限歸類為 ActionPermissions (Create, Update, Delete 等)
+                    foreach (var p in distinctPermissions.Where(p => p != readPermEntity))
+                    {
+                        actionPermissionDtos.Add(new PermissionDto
                         {
                             PermissionKey = p.PermissionKey,
                             PermissionTitle = p.PermissionTitle,
@@ -228,14 +261,15 @@ public class PermissionManagementService<TContext, TRole, TKey> : IPermissionMan
                             ActionTitle = p.ActionTitle,
                             Description = p.Description,
                             BitPosition = p.BitPosition
-                        })
-                        .ToList();
+                        });
+                    }
 
-                    controllerDtos.Add(new PermissionControllerDto
+                    functionDtos.Add(new PermissionFunctionDto
                     {
-                        ControllerName = firstCtrl.ControllerName,
-                        ControllerTitle = firstCtrl.ControllerTitle,
-                        Permissions = permissionItems
+                        FunctionName = firstCtrl.ControllerName,
+                        FunctionTitle = firstCtrl.ControllerTitle,
+                        ReadPermission = readPermissionDto,
+                        ActionPermissions = actionPermissionDtos
                     });
                 }
 
@@ -243,10 +277,11 @@ public class PermissionManagementService<TContext, TRole, TKey> : IPermissionMan
                 {
                     ModuleName = modGroup.Key,
                     ModuleTitle = firstMod.ModuleTitle,
-                    Controllers = controllerDtos
+                    Functions = functionDtos
                 });
             }
 
+            _logger.LogInformation("成功組裝依賴階層式權限樹，共處理模組數: {Count}", moduleDtos.Count);
             return moduleDtos;
         }
         catch (Exception ex)
@@ -255,6 +290,7 @@ public class PermissionManagementService<TContext, TRole, TKey> : IPermissionMan
             throw;
         }
     }
+
 
     public async Task<RolePermissionMatrixDto?> GetRolePermissionsAsync(string roleId, CancellationToken cancellationToken = default)
     {

@@ -15,6 +15,9 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.DTOs;
+using SGSFramework.AuthTokenBucket.DTOs.PermissionTree;
+using SGSFramework.AuthTokenBucket.DTOs.RolePermissions;
+using SGSFramework.AuthTokenBucket.DTOs.UserPermissions;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Permissions;
@@ -97,7 +100,7 @@ public sealed class PermissionController(
     }
 
     /// <summary>
-    /// 取得完整系統與動態模組權限清單 (階層式：Module -> Controller -> Permissions)
+    /// 取得完整系統與動態模組權限清單 (階層式：Section-> Module -> Function -> Action)
     /// </summary>
     [HttpGet("tree")]
     [Function("GetPermissionTree", "系統權限清單", Icon = "fa-solid fa-sitemap", Order = 1, Description = "取得完整系統與動態模組權限清單 (階層式：Module -> Controller -> Permissions)", IsMenu = false)]

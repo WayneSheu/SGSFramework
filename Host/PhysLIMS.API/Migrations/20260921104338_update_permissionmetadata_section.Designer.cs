@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using PhysLIMS.API.Dbcontexts;
 
@@ -11,9 +12,11 @@ using PhysLIMS.API.Dbcontexts;
 namespace PhysLIMS.API.Migrations
 {
     [DbContext(typeof(PhysLIMSDbContext))]
-    partial class PhysLIMSDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260921104338_update_permissionmetadata_section")]
+    partial class update_permissionmetadata_section
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -235,117 +238,95 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<string>("ActionName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(450)")
-                        .HasComment("取自ActionName Atteribute 的ActionName。");
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<string>("AttributesJson")
-                        .HasColumnType("nvarchar(max)")
-                        .HasComment(" Controller 或 Action 完整 Attributes 集合 (JSON 格式)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int?>("BitPosition")
-                        .HasColumnType("int")
-                        .HasComment("該 Action 在模組內對應的位元位置 (0 ~ 63)，用於 Bitmask 快速運算。");
+                        .HasColumnType("int");
 
                     b.Property<string>("ControllerIcon")
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
-                        .HasComment("取自ControllerIcon Atteribute 的ControllerIcon。");
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("ControllerName")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
-                        .HasComment("取自ControllerName Atteribute 的ControllerName。");
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<int>("ControllerOrder")
-                        .HasColumnType("int")
-                        .HasComment("取自ControllerOrder Atteribute 的ControllerOrder。");
+                        .HasColumnType("int");
 
                     b.Property<string>("ControllerTitle")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
-                        .HasComment("取自ControllerTitle Atteribute 的ControllerTitle。");
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("ControllerTypeName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)")
-                        .HasComment("取自ControllerTypeName Atteribute 的ControllerTypeName。");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()")
-                        .HasComment("建立日期");
+                        .HasDefaultValueSql("GETUTCDATE()");
 
                     b.Property<string>("Description")
-                        .HasColumnType("nvarchar(max)")
-                        .HasComment("動作說明 (供前端 Axios / HttpClient 顯示)。");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("DisplayName")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
-                        .HasComment("動作標題 (供前端 Axios / HttpClient 顯示)。");
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<int>("DisplayOrder")
-                        .HasColumnType("int")
-                        .HasComment("動作排序 (供前端 Axios / HttpClient 顯示)。");
+                        .HasColumnType("int");
 
                     b.Property<string>("Icon")
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
-                        .HasComment("動作圖示 (供前端 Axios / HttpClient 顯示)。");
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
-                        .HasDefaultValue(true)
-                        .HasComment("標記是否啟用");
+                        .HasDefaultValue(true);
 
                     b.Property<bool>("IsMenu")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
-                        .HasDefaultValue(false)
-                        .HasComment("是否為選單 (由 [Function] Attribute 之 IsMenu 標記)。");
+                        .HasDefaultValue(false);
 
                     b.Property<string>("ModuleName")
                         .IsRequired()
                         .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
-                        .HasComment("取自AssemblyInfo Attribute 的ModuleName 屬性。");
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("ModuleTitle")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
-                        .HasComment("取自AssemblyInfo Attribute 的ModulTitle。");
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("ParentMenuName")
-                        .HasColumnType("nvarchar(max)")
-                        .HasComment("父級選單名稱 (供前端 Axios / HttpClient 顯示)。");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Path")
                         .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)")
-                        .HasComment("供前端路由系統進行頁面跳轉與選單點擊導航。");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("PermissionKey")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
-                        .HasComment("權限Key (供前端 Axios / HttpClient 顯示)。");
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("RouteTemplate")
                         .IsRequired()
                         .HasMaxLength(250)
-                        .HasColumnType("nvarchar(250)")
-                        .HasComment("供前端 Axios / HttpClient 進行 HTTP 請求。");
+                        .HasColumnType("nvarchar(250)");
 
                     b.Property<string>("Version")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)")
-                        .HasComment("API 版本號 (例如: v1, v2, etc.)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
 
@@ -365,10 +346,7 @@ namespace PhysLIMS.API.Migrations
                         .IsUnique()
                         .HasDatabaseName("UX_Module_Controller_Action");
 
-                    b.ToTable("ControllerMetadatas", "core", t =>
-                        {
-                            t.HasComment("API 控制器與 Action 中繼資料實體");
-                        });
+                    b.ToTable("ControllerMetadatas", "core");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Controller.MenuItem", b =>
@@ -1055,75 +1033,79 @@ namespace PhysLIMS.API.Migrations
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int")
-                        .HasComment("主鍵");
+                        .HasColumnOrder(0);
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<string>("ActionName")
                         .IsRequired()
                         .HasColumnType("nvarchar(450)")
-                        .HasComment("操作名稱，對應ControllerMetadatas 的ActionName。");
+                        .HasColumnOrder(5);
 
                     b.Property<string>("ActionTitle")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)")
-                        .HasComment("操作標題，對應ControllerMetadatas 的ActionTitle。");
+                        .HasColumnOrder(6);
 
                     b.Property<int>("BitPosition")
                         .HasColumnType("int")
-                        .HasComment("位址權限，對應ControllerMetadatas 的BitPosition。");
+                        .HasColumnOrder(10);
 
                     b.Property<string>("ControllerName")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)")
-                        .HasComment("功能名稱，對應ControllerMetadatas 的ControllerName。");
+                        .HasColumnOrder(3);
 
                     b.Property<string>("ControllerTitle")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)")
-                        .HasComment("功能標題，對應ControllerMetadatas 的ControllerTitle。");
+                        .HasColumnOrder(4);
 
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)")
-                        .HasComment("操作說明，對應ControllerMetadatas 的Description。");
+                        .HasColumnOrder(7);
 
                     b.Property<int>("Level")
                         .HasColumnType("int")
-                        .HasComment("階層深度");
+                        .HasColumnOrder(13);
 
                     b.Property<string>("ModuleName")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)")
-                        .HasComment("模組名稱，對應ControllerMetadatas 的ModuleName，例如SGSFramework.System、SGSFramework.System。");
+                        .HasColumnOrder(1);
 
                     b.Property<string>("ModuleTitle")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)")
-                        .HasComment("模組標題，對應ControllerMetadatas 的ModuleTitle，例如系統管理、組織管理。");
+                        .HasColumnOrder(2);
 
                     b.Property<string>("NodePath")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)")
-                        .HasComment("物化路徑，例如：1/2/3/4/5/");
+                        .HasColumnOrder(12);
 
                     b.Property<int?>("ParentId")
                         .HasColumnType("int")
-                        .HasComment("父節點ID");
+                        .HasColumnOrder(11);
 
                     b.Property<string>("PermissionKey")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)")
-                        .HasComment("權限代碼，對應ControllerMetadatas 的PermissionKey。");
+                        .HasColumnOrder(9);
 
                     b.Property<string>("PermissionTitle")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)")
-                        .HasComment("權限標題，對應ControllerMetadatas 的PermissionTitle。");
+                        .HasColumnOrder(8);
+
+                    b.Property<string>("SectionName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
 
@@ -1132,10 +1114,7 @@ namespace PhysLIMS.API.Migrations
                     b.HasIndex("PermissionKey", "ControllerName", "ActionName")
                         .IsUnique();
 
-                    b.ToTable("PermissionMetadata", "core", t =>
-                        {
-                            t.HasComment("權限中繼資料實體");
-                        });
+                    b.ToTable("PermissionMetadata", "core");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Identities.PermissionGrant", b =>
@@ -1337,7 +1316,7 @@ namespace PhysLIMS.API.Migrations
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Entities.PermissionMetadata", b =>
                 {
                     b.HasOne("SGSFramework.Core.Abstractions.Permissions.Entities.PermissionMetadata", "Parent")
-                        .WithMany("Childrens")
+                        .WithMany("Children")
                         .HasForeignKey("ParentId")
                         .OnDelete(DeleteBehavior.Restrict);
 
@@ -1351,7 +1330,7 @@ namespace PhysLIMS.API.Migrations
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Entities.PermissionMetadata", b =>
                 {
-                    b.Navigation("Childrens");
+                    b.Navigation("Children");
                 });
 #pragma warning restore 612, 618
         }

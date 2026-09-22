@@ -3,6 +3,8 @@
 // 架構層級: Infrastructure Layer
 // ==========================================
 
+#nullable enable
+
 namespace SGSFramework.AuthTokenBucket.Services
 {
     using Microsoft.EntityFrameworkCore;
@@ -12,7 +14,6 @@ namespace SGSFramework.AuthTokenBucket.Services
     using SGSFramework.Core.Abstractions.Entities.Controller;
     using SGSFramework.Core.Abstractions.Permissions;
     using SGSFramework.Core.Abstractions.Permissions.Entities;
-    using SGSFramework.Core.Abstractions.Permissions.Identities;
     using System;
     using System.Linq;
     using System.Threading;
@@ -46,12 +47,14 @@ namespace SGSFramework.AuthTokenBucket.Services
                 var rawPermissions = _permissionRegistry.GetAllPermissions();
                 if (rawPermissions == null || rawPermissions.Count == 0)
                 {
+                    _logger.LogWarning("從權限註冊表中未取得任何權限定義，略過同步。");
                     return;
                 }
 
                 var registeredPermissions = rawPermissions.ToList();
 
                 var controllerMetadatas = await _dbContext.Set<ControllerMetadata>()
+                    .AsNoTracking()
                     .ToListAsync(cancellationToken)
                     .ConfigureAwait(false);
 
@@ -62,35 +65,39 @@ namespace SGSFramework.AuthTokenBucket.Services
                     string controllerName = perm.ControllerName ?? string.Empty;
                     string actionName = perm.ActionName ?? string.Empty;
 
+                    // 強化對應邏輯：優先以 ControllerName + ActionName 匹配，次之以 PermissionKey，最後以 ControllerName 進行群組對齊，確保模組與 ControllerMetadata 100% 一致
                     var matchedMeta = controllerMetadatas.FirstOrDefault(c =>
                         c.ControllerName.Equals(controllerName, StringComparison.OrdinalIgnoreCase) &&
                         c.ActionName.Equals(actionName, StringComparison.OrdinalIgnoreCase))
                         ?? controllerMetadatas.FirstOrDefault(c =>
-                        c.PermissionKey.Equals(key, StringComparison.OrdinalIgnoreCase));
+                        c.PermissionKey.Equals(key, StringComparison.OrdinalIgnoreCase))
+                        ?? controllerMetadatas.FirstOrDefault(c =>
+                        c.ControllerName.Equals(controllerName, StringComparison.OrdinalIgnoreCase));
 
-                    string rawModuleName = !string.IsNullOrEmpty(matchedMeta?.ModuleName)
+                    // 嚴格對齊 ControllerMetadata 的 ModuleName 與 ModuleTitle
+                    string moduleName = !string.IsNullOrEmpty(matchedMeta?.ModuleName)
                         ? matchedMeta.ModuleName
                         : (!string.IsNullOrEmpty(perm.ModuleName) ? perm.ModuleName : "SGSFramework.System");
 
-                    string fallbackModuleName = rawModuleName
+                    string fallbackModuleName = moduleName
                         .Replace("SGSFramework.", "", StringComparison.OrdinalIgnoreCase)
                         .Replace("PhysLIMS.", "", StringComparison.OrdinalIgnoreCase);
-
-                    string moduleName = !string.IsNullOrEmpty(matchedMeta?.ModuleName)
-                        ? matchedMeta.ModuleName
-                        : (!string.IsNullOrEmpty(perm.ModuleName) ? perm.ModuleName : fallbackModuleName);
 
                     string moduleTitle = !string.IsNullOrEmpty(matchedMeta?.ModuleTitle)
                         ? matchedMeta.ModuleTitle
                         : (!string.IsNullOrEmpty(perm.ModuleTitle) ? perm.ModuleTitle : fallbackModuleName);
 
-                    string controllerTitle = matchedMeta?.ControllerTitle ?? perm.ControllerTitle ?? controllerName;
-                    string actionTitle = matchedMeta?.DisplayName ?? perm.ActionTitle ?? actionName;
+                    string controllerTitle = !string.IsNullOrEmpty(matchedMeta?.ControllerTitle)
+                        ? matchedMeta.ControllerTitle
+                        : (!string.IsNullOrEmpty(perm.ControllerTitle) ? perm.ControllerTitle : controllerName);
 
-                    // 核心修正：將 RequiresPermissionAttribute 帶入的 perm.PermissionTitle 優先級調至最高，若未指定則依據原規則判定
+                    string actionTitle = !string.IsNullOrEmpty(matchedMeta?.DisplayName)
+                        ? matchedMeta.DisplayName
+                        : (!string.IsNullOrEmpty(perm.ActionTitle) ? perm.ActionTitle : actionName);
+
                     string defaultCalculatedTitle = (key.EndsWith(".READ", StringComparison.OrdinalIgnoreCase) || key.EndsWith("_READ", StringComparison.OrdinalIgnoreCase))
-                        ? (!string.IsNullOrEmpty(matchedMeta?.ControllerTitle) ? matchedMeta.ControllerTitle : (perm.ControllerTitle ?? controllerTitle))
-                        : (!string.IsNullOrEmpty(perm.ActionTitle) ? perm.ActionTitle : actionTitle);
+                        ? controllerTitle
+                        : actionTitle;
 
                     string permissionTitle = !string.IsNullOrEmpty(perm.PermissionTitle)
                         ? perm.PermissionTitle
@@ -100,6 +107,7 @@ namespace SGSFramework.AuthTokenBucket.Services
                         ? matchedMeta.Description
                         : (perm.Description ?? $"Auto-scanned permission: {key}");
 
+                    // 處理 BitPosition 衝突防範
                     var conflictByBit = await _dbContext.Set<PermissionMetadata>()
                         .FirstOrDefaultAsync(p => p.BitPosition == bitPosition && !(p.ControllerName == controllerName && p.ActionName == actionName), cancellationToken)
                         .ConfigureAwait(false);
@@ -118,17 +126,23 @@ namespace SGSFramework.AuthTokenBucket.Services
 
                     if (existingRecord != null)
                     {
-                        if (existingRecord.PermissionKey != key) { existingRecord.PermissionKey = key; isModified = true; }
+                        if (!string.Equals(existingRecord.PermissionKey, key, StringComparison.Ordinal)) { existingRecord.PermissionKey = key; isModified = true; }
                         if (existingRecord.BitPosition != bitPosition) { existingRecord.BitPosition = bitPosition; isModified = true; }
-                        if (existingRecord.ModuleName != moduleName) { existingRecord.ModuleName = moduleName; isModified = true; }
-                        if (existingRecord.ModuleTitle != moduleTitle) { existingRecord.ModuleTitle = moduleTitle; isModified = true; }
-                        if (existingRecord.ControllerTitle != controllerTitle) { existingRecord.ControllerTitle = controllerTitle; isModified = true; }
-                        if (existingRecord.ActionTitle != actionTitle) { existingRecord.ActionTitle = actionTitle; isModified = true; }
-                        if (existingRecord.PermissionTitle != permissionTitle) { existingRecord.PermissionTitle = permissionTitle; isModified = true; }
+                        if (!string.Equals(existingRecord.ModuleName, moduleName, StringComparison.Ordinal)) { existingRecord.ModuleName = moduleName; isModified = true; }
+                        if (!string.Equals(existingRecord.ModuleTitle, moduleTitle, StringComparison.Ordinal)) { existingRecord.ModuleTitle = moduleTitle; isModified = true; }
+                        if (!string.Equals(existingRecord.ControllerName, controllerName, StringComparison.Ordinal)) { existingRecord.ControllerName = controllerName; isModified = true; }
+                        if (!string.Equals(existingRecord.ControllerTitle, controllerTitle, StringComparison.Ordinal)) { existingRecord.ControllerTitle = controllerTitle; isModified = true; }
+                        if (!string.Equals(existingRecord.ActionName, actionName, StringComparison.Ordinal)) { existingRecord.ActionName = actionName; isModified = true; }
+                        if (!string.Equals(existingRecord.ActionTitle, actionTitle, StringComparison.Ordinal)) { existingRecord.ActionTitle = actionTitle; isModified = true; }
+                        if (!string.Equals(existingRecord.PermissionTitle, permissionTitle, StringComparison.Ordinal)) { existingRecord.PermissionTitle = permissionTitle; isModified = true; }
+
                         if (string.IsNullOrEmpty(existingRecord.Description) || existingRecord.Description.StartsWith("Auto-scanned permission:"))
                         {
-                            existingRecord.Description = description;
-                            isModified = true;
+                            if (!string.Equals(existingRecord.Description, description, StringComparison.Ordinal))
+                            {
+                                existingRecord.Description = description;
+                                isModified = true;
+                            }
                         }
                     }
                     else
@@ -139,15 +153,15 @@ namespace SGSFramework.AuthTokenBucket.Services
                             BitPosition = bitPosition,
                             ModuleName = moduleName,
                             ModuleTitle = moduleTitle,
+                            ControllerName = controllerName,
                             ControllerTitle = controllerTitle,
+                            ActionName = actionName,
                             ActionTitle = actionTitle,
                             PermissionTitle = permissionTitle,
-                            ControllerName = controllerName,
-                            ActionName = actionName,
                             Description = description
                         };
 
-                        _dbContext.Set<PermissionMetadata>().Add(newPermission);
+                        await _dbContext.Set<PermissionMetadata>().AddAsync(newPermission, cancellationToken).ConfigureAwait(false);
                         isModified = true;
                     }
 
@@ -157,17 +171,23 @@ namespace SGSFramework.AuthTokenBucket.Services
                     }
                 }
 
+                // 階層化同步處理 (建構 Parent-Child 關聯與計算 Level/NodePath)
                 var allPermissions = await _dbContext.Set<PermissionMetadata>()
                     .ToListAsync(cancellationToken)
                     .ConfigureAwait(false);
+
                 bool hierarchyChanged = false;
 
-                foreach (var group in allPermissions.GroupBy(p => p.ControllerName))
+                foreach (var group in allPermissions.GroupBy(p => p.ControllerName, StringComparer.OrdinalIgnoreCase))
                 {
                     if (string.IsNullOrEmpty(group.Key)) continue;
 
-                    var readPermission = group.FirstOrDefault(p => p.PermissionKey.EndsWith(".READ", StringComparison.OrdinalIgnoreCase) || p.PermissionKey.EndsWith("_READ", StringComparison.OrdinalIgnoreCase))
-                                      ?? group.FirstOrDefault();
+                    var readPermission = group.FirstOrDefault(p =>
+                        p.PermissionKey.EndsWith(".READ", StringComparison.OrdinalIgnoreCase) ||
+                        p.PermissionKey.EndsWith("_READ", StringComparison.OrdinalIgnoreCase) ||
+                        p.ActionName.StartsWith("Get", StringComparison.OrdinalIgnoreCase) ||
+                        p.ActionName.StartsWith("List", StringComparison.OrdinalIgnoreCase))
+                        ?? group.OrderBy(p => p.BitPosition).FirstOrDefault();
 
                     if (readPermission != null)
                     {
@@ -189,7 +209,7 @@ namespace SGSFramework.AuthTokenBucket.Services
                 if (hierarchyChanged)
                 {
                     await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                    _logger.LogInformation("已完整同步系統所有 Action 及其覆寫後的 PermissionTitle 至資料庫。");
+                    _logger.LogInformation("已成功完成 PermissionMetadata 與 ControllerMetadata 之模組與階層化結構完整對齊同步。");
                 }
             }
             catch (Exception ex)

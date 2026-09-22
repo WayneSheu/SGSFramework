@@ -1,66 +1,128 @@
-﻿// ==========================================
-// 檔案路徑: src/SGSFramework/Core/SGSFramework.Core.Abstractions/Permissions/Entities/PermissionMetadata.cs
-// 架構層級: Domain / Abstractions Layer
-// ==========================================
-
+﻿
 namespace SGSFramework.Core.Abstractions.Permissions.Entities
 {
     using Microsoft.EntityFrameworkCore;
     using Microsoft.EntityFrameworkCore.Metadata.Builders;
     using SGSFramework.Core.Abstractions.Entities.Hierarchical;
     using System.Collections.Generic;
+    using System.ComponentModel;
     using System.ComponentModel.DataAnnotations.Schema;
 
     /// <summary>
     /// 多維度權限維度矩陣-功能權限維度
     /// 整合 IHierarchicalEntity 支援階層樹狀結構，並對應 ControllerMetadatas 的標題與描述。
     /// </summary>
+    [Comment("權限中繼資料實體")]
     public class PermissionMetadata : IHierarchicalEntity
     {
-        [Column(Order = 0)]
+        [DisplayName("主鍵")]
+        [Comment("主鍵")]
         public int Id { get; set; }
 
-        [Column(Order = 1)]
+        /// <summary>
+        /// 模組名稱，對應ControllerMetadatas 的ControllerName。
+        /// </summary>
+        [DisplayName("模組名稱")]
+        [Comment("模組名稱，對應ControllerMetadatas 的ModuleName，例如SGSFramework.System、SGSFramework.System。")] 
         public string ModuleName { get; set; } = string.Empty;
 
-        [Column(Order = 2)]
+
+        /// <summary>
+        /// 模組標題，對應ControllerMetadatas 的ControllerTitle。
+        /// </summary>
+        [DisplayName("模組標題")]
+        [Comment("模組標題，對應ControllerMetadatas 的ModuleTitle，例如系統管理、組織管理。")]
         public string? ModuleTitle { get; set; }
 
-        [Column(Order = 3)]
+        /// <summary>
+        /// 功能名稱，對應ControllerMetadatas 的ControllerName。
+        /// </summary>
+        [DisplayName("功能名稱")]
+        [Comment("功能名稱，對應ControllerMetadatas 的ControllerName。")]
         public string ControllerName { get; set; } = string.Empty;
 
-        [Column(Order = 4)]
+        /// <summary>
+        /// 功能標題，對應ControllerMetadatas 的ControllerTitle。
+        /// </summary>
+        [DisplayName("功能標題")]
+        [Comment("功能標題，對應ControllerMetadatas 的ControllerTitle。")]
         public string? ControllerTitle { get; set; }
 
-        [Column(Order = 5)]
+        /// <summary>
+        /// 操作名稱，對應ControllerMetadatas 的ActionName。
+        /// </summary>
+        [DisplayName("操作名稱")]
+        [Comment("操作名稱，對應ControllerMetadatas 的ActionName。")]
         public string ActionName { get; set; } = string.Empty;
 
-        [Column(Order = 6)]
+        /// <summary>
+        /// 操作標題，對應ControllerMetadatas 的ActionTitle。
+        /// </summary>
+        [DisplayName("操作標題")]
+        [Comment("操作標題，對應ControllerMetadatas 的ActionTitle。")]
         public string ActionTitle { get; set; } = string.Empty;
 
-        [Column(Order = 7)]
+        /// <summary>
+        /// 操作說明，對應ControllerMetadatas 的Description。
+        /// </summary>
+        [DisplayName("操作說明")]
+        [Comment("操作說明，對應ControllerMetadatas 的Description。")]
         public string Description { get; set; } = string.Empty;
 
-        [Column(Order = 8)]
+        /// <summary>
+        /// 權限標題，對應ControllerMetadatas 的PermissionTitle。
+        /// </summary>
+        [DisplayName("權限標題")]
+        [Comment("權限標題，對應ControllerMetadatas 的PermissionTitle。")]
         public string PermissionTitle { get; set; } = string.Empty;
 
-        [Column(Order = 9)]
+        /// <summary>
+        /// 權限代碼，對應ControllerMetadatas 的PermissionKey。
+        /// </summary>
+        [DisplayName("權限代碼")]
+        [Comment("權限代碼，對應ControllerMetadatas 的PermissionKey。")]
         public string PermissionKey { get; set; } = string.Empty;
 
-        [Column(Order = 10)]
+        /// <summary>
+        /// 位址權限，對應ControllerMetadatas 的BitPosition。
+        /// </summary>
+        [DisplayName("位址權限")]
+        [Comment("位址權限，對應ControllerMetadatas 的BitPosition。")]
         public int BitPosition { get; set; }
 
-        [Column(Order = 11)]
+        /// <summary>
+        /// 父節點ID
+        /// </summary>
+        [DisplayName("父節點ID")]
+        [Comment("父節點ID")]
         public int? ParentId { get; set; }
 
+        /// <summary>
+        /// 父節點
+        /// </summary>
+        [DisplayName("父節點")]
+        [Comment("父節點")]
         public PermissionMetadata? Parent { get; set; }
 
-        public ICollection<PermissionMetadata> Children { get; set; } = new List<PermissionMetadata>();
+        /// <summary>
+        /// 子節點集
+        /// </summary>
+        [DisplayName("子節點集")]
+        [Comment("子節點集")]
+        public ICollection<PermissionMetadata> Childrens { get; set; } = new List<PermissionMetadata>();
 
-        [Column(Order = 12)]
+        /// <summary>
+        /// 物化路徑，例如：1/2/3/4/5/
+        /// </summary>
+        [DisplayName("物化路徑")]
+        [Comment("物化路徑，例如：1/2/3/4/5/")]
         public string NodePath { get; set; } = string.Empty;
 
-        [Column(Order = 13)]
+        /// <summary>
+        /// 階層深度
+        /// </summary>
+        [DisplayName("階層深度")]
+        [Comment("階層深度")]
         public int Level { get; set; }
 
         /// <summary>
@@ -127,7 +189,7 @@ namespace SGSFramework.Core.Abstractions.Permissions.Entities
 
             // 自我參考階層架構設定 (IHierarchicalEntity)
             builder.HasOne(e => e.Parent)
-                  .WithMany(e => e.Children)
+                  .WithMany(e => e.Childrens)
                   .HasForeignKey(e => e.ParentId)
                   .OnDelete(DeleteBehavior.Restrict);
         }
