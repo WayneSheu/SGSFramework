@@ -173,7 +173,8 @@ public static class AuthTokenBucketServiceCollectionExtensions
         services.AddScoped<IMenuStrategyFactory, MenuStrategyFactory>();
         // 註冊執行期作用域服務
         services.AddScoped<IUserRuntimeScopeService, UserRuntimeScopeService>();
-
+        // 註冊權權限遮罩服務
+        services.AddScoped<IPermissionBitmaskService, PermissionBitmaskService>();
         return services;
     }
 

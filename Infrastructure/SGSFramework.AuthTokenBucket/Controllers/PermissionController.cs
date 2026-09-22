@@ -42,20 +42,35 @@ namespace SGSFramework.AuthTokenBucket.Controllers.v1;
 [RequiresPermission("SYSTEM.PERMISSION.READ", "權限管理")]
 [Produces(MediaTypeNames.Application.Json)]
 [Consumes(MediaTypeNames.Application.Json)]
-public sealed class PermissionController(
-    IMemoryCache memoryCache,
-    IPermissionManagementService permissionService,
-    RoleManager<ApplicationRole> roleManager,
-    UserManager<ApplicationUser> userManager,
-    IUserPermissionRepository userPermissionRepository,
-    ILogger<PermissionController> logger) : ApiControllerBase
+public sealed class PermissionController : ApiControllerBase
 {
-    private readonly IMemoryCache _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
-    private readonly IPermissionManagementService _permissionService = permissionService ?? throw new ArgumentNullException(nameof(permissionService));
-    private readonly RoleManager<ApplicationRole> _roleManager = roleManager ?? throw new ArgumentNullException(nameof(roleManager));
-    private readonly UserManager<ApplicationUser> _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
-    private readonly IUserPermissionRepository _userPermissionRepository = userPermissionRepository ?? throw new ArgumentNullException(nameof(userPermissionRepository));
-    private readonly ILogger<PermissionController> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly IMemoryCache _memoryCache;
+    private readonly IPermissionManagementService _permissionService;
+    private readonly IPermissionBitmaskService _bitmaskService;
+    private readonly RoleManager<ApplicationRole> _roleManager;
+    private readonly UserManager<ApplicationUser> _userManager;
+    private readonly IUserPermissionRepository _userPermissionRepository;
+    private readonly ILogger<PermissionController> _logger;
+
+    public PermissionController(
+        IMemoryCache memoryCache,
+        IPermissionManagementService permissionService,
+        IPermissionBitmaskService bitmaskService,
+        RoleManager<ApplicationRole> roleManager,
+        UserManager<ApplicationUser> userManager,
+        IUserPermissionRepository userPermissionRepository,
+        ILogger<PermissionController> logger)
+    {
+        _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
+        _permissionService = permissionService ?? throw new ArgumentNullException(nameof(permissionService));
+        _bitmaskService = bitmaskService ?? throw new ArgumentNullException(nameof(bitmaskService));
+        _roleManager = roleManager ?? throw new ArgumentNullException(nameof(roleManager));
+        _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
+        _userPermissionRepository = userPermissionRepository ?? throw new ArgumentNullException(nameof(userPermissionRepository));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+
     private const string PermissionTreeCacheKey = "Cache_System_Permission_Tree";
 
     /// <summary>
@@ -250,18 +265,19 @@ public sealed class PermissionController(
     }
 
     /// <summary>
-    /// 取得指定使用者的所有權限總覽
+    /// 取得指定使用者的所有權限總覽 (包含從 User_Global_Permissions Bitmask 解碼之直接權限)
     /// </summary>
     [HttpGet("user/{userId:guid}/audit-permissions")]
     [Function("GetUserAllPermissions", "檢視使用者權限", Icon = "fa-solid fa-user-shield", Order = 4, Description = "取得指定使用者的直接權限與透過角色繼承的有效權限總覽，供資安稽核使用。", IsMenu = false)]
     [RequiresPermission("SYSTEM.PERMISSION.READ")]
     [EndpointSummary("檢視使用者權限")]
-    [EndpointDescription("取得指定使用者的直接權限與透過角色繼承的有效權限總覽，供資安稽核使用。")]
+    [EndpointDescription("取得指定使用者的直接權限與透過角色繼承的有效權限總覽，供資安稽核與彈出對話框回顯使用。")]
     [ProducesResponseType(typeof(UserAuditPermissionsResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetUserAllPermissions(
         [FromRoute] Guid userId,
+        [FromQuery] Guid? tenantLabId,
         CancellationToken cancellationToken = default)
     {
         try
@@ -278,17 +294,41 @@ public sealed class PermissionController(
                 });
             }
 
+            // 1. 讀取使用者角色與 Claims
             var roles = await _userManager.GetRolesAsync(user).ConfigureAwait(false);
             var claims = await _userManager.GetClaimsAsync(user).ConfigureAwait(false);
 
             const string permissionClaimType = "Permission";
-
-            var directPermissions = claims
+            var claimPermissions = claims
                 .Where(c => c.Type == permissionClaimType)
                 .Select(c => c.Value)
+                .ToList();
+
+            // 2. 從資料庫讀取使用者的直接 Bitmask 設定並進行還解碼
+            Dictionary<string, long> dbBitmaskMap;
+            if (tenantLabId.HasValue && tenantLabId.Value != Guid.Empty)
+            {
+                dbBitmaskMap = await _userPermissionRepository.GetPermissionsByLabAsync(
+                    userId.ToString(),
+                    tenantLabId.Value,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                dbBitmaskMap = await _userPermissionRepository.GetGlobalPermissionsAsync(
+                    userId.ToString(),
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            var decodedDirectPermissions = await _bitmaskService.DecodeBitmaskToPermissionsAsync(dbBitmaskMap, cancellationToken).ConfigureAwait(false);
+
+            // 合併 Identity Claim Permissions 與資料庫 Bitmask 解碼出的權限
+            var directPermissions = claimPermissions
+                .Union(decodedDirectPermissions, StringComparer.OrdinalIgnoreCase)
                 .Distinct()
                 .ToList();
 
+            // 3. 取得角色繼承權限
             var rolePermissionsList = new List<string>();
             foreach (var roleName in roles)
             {
@@ -304,6 +344,7 @@ public sealed class PermissionController(
                 }
             }
 
+            // 4. 彙整有效權限 (Direct + Role)
             var effectivePermissions = directPermissions
                 .Union(rolePermissionsList, StringComparer.OrdinalIgnoreCase)
                 .Distinct()
@@ -338,6 +379,7 @@ public sealed class PermissionController(
             });
         }
     }
+
 
     /// <summary>
     /// 取得指定角色的所有成員與權限總覽
@@ -447,7 +489,9 @@ public sealed class PermissionController(
             }
 
             var targetPermissions = request.Permissions?.Distinct().ToList() ?? new List<string>();
-            var moduleBitmaskDict = GroupPermissionsIntoBitmasks(targetPermissions);
+
+            // 呼叫獨立抽離的 Bitmask 計算服務
+            var moduleBitmaskDict = await _bitmaskService.CalculateModuleBitmasksAsync(targetPermissions, cancellationToken).ConfigureAwait(false);
 
             bool success;
             if (tenantLabId.HasValue && tenantLabId.Value != Guid.Empty)
@@ -480,6 +524,11 @@ public sealed class PermissionController(
             _logger.LogInformation("成功更新使用者 [{UserId}] 的直接權限遮罩，影響模組數: [{Count}]", userId, moduleBitmaskDict.Count);
             return Ok(new { message = "使用者直接權限指派成功。" });
         }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("指派使用者權限作業已取消。UserId: {UserId}", userId);
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "更新使用者直接權限時發生未預期異常。UserId: {UserId}", userId);
@@ -491,34 +540,5 @@ public sealed class PermissionController(
                 Instance = HttpContext.Request.Path
             });
         }
-    }
-
-    /// <summary>
-    /// 將權限字串集合轉譯為 64 位元位元遮罩字典
-    /// </summary>
-    private static Dictionary<string, long> GroupPermissionsIntoBitmasks(IEnumerable<string> permissions)
-    {
-        var result = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
-
-        var groups = permissions
-            .Where(p => p.Contains('.'))
-            .GroupBy(p => p[..p.LastIndexOf('.')]);
-
-        foreach (var group in groups)
-        {
-            long bitmask = 0;
-            int index = 0;
-            foreach (var _ in group)
-            {
-                if (index < 64)
-                {
-                    bitmask |= (1L << index);
-                }
-                index++;
-            }
-            result[group.Key] = bitmask;
-        }
-
-        return result;
     }
 }
