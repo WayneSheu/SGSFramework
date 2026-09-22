@@ -126,10 +126,12 @@ public static class AuthTokenBucketServiceCollectionExtensions
         // 5. 註冊核心服務（解決 ITokenManager 抽象介面無法被 TokenBucketEngine 解析之問題）
         services.AddScoped<ITokenManager, TokenManager>();
         services.AddScoped<TokenManager>(sp => (TokenManager)sp.GetRequiredService<ITokenManager>());
-   
+
         services.AddScoped<ITokenStorageProvider, SqlTokenStorageProvider<TDbContext>>();
         services.AddScoped<IUserRefreshTokenRepository, UserRefreshTokenRepository<TDbContext>>();
-        services.AddScoped<IPermissionManagementService, PermissionManagementService<TDbContext, TRole, Guid>>();
+        
+        // 註冊帶有 TDbContext 泛型型態的 PermissionManagementService
+        services.AddScoped<IPermissionManagementService, PermissionManagementService<TDbContext>>();
 
         // 6. 動態權限掃描與註冊
         // 註冊實驗室存取與權限驗證服務 
@@ -148,6 +150,7 @@ public static class AuthTokenBucketServiceCollectionExtensions
         var registry = new DynamicPermissionRegistry();
         registry.ScanAndRegisterAssemblies(fullAssembliesToScan);
         services.AddSingleton<IPermissionRegistry>(registry);
+
         // 註冊權限同步服務
         services.AddScoped<IPermissionSeedService>(sp =>
             new PermissionSeedService<TDbContext>(
@@ -173,7 +176,7 @@ public static class AuthTokenBucketServiceCollectionExtensions
         services.AddScoped<IMenuStrategyFactory, MenuStrategyFactory>();
         // 註冊執行期作用域服務
         services.AddScoped<IUserRuntimeScopeService, UserRuntimeScopeService>();
-        // 註冊權權限遮罩服務
+        // 註冊權限遮罩服務
         services.AddScoped<IPermissionBitmaskService, PermissionBitmaskService>();
         return services;
     }

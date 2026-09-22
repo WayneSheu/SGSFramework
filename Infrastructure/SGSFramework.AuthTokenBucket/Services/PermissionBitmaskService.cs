@@ -160,12 +160,12 @@ public sealed class PermissionBitmaskService : IPermissionBitmaskService
         }
     }
 
-    private static void ApplyBitmask(Dictionary<string, long> result, string rawPermissionKey, int bitPosition)
+    private static void ApplyBitmask(Dictionary<string, long> result, string rawPermissionKey, long bitPosition)
     {
         if (string.IsNullOrWhiteSpace(rawPermissionKey)) return;
 
         string groupKey = ExtractFeaturePrefix(rawPermissionKey);
-        int normalizedBit = bitPosition % 64;
+        int normalizedBit = (int)(bitPosition % 64);
         long currentMask = (1L << normalizedBit);
 
         if (result.TryGetValue(groupKey, out long existingMask))
@@ -180,14 +180,14 @@ public sealed class PermissionBitmaskService : IPermissionBitmaskService
 
     private static void CheckAndAddPermission(
         string permissionKey,
-        int bitPosition,
+        long bitPosition,
         Dictionary<string, long> bitmaskMap,
         List<string> resultList)
     {
         string groupKey = ExtractFeaturePrefix(permissionKey);
         if (bitmaskMap.TryGetValue(groupKey, out long storedBitmask))
         {
-            int normalizedBit = bitPosition % 64;
+            int normalizedBit = (int)(bitPosition % 64);
             long targetMask = (1L << normalizedBit);
 
             if ((storedBitmask & targetMask) == targetMask)

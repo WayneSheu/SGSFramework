@@ -30,7 +30,7 @@ namespace SGSFramework.AuthTokenBucket.Controllers.v1;
 [ApiController]
 [Authorize]
 [Route("api/v1/auth")]
-[ControllerTitle("身份驗證", Icon = "fa-solid fa-user-lock", Order = 10, Description = "提供帳密登入、AD SSO 登入、Token 輪轉刷新、動態選單與實驗室上下文切換服務")]
+[ControllerTitle("身分驗證", Icon = "fa-solid fa-user-lock", Order = 10, Description = "提供帳密登入、AD SSO 登入、Token 輪轉刷新、動態選單與實驗室上下文切換服務")]
 [RequiresPermission("SYSTEM.AUTH.READ", "身分驗證")]
 [Produces(MediaTypeNames.Application.Json)]
 [Consumes(MediaTypeNames.Application.Json)]
@@ -369,7 +369,6 @@ public sealed class AuthController(
     [HttpPost("refresh")]
     [AllowAnonymous]
     [Function("RefreshToken", "權杖(Token)刷新", Icon = "fa-solid fa-arrows-rotate", Order = 3, Description = "雙向權限票據高併發輪轉刷新")]
-
     [EndpointSummary("權杖(Token)刷新")]
     [EndpointDescription("雙向權限票據高併發輪轉刷新端點。")]
     [ProducesResponseType(typeof(TokenResultDto), StatusCodes.Status200OK)]

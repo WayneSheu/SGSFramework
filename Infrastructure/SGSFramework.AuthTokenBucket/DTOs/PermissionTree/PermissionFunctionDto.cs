@@ -1,29 +1,40 @@
-﻿using System;
+﻿namespace SGSFramework.AuthTokenBucket.DTOs.PermissionTree;
+
 using System.Collections.Generic;
-using System.Text;
+using System.Text.Json.Serialization;
 
-namespace SGSFramework.AuthTokenBucket.DTOs.PermissionTree
+/// <summary>
+/// 功能/控制器資料傳輸物件 (功能層節點)
+/// </summary>
+public sealed class PermissionFunctionDto
 {
-    public class PermissionFunctionDto
-    {
-        /// <summary>
-        /// 功能識別名稱 (對應 ControllerName)
-        /// </summary>
-        public string FunctionName { get; set; } = string.Empty;
+    /// <summary>
+    /// 控制器/功能名稱 (例如: LaboratoryController)
+    /// </summary>
+    [JsonPropertyName("functionName")]
+    public string FunctionName { get; set; } = string.Empty;
 
-        /// <summary>
-        /// 功能顯示標題 (對應 ControllerTitle)
-        /// </summary>
-        public string FunctionTitle { get; set; } = string.Empty;
+    /// <summary>
+    /// 功能/控制器中文標題 (例如: 實驗室管理)
+    /// </summary>
+    [JsonPropertyName("functionTitle")]
+    public string? FunctionTitle { get; set; }
 
-        /// <summary>
-        /// 基礎檢視權限 (READ)，作為該功能的核心前置依賴
-        /// </summary>
-        public PermissionDto ReadPermission { get; set; } = new();
+    /// <summary>
+    /// 功能詳細描述說明
+    /// </summary>
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
 
-        /// <summary>
-        /// 附加異動與操作權限清單 (Create, Update, Delete 等)
-        /// </summary>
-        public List<PermissionDto> ActionPermissions { get; set; } = new();
-    }
+    /// <summary>
+    /// 進入該功能/選單的主讀取權限 (通常為結尾 _READ 之權限)
+    /// </summary>
+    [JsonPropertyName("readPermission")]
+    public PermissionActionDto? ReadPermission { get; set; }
+
+    /// <summary>
+    /// 該功能下屬之子操作權限清單 (如 CREATE, UPDATE, DELETE 等，不包含 ReadPermission)
+    /// </summary>
+    [JsonPropertyName("actionPermissions")]
+    public List<PermissionActionDto> ActionPermissions { get; set; } = new();
 }

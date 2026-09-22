@@ -115,15 +115,15 @@ public sealed class PermissionController : ApiControllerBase
     }
 
     /// <summary>
-    /// 取得完整系統與動態模組權限清單 (階層式：Section-> Module -> Function -> Action)
+    /// 取得完整系統與動態模組權限清單 (階層式：Module -> Function -> ReadPermission / ActionPermissions)
     /// </summary>
     [HttpGet("tree")]
-    [Function("GetPermissionTree", "系統權限清單", Icon = "fa-solid fa-sitemap", Order = 1, Description = "取得完整系統與動態模組權限清單 (階層式：Module -> Controller -> Permissions)", IsMenu = false)]
+    [Function("GetPermissionTree", "系統權限清單", Icon = "fa-solid fa-sitemap", Order = 1, Description = "取得完整系統與動態模組權限清單", IsMenu = false)]
     [ProducesResponseType(typeof(List<PermissionModuleDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     [RequiresPermission("SYSTEM.PERMISSION.READ")]
     [EndpointSummary("系統權限清單")]
-    [EndpointDescription("取得完整系統與動態模組權限清單 (階層式：Module -> Controller -> Permissions)")]
+    [EndpointDescription("取得完整系統與動態模組權限清單 (階層式：Module -> Function -> Actions)")]
     public async Task<IActionResult> GetPermissionTree(CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -135,20 +135,25 @@ public sealed class PermissionController : ApiControllerBase
                 entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10);
                 entry.Priority = CacheItemPriority.High;
 
-                _logger.LogInformation("重新載入系統權限樹狀結構至記憶體快取。");
-                var data = await _permissionService.GetPermissionTreeAsync(cancellationToken);
+                _logger.LogInformation("[PermissionController] 重新載入系統權限樹狀結構至記憶體快取。");
+                var data = await _permissionService.GetPermissionTreeAsync(cancellationToken).ConfigureAwait(false);
                 return data ?? new List<PermissionModuleDto>();
-            });
+            }).ConfigureAwait(false);
 
             stopwatch.Stop();
-            _logger.LogDebug("取得權限樹狀結構耗時: {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
+            _logger.LogDebug("[PermissionController] 取得權限樹狀結構耗時: {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
 
             return Ok(tree ?? new List<PermissionModuleDto>());
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("[PermissionController] 取得權限樹狀結構作業已取消。");
+            throw;
         }
         catch (Exception ex)
         {
             stopwatch.Stop();
-            _logger.LogError(ex, "取得權限樹狀結構時發生未預期異常。耗時: {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
+            _logger.LogError(ex, "[PermissionController] 取得權限樹狀結構時發生未預期異常。耗時: {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
 
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
@@ -159,6 +164,7 @@ public sealed class PermissionController : ApiControllerBase
             });
         }
     }
+
 
     /// <summary>
     /// 取得指定角色的權限設定清單
