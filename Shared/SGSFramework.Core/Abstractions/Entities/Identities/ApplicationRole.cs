@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SGSFramework.Core.Abstractions.Entities.Base;
 
 namespace SGSFramework.Core.Abstractions.Entities.Identities
@@ -13,8 +14,27 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
     public class ApplicationRole : IdentityRole<Guid>, IRoleEntity
     {
         /// <summary>
-        /// 角色描述
+        /// 角色描述（選填，允許為 Null）
         /// </summary>
-        public string Description { get; set; } = string.Empty;
+        public string? Description { get; set; }
+    }
+
+    /// <summary>
+    /// ApplicationRole 實體資料庫映射組態
+    /// </summary>
+    public class ApplicationRoleConfiguration : IEntityTypeConfiguration<ApplicationRole>
+    {
+        public void Configure(EntityTypeBuilder<ApplicationRole> builder)
+        {
+            // 於資料庫層級強制設定 Name 為 NOT NULL
+            builder.Property(r => r.Name)
+                   .IsRequired()
+                   .HasMaxLength(256);
+
+            // 設定 Description 為 NULL
+            builder.Property(r => r.Description)
+                   .IsRequired(false)
+                   .HasMaxLength(500);
+        }
     }
 }
