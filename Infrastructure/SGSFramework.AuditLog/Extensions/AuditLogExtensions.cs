@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
+using SGSFramework.AuditLog.Abstractions;
 using SGSFramework.AuditLog.Channels;
 using SGSFramework.AuditLog.Configurations;
 using SGSFramework.AuditLog.Interceptors;
@@ -21,6 +22,9 @@ using System;
 
 public static class AuditLogExtensions
 {
+    /// <summary>
+    /// 註冊 AuditLog 基礎核心服務 (包含設定檔、HttpContext 身分提供者與兩大 SaveChanges 攔截器)
+    /// </summary>
     public static IServiceCollection AddAuditLog(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -29,9 +33,8 @@ public static class AuditLogExtensions
         services.Configure<AuditOptions>(configuration.GetSection(AuditOptions.SectionName));
         services.AddHttpContextAccessor();
         services.AddScoped<IAuditProvider, HttpAuditProvider>();
-        services.AddSingleton<AuditChannel>();
 
-        // 註冊兩個 Audit 攔截器
+        // 必須為 Transient 確保每次 SaveChanges 解析全新實體
         services.AddTransient<AuditInterceptor>();
         services.AddTransient<PermissionAuditInterceptor>();
 
@@ -39,8 +42,9 @@ public static class AuditLogExtensions
     }
 
     /// <summary>
-    /// 註冊特定模組的 DbContext、DbContextFactory、Audit 持久化單例策略與泛型 BackgroundService
+    /// 註冊特定模組的 DbContext、DbContextFactory、獨立泛型 AuditChannel、StorageStrategy 與專屬 AuditWorker
     /// </summary>
+    /// <typeparam name="TContext">符合 IAuditDbContext 介面之模組 DbContext</typeparam>
     public static IServiceCollection AddModuleDatabaseWithAudit<TContext>(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -55,6 +59,7 @@ public static class AuditLogExtensions
 
         try
         {
+            // 確保 Interceptors 已註冊
             services.AddTransient<AuditInterceptor>();
             services.AddTransient<PermissionAuditInterceptor>();
 
@@ -68,8 +73,13 @@ public static class AuditLogExtensions
             var moduleSchema = schemaName
                 ?? typeof(TContext).Name.Replace("DbContext", "", StringComparison.OrdinalIgnoreCase).ToLowerInvariant();
 
+            // 1. 為此 TContext 註冊專屬的泛型 Channel 佇列 (Singleton)
+            services.AddSingleton<IAuditChannel<TContext>, AuditChannel<TContext>>();
+
+            // 2. 為此 TContext 註冊獨立的 Bulk 持久化儲存策略 (Singleton/Scoped 視實作而定)
             services.AddSingleton<IAuditStorageStrategy<TContext>, SqlBulkAuditStorageStrategy<TContext>>();
 
+            // 3. 配置 DbContext 與 DbContextFactory 的選項 build 邏輯
             Action<IServiceProvider, DbContextOptionsBuilder> buildOptions = (sp, options) =>
             {
                 options.UseSqlServer(connectionString, sqlOptions =>
@@ -85,6 +95,8 @@ public static class AuditLogExtensions
 
             services.AddDbContextFactory<TContext>(buildOptions);
             services.AddDbContext<TContext>(buildOptions, ServiceLifetime.Scoped, ServiceLifetime.Singleton);
+
+            // 4. 為此 TContext 註冊專屬的泛型背景消費服務 (HostedService)
             services.AddHostedService<AuditWorker<TContext>>();
 
             return services;
@@ -96,6 +108,9 @@ public static class AuditLogExtensions
         }
     }
 
+    /// <summary>
+    /// 解析連線字串優先順序：MigrationConnection -> DefaultConnection -> Configuration Direct Key
+    /// </summary>
     private static string? ResolveConnectionString(IConfiguration configuration, string connectionStringKey)
     {
         var section = configuration.GetSection(connectionStringKey);
@@ -116,6 +131,9 @@ public static class AuditLogExtensions
         return configuration.GetConnectionString("DefaultConnection");
     }
 
+    /// <summary>
+    /// 為 DbContext 綁定 AuditInterceptor 與 PermissionAuditInterceptor 攔截器
+    /// </summary>
     private static void ConfigureAuditInterceptor(IServiceProvider sp, DbContextOptionsBuilder options)
     {
         ArgumentNullException.ThrowIfNull(sp);
@@ -123,21 +141,15 @@ public static class AuditLogExtensions
 
         try
         {
-            var auditInterceptor = sp.GetService<AuditInterceptor>();
-            var permissionInterceptor = sp.GetService<PermissionAuditInterceptor>();
+            var auditInterceptor = sp.GetRequiredService<AuditInterceptor>();
+            var permissionInterceptor = sp.GetRequiredService<PermissionAuditInterceptor>();
 
-            if (auditInterceptor != null && permissionInterceptor != null)
-            {
-                options.AddInterceptors(auditInterceptor, permissionInterceptor);
-            }
-            else if (auditInterceptor != null)
-            {
-                options.AddInterceptors(auditInterceptor);
-            }
+            options.AddInterceptors(auditInterceptor, permissionInterceptor);
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "[AuditLogExtensions] 解析 AuditInterceptor 時發生例外，DbContext 將以無稽核攔截模式運作。");
+            Log.Error(ex, "[AuditLogExtensions] 解析 AuditInterceptor 時發生例外，將阻斷連線以確保資安規範。");
+            throw;
         }
     }
 }

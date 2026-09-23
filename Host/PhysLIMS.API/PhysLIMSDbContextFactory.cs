@@ -1,11 +1,18 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿// ==========================================
+// 檔案路徑: Host/PhysLIMS.API/PhysLIMSDbContextFactory.cs
+// 架構層級: Presentation / Host Layer (EF Core Design-Time Factory)
+// 說明: PhysLIMSDbContext 設計時期 Factory，符合 .NET 10 與 Clean Architecture 企業級規範
+// ==========================================
+
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
-using Microsoft.EntityFrameworkCore.Metadata; // 必須引入以使用 IRelationalAnnotationProvider
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PhysLIMS.API.Dbcontexts;
+using SGSFramework.AuditLog.Abstractions;
 using SGSFramework.AuditLog.Channels;
 using SGSFramework.AuditLog.Interceptors;
 using SGSFramework.Core.Migrations;
@@ -14,12 +21,16 @@ using System.IO;
 
 namespace PhysLIMS.API
 {
+    /// <summary>
+    /// 提供設計時期 <see cref="PhysLIMSDbContext"/> 工廠實作，供 EF Core CLI / PMC 執行 Migration 相關指令。
+    /// </summary>
     public class PhysLIMSDbContextFactory : IDesignTimeDbContextFactory<PhysLIMSDbContext>
     {
         public PhysLIMSDbContext CreateDbContext(string[] args)
         {
             try
             {
+                // 1. 安全解析 Assembly 與配置檔目錄路徑
                 var assemblyLocation = typeof(PhysLIMSDbContext).Assembly.Location;
                 var assemblyDirectory = string.IsNullOrWhiteSpace(assemblyLocation)
                     ? AppContext.BaseDirectory
@@ -27,47 +38,65 @@ namespace PhysLIMS.API
 
                 var configuration = new ConfigurationBuilder()
                     .SetBasePath(assemblyDirectory)
-                    .AddJsonFile("appsettings.json", optional: true)
-                    .AddJsonFile("appsettings.Development.json", optional: true)
+                    .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
+                    .AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: false)
+                    .AddEnvironmentVariables()
                     .Build();
 
+                // 2. 獲取 Migration 專用連線字串，提供開發預設容錯值
                 var connectionString = configuration.GetSection("PersistentSettings:ConnectionStrings")["MigrationConnection"]
+                    ?? configuration.GetSection("PersistentSettings:ConnectionStrings")["DefaultConnection"]
                     ?? configuration.GetConnectionString("DefaultConnection")
-                    ?? throw new InvalidOperationException("未於配置檔中找到有效的資料庫連線字串。");
+                    ?? "Server=localhost;Database=PhysLIMS_DB;Integrated Security=True;TrustServerCertificate=True;";
 
-                // 1. 優先建立設計時期的 ServiceProvider
+                // 3. 配置設計時期專用的 ServiceCollection，補足泛型 AuditChannel 與 Interceptors 依賴
                 var services = new ServiceCollection();
+
                 services.AddLogging(builder => builder.AddConsole());
                 services.AddHttpContextAccessor();
 
-                services.AddSingleton<AuditChannel>();
+                // 註冊 PhysLIMSDbContext 專屬的獨立泛型 Channel 佇列與 Interceptors
+                services.AddSingleton<IAuditChannel<PhysLIMSDbContext>, AuditChannel<PhysLIMSDbContext>>();
                 services.AddTransient<AuditInterceptor>();
+                services.AddTransient<PermissionAuditInterceptor>();
 
                 var serviceProvider = services.BuildServiceProvider();
-                var interceptor = serviceProvider.GetRequiredService<AuditInterceptor>();
 
-                // 2. 建立與配置 OptionsBuilder
+                // 4. 解析 Interceptors 實例
+                var auditInterceptor = serviceProvider.GetRequiredService<AuditInterceptor>();
+                var permissionInterceptor = serviceProvider.GetService<PermissionAuditInterceptor>();
+
+                // 5. 建立與配置 OptionsBuilder
                 var optionsBuilder = new DbContextOptionsBuilder<PhysLIMSDbContext>();
 
                 optionsBuilder.UseSqlServer(connectionString, sql =>
                 {
                     var assemblyName = typeof(PhysLIMSDbContext).Assembly.FullName
-                        ?? throw new InvalidOperationException("無法取得 PhysLIMSDbContext Assembly 完整名稱。");
+                        ?? throw new InvalidOperationException("無法取得 PhysLIMSDbContext Assembly 的完整名稱。");
 
                     sql.MigrationsAssembly(assemblyName);
                     sql.MigrationsHistoryTable("__EFMigrationsHistory", "core");
+                    sql.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: TimeSpan.FromSeconds(5), errorNumbersToAdd: null);
                 });
 
-                // 3. 解決 CS1729：透過 EF Core 原生方法掛載 Interceptor 與外部服務，而非透過建構函式
+                // 6. 掛載 ServiceProvider 與 Interceptors 至 DbContextOptionsBuilder
                 optionsBuilder.UseApplicationServiceProvider(serviceProvider);
-                optionsBuilder.AddInterceptors(interceptor);
 
-                // 4. 解決 CS0311：使用 IRelationalAnnotationProvider 替換舊版介面
+                if (auditInterceptor != null && permissionInterceptor != null)
+                {
+                    optionsBuilder.AddInterceptors(auditInterceptor, permissionInterceptor);
+                }
+                else if (auditInterceptor != null)
+                {
+                    optionsBuilder.AddInterceptors(auditInterceptor);
+                }
+
+                // 7. 替換客製化 EF Core Metadata 與 Migration SQL 生成服務
                 optionsBuilder
                     .ReplaceService<IRelationalAnnotationProvider, CustomSqlServerAnnotationProvider>()
                     .ReplaceService<IMigrationsSqlGenerator, CustomSqlServerMigrationsSqlGenerator>();
 
-                // 5. 僅傳入單一 Options 參數實例化 DbContext
+                // 8. 傳入設定完成的 Options 實例化 DbContext
                 return new PhysLIMSDbContext(optionsBuilder.Options);
             }
             catch (Exception ex)

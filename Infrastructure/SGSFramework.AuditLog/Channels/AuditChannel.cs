@@ -1,60 +1,73 @@
-﻿using SGSFramework.AuditLog.DTOs;
-using System.Threading.Channels;
+﻿// ==========================================
+// 檔案路徑: Infrastructure/SGSFramework.AuditLog/Channels/AuditChannel.cs
+// 架構層級: Infrastructure Layer
+// ==========================================
 
-namespace SGSFramework.AuditLog.Channels
+namespace SGSFramework.AuditLog.Channels;
+
+using SGSFramework.AuditLog.Abstractions;
+using SGSFramework.AuditLog.DTOs;
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Channels;
+using System.Threading.Tasks;
+
+public sealed class AuditChannel<TContext> : IAuditChannel<TContext>
 {
-    public class AuditChannel
+    private readonly Channel<AuditEntry> _channel;
+
+    public AuditChannel()
     {
-        // 設定容量限制，避免記憶體無限膨脹 (例如最多緩衝 5000 筆)
-        // FullMode.Wait: 如果滿了，生產者(Interceptor)會等待，直到有空間
-        // FullMode.DropOldest: 如果滿了，丟棄舊日誌 (視業務重要性決定)
-        private readonly Channel<AuditEntry> _channel = Channel.CreateBounded<AuditEntry>(new BoundedChannelOptions(5000)
+        var options = new BoundedChannelOptions(5000)
         {
             FullMode = BoundedChannelFullMode.Wait,
-            SingleReader = true, // 只有一個 BackgroundService 在讀
-            SingleWriter = false // 多個 Request 同時在寫
-        });
+            SingleReader = true,  // 專屬指定 TContext 的 Worker 單一消費者[cite: 23]
+            SingleWriter = false  // 支援多個 HTTP Request 同時寫入[cite: 23]
+        };
 
-        // 寫入方法 (給 Interceptor 用)
-        public async ValueTask AddAuditLogAsync(AuditEntry entry, CancellationToken ct = default)
-        {
-            await _channel.Writer.WriteAsync(entry, ct);
-        }
+        _channel = Channel.CreateBounded<AuditEntry>(options);
+    }
 
-        // 批次寫入方法
-        public async ValueTask AddBatchAuditLogAsync(IEnumerable<AuditEntry> entries, CancellationToken ct = default)
+    /// <summary>
+    /// 異步寫入單筆稽核紀錄
+    /// </summary>
+    public ValueTask AddAuditLogAsync(AuditEntry entry, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        return _channel.Writer.WriteAsync(entry, ct);
+    }
+
+    /// <summary>
+    /// 批次寫入稽核紀錄
+    /// </summary>
+    public async ValueTask AddBatchAuditLogAsync(IEnumerable<AuditEntry> entries, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+
+        foreach (var entry in entries)
         {
-            try
+            if (entry is not null)
             {
-                foreach (var entry in entries)
-                {
-                    await _channel.Writer.WriteAsync(entry, ct);
-                }
-            }
-            catch (Exception ex)
-            {
-                _channel.Writer.TryComplete(ex); // 發生例外時，標記通道為完成狀態，並傳遞例外
+                await _channel.Writer.WriteAsync(entry, ct).ConfigureAwait(false);
             }
         }
+    }
 
-        // 新增：同步嘗試寫入 (給 SaveChanges 用)
-        public bool TryAddAuditLog(AuditEntry entry)
-        {
-            // TryWrite 是非阻塞的。如果通道滿了，它會回傳 false (可能會掉資料)
-            // 對於同步方法，為了避免 Deadlock，通常建議使用 TryWrite
-            return _channel.Writer.TryWrite(entry);
-        }
+    /// <summary>
+    /// 同步非阻塞嘗試寫入 (適合於非 async 上下文中使用)[cite: 23]
+    /// </summary>
+    public bool TryAddAuditLog(AuditEntry entry)
+    {
+        if (entry is null) return false;
+        return _channel.Writer.TryWrite(entry); //[cite: 23]
+    }
 
-        // 如果你堅持同步方法也要保證寫入 (可能會阻塞執行緒)
-        public void AddAuditLogSync(AuditEntry entry)
-        {
-            // 這是阻塞式寫入，直到有空間為止
-            var task = _channel.Writer.WriteAsync(entry).AsTask();
-            task.Wait();
-        }
-
-        // 讀取器 (給 Background Service 用)
-        public ChannelReader<AuditEntry> Reader => _channel.Reader;
-    
+    /// <summary>
+    /// 供背景服務讀取佇列所有訊息
+    /// </summary>
+    public IAsyncEnumerable<AuditEntry> ReadAllAsync(CancellationToken ct = default)
+    {
+        return _channel.Reader.ReadAllAsync(ct);
     }
 }

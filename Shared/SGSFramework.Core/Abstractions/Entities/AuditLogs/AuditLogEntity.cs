@@ -51,94 +51,88 @@ namespace SGSFramework.Core.Abstractions.Entities.AuditLogs
         {
             ArgumentNullException.ThrowIfNull(builder);
 
-            // 1. 資料表與複合主鍵設定 (搭配 CreatedAt 支援分區與 Ledger 機制)
+            // 僅指定 TableName，不寫死 Schema，使其能動態套用當前 DbContext 的 DefaultSchema
             builder.ToTable("AuditLogs");
+
             builder.HasKey(e => new { e.Id, e.CreatedAt });
 
-            builder.Property(e => e.Id)
-                   .ValueGeneratedOnAdd();
+        builder.Property(e => e.Id)
+               .ValueGeneratedOnAdd();
 
-            // 2. 身分與追蹤欄位 (固定 CHAR(32) ANSI 格式)
-            builder.Property(e => e.TraceId)
-                   .IsRequired()
-                   .HasMaxLength(32)
-                   .IsFixedLength()
-                   .IsUnicode(false);
+        // 將 TraceId 放寬至 NVARCHAR(64) 或長度相容，防止長度溢位導致 SaveChanges 異常
+        builder.Property(e => e.TraceId)
+               .IsRequired()
+               .HasMaxLength(64)
+               .IsUnicode(false);
 
-            builder.Property(e => e.UserId)
-                   .HasMaxLength(128)
-                   .IsRequired(false);
+        builder.Property(e => e.UserId)
+               .HasMaxLength(128)
+               .IsRequired(false);
 
-            builder.Property(e => e.RemoteIp)
-                   .HasMaxLength(64)
-                   .IsRequired(false);
+        builder.Property(e => e.RemoteIp)
+               .HasMaxLength(64)
+               .IsRequired(false);
 
-            // 3. 時間戳記欄位
-            builder.Property(e => e.CreatedAt)
-                   .HasColumnType("datetimeoffset(7)")
-                   .HasDefaultValueSql("SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time'")
-                   .IsRequired();
+        builder.Property(e => e.CreatedAt)
+               .HasColumnType("datetimeoffset(7)")
+               .HasDefaultValueSql("SYSDATETIMEOFFSET()")
+               .IsRequired();
 
-            builder.Property(e => e.Timestamp)
-                   .HasColumnType("datetimeoffset(7)")
-                   .HasDefaultValueSql("SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time'")
-                   .IsRequired();
+        builder.Property(e => e.Timestamp)
+               .HasColumnType("datetimeoffset(7)")
+               .HasDefaultValueSql("SYSDATETIMEOFFSET()")
+               .IsRequired();
 
-            // 4. 行為與目標描述
-            builder.Property(e => e.Schema)
-                   .HasMaxLength(64)
-                   .IsRequired(false);
+        builder.Property(e => e.Schema)
+               .HasMaxLength(64)
+               .IsRequired(false);
 
-            builder.Property(e => e.TableName)
-                   .HasMaxLength(128)
-                   .IsRequired();
+        builder.Property(e => e.TableName)
+               .HasMaxLength(128)
+               .IsRequired();
 
-            builder.Property(e => e.Action)
-                   .HasMaxLength(50)
-                   .IsRequired();
+        builder.Property(e => e.Action)
+               .HasMaxLength(50)
+               .IsRequired();
 
-            // 5. JSON 異動內容
-            builder.Property(e => e.KeyValues).HasColumnType("nvarchar(max)").IsRequired(false);
-            builder.Property(e => e.OldValues).HasColumnType("nvarchar(max)").IsRequired(false);
-            builder.Property(e => e.NewValues).HasColumnType("nvarchar(max)").IsRequired(false);
-            builder.Property(e => e.ChangedColumns).HasColumnType("nvarchar(max)").IsRequired(false);
+        builder.Property(e => e.KeyValues).HasColumnType("nvarchar(max)").IsRequired(false);
+        builder.Property(e => e.OldValues).HasColumnType("nvarchar(max)").IsRequired(false);
+        builder.Property(e => e.NewValues).HasColumnType("nvarchar(max)").IsRequired(false);
+        builder.Property(e => e.ChangedColumns).HasColumnType("nvarchar(max)").IsRequired(false);
 
-            // 6. 哈希鏈安全欄位
-            builder.Property(e => e.PreviousHash)
-                   .HasMaxLength(128)
-                   .IsRequired();
+        builder.Property(e => e.PreviousHash)
+               .HasMaxLength(128)
+               .IsRequired();
 
-            builder.Property(e => e.StoredHash)
-                   .HasMaxLength(128)
-                   .IsRequired();
+        builder.Property(e => e.StoredHash)
+               .HasMaxLength(128)
+               .IsRequired();
 
-            // 7. 自癒機制欄位
-            builder.Property(e => e.IsRepaired)
-                   .HasDefaultValue(false)
-                   .IsRequired();
+        builder.Property(e => e.IsRepaired)
+               .HasDefaultValue(false)
+               .IsRequired();
 
-            builder.Property(e => e.RepairedAt)
-                   .HasColumnType("datetimeoffset(7)")
-                   .IsRequired(false);
+        builder.Property(e => e.RepairedAt)
+               .HasColumnType("datetimeoffset(7)")
+               .IsRequired(false);
 
-            builder.Property(e => e.GapReason)
-                   .HasMaxLength(500)
-                   .IsRequired(false);
+        builder.Property(e => e.GapReason)
+               .HasMaxLength(500)
+               .IsRequired(false);
 
-            builder.Property(e => e.OriginalStoredHash)
-                   .HasMaxLength(128)
-                   .IsRequired(false);
+        builder.Property(e => e.OriginalStoredHash)
+               .HasMaxLength(128)
+               .IsRequired(false);
 
-            // 8. 涵蓋索引與過濾索引
-            builder.HasIndex(e => e.TraceId)
-                   .HasDatabaseName("IX_AuditLog_TraceId_Covering")
-                   .IncludeProperties(e => new { e.Action, e.CreatedAt, e.TableName });
+        builder.HasIndex(e => e.TraceId)
+               .HasDatabaseName("IX_AuditLog_TraceId_Covering")
+               .IncludeProperties(e => new { e.Action, e.CreatedAt, e.TableName });
 
-            builder.HasIndex(e => e.IsRepaired)
-                   .HasDatabaseName("IX_AuditLog_IsRepaired")
-                   .HasFilter("[IsRepaired] = 0")
-                   .IncludeProperties(e => new { e.TableName, e.TraceId, e.GapReason });
-        }
+        builder.HasIndex(e => e.IsRepaired)
+               .HasDatabaseName("IX_AuditLog_IsRepaired")
+               .HasFilter("[IsRepaired] = 0")
+               .IncludeProperties(e => new { e.TableName, e.TraceId, e.GapReason });
+    }
     }
 
 }

@@ -13,7 +13,6 @@ using SGSFramework.ApiInfrastructure.Filters;
 using SGSFramework.ApiInfrastructure.Middlewares;
 using SGSFramework.ApiInfrastructure.Transformers;
 using SGSFramework.AuditLog.Extensions;
-using SGSFramework.AuditLog.Interceptors;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.Extensions;
 using SGSFramework.AuthTokenBucket.Queries.Menuitems;
@@ -55,44 +54,30 @@ try
     });
 
     builder.Services.AddAPIDocServices();
-    // 1. 優先註冊 AuditLog 服務與 Interceptors (必須在 AddDbContext 之前)
+
+    // 2. 註冊 AuditLog 基礎設施 (包含 Options, HttpContextAccessor, IAuditProvider, Interceptors)
     builder.Services.AddAuditLog(config);
 
-    // 2. 資料庫基礎設施與上下文註冊 (傳入 (sp, options) 委派)
+    // 3. 資料庫基礎設施與 PhysLIMSDbContext 專屬 Audit/Channel/Worker 組合註冊
     builder.Services.AddPersistentServices();
 
-    builder.Services.AddDbContext<PhysLIMSDbContext>((sp, options) =>
-    {
-        var connectionString = config.GetSection("PersistentSettings:ConnectionStrings")["DefaultConnection"];
-        if (string.IsNullOrWhiteSpace(connectionString))
+    builder.Services.AddModuleDatabaseWithAudit<PhysLIMSDbContext>(
+        configuration: config,
+        connectionStringKey: "PersistentSettings:ConnectionStrings",
+        schemaName: "core",
+        configureOptions: options =>
         {
-            throw new InvalidOperationException("未找到 PhysLIMSDbContext 專用的 DefaultConnection 連線字串設定。");
-        }
-
-        // 1. 從 sp 解析 Interceptors 實例
-        var auditInterceptor = sp.GetRequiredService<AuditInterceptor>();
-        var permissionInterceptor = sp.GetRequiredService<PermissionAuditInterceptor>();
-
-        // 2. 配置 SQL Server 資料庫選項
-        options.UseSqlServer(connectionString, sqlOptions =>
-        {
-            sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "core");
+            options.ReplaceService<IRelationalAnnotationProvider, CustomSqlServerAnnotationProvider>();
+            options.ReplaceService<IMigrationsSqlGenerator, CustomSqlServerMigrationsSqlGenerator>()
+                   .ConfigureWarnings(warnings =>
+                       warnings.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
         });
-
-        // 3. 正確位置：將 Interceptors 註冊至 DbContextOptionsBuilder (options)
-        options.AddInterceptors(auditInterceptor, permissionInterceptor);
-
-        options.ReplaceService<IRelationalAnnotationProvider, CustomSqlServerAnnotationProvider>();
-        options.ReplaceService<IMigrationsSqlGenerator, CustomSqlServerMigrationsSqlGenerator>()
-               .ConfigureWarnings(warnings =>
-                   warnings.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
-    });
 
     builder.Services.AddScoped<ICoreDbContext>(sp => sp.GetRequiredService<PhysLIMSDbContext>());
     builder.Services.AddScoped<ITokenDbContext>(sp => sp.GetRequiredService<PhysLIMSDbContext>());
     builder.Services.AddScoped<DbContext>(sp => sp.GetRequiredService<PhysLIMSDbContext>());
 
-    // 3. ASP.NET Core Identity 打包註冊
+    // 4. ASP.NET Core Identity 打包註冊
     builder.Services.AddGenericIdentityPackage<PhysLIMSDbContext, ApplicationUser, ApplicationRole, Guid>(options =>
     {
         options.Password.RequireDigit = true;
@@ -104,14 +89,13 @@ try
         options.SignIn.RequireConfirmedAccount = false;
     });
 
-    // 4. 控制器與動態外掛模組註冊
+    // 5. 控制器與動態外掛模組註冊
     builder.Services.AddControllerInfrastructure(config);
     builder.Services.AddCustomApiBehavior();
     builder.Services.AddModulePlugin<PhysLIMSDbContext>(config);
     builder.Services.AddControllerScanner<PhysLIMSDbContext>();
 
-    // 5. 基礎設施服務與 CORS 企業級策略註冊
-    builder.Services.AddAuditLog(config);
+    // 6. 企業級 CORS 策略註冊
     builder.Services.AddCors(options =>
     {
         options.AddPolicy("CorsPolicy", policy =>
@@ -136,7 +120,7 @@ try
     builder.Services.AddProblemDetails();
     builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
-    // 6. Token Bucket 身份驗證與授權配置
+    // 7. Token Bucket 身份驗證與授權配置
     var scannedAssemblies = AppDomain.CurrentDomain.GetAssemblies()
         .Where(a => a.FullName != null &&
                    (a.FullName.StartsWith("SGS.") ||
@@ -156,12 +140,13 @@ try
         options.RefreshTokenGracePeriodSeconds = 8;
     },
     scannedAssemblies);
-    //註冊 MediatR 服務與 CQRS Handlers 掃描
+
+    // 8. 註冊 MediatR 服務與 CQRS Handlers 掃描
     builder.Services.AddMediatR(cfg =>
     {
-        // 透過強型別指定 Handlers 所在的 Assembly，強制 CLR 載入並自動註冊所有 IRequestHandler<TRequest, TResponse>
         cfg.RegisterServicesFromAssembly(typeof(GetFullMenuTreeQueryHandler).Assembly);
     });
+
     builder.Services.AddSSOServices();
     builder.Services.AddAuthorization();
 
@@ -213,7 +198,7 @@ try
         app.UseDeveloperExceptionPage();
     }
 
-    // 資料庫自動 Migration 與腳本初始化流程
+    // 資料庫自動 Migration 與腳本初始化流程 (已修正：改由 DI 容器解析完整具備 Interceptor 的 DbContext)
     var autoMigrate = config.GetValue<bool>("Database:AutoMigrate", true);
     if (app.Environment.IsDevelopment() || autoMigrate)
     {
@@ -221,20 +206,8 @@ try
         var initializer = scope.ServiceProvider.GetRequiredService<IDatabaseInitializer>();
         await initializer.InitializeDatabaseAsync(app.Lifetime.ApplicationStopping).ConfigureAwait(false);
 
-        var migrationConnectionString = config.GetSection("PersistentSettings:ConnectionStrings")["MigrationConnection"];
-        if (!string.IsNullOrWhiteSpace(migrationConnectionString))
-        {
-            var mainDbContextOptions = new DbContextOptionsBuilder<PhysLIMSDbContext>()
-                .UseSqlServer(migrationConnectionString, sqlOptions =>
-                {
-                    sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "core");
-                    sqlOptions.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: TimeSpan.FromSeconds(5), errorNumbersToAdd: null);
-                })
-                .Options;
-
-            await using var mainDbContext = new PhysLIMSDbContext(mainDbContextOptions);
-            await mainDbContext.Database.MigrateAsync(app.Lifetime.ApplicationStopping).ConfigureAwait(false);
-        }
+        var mainDbContext = scope.ServiceProvider.GetRequiredService<PhysLIMSDbContext>();
+        await mainDbContext.Database.MigrateAsync(app.Lifetime.ApplicationStopping).ConfigureAwait(false);
     }
 
     // 執行模組載入初始化動態控制器與權限、Menu 種子同步
@@ -246,21 +219,18 @@ try
     {
         var services = scope.ServiceProvider;
 
-        // 2.1 同步權限點與 BitPosition
+        // 同步權限點與 BitPosition
         var permissionSeeder = services.GetRequiredService<IPermissionSeedService>();
         await permissionSeeder.SeedAndSyncPermissionsAsync().ConfigureAwait(false);
 
-        // 2.2 同步選單樹 (Section -> Group -> Page)
+        // 同步選單樹 (Section -> Group -> Page)
         var menuSeeder = services.GetRequiredService<IMenuSeedService>();
         await menuSeeder.SeedAndSyncMenusAsync().ConfigureAwait(false);
     }
 
-
-    // 先進行路由配對
+    // 路由與跨域中間件
     app.UseRouting();
-    // 1. 在 UseCors 之前加入 CORS Log 攔截器
     app.UseMiddleware<CorsLoggingMiddleware>();
-    // UseCors 必須放在 UseRouting 之後、UseAuthentication 之前
     app.UseCors("CorsPolicy");
 
     // 驗證與授權中間件
@@ -305,7 +275,6 @@ try
 catch (Exception ex)
 {
     Log.Fatal(ex, "Application start-up failed");
-    // 確保異常能被記錄並讓進程以非零代碼結束，促使 IIS 產生 stdout 錯誤
     Environment.ExitCode = 1;
     throw;
 }
