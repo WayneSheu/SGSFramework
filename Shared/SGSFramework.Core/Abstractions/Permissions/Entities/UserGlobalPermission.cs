@@ -1,7 +1,10 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using SGSFramework.Core.Abstractions.Attributes;
+using SGSFramework.Core.Abstractions.Entities.AuditLogs;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Text;
 
 namespace SGSFramework.Core.Abstractions.Permissions.Identities
@@ -9,7 +12,7 @@ namespace SGSFramework.Core.Abstractions.Permissions.Identities
     /// <summary>
     /// 使用者全域/組織級 64 位元遮罩權限實體
     /// </summary>
-    public class UserGlobalPermission
+    public class UserGlobalPermission:IAuditable
     {
         /// <summary>
         /// 唯一識別碼 (Primary Key) 
@@ -40,6 +43,20 @@ namespace SGSFramework.Core.Abstractions.Permissions.Identities
         /// 最後修改時間
         /// </summary>
         public DateTime? UpdatedAt { get; set; }
+
+        [AuditIgnore]
+        [Editable(false)]
+        public string CreatedBy { get; set; }
+
+        [AuditIgnore]
+        [Editable(false)]
+        public DateTimeOffset CreatedAtUtc { get; set; }
+
+        [AuditIgnore]
+        public string? UpdatedBy { get; set; }
+
+        [AuditIgnore]
+        public DateTimeOffset? UpdatedAtUtc { get; set; }
     }
 
     public class UserGlobalPermissionConfiguration : IEntityTypeConfiguration<UserGlobalPermission>

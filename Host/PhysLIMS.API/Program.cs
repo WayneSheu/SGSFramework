@@ -13,6 +13,7 @@ using SGSFramework.ApiInfrastructure.Filters;
 using SGSFramework.ApiInfrastructure.Middlewares;
 using SGSFramework.ApiInfrastructure.Transformers;
 using SGSFramework.AuditLog.Extensions;
+using SGSFramework.AuditLog.Interceptors;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.Extensions;
 using SGSFramework.AuthTokenBucket.Queries.Menuitems;
@@ -54,11 +55,13 @@ try
     });
 
     builder.Services.AddAPIDocServices();
+    // 1. 優先註冊 AuditLog 服務與 Interceptors (必須在 AddDbContext 之前)
+    builder.Services.AddAuditLog(config);
 
-    // 2. 資料庫基礎設施與上下文註冊
+    // 2. 資料庫基礎設施與上下文註冊 (傳入 (sp, options) 委派)
     builder.Services.AddPersistentServices();
 
-    builder.Services.AddDbContext<PhysLIMSDbContext>(options =>
+    builder.Services.AddDbContext<PhysLIMSDbContext>((sp, options) =>
     {
         var connectionString = config.GetSection("PersistentSettings:ConnectionStrings")["DefaultConnection"];
         if (string.IsNullOrWhiteSpace(connectionString))
@@ -66,10 +69,18 @@ try
             throw new InvalidOperationException("未找到 PhysLIMSDbContext 專用的 DefaultConnection 連線字串設定。");
         }
 
+        // 1. 從 sp 解析 Interceptors 實例
+        var auditInterceptor = sp.GetRequiredService<AuditInterceptor>();
+        var permissionInterceptor = sp.GetRequiredService<PermissionAuditInterceptor>();
+
+        // 2. 配置 SQL Server 資料庫選項
         options.UseSqlServer(connectionString, sqlOptions =>
         {
             sqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "core");
         });
+
+        // 3. 正確位置：將 Interceptors 註冊至 DbContextOptionsBuilder (options)
+        options.AddInterceptors(auditInterceptor, permissionInterceptor);
 
         options.ReplaceService<IRelationalAnnotationProvider, CustomSqlServerAnnotationProvider>();
         options.ReplaceService<IMigrationsSqlGenerator, CustomSqlServerMigrationsSqlGenerator>()
