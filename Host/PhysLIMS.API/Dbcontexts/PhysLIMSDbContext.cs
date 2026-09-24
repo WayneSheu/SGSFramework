@@ -43,6 +43,8 @@ public class PhysLIMSDbContext : BaseIdentityDbContext<ApplicationUser, Applicat
     public DbSet<UserLabPermission> UserLabPermissions { get; set; } = null!;
     public DbSet<UserGlobalPermission> UserGlobalPermissions { get; set; } = null!;
 
+    public DbSet<RoleGlobalPermission> RoleGlobalPermissions { get; set; } = null!;
+
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
 

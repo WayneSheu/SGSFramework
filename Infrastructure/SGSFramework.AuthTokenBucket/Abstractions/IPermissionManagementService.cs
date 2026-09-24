@@ -25,8 +25,22 @@ namespace SGSFramework.AuthTokenBucket.Abstractions
         /// </summary>
         Task<IReadOnlyCollection<PermissionMetadataDto>> SyncPermissionMetadataAsync(CancellationToken cancellationToken = default);
         Task<List<PermissionModuleDto>> GetPermissionTreeAsync(CancellationToken cancellationToken = default);
-        Task<RolePermissionMatrixDto?> GetRolePermissionsAsync(string roleId, CancellationToken cancellationToken = default);
-        Task<(bool Succeeded, string Message)> UpdateRolePermissionsAsync(UpdateRolePermissionsRequest request, CancellationToken cancellationToken = default);
+        
+        /// <summary>
+        /// 獲取角色權限矩陣 (Read Operations)
+        /// </summary>
+        /// <param name="roleId"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        Task<RolePermissionMatrixDto?> GetRoleGlobalPermissionsAsync(string roleId, CancellationToken cancellationToken = default);
+        
+        /// <summary>
+        /// 更新角色全域權限 (Write Operations)
+        /// </summary>
+        /// <param name="request"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        Task<(bool Succeeded, string Message)> UpdateRolePermissionsAsync(UpdateRoleGlobalPermissionsRequest request, CancellationToken cancellationToken = default);
 
     }
 }

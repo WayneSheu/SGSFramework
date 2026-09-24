@@ -65,7 +65,6 @@ public sealed class AuthController(
     [HttpPost("login")]
     [AllowAnonymous]
     [Function("Login", "帳密登入", Icon = "fa-solid fa-right-to-bracket", Order = 1, Description = "使用系統標準帳密登入")]
-
     [EndpointSummary("帳密登入")]
     [EndpointDescription("使用系統標準帳密登入。")]
     [ProducesResponseType(typeof(LoginResponseDto), StatusCodes.Status200OK)]
@@ -361,6 +360,29 @@ public sealed class AuthController(
                 Instance = HttpContext.Request.Path
             });
         }
+    }
+
+
+    /// <summary>   
+    /// 登入動態表單
+    /// </summary>
+    [HttpPost("login-dfms")]
+    [Function("LoginDFMS", "登入動態表單系統", Icon = "fa-solid fa-right-to-bracket", Order = 1, Description = "使用者可以登入動態表單系統。")]
+    [EndpointSummary("登入動態表單系統")]
+    [EndpointDescription("使用者可以登入動態表單系統。")]
+    [RequiresPermission("SYSTEM.AUTH.LOGINDFMS", "登入動態表單系統")]
+    [ProducesResponseType(typeof(LoginResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status423Locked)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> LoginDFMSAsync(
+        CancellationToken cancellationToken = default)
+    {
+ 
+
+        return Ok();
+
     }
 
     /// <summary>

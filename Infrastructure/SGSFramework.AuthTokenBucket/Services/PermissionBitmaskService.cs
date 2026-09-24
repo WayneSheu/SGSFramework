@@ -1,32 +1,30 @@
-﻿// ==========================================
-// 檔案路徑: Application/SGSFramework.AuthTokenBucket/Services/PermissionBitmaskService.cs
-// 架構層級: Application Layer (Service Implementation)
-// 設計模式: Feature-level Bitmask Calculation & Decoding
-// ==========================================
-
-#nullable enable
+﻿#nullable enable
 
 namespace SGSFramework.AuthTokenBucket.Services;
 
 using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Abstractions;
-using SGSFramework.AuthTokenBucket.DTOs.PermissionTree;
+using SGSFramework.Core.Abstractions.Permissions;
+using SGSFramework.Core.Abstractions.Permissions.Entities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
+/// <summary>
+/// 功能級 Bitmask 計算與解碼服務
+/// </summary>
 public sealed class PermissionBitmaskService : IPermissionBitmaskService
 {
-    private readonly IPermissionManagementService _permissionService;
+    private readonly IPermissionMetadataRepository _metadataRepository;
     private readonly ILogger<PermissionBitmaskService> _logger;
 
     public PermissionBitmaskService(
-        IPermissionManagementService permissionService,
+        IPermissionMetadataRepository metadataRepository,
         ILogger<PermissionBitmaskService> logger)
     {
-        _permissionService = permissionService ?? throw new ArgumentNullException(nameof(permissionService));
+        _metadataRepository = metadataRepository ?? throw new ArgumentNullException(nameof(metadataRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -47,38 +45,22 @@ public sealed class PermissionBitmaskService : IPermissionBitmaskService
 
         try
         {
-            var permissionTree = await _permissionService.GetPermissionTreeAsync(cancellationToken).ConfigureAwait(false);
-            if (permissionTree == null || permissionTree.Count == 0)
+            var metadataList = await _metadataRepository.GetByPermissionKeysAsync(targetPermissions, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (metadataList.Count == 0)
             {
-                _logger.LogWarning("[PermissionBitmaskService] 未能取得系統權限樹狀 Metadata，無法計算位元遮罩。");
+                _logger.LogWarning("[PermissionBitmaskService] 未找到與傳入權限相對應的 Metadata 紀錄。");
                 return result;
             }
 
-            foreach (var module in permissionTree)
+            foreach (var metadata in metadataList)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (module.Functions == null || module.Functions.Count == 0) continue;
-
-                foreach (var fn in module.Functions)
+                if (!string.IsNullOrEmpty(metadata.PermissionKey))
                 {
-                    if (fn.ReadPermission != null &&
-                        !string.IsNullOrEmpty(fn.ReadPermission.PermissionKey) &&
-                        targetPermissions.Contains(fn.ReadPermission.PermissionKey))
-                    {
-                        ApplyBitmask(result, fn.ReadPermission.PermissionKey, fn.ReadPermission.BitPosition);
-                    }
-
-                    if (fn.ActionPermissions != null && fn.ActionPermissions.Count > 0)
-                    {
-                        foreach (var action in fn.ActionPermissions)
-                        {
-                            if (!string.IsNullOrEmpty(action.PermissionKey) && targetPermissions.Contains(action.PermissionKey))
-                            {
-                                ApplyBitmask(result, action.PermissionKey, action.BitPosition);
-                            }
-                        }
-                    }
+                    ApplyBitmask(result, metadata.PermissionKey, metadata.BitPosition);
                 }
             }
 
@@ -111,38 +93,22 @@ public sealed class PermissionBitmaskService : IPermissionBitmaskService
 
         try
         {
-            var permissionTree = await _permissionService.GetPermissionTreeAsync(cancellationToken).ConfigureAwait(false);
-            if (permissionTree == null || permissionTree.Count == 0)
+            var metadataList = await _metadataRepository.GetAllMetadataAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (metadataList.Count == 0)
             {
-                _logger.LogWarning("[PermissionBitmaskService] 未能取得系統權限樹狀 Metadata，無法解碼位元遮罩。");
+                _logger.LogWarning("[PermissionBitmaskService] 未能取得系統權限 Metadata，無法解碼位元遮罩。");
                 return result;
             }
 
-            foreach (var module in permissionTree)
+            foreach (var metadata in metadataList)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (module.Functions == null || module.Functions.Count == 0) continue;
-
-                foreach (var fn in module.Functions)
+                if (!string.IsNullOrEmpty(metadata.PermissionKey))
                 {
-                    // 1. 檢查 ReadPermission
-                    if (fn.ReadPermission != null && !string.IsNullOrEmpty(fn.ReadPermission.PermissionKey))
-                    {
-                        CheckAndAddPermission(fn.ReadPermission.PermissionKey, fn.ReadPermission.BitPosition, bitmaskMap, result);
-                    }
-
-                    // 2. 檢查 ActionPermissions
-                    if (fn.ActionPermissions != null && fn.ActionPermissions.Count > 0)
-                    {
-                        foreach (var action in fn.ActionPermissions)
-                        {
-                            if (!string.IsNullOrEmpty(action.PermissionKey))
-                            {
-                                CheckAndAddPermission(action.PermissionKey, action.BitPosition, bitmaskMap, result);
-                            }
-                        }
-                    }
+                    CheckAndAddPermission(metadata.PermissionKey, metadata.BitPosition, bitmaskMap, result);
                 }
             }
 

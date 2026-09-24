@@ -1,4 +1,6 @@
-﻿// ==========================================
+﻿#nullable enable
+
+// ==========================================
 // 檔案路徑: Application/SGSFramework.AuthTokenBucket/Services/PermissionManagementService.cs
 // 架構層級: Application Layer (Service Implementation)
 // ==========================================
@@ -11,9 +13,11 @@ using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionGrants;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionTree;
 using SGSFramework.AuthTokenBucket.DTOs.RolePermissions;
+using SGSFramework.AuthTokenBucket.Repositories;
 using SGSFramework.Core.Abstractions.DbContexts;
-using SGSFramework.Core.Abstractions.Entities.Identities;
+using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Abstractions.Permissions.Entities;
+using SGSFramework.Core.Abstractions.Permissions.Identities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -24,13 +28,19 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
     where TDbContext : DbContext, ITokenDbContext
 {
     private readonly TDbContext _dbContext;
+    private readonly IRolePermissionRepository _rolePermissionRepository;
+    private readonly IPermissionBitmaskService _bitmaskService;
     private readonly ILogger<PermissionManagementService<TDbContext>> _logger;
 
     public PermissionManagementService(
         TDbContext dbContext,
+        IRolePermissionRepository rolePermissionRepository,
+        IPermissionBitmaskService bitmaskService,
         ILogger<PermissionManagementService<TDbContext>> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _rolePermissionRepository = rolePermissionRepository ?? throw new ArgumentNullException(nameof(rolePermissionRepository));
+        _bitmaskService = bitmaskService ?? throw new ArgumentNullException(nameof(bitmaskService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -130,7 +140,6 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                         ActionPermissions = new List<PermissionActionDto>()
                     };
 
-                    // 尋找主讀取權限 (以 .READ 結尾或同名標題)
                     var readEntity = controllerGroup.FirstOrDefault(a =>
                         (!string.IsNullOrEmpty(a.PermissionKey) && a.PermissionKey.EndsWith(".READ", StringComparison.OrdinalIgnoreCase)) ||
                         string.Equals(a.PermissionTitle, controllerGroup.Key.ControllerTitle, StringComparison.OrdinalIgnoreCase));
@@ -148,7 +157,6 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                         };
                     }
 
-                    // 過濾掉已指派給 ReadPermission 的項目，其餘放入 ActionPermissions
                     foreach (var actionEntity in controllerGroup)
                     {
                         if (readEntity != null && actionEntity.PermissionKey == readEntity.PermissionKey)
@@ -185,22 +193,107 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
     }
 
     /// <inheritdoc />
-    public async Task<RolePermissionMatrixDto?> GetRolePermissionsAsync(string roleId, CancellationToken cancellationToken = default)
+    public async Task<RolePermissionMatrixDto?> GetRoleGlobalPermissionsAsync(string roleId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(roleId);
 
-        return await Task.FromResult(new RolePermissionMatrixDto
+        try
         {
-            RoleId = roleId,
-            GrantedPermissionKeys = new List<string>()
-        }).ConfigureAwait(false);
+           
+            var rolePermissions = await _dbContext.Set<RoleGlobalPermission>()
+                .AsNoTracking()
+                .Where(r => r.RoleId == roleId)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (rolePermissions.Count == 0)
+            {
+                return new RolePermissionMatrixDto
+                {
+                    RoleId = roleId,
+                    GrantedPermissionKeys = new List<string>()
+                };
+            }
+
+            Dictionary<string, long> dbBitmaskMap;
+
+            dbBitmaskMap = rolePermissions
+                    .Select(x => new { x.PermissionKey, x.Bitmask }).ToDictionary(
+                    x => x.PermissionKey,
+                    x => x.Bitmask,
+                    StringComparer.OrdinalIgnoreCase);
+
+            // 解碼權限
+            var decodedDirectPermissions = await _bitmaskService.DecodeBitmaskToPermissionsAsync(dbBitmaskMap, cancellationToken).ConfigureAwait(false);
+
+            return new RolePermissionMatrixDto
+            {
+                RoleId = roleId,
+                GrantedPermissionKeys = decodedDirectPermissions
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("[PermissionManagementService] 查詢角色 [{RoleId}] 權限作業已取消。", roleId);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[PermissionManagementService] 查詢角色 [{RoleId}] 權限矩陣時發生未預期異常。", roleId);
+            throw;
+        }
     }
 
     /// <inheritdoc />
-    public async Task<(bool Succeeded, string Message)> UpdateRolePermissionsAsync(UpdateRolePermissionsRequest request, CancellationToken cancellationToken = default)
+    public async Task<(bool Succeeded, string Message)> UpdateRolePermissionsAsync(UpdateRoleGlobalPermissionsRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        return await Task.FromResult((true, "角色權限已成功更新")).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(request.RoleId))
+        {
+            _logger.LogWarning("[PermissionManagementService] 更新失敗：傳入的 RoleId 為空。");
+            return (false, "角色識別碼 (RoleId) 不得為空。");
+        }
+
+        try
+        {
+            var targetPermissions = request.PermissionKeys?
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Select(p => p.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? new List<string>();
+
+                //  Bitmask 計算服務
+                Dictionary<string, long> moduleBitmaskDict = await _bitmaskService
+                    .CalculateModuleBitmasksAsync(targetPermissions, cancellationToken)
+                    .ConfigureAwait(false);
+
+            bool success = await _rolePermissionRepository
+                .SaveRoleGlobalPermissionsAsync(request.RoleId, moduleBitmaskDict, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!success)
+            {
+                _logger.LogWarning("[PermissionManagementService] 角色全域權限寫入資料庫失敗。RoleId: {RoleId}", request.RoleId);
+                return (false, "寫入角色全域權限資料時發生失敗。");
+            }
+
+            _logger.LogInformation(
+                "[PermissionManagementService] 成功更新角色 [{RoleId}] 全域權限，共影響 [{Count}] 個模組。",
+                request.RoleId,
+                moduleBitmaskDict.Count);
+
+            return (true, $"角色全域權限更新成功，共更新 {moduleBitmaskDict.Count} 個模組區段。");
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("[PermissionManagementService] 更新角色 [{RoleId}] 全域權限作業已取消。", request.RoleId);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[PermissionManagementService] 更新角色 [{RoleId}] 全域權限時發生未預期異常。", request.RoleId);
+            throw;
+        }
     }
 }

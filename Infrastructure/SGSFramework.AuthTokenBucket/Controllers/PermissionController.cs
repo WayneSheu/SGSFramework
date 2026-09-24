@@ -6,6 +6,7 @@
 #nullable enable
 
 using GSFramework.AuthTokenBucket.DTOs;
+using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
@@ -22,13 +23,9 @@ using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Controllers.Base;
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Net.Mime;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Security.Claims;
 
 namespace SGSFramework.AuthTokenBucket.Controllers.v1;
 
@@ -45,6 +42,7 @@ namespace SGSFramework.AuthTokenBucket.Controllers.v1;
 public sealed class PermissionController : ApiControllerBase
 {
     private readonly IMemoryCache _memoryCache;
+
     private readonly IPermissionManagementService _permissionService;
     private readonly IPermissionBitmaskService _bitmaskService;
     private readonly RoleManager<ApplicationRole> _roleManager;
@@ -185,7 +183,7 @@ public sealed class PermissionController : ApiControllerBase
 
         try
         {
-            var result = await _permissionService.GetRolePermissionsAsync(roleId, cancellationToken);
+            var result = await _permissionService.GetRoleGlobalPermissionsAsync(roleId, cancellationToken);
             if (result == null)
             {
                 return NotFound(new ProblemDetails
@@ -213,22 +211,22 @@ public sealed class PermissionController : ApiControllerBase
     }
 
     /// <summary>
-    /// 更新指定角色的權限關聯
+    /// 更新指定角色的全域權限 (Global Permissions)
     /// </summary>
-    [HttpPost("role/update")]
-    [Function("UpdateRolePermissions", "更新角色權限", Icon = "fa-solid fa-user-pen", Order = 3, Description = "更新指定角色的權限關聯配置與 Bitmask 設定", IsMenu = false)]
-    [RequiresPermission("SYSTEM.PERMISSION.UPDATE", "更新權限")]
-    [EndpointSummary("更新角色權限")]
-    [EndpointDescription("更新指定角色的權限關聯配置與 Bitmask 設定")]
-    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [HttpPost("role/global/update")]
+    [Function("UpdateRoleGlobalPermissions", "更新角色全域權限", Icon = "fa-solid fa-user-gear", Order = 3, Description = "更新指定角色的全域 Bitmask 權限配置", IsMenu = false)]
+    [RequiresPermission("SYSTEM.PERMISSION.UPDATE", "更新角色全域權限")]
+    [EndpointSummary("更新角色全域權限")]
+    [EndpointDescription("更新指定角色的全域權限關聯配置與 Bitmask 設定")]
+    [ProducesResponseType(typeof(UpdateRoleGlobalPermissionsCommandResult), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> UpdateRolePermissions(
-        [FromBody] UpdateRolePermissionsRequest request,
+    public async Task<IActionResult> UpdateRoleGlobalPermissions(
+        [FromBody] UpdateRoleGlobalPermissionsRequest request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-
+        
         if (string.IsNullOrWhiteSpace(request.RoleId))
         {
             return BadRequest(new ProblemDetails
@@ -242,29 +240,37 @@ public sealed class PermissionController : ApiControllerBase
 
         try
         {
-            var (succeeded, message) = await _permissionService.UpdateRolePermissionsAsync(request, cancellationToken);
-            if (!succeeded)
+            // 自動從 HttpContext Claims 中安全地讀取當前操作者 UserId
+            string? currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            var result = await _permissionService.UpdateRolePermissionsAsync(request, cancellationToken).ConfigureAwait(false); 
+            if (!result.Succeeded)
             {
                 return BadRequest(new ProblemDetails
                 {
                     Status = StatusCodes.Status400BadRequest,
-                    Title = "權限更新失敗",
-                    Detail = message,
+                    Title = "全域權限更新失敗",
+                    Detail = result.Message,
                     Instance = HttpContext.Request.Path
                 });
             }
 
-            _logger.LogInformation("成功更新角色 {RoleId} 的權限配置。", request.RoleId);
-            return Ok(new { message });
+            _logger.LogInformation("成功更新角色 {RoleId} 的全域權限配置，操作者: {OperatorId}。", request.RoleId, currentUserId ?? "System");
+            return Ok(result);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("更新角色 {RoleId} 的全域權限作業已取消。", request.RoleId);
+            throw;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "更新角色 {RoleId} 權限時發生未預期異常。", request.RoleId);
+            _logger.LogError(ex, "更新角色 {RoleId} 全域權限時發生未預期異常。", request.RoleId);
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
                 Status = StatusCodes.Status500InternalServerError,
                 Title = "伺服器內部錯誤",
-                Detail = "更新角色權限程序執行失敗。",
+                Detail = "更新角色全域權限程序執行失敗。",
                 Instance = HttpContext.Request.Path
             });
         }
@@ -342,7 +348,7 @@ public sealed class PermissionController : ApiControllerBase
                 var role = await _roleManager.FindByNameAsync(roleName).ConfigureAwait(false);
                 if (role != null)
                 {
-                    var roleMatrix = await _permissionService.GetRolePermissionsAsync(role.Id.ToString(), cancellationToken).ConfigureAwait(false);
+                    var roleMatrix = await _permissionService.GetRoleGlobalPermissionsAsync(role.Id.ToString(), cancellationToken).ConfigureAwait(false);
                     if (roleMatrix?.GrantedPermissionKeys is { Count: > 0 })
                     {
                         rolePermissionsList.AddRange(roleMatrix.GrantedPermissionKeys);
@@ -406,7 +412,7 @@ public sealed class PermissionController : ApiControllerBase
 
         try
         {
-            var rolePermissions = await _permissionService.GetRolePermissionsAsync(roleId, cancellationToken);
+            var rolePermissions = await _permissionService.GetRoleGlobalPermissionsAsync(roleId, cancellationToken);
             if (rolePermissions == null)
             {
                 return NotFound(new ProblemDetails
