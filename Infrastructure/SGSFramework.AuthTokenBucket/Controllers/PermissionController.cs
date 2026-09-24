@@ -42,7 +42,6 @@ namespace SGSFramework.AuthTokenBucket.Controllers.v1;
 public sealed class PermissionController : ApiControllerBase
 {
     private readonly IMemoryCache _memoryCache;
-
     private readonly IPermissionManagementService _permissionService;
     private readonly IPermissionBitmaskService _bitmaskService;
     private readonly RoleManager<ApplicationRole> _roleManager;
@@ -168,10 +167,10 @@ public sealed class PermissionController : ApiControllerBase
     /// 取得指定角色的權限設定清單
     /// </summary>
     [HttpGet("role/{roleId}")]
-    [Function("GetRolePermissions", "角色權限清單", Icon = "fa-solid fa-user-shield", Order = 2, Description = "取得指定角色的權限設定清單與 Bitmask 映射矩陣", IsMenu = false)]
+    [Function("GetRolePermissions", "角色權限清單", Icon = "fa-solid fa-user-shield", Order = 2, Description = "取得指定角色的全域權限設定清單與 Bitmask 映射矩陣", IsMenu = false)]
     [RequiresPermission("SYSTEM.PERMISSION.READ")]
-    [EndpointSummary("角色權限清單")]
-    [EndpointDescription("取得指定角色的權限設定清單與 Bitmask 映射矩陣。")]
+    [EndpointSummary("角色全域權限清單")]
+    [EndpointDescription("取得指定角色的全域權限設定清單與 Bitmask 映射矩陣。")]
     [ProducesResponseType(typeof(RolePermissionMatrixDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
@@ -199,7 +198,7 @@ public sealed class PermissionController : ApiControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "取得角色 {RoleId} 的權限配置時發生異常。", roleId);
+            _logger.LogError(ex, "取得角色 {RoleId} 的全域權限配置時發生異常。", roleId);
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
                 Status = StatusCodes.Status500InternalServerError,
@@ -549,6 +548,69 @@ public sealed class PermissionController : ApiControllerBase
                 Status = StatusCodes.Status500InternalServerError,
                 Title = "伺服器內部錯誤",
                 Detail = "更新使用者直接權限時發生系統異常，請聯繫系統管理員。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
+
+    /// <summary>
+    /// 取得具備指定權限代碼 (PermissionKey) 的使用者清單
+    /// </summary>
+    [HttpGet("users/by-permission")]
+    [Function("GetUsersByPermissionKey", "取得權限使用者清單", Icon = "fa-solid fa-users", Order = 7, Description = "取得擁有指定 PermissionKey 的所有使用者清單", IsMenu = false)]
+    [RequiresPermission("SYSTEM.PERMISSION.READ")]
+    [EndpointSummary("取得具備特定權限的使用者清單")]
+    [EndpointDescription("透過 PermissionKey (例如: SYSTEM.AUTH.LOGINDFMS) 查詢擁有該權限的所有使用者資訊。")]
+    [ProducesResponseType(typeof(List<PermissionUserDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetUsersByPermissionKey(
+        [FromQuery] string permissionKey,
+        [FromQuery] Guid? tenantLabId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(permissionKey))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "Validation.General",
+                Detail = "發生一項或多項驗證錯誤。",
+                Instance = HttpContext.Request.Path,
+                Extensions =
+                {
+                    ["errors"] = new[]
+                    {
+                        new { field = "permissionKey", message = "The permissionKey field is required." }
+                    }
+                }
+            });
+        }
+
+        try
+        {
+            // 在 Controller 內部組裝 DTO 呼叫 Service 或 MediatR
+            var result = await _permissionService.GetUsersByPermissionKeyAsync(
+                permissionKey,
+                tenantLabId,
+                cancellationToken).ConfigureAwait(false);
+
+            return Ok(result);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("查詢權限 [{PermissionKey}] 使用者清單作業已取消。", permissionKey);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "查詢具備權限 [{PermissionKey}] 的使用者清單時發生異常。", permissionKey);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "查詢具備特定權限的使用者清單時發生異常，請聯繫系統管理員。",
                 Instance = HttpContext.Request.Path
             });
         }

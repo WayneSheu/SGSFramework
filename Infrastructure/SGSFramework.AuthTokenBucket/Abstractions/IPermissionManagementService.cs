@@ -1,5 +1,6 @@
 ﻿// 檔案路徑: Abstractions/SGSFramework.AuthTokenBucket.Abstractions/IPermissionManagementService.cs
 
+using SGSFramework.AuthTokenBucket.DTOs;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionGrants;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionTree;
 using SGSFramework.AuthTokenBucket.DTOs.RolePermissions;
@@ -42,5 +43,13 @@ namespace SGSFramework.AuthTokenBucket.Abstractions
         /// <returns></returns>
         Task<(bool Succeeded, string Message)> UpdateRolePermissionsAsync(UpdateRoleGlobalPermissionsRequest request, CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// 取得具備指定 PermissionKey 的所有使用者清單
+        /// </summary>
+        Task<List<PermissionUserDto>> GetUsersByPermissionKeyAsync(
+    string permissionKey,
+    Guid? tenantLabId = null,
+    CancellationToken cancellationToken = default);
+    
     }
 }
