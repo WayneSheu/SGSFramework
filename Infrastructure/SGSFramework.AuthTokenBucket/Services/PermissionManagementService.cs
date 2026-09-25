@@ -364,7 +364,6 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                 }
                 else
                 {
-                    // 補充屬性
                     dto.ModuleTitle = moduleTitle;
                     dto.FunctionTitle = functionTitle;
                     dto.PermissionTitle = permissionTitle;
@@ -394,9 +393,13 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
 
+            // 修正比對邏輯：優先比對 RoleGlobalPermission 中的 PermissionKey 與 ModuleName 是否符號相符，
+            // 或進行模糊匹配（如前綴、後綴匹配），並確保位元遮罩正確命中 targetBitmaskFlag
             var matchingRolePermissions = allRolePermissions
                 .Where(r => (string.Equals(r.PermissionKey, moduleName, StringComparison.OrdinalIgnoreCase) ||
-                             string.Equals(r.PermissionKey, normalizedPermissionKey, StringComparison.OrdinalIgnoreCase))
+                             string.Equals(r.PermissionKey, normalizedPermissionKey, StringComparison.OrdinalIgnoreCase) ||
+                             normalizedPermissionKey.StartsWith(r.PermissionKey + ".", StringComparison.OrdinalIgnoreCase) ||
+                             r.PermissionKey.StartsWith(moduleName + ".", StringComparison.OrdinalIgnoreCase))
                          && (targetBitmaskFlag != 0 && (r.Bitmask & targetBitmaskFlag) != 0))
                 .ToList();
 
@@ -407,18 +410,35 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
 
             if (roleBitmaskMap.Count > 0)
             {
+                // 先撈出資料庫中具備這些 RoleId 的角色實體
+                var targetRoleIds = roleBitmaskMap.Keys.ToList();
                 var matchingRoles = await _roleManager.Roles
                     .AsNoTracking()
-                    .Where(r => roleBitmaskMap.Keys.Contains(r.Id.ToString()))
+                    .Where(r => targetRoleIds.Contains(r.Id.ToString()))
                     .ToListAsync(cancellationToken)
                     .ConfigureAwait(false);
+
+                // 若以 ID 為基準沒查到，則嘗試使用 Role Name 進行防禦性二次比對
+                if (matchingRoles.Count == 0)
+                {
+                    matchingRoles = await _roleManager.Roles
+                        .AsNoTracking()
+                        .Where(r => targetRoleIds.Contains(r.Name))
+                        .ToListAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                }
 
                 foreach (var role in matchingRoles)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var roleIdStr = role.Id.ToString();
                     var roleName = role.Name ?? roleIdStr;
-                    var roleBitmask = roleBitmaskMap[roleIdStr];
+
+                    // 取得對應 Bitmask，優先使用 ID，若無則使用 Name
+                    if (!roleBitmaskMap.TryGetValue(roleIdStr, out var roleBitmask))
+                    {
+                        roleBitmaskMap.TryGetValue(roleName, out roleBitmask);
+                    }
 
                     var usersInRole = await _userManager.GetUsersInRoleAsync(roleName).ConfigureAwait(false);
                     foreach (var user in usersInRole)
