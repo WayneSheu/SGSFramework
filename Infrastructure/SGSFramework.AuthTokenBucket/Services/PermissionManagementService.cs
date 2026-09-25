@@ -164,8 +164,8 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                             BitPosition = readEntity.BitPosition
                         };
                     }
-
-                    foreach (var actionEntity in controllerGroup)
+                    var actions = controllerGroup.DistinctBy(x => x.PermissionKey).ToList();
+                    foreach (var actionEntity in actions)
                     {
                         if (readEntity != null && actionEntity.PermissionKey == readEntity.PermissionKey)
                         {
