@@ -1,10 +1,8 @@
-﻿// ==========================================
-// 檔案路徑: Application/SGSFramework.AuthTokenBucket/Services/PermissionManagementService.cs
-// 架構層級: Application Layer (Service Implementation)
-// ==========================================
+﻿#nullable enable
 
 namespace SGSFramework.AuthTokenBucket.Services;
 
+using GSFramework.AuthTokenBucket.DTOs;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -13,6 +11,7 @@ using SGSFramework.AuthTokenBucket.DTOs;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionGrants;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionTree;
 using SGSFramework.AuthTokenBucket.DTOs.RolePermissions;
+using SGSFramework.AuthTokenBucket.DTOs.UserPermissions;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Permissions;
@@ -304,6 +303,100 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
     }
 
     /// <inheritdoc />
+    public async Task<UserAuditPermissionsResponseDto?> GetUserAllPermissionsAsync(
+        string userId,
+        Guid? tenantLabId = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
+
+        try
+        {
+            var user = await _userManager.FindByIdAsync(userId).ConfigureAwait(false);
+            if (user == null)
+            {
+                return null;
+            }
+
+            // 1. 讀取使用者角色與 Claims
+            var roles = await _userManager.GetRolesAsync(user).ConfigureAwait(false);
+            var claims = await _userManager.GetClaimsAsync(user).ConfigureAwait(false);
+
+            const string permissionClaimType = "Permission";
+            var claimPermissions = claims
+                .Where(c => c.Type == permissionClaimType)
+                .Select(c => c.Value)
+                .ToList();
+
+            // 2. 從資料庫讀取使用者的直接 Bitmask 設定並進行還解碼
+            Dictionary<string, long> dbBitmaskMap;
+            if (tenantLabId.HasValue && tenantLabId.Value != Guid.Empty)
+            {
+                dbBitmaskMap = await _userPermissionRepository.GetPermissionsByLabAsync(
+                    userId,
+                    tenantLabId.Value,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                dbBitmaskMap = await _userPermissionRepository.GetGlobalPermissionsAsync(
+                    userId,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            var decodedDirectPermissions = await _bitmaskService.DecodeBitmaskToPermissionsAsync(dbBitmaskMap, cancellationToken).ConfigureAwait(false);
+
+            // 合併 Identity Claim Permissions 與資料庫 Bitmask 解碼出的權限
+            var directPermissions = claimPermissions
+                .Union(decodedDirectPermissions, StringComparer.OrdinalIgnoreCase)
+                .Distinct()
+                .ToList();
+
+            // 3. 取得角色繼承權限
+            var rolePermissionsList = new List<string>();
+            foreach (var roleName in roles)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var role = await _roleManager.FindByNameAsync(roleName).ConfigureAwait(false);
+                if (role != null)
+                {
+                    var roleMatrix = await GetRoleGlobalPermissionsAsync(role.Id.ToString(), cancellationToken).ConfigureAwait(false);
+                    if (roleMatrix?.GrantedPermissionKeys is { Count: > 0 })
+                    {
+                        rolePermissionsList.AddRange(roleMatrix.GrantedPermissionKeys);
+                    }
+                }
+            }
+
+            // 4. 彙整有效權限 (Direct + Role)
+            var effectivePermissions = directPermissions
+                .Union(rolePermissionsList, StringComparer.OrdinalIgnoreCase)
+                .Distinct()
+                .OrderBy(p => p)
+                .ToList();
+
+            return new UserAuditPermissionsResponseDto
+            {
+                UserId = user.Id.ToString(),
+                Username = user.UserName ?? string.Empty,
+                Roles = roles.ToList(),
+                DirectPermissions = directPermissions,
+                EffectivePermissions = effectivePermissions
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("[PermissionManagementService] 查詢使用者權限稽核資料作業已取消。UserId: {UserId}", userId);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[PermissionManagementService] 查詢使用者權限稽核資料時發生異常。UserId: {UserId}", userId);
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<List<PermissionUserDto>> GetUsersByPermissionKeyAsync(
         string permissionKey,
         Guid? tenantLabId = null,
@@ -315,7 +408,6 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
         {
             var normalizedPermissionKey = permissionKey.Trim();
 
-            // 1. 從 PermissionMetadata 取得完整 Metadata 資訊
             var allMeta = await _dbContext.Set<PermissionMetadata>()
                 .AsNoTracking()
                 .ToListAsync(cancellationToken)
@@ -341,7 +433,6 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
 
             var resultDict = new Dictionary<string, PermissionUserDto>(StringComparer.OrdinalIgnoreCase);
 
-            // Helper: 統一建立或更正 DTO 屬性值
             PermissionUserDto CreateOrGetUserDto(string userId, string username, string email)
             {
                 if (!resultDict.TryGetValue(userId, out var dto))
@@ -372,7 +463,6 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                 return dto;
             }
 
-            // 2. 驗證 Lab 內部使用者
             HashSet<string>? validLabUserIds = null;
             if (tenantLabId.HasValue && tenantLabId.Value != Guid.Empty)
             {
@@ -387,14 +477,11 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                 if (validLabUserIds.Count == 0) return new List<PermissionUserDto>();
             }
 
-            // 3. 查詢的角色全域權限 (Role Global Permissions)
             var allRolePermissions = await _dbContext.Set<RoleGlobalPermission>()
                 .AsNoTracking()
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
 
-            // 修正比對邏輯：優先比對 RoleGlobalPermission 中的 PermissionKey 與 ModuleName 是否符號相符，
-            // 或進行模糊匹配（如前綴、後綴匹配），並確保位元遮罩正確命中 targetBitmaskFlag
             var matchingRolePermissions = allRolePermissions
                 .Where(r => (string.Equals(r.PermissionKey, moduleName, StringComparison.OrdinalIgnoreCase) ||
                              string.Equals(r.PermissionKey, normalizedPermissionKey, StringComparison.OrdinalIgnoreCase) ||
@@ -410,7 +497,6 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
 
             if (roleBitmaskMap.Count > 0)
             {
-                // 先撈出資料庫中具備這些 RoleId 的角色實體
                 var targetRoleIds = roleBitmaskMap.Keys.ToList();
                 var matchingRoles = await _roleManager.Roles
                     .AsNoTracking()
@@ -418,7 +504,6 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                     .ToListAsync(cancellationToken)
                     .ConfigureAwait(false);
 
-                // 若以 ID 為基準沒查到，則嘗試使用 Role Name 進行防禦性二次比對
                 if (matchingRoles.Count == 0)
                 {
                     matchingRoles = await _roleManager.Roles
@@ -434,7 +519,6 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                     var roleIdStr = role.Id.ToString();
                     var roleName = role.Name ?? roleIdStr;
 
-                    // 取得對應 Bitmask，優先使用 ID，若無則使用 Name
                     if (!roleBitmaskMap.TryGetValue(roleIdStr, out var roleBitmask))
                     {
                         roleBitmaskMap.TryGetValue(roleName, out roleBitmask);
@@ -457,7 +541,6 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                 }
             }
 
-            // 4. 查詢直接權限 (Direct User Permissions)
             var candidateUsers = await _userManager.Users.AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false);
 
             foreach (var user in candidateUsers)

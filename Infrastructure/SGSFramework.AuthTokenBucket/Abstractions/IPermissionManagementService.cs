@@ -1,5 +1,6 @@
 ﻿// 檔案路徑: Abstractions/SGSFramework.AuthTokenBucket.Abstractions/IPermissionManagementService.cs
 
+using GSFramework.AuthTokenBucket.DTOs;
 using SGSFramework.AuthTokenBucket.DTOs;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionGrants;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionTree;
@@ -18,6 +19,8 @@ namespace SGSFramework.AuthTokenBucket.Abstractions
 
         //角色權限授與與撤銷 (Write Operations)
         Task GrantPermissionToRoleAsync(string roleId, string permissionCode, CancellationToken cancellationToken = default);
+        
+        //角色權限授與與撤銷 (Read Operations)
         Task RevokePermissionFromRoleAsync(string roleId, string permissionCode, CancellationToken cancellationToken = default);
 
         //後台 UI 權限矩陣與樹狀結構維護 (Management DTOs)
@@ -25,6 +28,8 @@ namespace SGSFramework.AuthTokenBucket.Abstractions
         /// 同步並更新系統 PermissionMetadata 資料表，並透過 DTO 投影回傳完整資料清單
         /// </summary>
         Task<IReadOnlyCollection<PermissionMetadataDto>> SyncPermissionMetadataAsync(CancellationToken cancellationToken = default);
+        
+        //後台 UI 權限矩陣與樹狀結構維護 (Management DTOs)
         Task<List<PermissionModuleDto>> GetPermissionTreeAsync(CancellationToken cancellationToken = default);
         
         /// <summary>
@@ -44,12 +49,17 @@ namespace SGSFramework.AuthTokenBucket.Abstractions
         Task<(bool Succeeded, string Message)> UpdateRolePermissionsAsync(UpdateRoleGlobalPermissionsRequest request, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// 取得指定使用者的所有權限總覽 (包含從 User_Global_Permissions / Lab Permissions Bitmask 解碼之直接權限與角色繼承權限)
+        /// </summary>
+        Task<UserAuditPermissionsResponseDto?> GetUserAllPermissionsAsync(string userId, Guid? tenantLabId = null, CancellationToken cancellationToken = default);
+
+
+        /// <summary>
         /// 取得具備指定 PermissionKey 的所有使用者清單
         /// </summary>
-        Task<List<PermissionUserDto>> GetUsersByPermissionKeyAsync(
-    string permissionKey,
-    Guid? tenantLabId = null,
-    CancellationToken cancellationToken = default);
+        Task<List<PermissionUserDto>> GetUsersByPermissionKeyAsync(string permissionKey,Guid? tenantLabId = null,CancellationToken cancellationToken = default);
     
+
+
     }
 }

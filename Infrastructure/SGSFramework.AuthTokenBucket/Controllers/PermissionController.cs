@@ -293,8 +293,12 @@ public sealed class PermissionController : ApiControllerBase
     {
         try
         {
-            var user = await _userManager.FindByIdAsync(userId.ToString()).ConfigureAwait(false);
-            if (user == null)
+            var response = await _permissionService.GetUserAllPermissionsAsync(
+                userId.ToString(),
+                tenantLabId,
+                cancellationToken).ConfigureAwait(false);
+
+            if (response == null)
             {
                 return BadRequest(new ProblemDetails
                 {
@@ -304,72 +308,6 @@ public sealed class PermissionController : ApiControllerBase
                     Instance = HttpContext.Request.Path
                 });
             }
-
-            // 1. 讀取使用者角色與 Claims
-            var roles = await _userManager.GetRolesAsync(user).ConfigureAwait(false);
-            var claims = await _userManager.GetClaimsAsync(user).ConfigureAwait(false);
-
-            const string permissionClaimType = "Permission";
-            var claimPermissions = claims
-                .Where(c => c.Type == permissionClaimType)
-                .Select(c => c.Value)
-                .ToList();
-
-            // 2. 從資料庫讀取使用者的直接 Bitmask 設定並進行還解碼
-            Dictionary<string, long> dbBitmaskMap;
-            if (tenantLabId.HasValue && tenantLabId.Value != Guid.Empty)
-            {
-                dbBitmaskMap = await _userPermissionRepository.GetPermissionsByLabAsync(
-                    userId.ToString(),
-                    tenantLabId.Value,
-                    cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                dbBitmaskMap = await _userPermissionRepository.GetGlobalPermissionsAsync(
-                    userId.ToString(),
-                    cancellationToken).ConfigureAwait(false);
-            }
-
-            var decodedDirectPermissions = await _bitmaskService.DecodeBitmaskToPermissionsAsync(dbBitmaskMap, cancellationToken).ConfigureAwait(false);
-
-            // 合併 Identity Claim Permissions 與資料庫 Bitmask 解碼出的權限
-            var directPermissions = claimPermissions
-                .Union(decodedDirectPermissions, StringComparer.OrdinalIgnoreCase)
-                .Distinct()
-                .ToList();
-
-            // 3. 取得角色繼承權限
-            var rolePermissionsList = new List<string>();
-            foreach (var roleName in roles)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var role = await _roleManager.FindByNameAsync(roleName).ConfigureAwait(false);
-                if (role != null)
-                {
-                    var roleMatrix = await _permissionService.GetRoleGlobalPermissionsAsync(role.Id.ToString(), cancellationToken).ConfigureAwait(false);
-                    if (roleMatrix?.GrantedPermissionKeys is { Count: > 0 })
-                    {
-                        rolePermissionsList.AddRange(roleMatrix.GrantedPermissionKeys);
-                    }
-                }
-            }
-
-            // 4. 彙整有效權限 (Direct + Role)
-            var effectivePermissions = directPermissions
-                .Union(rolePermissionsList, StringComparer.OrdinalIgnoreCase)
-                .Distinct()
-                .OrderBy(p => p)
-                .ToList();
-
-            var response = new UserAuditPermissionsResponseDto
-            {
-                UserId = user.Id.ToString(),
-                Username = user.UserName ?? string.Empty,
-                Roles = roles.ToList(),
-                DirectPermissions = directPermissions,
-                EffectivePermissions = effectivePermissions
-            };
 
             return Ok(response);
         }
