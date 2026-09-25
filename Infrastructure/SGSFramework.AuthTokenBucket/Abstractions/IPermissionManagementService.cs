@@ -4,6 +4,7 @@ using GSFramework.AuthTokenBucket.DTOs;
 using SGSFramework.AuthTokenBucket.DTOs;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionGrants;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionTree;
+using SGSFramework.AuthTokenBucket.DTOs.PermissionUsers;
 using SGSFramework.AuthTokenBucket.DTOs.RolePermissions;
 using SGSFramework.AuthTokenBucket.DTOs.UserPermissions;
 using SGSFramework.Core.Abstractions.Permissions.Entities;
@@ -62,7 +63,7 @@ namespace SGSFramework.AuthTokenBucket.Abstractions
         /// <summary>
         /// 取得具備指定 PermissionKey 的所有使用者清單
         /// </summary>
-        Task<List<PermissionUserDto>> GetUsersByPermissionKeyAsync(string permissionKey,Guid? tenantLabId = null,CancellationToken cancellationToken = default);
+        Task<PermissionUsersMasterDto> GetUsersByPermissionKeyAsync(string permissionKey,Guid? tenantLabId = null,CancellationToken cancellationToken = default);
     
 
 

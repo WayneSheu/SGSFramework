@@ -1,11 +1,12 @@
 ﻿using MediatR;
+using SGSFramework.AuthTokenBucket.DTOs.PermissionUsers;
 using System;
 using System.Collections.Generic;
 using System.Text;
 
 namespace SGSFramework.AuthTokenBucket.DTOs
 {
-    public sealed class GetUsersByPermissionKeyQuery : IRequest<List<PermissionUserDto>>
+    public sealed class GetUsersByPermissionKeyQuery : IRequest<PermissionUsersMasterDto>
     {
         /// <summary>
         /// 權限代碼 (例如: SYSTEM.AUTH.LOGINDFMS)

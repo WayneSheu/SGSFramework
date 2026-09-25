@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace SGS.Modules.ORG.Application.Features.Laboratories.Dtos
+namespace SGSFramework.Core.DTOs
 {
     /// <summary>
     /// 使用者實驗室關聯資料傳輸物件 (DTO)

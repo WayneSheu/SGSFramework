@@ -11,6 +11,7 @@ using SGS.Modules.ORG.Application.Features.Laboratories.Dtos;
 using SGS.Modules.ORG.Application.Features.Laboratories.Queries;
 using SGS.Modules.ORG.Application.Features.Laboratories.Command;
 using Microsoft.AspNetCore.Authorization;
+using SGSFramework.Core.DTOs;
 
 namespace SGS.Modules.ORG.Controllers;
 

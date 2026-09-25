@@ -17,6 +17,7 @@ using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.DTOs;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionTree;
+using SGSFramework.AuthTokenBucket.DTOs.PermissionUsers;
 using SGSFramework.AuthTokenBucket.DTOs.RolePermissions;
 using SGSFramework.AuthTokenBucket.DTOs.UserPermissions;
 using SGSFramework.Core.Abstractions.Attributes;
@@ -214,7 +215,7 @@ public sealed class PermissionController : ApiControllerBase
     /// </summary>
     [HttpPost("role/global/update")]
     [Function("UpdateRoleGlobalPermissions", "更新角色全域權限", Icon = "fa-solid fa-user-gear", Order = 3, Description = "更新指定角色的全域 Bitmask 權限配置", IsMenu = false)]
-    [RequiresPermission("SYSTEM.PERMISSION.UPDATE", "更新角色/用戶權限")]
+    [RequiresPermission("SYSTEM.PERMISSION.ASSIGN_ROLE", "角色的全域權限")]
     [EndpointSummary("更新角色全域權限")]
     [EndpointDescription("更新指定角色的全域權限關聯配置與 Bitmask 設定")]
     [ProducesResponseType(typeof(UpdateRoleGlobalPermissionsCommandResult), StatusCodes.Status200OK)]
@@ -409,7 +410,7 @@ public sealed class PermissionController : ApiControllerBase
     /// </summary>
     [HttpPut("user/{userId:guid}/permissions")]
     [Function("AssignUserPermissions", "指派使用者權限", Icon = "fa-solid fa-key", Order = 6, Description = "更新指定使用者的直接 API 權限", IsMenu = false)]
-    [RequiresPermission("SYSTEM.PERMISSION.UPDATE")]
+    [RequiresPermission("SYSTEM.PERMISSION.ASSIGN_USER", "使用者直接權限")]
     [EndpointSummary("指派使用者權限")]
     [EndpointDescription("更新指定使用者的直接 API 權限。")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
@@ -467,11 +468,11 @@ public sealed class PermissionController : ApiControllerBase
     /// 取得具備指定權限代碼 (PermissionKey) 的使用者清單
     /// </summary>
     [HttpGet("users/by-permission")]
-    [Function("GetUsersByPermissionKey", "取得權限使用者清單", Icon = "fa-solid fa-users", Order = 7, Description = "取得擁有指定 PermissionKey 的所有使用者清單", IsMenu = false)]
-    [RequiresPermission("SYSTEM.PERMISSION.READ")]
+    [Function("GetUsersByPermissionKey", "取得具備特定權限的使用者清單", Icon = "fa-solid fa-users", Order = 7, Description = "取得擁有指定 PermissionKey 的所有使用者清單", IsMenu = false)]
+    [RequiresPermission("SYSTEM.PERMISSION.Audit", "特定權限的使用者清單")]
     [EndpointSummary("取得具備特定權限的使用者清單")]
     [EndpointDescription("透過 PermissionKey (例如: SYSTEM.AUTH.LOGINDFMS) 查詢擁有該權限的所有使用者資訊。")]
-    [ProducesResponseType(typeof(List<PermissionUserDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(PermissionUsersMasterDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetUsersByPermissionKey(

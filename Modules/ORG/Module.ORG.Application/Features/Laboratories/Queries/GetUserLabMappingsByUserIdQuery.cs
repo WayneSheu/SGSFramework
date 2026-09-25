@@ -7,6 +7,7 @@ using SGS.Modules.ORG.Infrastructure.Dbcontexts;
 using SGS.Modules.ORG.Infrastructure.Entities.Org;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.Identities;
+using SGSFramework.Core.DTOs;
 using SGSFramework.Core.Errors;
 using SGSFramework.Core.Results;
 using System;
