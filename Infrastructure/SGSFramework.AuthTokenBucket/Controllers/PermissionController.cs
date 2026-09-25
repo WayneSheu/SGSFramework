@@ -214,7 +214,7 @@ public sealed class PermissionController : ApiControllerBase
     /// </summary>
     [HttpPost("role/global/update")]
     [Function("UpdateRoleGlobalPermissions", "更新角色全域權限", Icon = "fa-solid fa-user-gear", Order = 3, Description = "更新指定角色的全域 Bitmask 權限配置", IsMenu = false)]
-    [RequiresPermission("SYSTEM.PERMISSION.UPDATE", "更新角色全域權限")]
+    [RequiresPermission("SYSTEM.PERMISSION.UPDATE", "更新角色/用戶權限")]
     [EndpointSummary("更新角色全域權限")]
     [EndpointDescription("更新指定角色的全域權限關聯配置與 Bitmask 設定")]
     [ProducesResponseType(typeof(UpdateRoleGlobalPermissionsCommandResult), StatusCodes.Status200OK)]
@@ -425,53 +425,24 @@ public sealed class PermissionController : ApiControllerBase
 
         try
         {
-            var user = await _userManager.FindByIdAsync(userId.ToString()).ConfigureAwait(false);
-            if (user == null)
-            {
-                return BadRequest(new ProblemDetails
-                {
-                    Status = StatusCodes.Status400BadRequest,
-                    Title = "使用者不存在",
-                    Detail = $"找不到識別碼為 '{userId}' 的使用者。",
-                    Instance = HttpContext.Request.Path
-                });
-            }
+            var result = await _permissionService.AssignUserPermissionsAsync(
+                userId.ToString(),
+                tenantLabId,
+                request,
+                cancellationToken).ConfigureAwait(false);
 
-            var targetPermissions = request.Permissions?.Distinct().ToList() ?? new List<string>();
-
-            // 呼叫獨立抽離的 Bitmask 計算服務
-            var moduleBitmaskDict = await _bitmaskService.CalculateModuleBitmasksAsync(targetPermissions, cancellationToken).ConfigureAwait(false);
-
-            bool success;
-            if (tenantLabId.HasValue && tenantLabId.Value != Guid.Empty)
-            {
-                success = await _userPermissionRepository.SaveUserLabPermissionsAsync(
-                    userId.ToString(),
-                    tenantLabId.Value,
-                    moduleBitmaskDict,
-                    cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                success = await _userPermissionRepository.SaveUserGlobalPermissionsAsync(
-                    userId.ToString(),
-                    moduleBitmaskDict,
-                    cancellationToken).ConfigureAwait(false);
-            }
-
-            if (!success)
+            if (!result.Succeeded)
             {
                 return BadRequest(new ProblemDetails
                 {
                     Status = StatusCodes.Status400BadRequest,
                     Title = "權限指派失敗",
-                    Detail = "將使用者權限寫入資料庫時發生錯誤，請稍後再試。",
+                    Detail = result.Message,
                     Instance = HttpContext.Request.Path
                 });
             }
 
-            _logger.LogInformation("成功更新使用者 [{UserId}] 的直接權限遮罩，影響模組數: [{Count}]", userId, moduleBitmaskDict.Count);
-            return Ok(new { message = "使用者直接權限指派成功。" });
+            return Ok(new { message = result.Message });
         }
         catch (OperationCanceledException)
         {

@@ -5,6 +5,7 @@ using SGSFramework.AuthTokenBucket.DTOs;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionGrants;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionTree;
 using SGSFramework.AuthTokenBucket.DTOs.RolePermissions;
+using SGSFramework.AuthTokenBucket.DTOs.UserPermissions;
 using SGSFramework.Core.Abstractions.Permissions.Entities;
 using System.Collections.Generic;
 using System.Threading;
@@ -53,6 +54,10 @@ namespace SGSFramework.AuthTokenBucket.Abstractions
         /// </summary>
         Task<UserAuditPermissionsResponseDto?> GetUserAllPermissionsAsync(string userId, Guid? tenantLabId = null, CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// 指派或更新指定使用者的直接 API 權限清單
+        /// </summary>
+        Task<(bool Succeeded, string Message)> AssignUserPermissionsAsync(string userId,Guid? tenantLabId,AssignUserPermissionsRequest request,CancellationToken cancellationToken = default);
 
         /// <summary>
         /// 取得具備指定 PermissionKey 的所有使用者清單

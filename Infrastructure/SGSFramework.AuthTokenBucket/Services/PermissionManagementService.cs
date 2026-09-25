@@ -397,6 +397,74 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
     }
 
     /// <inheritdoc />
+    public async Task<(bool Succeeded, string Message)> AssignUserPermissionsAsync(
+        string userId,
+        Guid? tenantLabId,
+        AssignUserPermissionsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
+        ArgumentNullException.ThrowIfNull(request);
+
+        try
+        {
+            var user = await _userManager.FindByIdAsync(userId).ConfigureAwait(false);
+            if (user == null)
+            {
+                _logger.LogWarning("[PermissionManagementService] 指派權限失敗：找不到識別碼為 [{UserId}] 的使用者。", userId);
+                return (false, $"找不到識別碼為 '{userId}' 的使用者。");
+            }
+
+            var targetPermissions = request.Permissions?.Distinct().ToList() ?? new List<string>();
+
+            // 呼叫獨立抽離的 Bitmask 計算服務
+            var moduleBitmaskDict = await _bitmaskService
+                .CalculateModuleBitmasksAsync(targetPermissions, cancellationToken)
+                .ConfigureAwait(false);
+
+            bool success;
+            if (tenantLabId.HasValue && tenantLabId.Value != Guid.Empty)
+            {
+                success = await _userPermissionRepository.SaveUserLabPermissionsAsync(
+                    userId,
+                    tenantLabId.Value,
+                    moduleBitmaskDict,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                success = await _userPermissionRepository.SaveUserGlobalPermissionsAsync(
+                    userId,
+                    moduleBitmaskDict,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            if (!success)
+            {
+                _logger.LogWarning("[PermissionManagementService] 將使用者 [{UserId}] 權限寫入資料庫時失敗。", userId);
+                return (false, "將使用者權限寫入資料庫時發生錯誤，請稍後再試。");
+            }
+
+            _logger.LogInformation(
+                "[PermissionManagementService] 成功更新使用者 [{UserId}] 的直接權限遮罩，影響模組數: [{Count}]",
+                userId,
+                moduleBitmaskDict.Count);
+
+            return (true, "使用者直接權限指派成功。");
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("[PermissionManagementService] 指派使用者權限作業已取消。UserId: {UserId}", userId);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[PermissionManagementService] 更新使用者直接權限時發生未預期異常。UserId: {UserId}", userId);
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<List<PermissionUserDto>> GetUsersByPermissionKeyAsync(
         string permissionKey,
         Guid? tenantLabId = null,
