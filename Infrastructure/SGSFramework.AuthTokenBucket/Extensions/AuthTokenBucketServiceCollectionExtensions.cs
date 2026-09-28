@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
+using SGSFramework.Application.Strategies;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.Configurations;
 using SGSFramework.AuthTokenBucket.Queries.Menuitems;
@@ -25,6 +26,8 @@ using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Menus;
 using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Abstractions.Permissions.Contract;
+using SGSFramework.Core.Abstractions.Permissions.Repositories;
+using SGSFramework.Core.Abstractions.Strategies;
 using System;
 using System.Linq;
 using System.Reflection;
@@ -132,6 +135,7 @@ public static class AuthTokenBucketServiceCollectionExtensions
         
         // 註冊帶有 TDbContext 泛型型態的 PermissionManagementService
         services.AddScoped<IPermissionManagementService, PermissionManagementService<TDbContext>>();
+        services.AddScoped<IUserLabPermissionAssignmentService, UserLabPermissionAssignmentService>();
 
         // 6. 動態權限掃描與註冊
         // 註冊實驗室存取與權限驗證服務 
@@ -167,10 +171,15 @@ public static class AuthTokenBucketServiceCollectionExtensions
         // 由於 UserPermissionRepository 依賴 DbContext（其預設為 Scoped），因此必須註冊為 Scoped
         services.AddScoped<IUserPermissionRepository, UserPermissionRepository>();
         services.AddScoped<IRolePermissionRepository, RolePermissionRepository>();
+        services.AddScoped<IUserLabPermissionRepository, UserLabPermissionRepository<TDbContext>>();
 
         // 註冊動態權限解析策略
         services.AddScoped<IPermissionResolver, DefaultPermissionResolver>();
         services.AddScoped<TokenBucketEngine<TUser>>();
+        // 確保將 PrimaryLabPermissionStrategy 與 SecondaryLabPermissionStrategy 註冊至 DI 容器
+        services.AddScoped<ILabPermissionStrategy, PrimaryLabPermissionStrategy>();
+        services.AddScoped<ILabPermissionStrategy, AdjunctLabPermissionStrategy>();
+
 
         // 註冊獨立的動態選單種子服務
         services.AddScoped<IMenuSeedService, MenuSeedService<TDbContext>>();

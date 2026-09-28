@@ -19,10 +19,11 @@ using SGSFramework.AuthTokenBucket.DTOs;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionTree;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionUsers;
 using SGSFramework.AuthTokenBucket.DTOs.RolePermissions;
+using SGSFramework.AuthTokenBucket.DTOs.UserLabPermissions;
 using SGSFramework.AuthTokenBucket.DTOs.UserPermissions;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Identities;
-using SGSFramework.Core.Abstractions.Permissions;
+using SGSFramework.Core.Abstractions.Permissions.Repositories;
 using SGSFramework.Core.Controllers.Base;
 using System.Diagnostics;
 using System.Net.Mime;
@@ -48,6 +49,7 @@ public sealed class PermissionController : ApiControllerBase
     private readonly RoleManager<ApplicationRole> _roleManager;
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IUserPermissionRepository _userPermissionRepository;
+    private readonly IUserLabPermissionAssignmentService _labPermissionAssignmentService;
     private readonly ILogger<PermissionController> _logger;
 
     public PermissionController(
@@ -57,6 +59,7 @@ public sealed class PermissionController : ApiControllerBase
         RoleManager<ApplicationRole> roleManager,
         UserManager<ApplicationUser> userManager,
         IUserPermissionRepository userPermissionRepository,
+        IUserLabPermissionAssignmentService labPermissionAssignmentService,
         ILogger<PermissionController> logger)
     {
         _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
@@ -65,6 +68,7 @@ public sealed class PermissionController : ApiControllerBase
         _roleManager = roleManager ?? throw new ArgumentNullException(nameof(roleManager));
         _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
         _userPermissionRepository = userPermissionRepository ?? throw new ArgumentNullException(nameof(userPermissionRepository));
+        _labPermissionAssignmentService= labPermissionAssignmentService ?? throw new ArgumentNullException(nameof(labPermissionAssignmentService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -463,6 +467,159 @@ public sealed class PermissionController : ApiControllerBase
         }
     }
 
+    /// <summary>
+    /// 取得指定使用者在特定實驗室中的專屬模組權限記錄
+    /// </summary>
+    [HttpGet("user/{userId:guid}/labs/{labId:int}")]
+    [Function("GetUserLabPermissions", "取得使用者實驗室權限", Icon = "fa-solid fa-flask-vial", Order = 7, Description = "取得指定使用者在特定實驗室中的專屬 Bitmask 權限記錄", IsMenu = false)]
+    [RequiresPermission("SYSTEM.PERMISSION.READ")]
+    [ProducesResponseType(typeof(List<UserLabPermissionDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetUserLabPermissions(
+        [FromRoute] Guid userId,
+        [FromRoute] int labId,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty || labId <= 0)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "請求參數無效",
+                Detail = "使用者 ID 或實驗室 ID 格式錯誤。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+
+        try
+        {
+            // 透過服務取得該使用者在該實驗室的權限清單 (回傳包含 ControllerOrModuleKey 與 Bitmask 的 DTO 集合)
+            var permissions = await _labPermissionAssignmentService.GetLabPermissionsAsync(userId, labId, cancellationToken)
+                .ConfigureAwait(false);
+
+            return Ok(permissions ?? new List<UserLabPermissionDto>());
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("取得使用者實驗室權限作業已取消。UserId: {UserId}, LabId: {LabId}", userId, labId);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "取得使用者 [{UserId}] 在實驗室 [{LabId}] 的專屬權限時發生異常。", userId, labId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "無法取得實驗室專屬權限資料。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
+    /// <summary>
+    /// 指派或更新指定使用者在特定實驗室（主區域/兼任）的專屬模組權限
+    /// </summary>
+    [HttpPut("user/{userId:guid}/lab-permissions")]
+    [Function("UserAssignLablorityPermission", "指派使用者實驗室權限", Icon = "fa-solid fa-flask-vial", Order = 8, Description = "更新指定使用者在特定實驗室中的模組專屬 Bitmask 權限", IsMenu = false)]
+    [RequiresPermission("SYSTEM.PERMISSION.ASSIGN_USER", "實驗室專屬權限")]
+    [EndpointSummary("指派使用者實驗室權限")]
+    [EndpointDescription("依據使用者與實驗室對應關係（主實驗室或兼任實驗室），動態驗證並更新其模組專屬 Bitmask 權限。")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> UserAssignLablorityPermission(
+        [FromRoute] Guid userId,
+        [FromBody] AssignUserLabPermissionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (request.LabId <= 0)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "請求參數無效",
+                Detail = "實驗室 ID (LabId) 必須大於 0。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.ControllerOrModuleKey))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "請求參數無效",
+                Detail = "模組或控制器鍵值 (ControllerOrModuleKey) 不得為空。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+
+        try
+        {
+            // 安全取得當前操作者 ID (若無則預設為 System)
+            string operatorId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "System";
+
+            // 呼叫先前優化之權限指派服務（內部已整合兼任/主實驗室策略過濾）
+            await _labPermissionAssignmentService.AssignOrUpdateLabPermissionAsync(
+                userId,
+                request.LabId,
+                request.ControllerOrModuleKey,
+                request.Bitmask,
+                operatorId,
+                cancellationToken).ConfigureAwait(false);
+
+            _logger.LogInformation("成功更新使用者 [{UserId}] 在實驗室 [{LabId}] 的模組 [{Module}] 權限，操作者: {OperatorId}",
+                userId, request.LabId, request.ControllerOrModuleKey, operatorId);
+
+            return Ok(new
+            {
+                success = true,
+                message = $"已成功更新使用者在實驗室 [{request.LabId}] 的專屬權限配置。"
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "指派使用者實驗室權限參數驗證失敗。UserId: {UserId}", userId);
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "請求參數無效",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "指派使用者實驗室權限業務邏輯驗證失敗。UserId: {UserId}, LabId: {LabId}", userId, request.LabId);
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "權限指派拒絕",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("指派使用者實驗室權限作業已取消。UserId: {UserId}, LabId: {LabId}", userId, request.LabId);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "更新使用者實驗室專屬權限時發生未預期異常。UserId: {UserId}, LabId: {LabId}", userId, request.LabId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "更新使用者實驗室專屬權限時發生系統異常，請聯繫系統管理員。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
 
     /// <summary>
     /// 取得具備指定權限代碼 (PermissionKey) 的使用者清單
@@ -500,7 +657,7 @@ public sealed class PermissionController : ApiControllerBase
 
         try
         {
-            // 在 Controller 內部組裝 DTO 呼叫 Service 或 MediatR
+            // 在 Controller 內部組裝 DTO 呼叫 Service 
             var result = await _permissionService.GetUsersByPermissionKeyAsync(
                 permissionKey,
                 tenantLabId,
@@ -525,4 +682,7 @@ public sealed class PermissionController : ApiControllerBase
             });
         }
     }
+
+
+
 }

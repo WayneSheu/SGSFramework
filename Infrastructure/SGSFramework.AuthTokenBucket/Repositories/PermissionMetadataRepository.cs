@@ -1,7 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using SGSFramework.Core.Abstractions.DbContexts;
-using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Abstractions.Permissions.Entities;
+using SGSFramework.Core.Abstractions.Permissions.Repositories;
 using System;
 using System.Collections.Generic;
 using System.Text;

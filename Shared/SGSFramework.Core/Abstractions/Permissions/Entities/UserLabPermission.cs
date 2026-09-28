@@ -1,99 +1,120 @@
-﻿using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using System;
-using System.Collections.Generic;
-using System.Text;
+﻿// ==========================================
+// 檔案路徑: src/SGSFramework.Core/Entities/Permissions/UserLabPermission.cs
+// 架構層級: Core Domain / Entities
+// ==========================================
+
+#nullable enable
 
 namespace SGSFramework.Core.Abstractions.Permissions.Identities
 {
+    using Microsoft.EntityFrameworkCore;
+    using Microsoft.EntityFrameworkCore.Metadata.Builders;
+    using SGSFramework.Core.Abstractions.Entities.AuditLogs;
+    using System;
 
     /// <summary>
-    /// 使用者實驗室層級 64 位元遮罩權限實體
+    /// 優化後的使用者實驗室專屬 64 位元遮罩權限實體 (對齊 UserLabMapping 型別與稽核標準)
     /// </summary>
-    public class UserLabPermission
+    public class UserLabPermission : IAuditable
     {
-        /// <summary>
-        /// 唯一識別碼 (Primary Key)
-        /// </summary>
-        public Guid Id { get; set; } = Guid.NewGuid();
+        public Guid Id { get; private set; } = Guid.NewGuid();
+        public Guid UserId { get; private set; }
+        public int LabId { get; private set; }
+        public Guid TenantLabId { get; private set; }
+        public string ControllerOrModuleKey { get; private set; } = string.Empty;
+        public long Bitmask { get; private set; }
 
-        /// <summary>
-        /// 使用者識別碼 (對應 ASP.NET Core Identity UserId)
-        /// </summary>
-        public string UserId { get; set; } = string.Empty;
+        // --- IAuditable 實作 ---
+        public DateTimeOffset CreatedAtUtc { get; set; }
+        public string? CreatedBy { get; set; }
+        public DateTimeOffset? UpdatedAtUtc { get; set; }
+        public string? UpdatedBy { get; set; }
 
-        /// <summary>
-        /// 租戶實驗室識別碼 (Tenant Lab ID)
-        /// </summary>
-        public Guid TenantLabId { get; set; }
+        private UserLabPermission() { }
 
-        /// <summary>
-        /// 控制器或模組識別 Key (對應 ControllerMetadata 或 Module Key)
-        /// </summary>
-        public string ControllerOrModuleKey { get; set; } = string.Empty;
+        public static UserLabPermission Create(
+            Guid userId,
+            int labId,
+            Guid tenantLabId,
+            string controllerOrModuleKey,
+            long bitmask,
+            string? operatorId = null)
+        {
+            if (userId == Guid.Empty) throw new ArgumentException("UserId 不能為 Empty Guid。", nameof(userId));
+            if (labId <= 0) throw new ArgumentOutOfRangeException(nameof(labId), "LabId 必須大於 0。");
+            if (tenantLabId == Guid.Empty) throw new ArgumentException("TenantLabId 不能為 Empty Guid。", nameof(tenantLabId));
+            ArgumentException.ThrowIfNullOrWhiteSpace(controllerOrModuleKey);
 
-        /// <summary>
-        /// 64 位元權限遮罩值 (Bitmask 0-63)
-        /// </summary>
-        public long Bitmask { get; set; }
+            var nowUtc = DateTimeOffset.UtcNow;
+            return new UserLabPermission
+            {
+                UserId = userId,
+                LabId = labId,
+                TenantLabId = tenantLabId,
+                ControllerOrModuleKey = controllerOrModuleKey.Trim().ToUpperInvariant(),
+                Bitmask = bitmask,
+                CreatedAtUtc = nowUtc,
+                CreatedBy = operatorId
+            };
+        }
 
-        /// <summary>
-        /// 建立時間
-        /// </summary>
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-
-        /// <summary>
-        /// 最後修改時間
-        /// </summary>
-        public DateTime? UpdatedAt { get; set; }
+        public void UpdateBitmask(long newBitmask, string? operatorId = null)
+        {
+            Bitmask = newBitmask;
+            UpdatedAtUtc = DateTimeOffset.UtcNow;
+            UpdatedBy = operatorId;
+        }
     }
 
     public class UserLabPermissionConfiguration : IEntityTypeConfiguration<UserLabPermission>
     {
         public void Configure(EntityTypeBuilder<UserLabPermission> builder)
         {
-            builder.ToTable("User_Lab_Permissions");
+            builder.ToTable("UserLabPermissions", "core");
 
             builder.HasKey(x => x.Id);
 
-            builder.Property(x => x.Id)
-                .HasColumnName("id")
+            builder.Property(x => x.UserId)
                 .IsRequired();
 
-            builder.Property(x => x.UserId)
-                .HasColumnName("user_id")
-                .HasMaxLength(450)
+            builder.Property(x => x.LabId)
                 .IsRequired();
 
             builder.Property(x => x.TenantLabId)
-                .HasColumnName("tenant_lab_id")
                 .IsRequired();
 
             builder.Property(x => x.ControllerOrModuleKey)
-                .HasColumnName("controller_or_module_key")
                 .HasMaxLength(150)
                 .IsRequired();
 
             builder.Property(x => x.Bitmask)
-                .HasColumnName("bitmask")
                 .IsRequired();
 
-            builder.Property(x => x.CreatedAt)
-                .HasColumnName("created_at")
+            builder.Property(x => x.CreatedAtUtc)
+                .HasColumnType("datetimeoffset(7)")
+                .HasDefaultValueSql("SYSDATETIMEOFFSET()")
                 .IsRequired();
 
-            builder.Property(x => x.UpdatedAt)
-                .HasColumnName("updated_at");
+            builder.Property(x => x.CreatedBy)
+                .HasMaxLength(100)
+                .IsRequired(false);
 
-            // 建立複合唯一索引，確保同一使用者在同一實驗室下的同一個模組/控制器權限記錄唯一
-            builder.HasIndex(x => new { x.UserId, x.TenantLabId, x.ControllerOrModuleKey })
+            builder.Property(x => x.UpdatedAtUtc)
+                .HasColumnType("datetimeoffset(7)")
+                .IsRequired(false);
+
+            builder.Property(x => x.UpdatedBy)
+                .HasMaxLength(100)
+                .IsRequired(false);
+
+            // 複合唯一索引：確保同一使用者在同一實驗室下的同一個模組/控制器權限記錄唯一
+            builder.HasIndex(x => new { x.UserId, x.LabId, x.ControllerOrModuleKey })
                 .IsUnique()
-                .HasDatabaseName("ix_user_lab_permissions_user_lab_controller");
+                .HasDatabaseName("UX_UserLabPermissions_User_Lab_Module");
 
-            // 額外針對 TenantLabId 與 UserId 建立效能索引，加快多租戶權限過濾查詢
+            //高效能關聯索引
             builder.HasIndex(x => new { x.UserId, x.TenantLabId })
-                .HasDatabaseName("ix_user_lab_permissions_user_tenant");
+                .HasDatabaseName("IX_UserLabPermissions_UserId_TenantLabId");
         }
     }
-
 }

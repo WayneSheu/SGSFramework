@@ -1,15 +1,25 @@
-﻿using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
-using SGSFramework.Core.Abstractions.Permissions;
-using SGSFramework.Core.Abstractions.Permissions.Identities;
-using System;
-using System.Collections.Generic;
-using System.Text;
+﻿// ==========================================
+// 檔案路徑: Infrastructure/SGSFramework.AuthTokenBucket/Repositories/UserPermissionRepository.cs
+// 架構層級: Infrastructure Layer (Repository Implementation)
+// ==========================================
+
+#nullable enable
 
 namespace SGSFramework.AuthTokenBucket.Repositories
 {
+    using Microsoft.EntityFrameworkCore;
+    using Microsoft.Extensions.Logging;
+    using SGSFramework.Core.Abstractions.Entities.Identities;
+    using SGSFramework.Core.Abstractions.Permissions.Identities;
+    using SGSFramework.Core.Abstractions.Permissions.Repositories;
+    using System;
+    using System.Collections.Generic;
+    using System.Linq;
+    using System.Threading;
+    using System.Threading.Tasks;
+
     /// <summary>
-    /// 使用者權限與位元遮罩資料存取實作 (Entity Framework Core)
+    /// 使用者權限與位元遮罩資料存取實作 (Entity Framework Core) - 對齊領域實體封裝與工廠方法
     /// </summary>
     public class UserPermissionRepository(
     DbContext context,
@@ -18,17 +28,25 @@ namespace SGSFramework.AuthTokenBucket.Repositories
         private readonly DbContext _context = context ?? throw new ArgumentNullException(nameof(context));
         private readonly ILogger<UserPermissionRepository> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
+        /// <inheritdoc />
         public async Task<Dictionary<string, long>> GetPermissionsByLabAsync(
             string userId,
-            Guid labId,
+            Guid tenantLabId,
             CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrEmpty(userId);
 
+            if (!Guid.TryParse(userId, out var userGuid))
+            {
+                _logger.LogWarning("無效的 UserId 格式: {UserId}", userId);
+                return new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+            }
+
             try
             {
                 var records = await _context.Set<UserLabPermission>()
-                    .Where(x => x.UserId == userId && x.TenantLabId == labId)
+                    .AsNoTracking()
+                    .Where(x => x.UserId == userGuid && x.TenantLabId == tenantLabId)
                     .Select(x => new { x.ControllerOrModuleKey, x.Bitmask })
                     .ToListAsync(cancellationToken)
                     .ConfigureAwait(false);
@@ -40,21 +58,29 @@ namespace SGSFramework.AuthTokenBucket.Repositories
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "從資料庫查詢使用者實驗室權限發生異常。UserId: {UserId}, LabId: {LabId}", userId, labId);
+                _logger.LogError(ex, "從資料庫查詢使用者實驗室權限發生異常。UserId: {UserId}, TenantLabId: {TenantLabId}", userId, tenantLabId);
                 return new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
             }
         }
 
+        /// <inheritdoc />
         public async Task<Dictionary<string, long>> GetGlobalPermissionsAsync(
             string userId,
             CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrEmpty(userId);
 
+            if (!Guid.TryParse(userId, out var userGuid))
+            {
+                _logger.LogWarning("無效的 UserId 格式: {UserId}", userId);
+                return new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+            }
+
             try
             {
                 var records = await _context.Set<UserGlobalPermission>()
-                    .Where(x => x.UserId == userId)
+                    .AsNoTracking()
+                    .Where(x => x.UserId == userGuid)
                     .Select(x => new { x.PermissionKey, x.Bitmask })
                     .ToListAsync(cancellationToken)
                     .ConfigureAwait(false);
@@ -71,21 +97,39 @@ namespace SGSFramework.AuthTokenBucket.Repositories
             }
         }
 
+        /// <inheritdoc />
         public async Task<bool> SaveUserLabPermissionsAsync(
             string userId,
-            Guid labId,
+            Guid tenantLabId,
             Dictionary<string, long> permissions,
             CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrEmpty(userId);
             permissions ??= new(StringComparer.OrdinalIgnoreCase);
 
+            if (!Guid.TryParse(userId, out var userGuid))
+            {
+                _logger.LogError("儲存實驗室權限失敗，無效的 UserId 格式: {UserId}", userId);
+                return false;
+            }
+
             try
             {
                 var dbSet = _context.Set<UserLabPermission>();
 
+                var labMapping = await _context.Set<UserLabMapping>()
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.UserId == userGuid && x.TenantLabId == tenantLabId, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (labMapping == null)
+                {
+                    _logger.LogWarning("找不到使用者 [{UserId}] 與租戶實驗室 [{TenantLabId}] 的有效對應，無法儲存權限。", userId, tenantLabId);
+                    return false;
+                }
+
                 var existingRecords = await dbSet
-                    .Where(x => x.UserId == userId && x.TenantLabId == labId)
+                    .Where(x => x.UserId == userGuid && x.TenantLabId == tenantLabId)
                     .ToListAsync(cancellationToken)
                     .ConfigureAwait(false);
 
@@ -93,27 +137,26 @@ namespace SGSFramework.AuthTokenBucket.Repositories
 
                 foreach (var kvp in permissions)
                 {
-                    if (existingDict.TryGetValue(kvp.Key, out var existingEntity))
+                    var normalizedKey = kvp.Key.Trim().ToUpperInvariant();
+                    if (existingDict.TryGetValue(normalizedKey, out var existingEntity))
                     {
                         if (existingEntity.Bitmask != kvp.Value)
                         {
-                            existingEntity.Bitmask = kvp.Value;
-                            existingEntity.UpdatedAt = DateTime.UtcNow;
+                            existingEntity.UpdateBitmask(kvp.Value, userId);
                             dbSet.Update(existingEntity);
                         }
-                        existingDict.Remove(kvp.Key);
+                        existingDict.Remove(normalizedKey);
                     }
                     else
                     {
-                        var newEntity = new UserLabPermission
-                        {
-                            Id = Guid.NewGuid(),
-                            UserId = userId,
-                            TenantLabId = labId,
-                            ControllerOrModuleKey = kvp.Key,
-                            Bitmask = kvp.Value,
-                            CreatedAt = DateTime.UtcNow
-                        };
+                        var newEntity = UserLabPermission.Create(
+                            userGuid,
+                            labMapping.LabId,
+                            tenantLabId,
+                            normalizedKey,
+                            kvp.Value,
+                            userId);
+
                         dbSet.Add(newEntity);
                     }
                 }
@@ -128,14 +171,12 @@ namespace SGSFramework.AuthTokenBucket.Repositories
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "儲存使用者實驗室權限至資料庫時發生異常。UserId: {UserId}, LabId: {LabId}", userId, labId);
+                _logger.LogError(ex, "儲存使用者實驗室權限至資料庫時發生異常。UserId: {UserId}, TenantLabId: {TenantLabId}", userId, tenantLabId);
                 return false;
             }
         }
 
-        /// <summary>
-        /// 實作使用者的全域/組織級權限寫入與 Upsert / Delete Diff 邏輯
-        /// </summary>
+        /// <inheritdoc />
         public async Task<bool> SaveUserGlobalPermissionsAsync(
             string userId,
             Dictionary<string, long> permissions,
@@ -144,12 +185,18 @@ namespace SGSFramework.AuthTokenBucket.Repositories
             ArgumentException.ThrowIfNullOrEmpty(userId);
             permissions ??= new(StringComparer.OrdinalIgnoreCase);
 
+            if (!Guid.TryParse(userId, out var userGuid))
+            {
+                _logger.LogError("儲存全域權限失敗，無效的 UserId 格式: {UserId}", userId);
+                return false;
+            }
+
             try
             {
                 var dbSet = _context.Set<UserGlobalPermission>();
 
                 var existingRecords = await dbSet
-                    .Where(x => x.UserId == userId)
+                    .Where(x => x.UserId == userGuid)
                     .ToListAsync(cancellationToken)
                     .ConfigureAwait(false);
 
@@ -157,26 +204,26 @@ namespace SGSFramework.AuthTokenBucket.Repositories
 
                 foreach (var kvp in permissions)
                 {
-                    if (existingDict.TryGetValue(kvp.Key, out var existingEntity))
+                    var normalizedKey = kvp.Key.Trim().ToUpperInvariant();
+                    if (existingDict.TryGetValue(normalizedKey, out var existingEntity))
                     {
                         if (existingEntity.Bitmask != kvp.Value)
                         {
-                            existingEntity.Bitmask = kvp.Value;
-                            existingEntity.UpdatedAt = DateTime.UtcNow;
+                            // 修正 CS0272 與封裝原則：改用實體提供的 UpdateBitmask 方法
+                            existingEntity.UpdateBitmask(kvp.Value, userId);
                             dbSet.Update(existingEntity);
                         }
-                        existingDict.Remove(kvp.Key);
+                        existingDict.Remove(normalizedKey);
                     }
                     else
                     {
-                        var newEntity = new UserGlobalPermission
-                        {
-                            Id = Guid.NewGuid(),
-                            UserId = userId,
-                            PermissionKey = kvp.Key,
-                            Bitmask = kvp.Value,
-                            CreatedAt = DateTime.UtcNow
-                        };
+                        // 修正 CS0272 錯誤：改用 UserGlobalPermission.Create 領域工廠方法進行初始化
+                        var newEntity = UserGlobalPermission.Create(
+                            userGuid,
+                            normalizedKey,
+                            kvp.Value,
+                            userId);
+
                         dbSet.Add(newEntity);
                     }
                 }

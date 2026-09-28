@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using PhysLIMS.API.Dbcontexts;
 
@@ -11,9 +12,11 @@ using PhysLIMS.API.Dbcontexts;
 namespace PhysLIMS.API.Migrations
 {
     [DbContext(typeof(PhysLIMSDbContext))]
-    partial class PhysLIMSDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260925153605_user_lab_globalPermission")]
+    partial class user_lab_globalPermission
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1072,11 +1075,6 @@ namespace PhysLIMS.API.Migrations
                     b.Property<int>("BitPosition")
                         .HasColumnType("int")
                         .HasComment("位址權限，對應ControllerMetadatas 的BitPosition。");
-
-                    b.Property<string>("Category")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)")
-                        .HasComment("用於區分該節點為一般檢視、業務操作或關鍵管理權限");
 
                     b.Property<string>("ControllerName")
                         .IsRequired()

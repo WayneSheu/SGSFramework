@@ -4,6 +4,7 @@ namespace SGSFramework.Core.Abstractions.Permissions.Entities
     using Microsoft.EntityFrameworkCore;
     using Microsoft.EntityFrameworkCore.Metadata.Builders;
     using SGSFramework.Core.Abstractions.Entities.Hierarchical;
+    using SGSFramework.Core.Abstractions.Permissions.Enums;
     using System.Collections.Generic;
     using System.ComponentModel;
     using System.ComponentModel.DataAnnotations.Schema;
@@ -82,6 +83,10 @@ namespace SGSFramework.Core.Abstractions.Permissions.Entities
         [DisplayName("權限代碼")]
         [Comment("權限代碼，對應ControllerMetadatas 的PermissionKey。")]
         public string PermissionKey { get; set; } = string.Empty;
+
+        [DisplayName("操作敏感別")]
+        [Comment("用於區分該節點為一般檢視、業務操作或關鍵管理權限")]
+        public ActionCategory Category { get; set; } = ActionCategory.Basic;
 
         /// <summary>
         /// 位址權限，對應ControllerMetadatas 的BitPosition。

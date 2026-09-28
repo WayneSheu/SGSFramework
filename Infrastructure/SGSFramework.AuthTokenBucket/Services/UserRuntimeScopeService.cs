@@ -10,6 +10,7 @@ using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Menus;
 using SGSFramework.Core.Abstractions.Permissions;
+using SGSFramework.Core.Abstractions.Permissions.Repositories;
 using SGSFramework.Core.Controllers.Services;
 using SGSFramework.Core.DTOs;
 using System;

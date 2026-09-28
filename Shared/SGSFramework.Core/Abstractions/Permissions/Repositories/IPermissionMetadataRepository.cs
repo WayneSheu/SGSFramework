@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace SGSFramework.Core.Abstractions.Permissions
+namespace SGSFramework.Core.Abstractions.Permissions.Repositories
 {
     /// <summary>
     /// 權限 Metadata 資料存取介面
