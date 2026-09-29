@@ -2,11 +2,11 @@
 
 namespace SGSFramework.AuthTokenBucket.Services;
 
-using GSFramework.AuthTokenBucket.DTOs;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Abstractions;
+using SGSFramework.AuthTokenBucket.DTOs.PermissionAudits;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionGrants;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionTree;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionUsers;
@@ -15,6 +15,7 @@ using SGSFramework.AuthTokenBucket.DTOs.UserPermissions;
 using SGSFramework.Core.Abstractions.Adapters;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.Identities;
+using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Abstractions.Permissions.Entities;
 using SGSFramework.Core.Abstractions.Permissions.Repositories;
 using System;
@@ -33,6 +34,7 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
     private readonly IUserPermissionRepository _userPermissionRepository;
     private readonly IUserLabRepository _userLabRepository;
     private readonly IOrganizationIntegrationService _orgIntegrationService;
+    private readonly IPermissionRegistry _permissionRegistry;
     private readonly IPermissionBitmaskService _bitmaskService;
     private readonly ILogger<PermissionManagementService<TDbContext>> _logger;
 
@@ -44,6 +46,7 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
         IUserPermissionRepository userPermissionRepository,
         IOrganizationIntegrationService orgIntegrationService,
         IUserLabRepository userLabRepository,
+        IPermissionRegistry permissionRegistry,
         IPermissionBitmaskService bitmaskService,
         ILogger<PermissionManagementService<TDbContext>> logger)
     {
@@ -54,6 +57,7 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
         _userPermissionRepository = userPermissionRepository ?? throw new ArgumentNullException(nameof(userPermissionRepository));
         _orgIntegrationService = orgIntegrationService ?? throw new ArgumentNullException(nameof(orgIntegrationService));
         _userLabRepository = userLabRepository ?? throw new ArgumentNullException(nameof(userLabRepository));
+        _permissionRegistry= permissionRegistry ?? throw new ArgumentNullException(nameof(permissionRegistry));
         _bitmaskService = bitmaskService ?? throw new ArgumentNullException(nameof(bitmaskService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -322,69 +326,160 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
             var user = await _userManager.FindByIdAsync(userId).ConfigureAwait(false);
             if (user == null)
             {
+                _logger.LogWarning("[PermissionManagementService] 查詢稽核資料失敗：找不到識別碼為 [{UserId}] 的使用者。", userId);
                 return null;
             }
 
-            var roles = await _userManager.GetRolesAsync(user).ConfigureAwait(false);
-            var claims = await _userManager.GetClaimsAsync(user).ConfigureAwait(false);
+            var roleNames = await _userManager.GetRolesAsync(user).ConfigureAwait(false);
+            var roleAuditList = new List<RoleAuditInfoItemDto>();
 
+            // 1. 查詢角色詳情 (包含 Description)
+            foreach (var roleName in roleNames)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var role = await _roleManager.FindByNameAsync(roleName).ConfigureAwait(false);
+                if (role != null)
+                {
+                    roleAuditList.Add(new RoleAuditInfoItemDto
+                    {
+                        RoleName = role.Name ?? roleName,
+                        Description = role.Description
+                    });
+                }
+            }
+
+            var claims = await _userManager.GetClaimsAsync(user).ConfigureAwait(false);
             const string permissionClaimType = "Permission";
             var claimPermissions = claims
                 .Where(c => c.Type == permissionClaimType)
                 .Select(c => c.Value)
                 .ToList();
 
-            Dictionary<string, long> dbBitmaskMap;
-            if (tenantLabId.HasValue && tenantLabId.Value != Guid.Empty)
-            {
-                dbBitmaskMap = await _userPermissionRepository.GetPermissionsByLabAsync(
-                    userId,
-                    tenantLabId.Value,
-                    cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                dbBitmaskMap = await _userPermissionRepository.GetGlobalPermissionsAsync(
-                    userId,
-                    cancellationToken).ConfigureAwait(false);
-            }
+            // 2. 解析全域直接權限
+            var globalBitmaskMap = await _userPermissionRepository.GetGlobalPermissionsAsync(userId, cancellationToken).ConfigureAwait(false);
+            var decodedGlobalDirect = await _bitmaskService.DecodeBitmaskToPermissionsAsync(globalBitmaskMap, cancellationToken).ConfigureAwait(false);
 
-            var decodedDirectPermissions = await _bitmaskService.DecodeBitmaskToPermissionsAsync(dbBitmaskMap, cancellationToken).ConfigureAwait(false);
-
-            var directPermissions = claimPermissions
-                .Union(decodedDirectPermissions, StringComparer.OrdinalIgnoreCase)
+            var globalDirectKeys = claimPermissions
+                .Union(decodedGlobalDirect, StringComparer.OrdinalIgnoreCase)
                 .Distinct()
+                .OrderBy(p => p)
                 .ToList();
 
-            var rolePermissionsList = new List<string>();
-            foreach (var roleName in roles)
+            // 3. 解析全域角色繼承權限
+            var globalRoleKeys = new List<string>();
+            foreach (var roleItem in roleAuditList)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var role = await _roleManager.FindByNameAsync(roleName).ConfigureAwait(false);
+                var role = await _roleManager.FindByNameAsync(roleItem.RoleName).ConfigureAwait(false);
                 if (role != null)
                 {
                     var roleMatrix = await GetRoleGlobalPermissionsAsync(role.Id.ToString(), cancellationToken).ConfigureAwait(false);
                     if (roleMatrix?.GrantedPermissionKeys is { Count: > 0 })
                     {
-                        rolePermissionsList.AddRange(roleMatrix.GrantedPermissionKeys);
+                        globalRoleKeys.AddRange(roleMatrix.GrantedPermissionKeys);
                     }
                 }
             }
 
-            var effectivePermissions = directPermissions
-                .Union(rolePermissionsList, StringComparer.OrdinalIgnoreCase)
+            globalRoleKeys = globalRoleKeys
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(p => p)
+                .ToList();
+
+            // 4. 解析全域有效權限
+            var globalEffectiveKeys = globalDirectKeys
+                .Union(globalRoleKeys, StringComparer.OrdinalIgnoreCase)
                 .Distinct()
                 .OrderBy(p => p)
                 .ToList();
 
-            return new UserAuditPermissionsResponseDto
+            // 轉換為豐富資訊之 PermissionAuditInfoItemDto
+            var globalDirectPermissions = EnrichPermissionDetails(globalDirectKeys);
+            var globalRolePermissions = EnrichPermissionDetails(globalRoleKeys);
+            var globalEffectivePermissions = EnrichPermissionDetails(globalEffectiveKeys);
+
+            var responseDto = new UserAuditPermissionsResponseDto
             {
                 UserId = user.Id.ToString(),
                 Username = user.UserName ?? string.Empty,
-                Roles = roles.ToList(),
-                DirectPermissions = directPermissions,
-                EffectivePermissions = effectivePermissions
+                Roles = roleAuditList,
+                GlobalDirectPermissions = globalDirectPermissions,
+                GlobalRolePermissions = globalRolePermissions,
+                GlobalEffectivePermissions = globalEffectivePermissions,
+                SecondaryLabPermissions = new List<UserLabPermissionAuditDto>()
             };
+
+            // 5. 解析主區域與兼區域實驗室權限
+            if (Guid.TryParse(userId, out var userGuid))
+            {
+                var accessibleLabs = await _userLabRepository.GetAccessibleLabsAsync(userGuid, cancellationToken).ConfigureAwait(false);
+                if (accessibleLabs != null && accessibleLabs.Count > 0)
+                {
+                    foreach (var lab in accessibleLabs.Where(l => l.IsActive))
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        if (tenantLabId.HasValue && tenantLabId.Value != Guid.Empty && tenantLabId.Value != lab.TenantLabId)
+                        {
+                            continue;
+                        }
+
+                        var orgInfo = await _orgIntegrationService.GetOrganizationByIdAsync(lab.TenantLabId, cancellationToken).ConfigureAwait(false);
+
+                        var labBitmaskMap = await _userPermissionRepository.GetPermissionsByLabAsync(
+                            userId,
+                            lab.TenantLabId,
+                            cancellationToken).ConfigureAwait(false);
+
+                        var labDirectKeys = (await _bitmaskService
+                            .DecodeBitmaskToPermissionsAsync(labBitmaskMap, cancellationToken)
+                            .ConfigureAwait(false))
+                            .OrderBy(p => p)
+                            .ToList();
+
+                        var labRoleKeys = globalRoleKeys;
+
+                        var labEffectiveKeys = labDirectKeys
+                            .Union(labRoleKeys, StringComparer.OrdinalIgnoreCase)
+                            .Union(globalDirectKeys, StringComparer.OrdinalIgnoreCase)
+                            .Distinct()
+                            .OrderBy(p => p)
+                            .ToList();
+
+                        var labAuditDto = new UserLabPermissionAuditDto
+                        {
+                            TenantLabId = lab.TenantLabId,
+                            CategoryCode = orgInfo?.ParentLabCode ?? string.Empty,
+                            CategoryName = orgInfo?.ParentLabName ?? string.Empty,
+                            LabCode = orgInfo?.Code ?? string.Empty,
+                            LabName = orgInfo?.Name ?? string.Empty,
+                            IsPrimary = lab.IsPrimary,
+                            JobTitle = lab.JobTitle,
+                            EffectiveDate = lab.EffectiveDate,
+                            ExpiryDate = lab.ExpiryDate,
+                            LabDirectPermissions = EnrichPermissionDetails(labDirectKeys),
+                            LabRolePermissions = EnrichPermissionDetails(labRoleKeys),
+                            LabEffectivePermissions = EnrichPermissionDetails(labEffectiveKeys)
+                        };
+
+                        if (lab.IsPrimary)
+                        {
+                            responseDto.PrimaryLabPermission = labAuditDto;
+                        }
+                        else
+                        {
+                            responseDto.SecondaryLabPermissions.Add(labAuditDto);
+                        }
+                    }
+                }
+            }
+
+            responseDto.SecondaryLabPermissions = responseDto.SecondaryLabPermissions
+                .OrderBy(l => l.CategoryCode)
+                .ThenBy(l => l.LabCode)
+                .ToList();
+
+            return responseDto;
         }
         catch (OperationCanceledException)
         {
@@ -397,6 +492,29 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
             throw;
         }
     }
+
+    /// <summary>
+    /// 依據 PermissionKey 查表/對照 Registry 補全 Title 與 Description 資訊
+    /// </summary>
+    private List<PermissionAuditInfoItemDto> EnrichPermissionDetails(IEnumerable<string> permissionKeys)
+    {
+        return permissionKeys.Select(key =>
+        {
+            _permissionRegistry.TryGetPermission(key, out var meta);
+
+            var title = !string.IsNullOrWhiteSpace(meta?.PermissionTitle)
+                ? meta.PermissionTitle
+                : (!string.IsNullOrWhiteSpace(meta?.ActionTitle) ? meta.ActionTitle : key);
+
+            return new PermissionAuditInfoItemDto
+            {
+                PermissionKey = key,
+                Title = title,
+                Description = meta?.Description
+            };
+        }).ToList();
+    }
+
 
     /// <inheritdoc />
     public async Task<(bool Succeeded, string Message)> AssignUserPermissionsAsync(

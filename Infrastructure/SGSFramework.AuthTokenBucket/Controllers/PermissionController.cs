@@ -5,8 +5,6 @@
 
 #nullable enable
 
-using GSFramework.AuthTokenBucket.DTOs;
-using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
@@ -16,6 +14,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.DTOs;
+using SGSFramework.AuthTokenBucket.DTOs.PermissionAudits;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionTree;
 using SGSFramework.AuthTokenBucket.DTOs.PermissionUsers;
 using SGSFramework.AuthTokenBucket.DTOs.RolePermissions;
