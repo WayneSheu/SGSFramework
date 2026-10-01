@@ -1,33 +1,42 @@
-﻿using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Negotiate;
+﻿using Microsoft.AspNetCore.Authentication.Negotiate;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
 
-namespace PhysLIMS.API.Extensions
+namespace PhysLIMS.API.Extensions;
+
+public static class AuthenticationExtensions
 {
-    public static class AuthenticationExtensions
+    /// <summary>
+    /// 根據執行環境 (IIS 或 Kestrel) 安全配置身分驗證，避免在 IIS 下註冊過度的 NegotiateHandler。
+    /// </summary>
+    public static IServiceCollection AddCustomAuthentication(this IServiceCollection services, bool isIisHosted)
     {
-        /// <summary>
-        /// authentication 註冊邏輯（防重複註冊）
-        /// </summary>
-        /// <param name="services"></param>
-        /// <returns></returns>
-        public static IServiceCollection AddSafeNegotiateAuthentication(this IServiceCollection services)
+        var authBuilder = services.AddAuthentication(options =>
         {
-            // 1. 取得 AuthenticationBuilder 實例
-            var authBuilder = services.AddAuthentication(NegotiateDefaults.AuthenticationScheme);
+            options.DefaultScheme = "Bearer";
+        });
 
-            // 2. 檢查 DI 容器中是否已經註冊過 NegotiateHandler 實作
-            // 這樣可防止 Plugin 或多處註冊導致 Scheme 被重複 Add 造成 InvalidOperationException
-            var isAlreadyRegistered = services.Any(sd =>
+        if (isIisHosted)
+        {
+            // IIS 託管模式：驗證由 IIS 本機模組 (Kernel-mode) 完成，僅需設定 IISServerOptions 允許自動驗證
+            services.Configure<IISServerOptions>(options =>
+            {
+                options.AutomaticAuthentication = true;
+            });
+        }
+        else
+        {
+            // Kestrel 獨立執行模式：檢查避免重複註冊，並啟用 Kestrel 專屬的 NegotiateHandler
+            var isNegotiateRegistered = services.Any(sd =>
                 sd.ImplementationType == typeof(NegotiateHandler) ||
                 sd.ServiceType == typeof(NegotiateHandler));
 
-            if (!isAlreadyRegistered)
+            if (!isNegotiateRegistered)
             {
-                // 3. 針對 AuthenticationBuilder 呼叫 AddNegotiate()
                 authBuilder.AddNegotiate();
             }
-
-            return services;
         }
+
+        return services;
     }
 }

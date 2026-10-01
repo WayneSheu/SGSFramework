@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using PhysLIMS.API.Dbcontexts;
+using PhysLIMS.API.Extensions;
 using Scalar.AspNetCore;
 using Serilog;
 using SGSFramework.ApiInfrastructure.Bootstrappers;
@@ -124,6 +125,7 @@ try
     var scannedAssemblies = AppDomain.CurrentDomain.GetAssemblies()
         .Where(a => a.FullName != null &&
                    (a.FullName.StartsWith("SGS.") ||
+                    a.FullName.StartsWith("SGSFramework") || // 確保包含了 SGSFramework.ModulePlugin
                     a.FullName.StartsWith("PhysLIMS") ||
                     a == Assembly.GetEntryAssembly()))
         .Distinct()
@@ -151,17 +153,17 @@ try
     builder.Services.AddAuthorization();
 
     #region 身分驗證環境配置 (IIS / Kestrel)
-    if (!builder.Environment.IsDevelopment())
-    {
-        var isIISHosted = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("APP_POOL_ID")) ||
-                          !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ANCM_PREFER_USER_STORE"));
+    // 判斷是否為 IIS / IIS Express 託管環境
+    var isIISHosted = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("APP_POOL_ID")) ||
+                      !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ANCM_PREFER_USER_STORE"));
 
-        if (isIISHosted)
-        {
-            Log.Information("偵測到 IIS 託管環境，整合 IIS Native Windows Authentication。");
-            RemoveNegotiateServices(builder.Services);
-        }
+    if (isIISHosted)
+    {
+        Log.Information("偵測到 IIS 託管環境，整合 IIS Native Windows Authentication。");
     }
+
+    // 根據託管環境設定 Custom Authentication (安全區分 IIS 與 Kestrel 驗證 Handler)
+    builder.Services.AddCustomAuthentication(isIISHosted);
     #endregion
 
     builder.Services.AddProductionAdminSeeder(builder.Configuration);
@@ -198,11 +200,22 @@ try
         app.UseDeveloperExceptionPage();
     }
 
-    // 資料庫自動 Migration 與腳本初始化流程 (已修正：改由 DI 容器解析完整具備 Interceptor 的 DbContext)
+    // 1. 靜態檔案與前端資源託管（確保 WebRoot 目錄存在，避免靜態檔案處置拋出警告）
+    var webRootPath = app.Environment.WebRootPath;
+    if (!string.IsNullOrEmpty(webRootPath) && !Directory.Exists(webRootPath))
+    {
+        Directory.CreateDirectory(webRootPath);
+    }
+    //app.UseBlazorFrameworkFiles();
+    // 啟用預設檔案（如 index.html）與靜態檔案託管
+    app.UseDefaultFiles();
+    app.UseStaticFiles();
+
+    // 2. 資料庫自動 Migration 與腳本初始化
     var autoMigrate = config.GetValue<bool>("Database:AutoMigrate", true);
     if (app.Environment.IsDevelopment() || autoMigrate)
     {
-        using var scope = app.Services.CreateScope();
+        using var scope = app.Services.GetRequiredService<IServiceScopeFactory>().CreateScope();
         var initializer = scope.ServiceProvider.GetRequiredService<IDatabaseInitializer>();
         await initializer.InitializeDatabaseAsync(app.Lifetime.ApplicationStopping).ConfigureAwait(false);
 
@@ -210,36 +223,31 @@ try
         await mainDbContext.Database.MigrateAsync(app.Lifetime.ApplicationStopping).ConfigureAwait(false);
     }
 
-    // 執行模組載入初始化動態控制器與權限、Menu 種子同步
-    await app.InitializeModularSystemAsync().ConfigureAwait(false);
-    await app.UseDynamicControllersAsync().ConfigureAwait(false);
-
-    // 執行動態權限與選單樹狀結構種子同步
-    using (var scope = app.Services.CreateScope())
+    // 3. 執行動態權限與選單樹種子同步
+    using (var scope = app.Services.GetRequiredService<IServiceScopeFactory>().CreateScope())
     {
         var services = scope.ServiceProvider;
-
-        // 同步權限點與 BitPosition
         var permissionSeeder = services.GetRequiredService<IPermissionSeedService>();
         await permissionSeeder.SeedAndSyncPermissionsAsync().ConfigureAwait(false);
 
-        // 同步選單樹 (Section -> Group -> Page)
         var menuSeeder = services.GetRequiredService<IMenuSeedService>();
         await menuSeeder.SeedAndSyncMenusAsync().ConfigureAwait(false);
     }
 
-    // 路由與跨域中間件
-    app.UseRouting();
-    app.UseMiddleware<CorsLoggingMiddleware>();
-    app.UseCors("CorsPolicy");
+    // 4. 動態外掛模組初始化（必須在 UseRouting 與 MapControllers 之前完成 Assembly 與 Controller Metadata 載入）
+    await app.InitializeModularSystemAsync().ConfigureAwait(false);
+    await app.UseDynamicControllersAsync().ConfigureAwait(false);
 
-    // 驗證與授權中間件
+    // 5. 核心路由、跨域與身份驗證中間件
+    //app.UseRouting();
+    app.UseCors("CorsPolicy");
+    app.UseMiddleware<CorsLoggingMiddleware>();
+
+
     app.UseAuthentication();
     app.UseAuthorization();
 
-    var changeProvider = app.Services.GetRequiredService<IDynamicActionDescriptorChangeProvider>();
-    changeProvider.NotifyChanges();
-
+    // OpenAPI 快取控制
     app.Use(async (context, next) =>
     {
         if (context.Request.Path.StartsWithSegments("/openapi", StringComparison.OrdinalIgnoreCase))
@@ -251,6 +259,7 @@ try
         await next();
     });
 
+    // 6. 映射 Endpoints (OpenAPI / Scalar / API Controllers)
     app.MapOpenApi();
     app.MapScalarApiReference(options =>
     {
@@ -263,36 +272,39 @@ try
         };
     });
 
+    // 建立所有控制器的 Endpoint 路由映射
     app.MapControllers();
-    app.MapGet("/", context =>
-    {
-        context.Response.Redirect("/scalar/v1");
-        return Task.CompletedTask;
-    });
 
-    await app.RunAsync().ConfigureAwait(false);
+    // 在 MapControllers() 建立完整路由樹後，觸發 Dynamic Action 異動通知刷洗 Endpoint 數據源
+    var changeProvider = app.Services.GetRequiredService<IDynamicActionDescriptorChangeProvider>();
+    changeProvider.NotifyChanges();
+
+    // 修改 SPA Fallback 行為：排除 /api 與 /scalar 路徑，避免前端路由吞掉後端 API 的 404 錯誤
+    app.MapWhen(context =>
+        !context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase) &&
+        !context.Request.Path.StartsWithSegments("/scalar", StringComparison.OrdinalIgnoreCase) &&
+        !context.Request.Path.StartsWithSegments("/openapi", StringComparison.OrdinalIgnoreCase),
+        builder =>
+        {
+            // 只有非 API 請求才會交給前端 Vue 處理 (History Mode)
+            // 這裡套用您原本的自訂 Fallback 擴充
+            builder.UseRouting();
+            builder.UseEndpoints(endpoints =>
+            {
+                endpoints.MapProtectedSpaFallback(app.Environment, "index.html");
+                // 若上行代碼有問題，可替換為原生寫法： endpoints.MapFallbackToFile("index.html");
+            });
+        });
+
+    await app.RunAsync().ConfigureAwait(false); 
 }
 catch (Exception ex)
 {
     Log.Fatal(ex, "Application start-up failed");
-    Environment.ExitCode = 1;
+    Environment.ExitCode = -1;
     throw;
 }
 finally
 {
     Log.CloseAndFlush();
-}
-
-static void RemoveNegotiateServices(IServiceCollection services)
-{
-    var negotiateServices = services.Where(sd =>
-        sd.ServiceType.FullName?.Contains("Negotiate") == true ||
-        sd.ImplementationType?.FullName?.Contains("Negotiate") == true ||
-        sd.ImplementationInstance?.GetType().FullName?.Contains("Negotiate") == true
-    ).ToList();
-
-    foreach (var service in negotiateServices)
-    {
-        services.Remove(service);
-    }
 }
