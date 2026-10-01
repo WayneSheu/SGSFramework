@@ -1,11 +1,14 @@
 // Path: src/SGSFramework/Host/PhysLIMS.API/Program.cs
+using Asp.Versioning;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using PhysLIMS.API.Dbcontexts;
 using PhysLIMS.API.Extensions;
+using Polly;
 using Scalar.AspNetCore;
 using Serilog;
 using SGSFramework.ApiInfrastructure.Bootstrappers;
@@ -45,7 +48,31 @@ try
     IConfiguration config = builder.Configuration;
     builder.AddSGSFrameworkCore();
 
-    // 1. OpenAPI 與 Scalar 文件設定
+    builder.Services.AddApiVersioning(options =>
+    {
+        // 未指定版本時帶入預設版本號 (1.0)
+        options.DefaultApiVersion = new ApiVersion(1, 0);
+        options.AssumeDefaultVersionWhenUnspecified = true;
+
+        // 於 HTTP Response Header 自動注入 api-supported-versions 與 api-deprecated-versions
+        options.ReportApiVersions = true;
+
+        // 採用動態 URL 路徑段落讀取器
+        options.ApiVersionReader = new UrlSegmentApiVersionReader();
+    })
+    .AddApiExplorer(options =>
+    {
+        // 設定 API 文件群組名稱格式 (例如：v1, v2)
+        options.GroupNameFormat = "'v'VVV";
+
+        // 關鍵設定：自動將 OpenAPI / Scalar 路由中的 {version:apiVersion} 替換為實際版號 (例如 v1)
+        options.SubstituteApiVersionInUrl = true;
+    });
+
+    // ----------------------------------------------------
+    // OpenAPI 與 Scalar 文件設定
+    // 註冊多版本 OpenAPI (v1, v2) 檔案生成
+    // ----------------------------------------------------
     builder.Services.AddOpenApi("v1", options =>
     {
         options.ShouldInclude = (description) => true;
@@ -53,6 +80,14 @@ try
         options.AddDocumentTransformer<DynamicControllerDocumentFilter>();
         options.AddDocumentTransformer<OpenApiSecurityRequirementTransformer>();
     });
+
+    //builder.Services.AddOpenApi("v2", options =>
+    //{
+    //    options.ShouldInclude = (description) => true;
+    //    options.AddOperationTransformer<MenuAttributeTransformer>();
+    //    options.AddDocumentTransformer<DynamicControllerDocumentFilter>();
+    //    options.AddDocumentTransformer<OpenApiSecurityRequirementTransformer>();
+    //});
 
     builder.Services.AddAPIDocServices();
 
@@ -200,16 +235,39 @@ try
         app.UseDeveloperExceptionPage();
     }
 
-    // 1. 靜態檔案與前端資源託管（確保 WebRoot 目錄存在，避免靜態檔案處置拋出警告）
+    // ----------------------------------------------------
+    // Blazor WASM 與 Vue 靜態資源託管配置（確保 WebRoot 目錄存在，避免靜態檔案處置拋出警告）
+    // ----------------------------------------------------
     var webRootPath = app.Environment.WebRootPath;
     if (!string.IsNullOrEmpty(webRootPath) && !Directory.Exists(webRootPath))
     {
         Directory.CreateDirectory(webRootPath);
     }
-    //app.UseBlazorFrameworkFiles();
+    // 指定 Blazor WebAssembly 在 /blazor 前綴下掛載 _framework 資源
+    app.UseBlazorFrameworkFiles("/blazor");
     // 啟用預設檔案（如 index.html）與靜態檔案託管
     app.UseDefaultFiles();
-    app.UseStaticFiles();
+
+    // 建立 ContentTypeProvider 並補強/覆寫 Vue 與 Blazor WASM 的 MIME 對映
+    var provider = new FileExtensionContentTypeProvider();
+
+    // --- Vue / 現代前端 JavaScript & JSON ---
+    provider.Mappings[".js"] = "application/javascript";
+    provider.Mappings[".mjs"] = "application/javascript"; // ⚠️ Vite/Modern Web 必備 ESM 模組
+    provider.Mappings[".json"] = "application/json";
+
+    // --- Blazor WebAssembly 專屬檔案 ---
+    provider.Mappings[".wasm"] = "application/wasm";
+    provider.Mappings[".dat"] = "application/octet-stream";
+    provider.Mappings[".blat"] = "application/octet-stream";
+    provider.Mappings[".clat"] = "application/octet-stream";
+    provider.Mappings[".br"] = "application/brotli";
+
+    // 套用至 UseStaticFiles 中間件
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        ContentTypeProvider = provider
+    });
 
     // 2. 資料庫自動 Migration 與腳本初始化
     var autoMigrate = config.GetValue<bool>("Database:AutoMigrate", true);
@@ -279,11 +337,15 @@ try
     var changeProvider = app.Services.GetRequiredService<IDynamicActionDescriptorChangeProvider>();
     changeProvider.NotifyChanges();
 
-    // 修改 SPA Fallback 行為：排除 /api 與 /scalar 路徑，避免前端路由吞掉後端 API 的 404 錯誤
+    // ----------------------------------------------------
+    // 多 SPA Fallback 隔離路由配置
+    // ----------------------------------------------------
+    //  SPA Fallback 行為：排除 /api 與 /scalar 路徑，避免前端路由吞掉後端 API 的 404 錯誤
     app.MapWhen(context =>
         !context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase) &&
         !context.Request.Path.StartsWithSegments("/scalar", StringComparison.OrdinalIgnoreCase) &&
-        !context.Request.Path.StartsWithSegments("/openapi", StringComparison.OrdinalIgnoreCase),
+        !context.Request.Path.StartsWithSegments("/openapi", StringComparison.OrdinalIgnoreCase) &&
+        !context.Request.Path.StartsWithSegments("/blazor", StringComparison.OrdinalIgnoreCase),
         builder =>
         {
             // 只有非 API 請求才會交給前端 Vue 處理 (History Mode)

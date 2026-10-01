@@ -1,7 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Abstractions;
-using SGSFramework.AuthTokenBucket.DTOs.PermissionGrants;
+using SGSFramework.AuthTokenBucket.Controllers.V1.DTOs.PermissionGrants;
 using SGSFramework.Core.Abstractions.Permissions.Identities;
 
 namespace SGSFramework.AuthTokenBucket.Services

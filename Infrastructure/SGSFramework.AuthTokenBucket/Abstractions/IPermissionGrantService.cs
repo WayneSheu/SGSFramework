@@ -1,4 +1,4 @@
-﻿using SGSFramework.AuthTokenBucket.DTOs.PermissionGrants;
+﻿using SGSFramework.AuthTokenBucket.Controllers.V1.DTOs.PermissionGrants;
 
 namespace SGSFramework.AuthTokenBucket.Abstractions
 {

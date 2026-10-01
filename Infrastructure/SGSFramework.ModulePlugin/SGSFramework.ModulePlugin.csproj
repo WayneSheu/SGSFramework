@@ -17,6 +17,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="Alerts\**" />
+    <EmbeddedResource Remove="Alerts\**" />
+    <None Remove="Alerts\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Content Include="Configurations\appsettings.moduleplugin.json">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
       <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
@@ -33,9 +39,6 @@
     <ProjectReference Include="..\..\SGSFramework.Alert\SGSFramework.Alert.csproj" />
     <ProjectReference Include="..\..\Shared\SGSFramework.Core\SGSFramework.Core.csproj" />
     <ProjectReference Include="..\SGSFramework.AuthTokenBucket\SGSFramework.AuthTokenBucket.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <Folder Include="Alerts\" />
   </ItemGroup>
 	<Target Name="PushToBaGet" AfterTargets="Pack" Condition="'$(Configuration)' == 'Release'">
 		<Exec Command="dotnet nuget push &quot;$(ProjectDir)bin\$(Configuration)\*.nupkg&quot; --source http://59.125.142.81:5000/v3/index.json --api-key SHANDA_BaGet_!qaz --allow-insecure-connections --skip-duplicate" />

@@ -1,4 +1,4 @@
-﻿using SGSFramework.AuthTokenBucket.DTOs.UserLabPermissions;
+﻿using SGSFramework.AuthTokenBucket.Controllers.V1.DTOs.UserLabPermissions;
 using System;
 using System.Collections.Generic;
 using System.Text;

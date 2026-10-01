@@ -4,7 +4,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Abstractions;
-using SGSFramework.AuthTokenBucket.DTOs.UserLabPermissions;
+using SGSFramework.AuthTokenBucket.Controllers.V1.DTOs.UserLabPermissions;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Permissions.Entities;

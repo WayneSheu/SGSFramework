@@ -1,16 +1,11 @@
 ﻿// 檔案路徑: Abstractions/SGSFramework.AuthTokenBucket.Abstractions/IPermissionManagementService.cs
 
-using SGSFramework.AuthTokenBucket.DTOs;
-using SGSFramework.AuthTokenBucket.DTOs.PermissionAudits;
-using SGSFramework.AuthTokenBucket.DTOs.PermissionGrants;
-using SGSFramework.AuthTokenBucket.DTOs.PermissionTree;
-using SGSFramework.AuthTokenBucket.DTOs.PermissionUsers;
-using SGSFramework.AuthTokenBucket.DTOs.RolePermissions;
-using SGSFramework.AuthTokenBucket.DTOs.UserPermissions;
-using SGSFramework.Core.Abstractions.Permissions.Entities;
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
+using SGSFramework.AuthTokenBucket.Controllers.V1.DTOs.PermissionAudits;
+using SGSFramework.AuthTokenBucket.Controllers.V1.DTOs.PermissionGrants;
+using SGSFramework.AuthTokenBucket.Controllers.V1.DTOs.PermissionTree;
+using SGSFramework.AuthTokenBucket.Controllers.V1.DTOs.PermissionUsers;
+using SGSFramework.AuthTokenBucket.Controllers.V1.DTOs.RolePermissions;
+using SGSFramework.AuthTokenBucket.Controllers.V1.DTOs.UserPermissions;
 
 namespace SGSFramework.AuthTokenBucket.Abstractions
 {
