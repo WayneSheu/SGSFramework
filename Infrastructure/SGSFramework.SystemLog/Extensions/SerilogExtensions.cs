@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
+using Serilog.Core;
 using Serilog.Events;
 using SGSFramework.Core.Abstractions.Logings;
 using SGSFramework.Core.Abstractions.Notifications;
@@ -13,7 +14,7 @@ using SGSFramework.Core.Mask;
 using SGSFramework.SystemLog.BackgroundServices;
 using SGSFramework.SystemLog.Channels;
 using SGSFramework.SystemLog.Notifications;
-using SGSFramework.SystemLog.Options; // 💡 確保導入 AlertSettings 所在的命名空間
+using SGSFramework.SystemLog.Options;
 using SGSFramework.SystemLog.Services;
 using SGSFramework.SystemLog.Sinks;
 
@@ -31,58 +32,63 @@ namespace SGSFramework.SystemLog.Extensions
         /// <summary>
         /// 將 Serilog 配置為 ASP.NET Core 的日誌提供程序，並自動在內部完整註冊管道、處理器、組態繫結與背景 Worker。
         /// </summary>
-        public static void AddSystemLog(this WebApplicationBuilder builder)
+        public static WebApplicationBuilder AddSystemLog(this WebApplicationBuilder builder)
         {
             ArgumentNullException.ThrowIfNull(builder);
 
-            //執行基礎引導日誌 (確保在 Config 載入前有錯誤追蹤)
+            // =========================================================================
+            // 1. 初始化動態日誌層級切換器 (LoggingLevelSwitch) 並註冊為 Singleton
+            // =========================================================================
+            var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Information);
+            builder.Services.AddSingleton(levelSwitch);
+
+            // 執行基礎引導日誌 (確保在 Config 載入前有錯誤追蹤)
             Log.Logger = new LoggerConfiguration()
-                .MinimumLevel.Debug() // 開啟除錯診斷
+                .MinimumLevel.ControlledBy(levelSwitch)
                 .WriteTo.Console()
                 .CreateBootstrapLogger();
 
-            // 開啟除錯診斷
+            // 開啟 Serilog 內部除錯診斷
             Serilog.Debugging.SelfLog.Enable(msg => Console.WriteLine($"🔥 Serilog Internal Error: {msg}"));
 
-
             // =========================================================================
-            // 將 appsettings.json 的 Logging:AlertSettings 區段與 Options 進行強型別繫結
+            // 2. 將 appsettings.json 的 AlertSettings 區段進行強型別繫結與啟動驗證
             // =========================================================================
             builder.Services.AddOptions<AlertSettings>()
                 .Bind(builder.Configuration.GetSection("AlertSettings"))
-                .ValidateDataAnnotations() // 保留原本的 DataAnnotation 強制驗證防禦機制
-                .ValidateOnStart();       // 確保在主機啟動時就進行嚴格欄位檢查
+                .ValidateDataAnnotations()
+                .ValidateOnStart();
 
             // =========================================================================
-            // 核心記憶體管道註冊 (全域單例)
+            // 3. 核心記憶體管道註冊 (全域單例)
             // =========================================================================
-            builder.Services.AddSingleton<SystemLogChannel>(_systemChannel);
-            builder.Services.AddSingleton<SecurityLogChannel>(_securityChannel);
-            builder.Services.AddSingleton<AlertMemoryChannel>(_alertChannel);
+            builder.Services.AddSingleton(_systemChannel);
+            builder.Services.AddSingleton(_securityChannel);
+            builder.Services.AddSingleton(_alertChannel);
 
             // =========================================================================
-            // 告警通知核心與發送策略註冊
+            // 4. 告警通知與日誌查詢服務註冊
             // =========================================================================
             builder.Services.AddSingleton<IAlertCoordinator, AlertCoordinator>();
             builder.Services.AddSingleton<INotificationStrategy, EmailNotificationStrategy>();
+            builder.Services.AddScoped<ISystemLogQueryService, SystemLogQueryService>();
 
             // =========================================================================
-            // 持久化核心處理器註冊 (Processors)
+            // 5. 持久化核心處理器註冊 (Processors)
             // =========================================================================
             builder.Services.AddSingleton<SqlServerLogProcessor>();
-            builder.Services.AddSingleton<ISecurityLogger,SecurityLogger>();
+            builder.Services.AddSingleton<ISecurityLogger, SecurityLogger>();
             builder.Services.AddSingleton<SqlServerSecurityProcessor>();
-   
 
             // =========================================================================
-            // 常駐背景服務註冊 (Hosted Services / Workers 消費端)
+            // 6. 常駐背景服務註冊 (Hosted Services / Workers 消費端)
             // =========================================================================
             builder.Services.AddHostedService<SystemLogPersistentWorker>();
             builder.Services.AddHostedService<SecurityLogPersistentWorker>();
             builder.Services.AddHostedService<AlertWorkerService>();
 
             // =========================================================================
-            // 配置主機關閉寬限時間
+            // 7. 配置主機關閉寬限時間
             // =========================================================================
             builder.Services.Configure<HostOptions>(options =>
             {
@@ -90,27 +96,26 @@ namespace SGSFramework.SystemLog.Extensions
             });
 
             // =========================================================================
-            // 建立並繫結 USGSFrameworkerilog 核心管線
+            // 8. 建立並繫結 Serilog 核心管線
             // =========================================================================
             builder.Host.UseSerilog((context, servicesProvider, loggerConfig) =>
             {
                 try
                 {
                     loggerConfig
-                        .ReadFrom.Configuration(context.Configuration)// 讀取 appsettings.json 的 Serilog 配置
-                        .ReadFrom.Services(servicesProvider);// 關鍵：讓 Serilog 可以存取 DI 服務
+                        .MinimumLevel.ControlledBy(levelSwitch) // 動態層級控管
+                        .ReadFrom.Configuration(context.Configuration) // 讀取 appsettings.json 配置
+                        .ReadFrom.Services(servicesProvider); // 讓 Serilog 可存取 DI 服務
 
                     loggerConfig.ConfigurationSerilogMasking();
 
                     // 管道分流 (1)：一般系統日誌路由        
                     loggerConfig.WriteTo.Logger(lc => lc
-                        // 只包含 LogType 為 null 的一般系統日誌，或 SourceContext 為 SecurityEventSource 的安全日誌
                         .Filter.ByExcluding("LogType is not null or SourceContext = 'SecurityEventSource'")
                         .WriteTo.Sink(new PersistentChannelSink(_systemChannel)));
 
                     // 管道分流 (2)：安全日誌路由
                     loggerConfig.WriteTo.Logger(lc => lc
-                        // 只包含 LogType 不為 null 的安全日誌，或 SourceContext 為 SecurityEventSource 的安全日誌
                         .Filter.ByIncludingOnly("LogType is not null or SourceContext = 'SecurityEventSource'")
                         .WriteTo.Sink(new PersistentChannelSink(_securityChannel)));
 
@@ -122,12 +127,7 @@ namespace SGSFramework.SystemLog.Extensions
                                              logType is ScalarValue sv &&
                                              "Security".Equals(sv.Value?.ToString(), StringComparison.OrdinalIgnoreCase);
 
-                            if (isSecurity)
-                            {
-                                return evt.Level >= LogEventLevel.Warning;
-                            }
-
-                            return evt.Level >= LogEventLevel.Error;
+                            return isSecurity ? evt.Level >= LogEventLevel.Warning : evt.Level >= LogEventLevel.Error;
                         },
                         wt => wt.AlertingSink(_alertChannel.Writer)
                     );
@@ -138,6 +138,8 @@ namespace SGSFramework.SystemLog.Extensions
                     throw;
                 }
             });
+
+            return builder;
         }
     }
 }
