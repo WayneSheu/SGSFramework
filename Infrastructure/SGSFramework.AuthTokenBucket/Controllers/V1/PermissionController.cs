@@ -35,7 +35,7 @@ namespace SGSFramework.AuthTokenBucket.Controllers.V1;
 /// </summary>
 [ApiController]
 [Authorize]
-[ApiVersion("1.0")]
+[ApiVersion("1")]
 [Route("api/v{version:apiVersion}/permissions")]
 [ControllerTitle("權限管理", Icon = "fa-solid fa-shield-halved", Order = 20, Description = "提供系統權限樹狀圖查詢、角色權限矩陣讀取與更新服務")]
 [RequiresPermission("SYSTEM.PERMISSION.READ", "權限管理")]

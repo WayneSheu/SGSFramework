@@ -1,58 +1,67 @@
-﻿namespace PhysLIMS.API.Extensions;
+﻿// Path: src/SGSFramework/Host/PhysLIMS.API/Extensions/WebApplicationPipelineExtensions.cs
+#nullable enable
+
+namespace PhysLIMS.API.Extensions;
 
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.FileProviders;
 using PhysLIMS.API.Dbcontexts;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.Core.Abstractions.Database;
-using SGSFramework.ModulePlugin.Extensions;
-using SGSFramework.ModulePlugin.Systems.Controller.Providers;
+using System.IO;
 
-/// <summary>
-/// WebApplication 中間件管道與啟動任務擴充類別
-/// </summary>
 public static class WebApplicationPipelineExtensions
 {
     /// <summary>
-    /// 配置靜態檔案與 Blazor WASM / Vue 專屬 Content-Type 映射
+    /// 啟用企業級靜態檔案服務，支援 Vue 3 與 Blazor WASM 的完整 MIME Type 映射。
     /// </summary>
+    /// <param name="app"></param>
+    /// <returns></returns>
     public static WebApplication UseEnterpriseStaticFiles(this WebApplication app)
     {
         ArgumentNullException.ThrowIfNull(app);
 
+        // ----------------------------------------------------
+        // Blazor WASM 與 Vue 靜態資源託管配置（確保 WebRoot 目錄存在，避免靜態檔案處置拋出警告）
+        // ----------------------------------------------------
         var webRootPath = app.Environment.WebRootPath;
         if (!string.IsNullOrEmpty(webRootPath) && !Directory.Exists(webRootPath))
         {
             Directory.CreateDirectory(webRootPath);
         }
+        // 指定 Blazor WebAssembly 在 /blazor 前綴下掛載 _framework 資源
+        app.UseBlazorFrameworkFiles("/blazor");
+        // 啟用預設檔案（如 index.html）與靜態檔案託管
+        app.UseDefaultFiles();
 
+        // 建立 ContentTypeProvider 並補強/覆寫 Vue 與 Blazor WASM 的 MIME 對映
         var provider = new FileExtensionContentTypeProvider();
+
+        // --- Vue / 現代前端 JavaScript & JSON ---
         provider.Mappings[".js"] = "application/javascript";
-        provider.Mappings[".mjs"] = "application/javascript";
+        provider.Mappings[".mjs"] = "application/javascript"; // ⚠️ Vite/Modern Web 必備 ESM 模組
         provider.Mappings[".json"] = "application/json";
+
+        // --- Blazor WebAssembly 專屬檔案 ---
         provider.Mappings[".wasm"] = "application/wasm";
         provider.Mappings[".dat"] = "application/octet-stream";
         provider.Mappings[".blat"] = "application/octet-stream";
         provider.Mappings[".clat"] = "application/octet-stream";
         provider.Mappings[".br"] = "application/brotli";
 
-        // 1. 掛載 Blazor WASM 框架檔案路徑
-        app.UseBlazorFrameworkFiles("/blazor");
-
-        // 2. 預設檔案與靜態資源 ContentTypeProvider 映射
-        app.UseDefaultFiles();
+        // 套用至 UseStaticFiles 中間件
         app.UseStaticFiles(new StaticFileOptions
         {
             ContentTypeProvider = provider
         });
 
+
         return app;
     }
 
-    /// <summary>
-    /// 執行系統啟動自動遷移與種子資料同步 (單一 Scope 優化)
-    /// </summary>
     public static async Task ExecuteStartupSeedersAsync(this WebApplication app, IConfiguration config)
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -61,7 +70,6 @@ public static class WebApplicationPipelineExtensions
         using var scope = app.Services.GetRequiredService<IServiceScopeFactory>().CreateScope();
         var services = scope.ServiceProvider;
 
-        // 1. 自動 Migration
         var autoMigrate = config.GetValue<bool>("Database:AutoMigrate", true);
         if (app.Environment.IsDevelopment() || autoMigrate)
         {
@@ -72,7 +80,6 @@ public static class WebApplicationPipelineExtensions
             await mainDbContext.Database.MigrateAsync(app.Lifetime.ApplicationStopping).ConfigureAwait(false);
         }
 
-        // 2. 權限與選單樹種子資料同步
         var permissionSeeder = services.GetRequiredService<IPermissionSeedService>();
         await permissionSeeder.SeedAndSyncPermissionsAsync().ConfigureAwait(false);
 

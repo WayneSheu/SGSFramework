@@ -14,7 +14,7 @@ namespace SGSFramework.SystemLog.Controllers.V1;
 /// 系統與資安總帳日誌管理控制器 (資料庫版)
 /// </summary>
 [ApiController]
-[ApiVersion("1.0")]
+[ApiVersion("1")]
 [Route("api/v{version:apiVersion}/system/log-manager")]
 [ControllerTitle("系統日誌管理", Icon = "fa-solid fa-receipt", Order = 90, Description = "動態調整 Serilog 紀錄層級與線上檢視 core.SystemLogs / core.SecurityLog 資料庫紀錄")]
 [RequiresPermission("SYSTEM.LOGMANAGER.READ", "系統日誌管理")]

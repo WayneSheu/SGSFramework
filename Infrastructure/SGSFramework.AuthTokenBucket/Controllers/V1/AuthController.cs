@@ -31,7 +31,7 @@ namespace SGSFramework.AuthTokenBucket.Controllers.V1;
 /// </summary>
 [ApiController]
 [Authorize]
-[ApiVersion("1.0")]
+[ApiVersion("1")]
 [Route("api/v{version:apiVersion}/auth")]
 [ControllerTitle("身分驗證", Icon = "fa-solid fa-user-lock", Order = 10, Description = "提供帳密登入、AD SSO 登入、Token 輪轉刷新、動態選單與實驗室上下文切換服務")]
 [RequiresPermission("SYSTEM.AUTH.READ", "身分驗證")]

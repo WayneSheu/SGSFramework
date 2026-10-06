@@ -25,7 +25,7 @@ using SGSFramework.Identity.DTOs;
 /// </summary>
 [ApiController]
 [Authorize]
-[ApiVersion("1.0")]
+[ApiVersion("1")]
 [Route("api/v{version:apiVersion}/roles")]
 [ControllerTitle("角色管理", Icon = "fa-solid fa-user-shield", Order = 20, Description = "提供企業級角色 CRUD、AD 網域群組自動對應與使用者角色授權管理")]
 [RequiresPermission("SYSTEM.ROLEMANAGEMENT.READ", "角色管理")]

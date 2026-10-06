@@ -25,7 +25,7 @@ using System.Threading.Tasks;
 /// </summary>
 [ApiController]
 [Authorize]
-[ApiVersion("1.0")]
+[ApiVersion("1")]
 [Route("api/v{version:apiVersion}/menu-items")]
 [ControllerTitle("選單管理", Icon = "fa-solid fa-bars-staggered", Order = 90, Description = "維護系統三層動態導覽選單 (Section -> Group -> Page) 與權限綁定")]
 [RequiresPermission("SYSTEM.MENU.READ", "選單管理")]

@@ -18,7 +18,7 @@ namespace SGSFramework.VerifyLedger.Controllers.V1
     /// </summary>
     [ApiController]
     [Authorize]
-    [ApiVersion("1.0")]
+    [ApiVersion("1")]
     [Route("api/v{version:apiVersion}/ledger")]
     [ControllerTitle("總帳驗證管理", Icon = "fa-solid fa-user-shield", Order = 20, Description = "泛型總帳驗證控制器，支援動態路由解析特定 DbContext 與 Entity")]
     [RequiresPermission("SYSTEM.LEDGERVERIFICATION.READ")]

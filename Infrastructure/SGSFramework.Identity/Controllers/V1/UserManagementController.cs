@@ -36,7 +36,7 @@ using System.Threading.Tasks;
 /// </summary>
 [ApiController]
 [Authorize]
-[ApiVersion("1.0")]
+[ApiVersion("1")]
 [Route("api/v{version:apiVersion}/users")]
 [ControllerTitle("使用者管理", Icon = "fa-solid fa-user-gear", Order = 10, Description = "提供使用者分頁查詢、帳號建立、資料更新、密碼重設與生命週期管理服務")]
 [RequiresPermission("SYSTEM.USERMANAGEMENT.READ", "使用者管理")]

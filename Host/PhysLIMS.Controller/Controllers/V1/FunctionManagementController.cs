@@ -16,7 +16,7 @@ namespace SGSFramework.ApiInfrastructure.Controllers.V1;
 /// </summary>
 [ApiController]
 [Authorize]
-[ApiVersion("1.0")]
+[ApiVersion("1")]
 [Route("api/v{version:apiVersion}/function-managements")]
 [ControllerTitle("系統功能管理", Icon = "fa-solid fa-gears", Order = 22, Description = "提供查詢與管理系統註冊之所有 Controller 與 Function 中繼資料清單與狀態維護")]
 [RequiresPermission("SYSTEM.FUNCTIONMANAGEMENT.READ", "系統功能管理")]

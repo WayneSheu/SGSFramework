@@ -1,5 +1,7 @@
 // Path: src/SGSFramework/Host/PhysLIMS.API/Program.cs
 using MediatR;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.DataProtection;
 using PhysLIMS.API.Dbcontexts;
 using PhysLIMS.API.Extensions;
 using Scalar.AspNetCore;
@@ -13,7 +15,6 @@ using SGSFramework.Core.Extensions;
 using SGSFramework.ModulePlugin.Extensions;
 using SGSFramework.ModulePlugin.Systems.Controller.Providers;
 using SGSFramework.SystemLog.Extensions;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 
 try
 {
@@ -26,19 +27,30 @@ try
     IConfiguration config = builder.Configuration;
     builder.AddSGSFrameworkCore();
 
-    // 2. 註冊多版本 API 與文件 (v1, v2)
+    // 【安全性強化】將 Data Protection 金鑰持久化至專案實體資料夾，避免 IIS App Pool 回收導致登入失效
+    var keysFolder = Path.Combine(builder.Environment.ContentRootPath, "keys");
+    if (!Directory.Exists(keysFolder))
+    {
+        Directory.CreateDirectory(keysFolder);
+    }
+
+    builder.Services.AddDataProtection()
+        .PersistKeysToFileSystem(new DirectoryInfo(keysFolder))
+        .SetApplicationName("PhysLIMS.Enterprise");
+
+    // 2. 註冊多版本 API 控制與 OpenAPI/Scalar 文件 (v1, v2)
     builder.Services.AddEnterpriseApiVersioningAndDocs();
 
-    // 3. 註冊資料庫基礎設施與 PhysLIMSDbContext 組合
+    // 3. 註冊資料庫基礎設施與 PhysLIMSDbContext 組合 (含 AuditLog 與 Persistent)
     builder.Services.AddCoreDatabaseInfrastructure(config);
 
-    // 4. 控制器與動態外掛模組註冊
+    // 4. 控制器、動態外掛模組與組件掃描註冊
     builder.Services.AddControllerInfrastructure(config);
     builder.Services.AddCustomApiBehavior();
     builder.Services.AddModulePlugin<PhysLIMSDbContext>(config);
     builder.Services.AddControllerScanner<PhysLIMSDbContext>();
 
-    // 5. 跨域、例外處理與安全身分驗證
+    // 5. 跨域政策、例外處理與 Token Bucket 身分驗證
     builder.Services.AddEnterpriseCorsPolicy(config);
     builder.Services.AddProblemDetails();
     builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
@@ -62,9 +74,20 @@ try
     builder.Services.AddCustomAuthentication(isIISHosted);
     #endregion
 
-    // 7. 資安防護、帳本驗證與生產管理者 Seed 服務 (收納於 WebApplicationBuilderExtensions)
+    // 7. 資安防護、Seed 服務與 DI 容器驗證
     builder.Services.AddEnterpriseSecurityAndSeeders(config);
     builder.AddDIContainerValidation();
+
+    // 強制移除 SGSFramework 核心注入的 Negotiate 啟動防呆檢查
+    var negotiateFilters = builder.Services
+        .Where(s => s.ServiceType.Name == "IStartupFilter" &&
+                    s.ImplementationType?.Name == "NegotiateOptionsValidationStartupFilter")
+        .ToList();
+
+    foreach (var filter in negotiateFilters)
+    {
+        builder.Services.Remove(filter);
+    }
 
     var app = builder.Build();
 
@@ -82,9 +105,10 @@ try
         throw;
     }
 
-    // ----------------------------------------------------
+    // ====================================================
     // 中間件管道配置 (Middleware Pipeline Execution Order)
-    // ----------------------------------------------------
+    // 完全對齊伺服器版 (修正動態路由刷新順序與 SPA 管道隔離)
+    // ====================================================
     app.UseExceptionHandler();
 
     if (!app.Environment.IsDevelopment())
@@ -96,24 +120,29 @@ try
         app.UseDeveloperExceptionPage();
     }
 
-    // 9. 靜態檔案與 Blazor WASM / Vue 資源託管
-    app.UseEnterpriseStaticFiles();
-
-    // 10. 資料庫自動 Migration 與種子資料同步
+    // 1. 優先執行資料庫 Migration 與基礎 Schema 建置
     await app.ExecuteStartupSeedersAsync(config).ConfigureAwait(false);
 
-    // 11. 動態外掛模組初始化
-    await app.InitializeModularSystemAsync().ConfigureAwait(false);
-    await app.UseDynamicControllersAsync().ConfigureAwait(false);
+    // 2. 動態控制器模組載入與外掛初始化（必須在 MapControllers 之前完成 Assembly 載入）
+    try
+    {
+        Log.Information("正在初始化動態外掛系統，執行目錄：{BaseDir}", AppContext.BaseDirectory);
+        await app.InitializeModularSystemAsync().ConfigureAwait(false);
+        await app.UseDynamicControllersAsync().ConfigureAwait(false);
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, ">>> 動態外掛模組初始化失敗！");
+        throw;
+    }
 
-    // 12. 跨域與安全中間件
+    // 3. 安全授權與跨域中間件 (順序嚴格對齊：CORS -> 認證 -> 授權)
     app.UseCors("CorsPolicy");
     app.UseMiddleware<CorsLoggingMiddleware>();
-
     app.UseAuthentication();
     app.UseAuthorization();
 
-    // 13. OpenAPI 快取控制標頭設定
+    // 4. OpenAPI 快取控制中間件
     app.Use(async (context, next) =>
     {
         if (context.Request.Path.StartsWithSegments("/openapi", StringComparison.OrdinalIgnoreCase))
@@ -125,36 +154,48 @@ try
         await next().ConfigureAwait(false);
     });
 
-    // 14. 映射 Endpoints (OpenAPI / Scalar / API Controllers)
+    // 5. [關鍵修正 1] 映射 API Controllers 與文件端點，建立 EndpointDataSource 路由樹
     app.MapOpenApi();
-    app.MapScalarApiReference(options =>
-    {
-        options.Title = "PhysLIMS 2.0 API";
-        options.Theme = ScalarTheme.Solarized;
-        options.Layout = ScalarLayout.Modern;
-        options.Authentication = new ScalarAuthenticationOptions
-        {
-            PreferredSecurityScheme = JwtBearerDefaults.AuthenticationScheme
-        };
-    });
-
+    app.MapCustomScalarApiReference();
     app.MapControllers();
 
-    // 刷新 Dynamic Action 變更通知
+    // 6. [關鍵修正 2] 於 MapControllers 完成後，觸發 Dynamic Action 異動通知刷洗 Endpoint 數據源
     var changeProvider = app.Services.GetRequiredService<IDynamicActionDescriptorChangeProvider>();
     changeProvider.NotifyChanges();
 
-    // 15. 多 SPA Fallback 隔離路由配置
+    // 7. 啟用靜態檔案與 MIME 支援
+    app.UseEnterpriseStaticFiles();
+
+    // 8. [關鍵修正 3] 使用 MapWhen 隔離非 API/Scalar/OpenAPI/Blazor 路徑，建立獨立 SPA Fallback 管線
     app.MapWhen(context =>
         !context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase) &&
         !context.Request.Path.StartsWithSegments("/scalar", StringComparison.OrdinalIgnoreCase) &&
         !context.Request.Path.StartsWithSegments("/openapi", StringComparison.OrdinalIgnoreCase) &&
         !context.Request.Path.StartsWithSegments("/blazor", StringComparison.OrdinalIgnoreCase),
-        builderApp =>
+        builder =>
         {
-            builderApp.UseRouting();
-            builderApp.UseEndpoints(endpoints =>
+            builder.UseRouting();
+            builder.UseEndpoints(endpoints =>
             {
+                // 根目錄存取導向處理
+                endpoints.MapGet("/", async context =>
+                {
+                    var webRoot = app.Environment.WebRootPath ?? Path.Combine(AppContext.BaseDirectory, "wwwroot");
+                    var vueIndexPath = Path.Combine(webRoot, "index.html");
+
+                    if (File.Exists(vueIndexPath))
+                    {
+                        context.Response.ContentType = "text/html; charset=utf-8";
+                        await context.Response.SendFileAsync(vueIndexPath);
+                    }
+                    else
+                    {
+                        context.Response.Redirect("/blazor/", permanent: false);
+                    }
+                });
+
+                // 雙 SPA (Blazor WASM / Vue) 後備路由掛載
+                endpoints.MapBlazorSpaFallback();
                 endpoints.MapProtectedSpaFallback(app.Environment, "index.html");
             });
         });

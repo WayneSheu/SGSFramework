@@ -198,6 +198,7 @@ public class DynamicControllerRepository<T>(
                     metaVer.Version = version;
                 }
 
+                // 清理多餘的開頭斜線與舊版本前綴，但不額外在最前方強制拼入硬編碼版本
                 var cleanRoute = controller.RouteTemplate.TrimStart('/');
                 var versionPrefixes = Enumerable.Range(1, 20).Select(i => $"v{i}/").ToArray();
                 if (versionPrefixes.Any(prefix => cleanRoute.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
@@ -207,7 +208,8 @@ public class DynamicControllerRepository<T>(
 
                 if (controller is ControllerMetadata metaRoute)
                 {
-                    metaRoute.RouteTemplate = $"{version}/{cleanRoute}";
+                    // 【修正處】：直接使用標準解析後的路由，不要強行加上 `${version}/` 前綴
+                    metaRoute.RouteTemplate = cleanRoute;
                 }
 
                 if (controller is ControllerMetadata metaController)

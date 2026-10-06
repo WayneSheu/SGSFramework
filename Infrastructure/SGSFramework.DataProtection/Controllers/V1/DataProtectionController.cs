@@ -16,7 +16,7 @@ namespace SGSFramework.DataProtection.Controllers.V1;
 /// </summary>
 [ApiController]
 [Authorize]
-[ApiVersion("1.0")]
+[ApiVersion("1")]
 [Route("api/v{version:apiVersion}/data-protections")]
 [ControllerTitle("資料保護管理", Icon = "fa-solid fa-shield-halved", Order = 23, Description = "提供系統敏感資料之加密與解密安全性服務")]
 [RequiresPermission("SYSTEM.DATAPROTECTION.READ")]

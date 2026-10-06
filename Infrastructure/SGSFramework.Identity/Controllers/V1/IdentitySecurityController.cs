@@ -16,7 +16,7 @@ namespace SGSFramework.Identity.Controllers.V1;
 /// </summary>
 [ApiController]
 [Authorize]
-[ApiVersion("1.0")]
+[ApiVersion("1")]
 [Route("api/v{version:apiVersion}/identity-security")]
 [ControllerTitle("身分安全管理", Icon = "fa-solid fa-user-shield", Order = 25, Description = "身分安全管理與緊急風險控制機制，支援帳號緊急熔斷與身分補償解凍")]
 [RequiresPermission("SYSTEM.IDENTITYSECURITY.READ", "身分安全管理")]

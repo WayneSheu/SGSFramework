@@ -20,7 +20,7 @@ namespace SGS.Modules.ORG.Controllers.V1;
 /// </summary>
 [ApiController]
 [Authorize]
-[ApiVersion("1.0")]
+[ApiVersion("1")]
 [Route("api/v{version:apiVersion}/org/user-labs")]
 [ControllerTitle("用戶歸屬實驗室", Icon = "fa-solid fa-user-gear", Order = 11, Description = "管理使用者於各實驗室之主要/兼任歸屬與職位標題")]
 [RequiresPermission("ORG.USERLABMAPPING.READ")]

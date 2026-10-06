@@ -17,7 +17,7 @@ namespace SGS.Modules.ORG.Controllers.V1;
 /// ME實驗室報表控制器
 /// </summary>
 [ApiController]
-[ApiVersion("1.0")]
+[ApiVersion("1")]
 [Route("api/v{version:apiVersion}/reports/laboratories")]
 [ControllerTitle("ME實驗室報表管理", Icon = "fa-solid fa-flask", Order = 10, Description = "提供ME實驗室相關報表數據準備、分類查詢與 PDF 下載服務。")]
 [RequiresPermission("ORG.MELABORATORYREPORT.READ")]

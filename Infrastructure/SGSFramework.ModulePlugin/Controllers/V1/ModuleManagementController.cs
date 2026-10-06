@@ -20,7 +20,7 @@ namespace SGSFramework.ModulePlugin.Controllers.V1;
 /// </summary>
 [ApiController]
 [Authorize]
-[ApiVersion("1.0")]
+[ApiVersion("1")]
 [Route("api/v{version:apiVersion}/system/modules")]
 [ControllerTitle("模組管理", Icon = "fa-solid fa-cubes", Order = 100, Description = "商業模組熱插拔維護與動態載入卸載管理")]
 [RequiresPermission("SYSTEM.MODULEMANAGEMENT.READ")]

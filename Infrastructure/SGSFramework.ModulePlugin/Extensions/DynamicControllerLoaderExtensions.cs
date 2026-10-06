@@ -27,6 +27,11 @@ using System.Threading.Tasks;
 /// </summary>
 public static class DynamicControllerLoaderExtensions
 {
+    private const string DefaultVersion = "1.0.0.0";
+
+    /// <summary>
+    /// 非同步註冊並同步動態控制器中繼資料
+    /// </summary>
     public static async Task UseDynamicControllersAsync(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -41,119 +46,191 @@ public static class DynamicControllerLoaderExtensions
         {
             string moduleName = assembly.GetName().Name ?? "Unknown";
 
-            // 過濾非目標模組 Assembly
-            if (!loadedModuleNames.Contains(moduleName)
-                && !moduleName.Equals("PhysLIMS.Controller", StringComparison.OrdinalIgnoreCase)
-                && !moduleName.Equals("SGS.API", StringComparison.OrdinalIgnoreCase))
+            if (!IsTargetModule(moduleName, loadedModuleNames))
             {
                 continue;
             }
 
-            var controllerTypes = assembly.GetTypes()
-                .Where(t => !t.IsAbstract && t.IsClass && t.Name.EndsWith("Controller", StringComparison.OrdinalIgnoreCase))
-                .ToList();
-
-            if (controllerTypes.Count == 0) continue;
-
-            // 1. 解析 ModuleTitle: [ModuleAttribute] -> [AssemblyTitleAttribute] -> Assembly Name
-            var moduleAttr = assembly.GetCustomAttribute<ModuleAttribute>();
-            var assemblyTitleAttr = assembly.GetCustomAttribute<AssemblyTitleAttribute>();
-            string moduleTitle = !string.IsNullOrWhiteSpace(moduleAttr?.Title)
-                ? moduleAttr.Title
-                : (!string.IsNullOrWhiteSpace(assemblyTitleAttr?.Title) ? assemblyTitleAttr.Title : moduleName);
-
-            Log.Information("[DynamicController] 開始註冊模組: {Module} ({ModuleTitle}), 傳入 Controller 數量: {Count}",
-                moduleName, moduleTitle, controllerTypes.Count);
-
-            var newMetas = new List<ControllerMetadata>();
-
-            foreach (var ctrlType in controllerTypes)
+            try
             {
-                // 2. 解析 Route Base
-                var routeAttr = ctrlType.GetCustomAttributes<RouteAttribute>(inherit: true).FirstOrDefault();
-                string baseRoute = routeAttr?.Template ?? $"api/{ctrlType.Name.Replace("Controller", "", StringComparison.OrdinalIgnoreCase)}";
-
-                // 3. 解析 ControllerTitle 及 Controller 層級選單屬性
-                var ctrlTitleAttr = ctrlType.GetCustomAttribute<ControllerTitleAttribute>();
-                var ctrlPermAttr = ctrlType.GetCustomAttribute<RequiresPermissionAttribute>();
-
-                string controllerTitle = !string.IsNullOrWhiteSpace(ctrlTitleAttr?.Title)
-                    ? ctrlTitleAttr.Title
-                    : ctrlType.Name.Replace("Controller", "", StringComparison.OrdinalIgnoreCase);
-
-                string controllerIcon = ctrlTitleAttr?.Icon ?? "fa-solid fa-folder";
-                int controllerOrder = ctrlTitleAttr?.Order ?? 0;
-
-                // 4. 解析 Controller 的 Action
-                var actions = ctrlType.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-                    .Where(m => m.IsPublic && !m.IsSpecialName && !m.IsDefined(typeof(NonActionAttribute)));
-
-                foreach (var action in actions)
-                {
-                    string actionName = action.Name;
-
-                    // 解析 HTTP Verb 與 Action 路由
-                    var httpMethodAttr = action.GetCustomAttributes<HttpMethodAttribute>(inherit: true).FirstOrDefault();
-                    string routeTemplate = baseRoute;
-
-                    if (httpMethodAttr?.Template is { Length: > 0 } relativeOrAbsoluteRoute)
-                    {
-                        routeTemplate = relativeOrAbsoluteRoute.StartsWith('/')
-                            ? relativeOrAbsoluteRoute.TrimStart('/')
-                            : $"{baseRoute}/{relativeOrAbsoluteRoute}";
-                    }
-
-                    // 5. 解析 FunctionAttribute (Action 級別選單與權限屬性)
-                    var actionFuncAttr = action.GetCustomAttribute<FunctionAttribute>();
-                    var actionPermAttr = action.GetCustomAttribute<RequiresPermissionAttribute>() ?? ctrlPermAttr;
-
-                    // 各屬性賦值與 Fallback 機制
-                    string actionDisplayName = !string.IsNullOrWhiteSpace(actionFuncAttr?.Title) ? actionFuncAttr.Title : actionName;
-                    string actionIcon = !string.IsNullOrWhiteSpace(actionFuncAttr?.Icon) ? actionFuncAttr.Icon : controllerIcon;
-                    int actionOrder = actionFuncAttr?.Order ?? 0;
-                    string? actionDescription = actionFuncAttr?.Description ?? ctrlTitleAttr?.Description;
-
-                    // 選單標記與自訂路由
-                    bool isMenu = actionFuncAttr?.IsMenu ?? false;
-                    string? customPath = actionFuncAttr?.Path;
-
-                    var metadata = new ControllerMetadata
-                    {
-                        Id = Guid.NewGuid(),
-                        ModuleName = moduleName,
-                        ModuleTitle = moduleTitle,
-                        ControllerName = ctrlType.Name,
-                        ControllerTitle = controllerTitle,
-                        ControllerIcon = controllerIcon,
-                        ControllerOrder = controllerOrder,
-                        ActionName = actionName,
-                        DisplayName = actionDisplayName,
-                        RouteTemplate = routeTemplate,
-                        ParentMenuName = controllerTitle,
-                        Icon = actionIcon,
-                        DisplayOrder = actionOrder,
-                        IsMenu = isMenu,
-                        Path = customPath,
-                        PermissionKey = actionPermAttr?.PermissionKey ?? string.Empty,
-                        Description = actionDescription,
-                        ControllerTypeName = ctrlType.FullName ?? ctrlType.Name,
-                        Version = assembly.GetName().Version?.ToString() ?? "1.0.0.0",
-                        IsActive = true,
-                        CreatedAt = DateTime.UtcNow
-                    };
-
-                    // 執行擴充方法，同步解析 BitPosition 與 AttributesJson
-                    metadata.SyncFromAttribute(ctrlType);
-
-                    newMetas.Add(metadata);
-                }
+                await ProcessAssemblyControllersAsync(assembly, moduleName, controllerRepo).ConfigureAwait(false);
             }
-
-            // 將解析好的元資料同步寫入 Repository / DB
-            await controllerRepo.RegisterAsync(moduleName, newMetas);
-            Log.Information("[DynamicController] 模組 {Module} 註冊與狀態同步處理完畢。", moduleName);
+            catch (Exception ex)
+            {
+                Log.Error(ex, "[DynamicController] 處理組件 {Module} 控制器註冊時發生未預期錯誤", moduleName);
+                throw;
+            }
         }
 
         Log.Information("控制器元資料同步已成功完成。");
+    }
+
+    private static bool IsTargetModule(string moduleName, HashSet<string> loadedModuleNames)
+    {
+        return loadedModuleNames.Contains(moduleName)
+            || moduleName.Equals("PhysLIMS.Controller", StringComparison.OrdinalIgnoreCase)
+            || moduleName.Equals("SGS.API", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task ProcessAssemblyControllersAsync(
+        Assembly assembly,
+        string moduleName,
+        IDynamicControllerRepository<ControllerMetadata> controllerRepo)
+    {
+        var controllerTypes = assembly.GetTypes()
+            .Where(t => !t.IsAbstract && t.IsClass && t.Name.EndsWith("Controller", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (controllerTypes.Count == 0) return;
+
+        string moduleTitle = ResolveModuleTitle(assembly, moduleName);
+
+        Log.Information("[DynamicController] 開始註冊模組: {Module} ({ModuleTitle}), 傳入 Controller 數量: {Count}",
+            moduleName, moduleTitle, controllerTypes.Count);
+
+        var newMetas = new List<ControllerMetadata>();
+
+        foreach (var ctrlType in controllerTypes)
+        {
+            ExtractControllerMetadata(assembly, moduleName, moduleTitle, ctrlType, newMetas);
+        }
+
+        await controllerRepo.RegisterAsync(moduleName, newMetas).ConfigureAwait(false);
+        Log.Information("[DynamicController] 模組 {Module} 註冊與狀態同步處理完畢。", moduleName);
+    }
+
+    private static string ResolveModuleTitle(Assembly assembly, string moduleName)
+    {
+        var moduleAttr = assembly.GetCustomAttribute<ModuleAttribute>();
+        var assemblyTitleAttr = assembly.GetCustomAttribute<AssemblyTitleAttribute>();
+
+        if (!string.IsNullOrWhiteSpace(moduleAttr?.Title))
+            return moduleAttr.Title;
+
+        if (!string.IsNullOrWhiteSpace(assemblyTitleAttr?.Title))
+            return assemblyTitleAttr.Title;
+
+        return moduleName;
+    }
+
+    private static void ExtractControllerMetadata(
+        Assembly assembly,
+        string moduleName,
+        string moduleTitle,
+        Type ctrlType,
+        List<ControllerMetadata> newMetas)
+    {
+        var routeAttr = ctrlType.GetCustomAttributes<RouteAttribute>(inherit: true).FirstOrDefault();
+        string baseRoute = routeAttr?.Template ?? $"api/{ctrlType.Name.Replace("Controller", "", StringComparison.OrdinalIgnoreCase)}";
+
+        // 確保路由不包含錯誤的版本前綴 (如 1.0/)
+        baseRoute = CleanRouteTemplate(baseRoute);
+
+        var ctrlTitleAttr = ctrlType.GetCustomAttribute<ControllerTitleAttribute>();
+        var ctrlPermAttr = ctrlType.GetCustomAttribute<RequiresPermissionAttribute>();
+
+        string controllerTitle = !string.IsNullOrWhiteSpace(ctrlTitleAttr?.Title)
+            ? ctrlTitleAttr.Title
+            : ctrlType.Name.Replace("Controller", "", StringComparison.OrdinalIgnoreCase);
+
+        string controllerIcon = ctrlTitleAttr?.Icon ?? "fa-solid fa-folder";
+        int controllerOrder = ctrlTitleAttr?.Order ?? 0;
+
+        var actions = ctrlType.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(m => m.IsPublic && !m.IsSpecialName && !m.IsDefined(typeof(NonActionAttribute)));
+
+        foreach (var action in actions)
+        {
+            var metadata = CreateActionMetadata(assembly, moduleName, moduleTitle, ctrlType, ctrlTitleAttr, ctrlPermAttr, baseRoute, controllerTitle, controllerIcon, controllerOrder, action);
+            newMetas.Add(metadata);
+        }
+    }
+
+    private static ControllerMetadata CreateActionMetadata(
+        Assembly assembly,
+        string moduleName,
+        string moduleTitle,
+        Type ctrlType,
+        ControllerTitleAttribute? ctrlTitleAttr,
+        RequiresPermissionAttribute? ctrlPermAttr,
+        string baseRoute,
+        string controllerTitle,
+        string controllerIcon,
+        int controllerOrder,
+        MethodInfo action)
+    {
+        string actionName = action.Name;
+        var httpMethodAttr = action.GetCustomAttributes<HttpMethodAttribute>(inherit: true).FirstOrDefault();
+        string routeTemplate = baseRoute;
+
+        if (httpMethodAttr?.Template is { Length: > 0 } relativeOrAbsoluteRoute)
+        {
+            routeTemplate = relativeOrAbsoluteRoute.StartsWith('/')
+                ? relativeOrAbsoluteRoute.TrimStart('/')
+                : $"{baseRoute}/{relativeOrAbsoluteRoute}";
+        }
+
+        routeTemplate = CleanRouteTemplate(routeTemplate);
+
+        var actionFuncAttr = action.GetCustomAttribute<FunctionAttribute>();
+        var actionPermAttr = action.GetCustomAttribute<RequiresPermissionAttribute>() ?? ctrlPermAttr;
+
+        string actionDisplayName = !string.IsNullOrWhiteSpace(actionFuncAttr?.Title) ? actionFuncAttr.Title : actionName;
+        string actionIcon = !string.IsNullOrWhiteSpace(actionFuncAttr?.Icon) ? actionFuncAttr.Icon : controllerIcon;
+        int actionOrder = actionFuncAttr?.Order ?? 0;
+        string? actionDescription = actionFuncAttr?.Description ?? ctrlTitleAttr?.Description;
+
+        bool isMenu = actionFuncAttr?.IsMenu ?? false;
+        string? customPath = actionFuncAttr?.Path;
+
+        var metadata = new ControllerMetadata
+        {
+            Id = Guid.NewGuid(),
+            ModuleName = moduleName,
+            ModuleTitle = moduleTitle,
+            ControllerName = ctrlType.Name,
+            ControllerTitle = controllerTitle,
+            ControllerIcon = controllerIcon,
+            ControllerOrder = controllerOrder,
+            ActionName = actionName,
+            DisplayName = actionDisplayName,
+            RouteTemplate = routeTemplate,
+            ParentMenuName = controllerTitle,
+            Icon = actionIcon,
+            DisplayOrder = actionOrder,
+            IsMenu = isMenu,
+            Path = customPath,
+            PermissionKey = actionPermAttr?.PermissionKey ?? string.Empty,
+            Description = actionDescription,
+            ControllerTypeName = ctrlType.FullName ?? ctrlType.Name,
+            Version = assembly.GetName().Version?.ToString() ?? DefaultVersion,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        metadata.SyncFromAttribute(ctrlType);
+        return metadata;
+    }
+
+    private static string CleanRouteTemplate(string routeTemplate)
+    {
+        if (string.IsNullOrWhiteSpace(routeTemplate))
+            return string.Empty;
+
+        // 遞迴或使用正則移除所有開頭的硬編碼版本號（例如 "1.0/", "v1/", "v1.0/"）
+        // 避免與 {version:apiVersion} 產生重複或衝突的前綴
+        while (routeTemplate.StartsWith("1.0/", StringComparison.OrdinalIgnoreCase) ||
+               routeTemplate.StartsWith("v1.0/", StringComparison.OrdinalIgnoreCase) ||
+               routeTemplate.StartsWith("v1/", StringComparison.OrdinalIgnoreCase))
+        {
+            if (routeTemplate.StartsWith("1.0/", StringComparison.OrdinalIgnoreCase))
+                routeTemplate = routeTemplate[4..];
+            else if (routeTemplate.StartsWith("v1.0/", StringComparison.OrdinalIgnoreCase))
+                routeTemplate = routeTemplate[5..];
+            else if (routeTemplate.StartsWith("v1/", StringComparison.OrdinalIgnoreCase))
+                routeTemplate = routeTemplate[3..];
+        }
+
+        return routeTemplate.TrimStart('/');
     }
 }

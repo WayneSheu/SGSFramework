@@ -24,7 +24,7 @@ using System.Threading.Tasks;
 /// </summary>
 [ApiController]
 [Authorize]
-[ApiVersion("1.0")]
+[ApiVersion("1")]
 [Route("api/v{version:apiVersion}/org/laboratories")]
 [ControllerTitle("實驗室管理", Icon = "fa-solid fa-flask", Order = 10, Description = "維護組織樹狀結構下的各級實驗室資訊")]
 [RequiresPermission("ORG.LABORATORY.READ")]

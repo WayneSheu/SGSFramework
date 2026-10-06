@@ -1,19 +1,16 @@
-﻿namespace PhysLIMS.API.Extensions;
+﻿// Path: src/SGSFramework/Host/PhysLIMS.API/Extensions/WebApplicationBuilderExtensions.cs
+namespace PhysLIMS.API.Extensions;
 
 using Asp.Versioning;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.OpenApi;
 using PhysLIMS.API.Dbcontexts;
-using Scalar.AspNetCore;
 using SGSFramework.ApiInfrastructure.Filters;
 using SGSFramework.ApiInfrastructure.Transformers;
 using SGSFramework.AuditLog.Extensions;
-using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.Extensions;
-using SGSFramework.AuthTokenBucket.Queries.Menuitems;
 using SGSFramework.CodeSecurity.Extensions;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.Identities;
@@ -21,9 +18,7 @@ using SGSFramework.Core.ApiDoc.Extensions;
 using SGSFramework.Core.Migrations;
 using SGSFramework.Core.SSOs;
 using SGSFramework.Identity.Extensions;
-using SGSFramework.ModulePlugin.Extensions;
 using SGSFramework.Persistent.Extensions;
-using SGSFramework.SystemLog.Extensions;
 using SGSFramework.VerifyLedger.Extensions;
 using System.Reflection;
 
@@ -41,35 +36,81 @@ public static class WebApplicationBuilderExtensions
 
         services.AddApiVersioning(options =>
         {
+            // 設定預設版本為 v1.0
             options.DefaultApiVersion = new ApiVersion(1, 0);
+            // 版本未指定時使用預設版本
             options.AssumeDefaultVersionWhenUnspecified = true;
+            // 設定版本路由為 /api/{version:apiVersion}/{controller}/{action}/{id?}
             options.ReportApiVersions = true;
+            // 設定版本路由為 /api/{controller}/{action}/{id?}
             options.ApiVersionReader = new UrlSegmentApiVersionReader();
         })
         .AddApiExplorer(options =>
         {
             options.GroupNameFormat = "'v'VVV";
+            //自動將 OpenAPI / Scalar 路由中的 {version:apiVersion} 替換為實際版號 (例如 v1)
             options.SubstituteApiVersionInUrl = true;
         });
 
         // 註冊 v1 OpenAPI 文件規格
         services.AddOpenApi("v1", options =>
         {
-            options.ShouldInclude = (description) => string.Equals(description.GroupName, "v1", StringComparison.OrdinalIgnoreCase);
+            options.ShouldInclude = (description) => true;
+
             options.AddOperationTransformer<MenuAttributeTransformer>();
             options.AddDocumentTransformer<DynamicControllerDocumentFilter>();
             options.AddDocumentTransformer<OpenApiSecurityRequirementTransformer>();
+
+            // 啟用 Server Base URL 動態對應
+            options.AddDocumentTransformer((document, context, cancellationToken) =>
+            {
+                var httpContextAccessor = context.ApplicationServices.GetRequiredService<IHttpContextAccessor>();
+                var request = httpContextAccessor?.HttpContext?.Request;
+
+                if (request != null)
+                {
+                    var pathBase = request.PathBase.Value;
+                    var baseUrl = $"{request.Scheme}://{request.Host}{pathBase}";
+                    document.Servers = new List<OpenApiServer> { new OpenApiServer { Url = baseUrl } };
+                }
+                else
+                {
+                    document.Servers = new List<OpenApiServer> { new OpenApiServer { Url = "/" } };
+                }
+                return Task.CompletedTask;
+            });
         });
 
-        // 註冊 v2 OpenAPI 文件規格
-        services.AddOpenApi("v2", options =>
-        {
-            options.ShouldInclude = (description) => string.Equals(description.GroupName, "v2", StringComparison.OrdinalIgnoreCase);
-            options.AddOperationTransformer<MenuAttributeTransformer>();
-            options.AddDocumentTransformer<DynamicControllerDocumentFilter>();
-            options.AddDocumentTransformer<OpenApiSecurityRequirementTransformer>();
-        });
 
+        //// 註冊 v2 OpenAPI 文件規格（同樣套用此修正）
+        //services.AddOpenApi("v2", options =>
+        //{
+        //    options.ShouldInclude = (description) => string.Equals(description.GroupName, "v2", StringComparison.OrdinalIgnoreCase);
+        //    options.AddOperationTransformer<MenuAttributeTransformer>();
+        //    options.AddDocumentTransformer<DynamicControllerDocumentFilter>();
+        //    options.AddDocumentTransformer<OpenApiSecurityRequirementTransformer>();
+
+        //    options.AddDocumentTransformer((document, context, cancellationToken) =>
+        //    {
+        //        var httpContextAccessor = context.ApplicationServices.GetService<IHttpContextAccessor>();
+        //        var request = httpContextAccessor?.HttpContext?.Request;
+
+        //        if (request != null)
+        //        {
+        //            // 確保動態取得正確的 PathBase (若 IIS 有設定虛擬應用程式名稱)
+        //            var pathBase = request.PathBase.Value;
+        //            var baseUrl = $"{request.Scheme}://{request.Host}{pathBase}";
+        //            document.Servers = [new OpenApiServer { Url = baseUrl }];
+        //        }
+        //        else
+        //        {
+        //            document.Servers = [new OpenApiServer { Url = "/" }];
+        //        }
+        //        return Task.CompletedTask;
+        //    });
+        //});
+
+        // 註冊 Scalar API 文件規格
         services.AddAPIDocServices();
         return services;
     }

@@ -3,6 +3,8 @@
 // 架構層級: Infrastructure Framework
 // ==========================================
 
+namespace SGSFramework.ModulePlugin.Extensions;
+
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -29,8 +31,6 @@ using SGSFramework.ModulePlugin.Systems.Module.Loaders;
 using SGSFramework.ModulePlugin.Systems.Module.Registries;
 using SGSFramework.ModulePlugin.Systems.Module.Services;
 
-namespace SGSFramework.ModulePlugin.Extensions;
-
 /// <summary>
 /// 模組化插件系統 DI 服務註冊與應用程式啟動擴充
 /// </summary>
@@ -39,59 +39,17 @@ public static class ModulePluginExtensions
     /// <summary>
     /// 將模組化插件系統的核心服務、策略模式存取層與動態控制器倉儲註冊至 DI 容器（支援指定 DbContext）。
     /// </summary>
-    /// <typeparam name="TDbContext">目標 EF Core DbContext 類型</typeparam>
-    /// <param name="services">DI 服務集合</param>
-    /// <param name="config">組態設定</param>
-    /// <returns>服務集合</returns>
     public static IServiceCollection AddModulePlugin<TDbContext>(this IServiceCollection services, IConfiguration config)
         where TDbContext : DbContext
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(config);
 
-        // 1. 載入外掛模組持久化與策略服務 (包含 IModuleStorageStrategy & IModuleRepository)
         services.AddModuleFrameworkServices<TDbContext>();
 
-        // 2. 模組註冊與註冊表服務 (Singleton)
-        services.TryAddSingleton<ModuleRegistry>();
-        services.TryAddSingleton<IModuleRegistry>(sp => sp.GetRequiredService<ModuleRegistry>());
-        services.TryAddSingleton<ServiceRegistryMonitor>();
-
-        // 3. 動態 ActionDescriptor 變更通知提供者 (Singleton)
-        services.TryAddSingleton<IDynamicActionDescriptorChangeProvider>(DynamicActionDescriptorChangeProvider.Instance);
-        services.TryAddSingleton<IActionDescriptorChangeProvider>(sp => sp.GetRequiredService<IDynamicActionDescriptorChangeProvider>());
-
-        // 4. 動態控制器資料庫倉儲 (Scoped, 依賴目標 DbContext)
-        services.TryAddScoped<IDynamicControllerRepository<ControllerMetadata>>(sp =>
-        {
-            var context = sp.GetRequiredService<TDbContext>();
-            var cache = sp.GetRequiredService<IMemoryCache>();
-            var logger = sp.GetRequiredService<ILogger<DynamicControllerRepository<ControllerMetadata>>>();
-            return new DynamicControllerRepository<ControllerMetadata>(context, cache, logger);
-        });
-
-        services.TryAddScoped(typeof(IDynamicControllerRepository<>), typeof(DynamicControllerRepository<>));
-
-        // 5. 模組生命週期管理、熱加載與應用層服務 (Scoped)
-        services.TryAddScoped<ModuleLifecycleService>();
-        services.TryAddScoped<IModuleAssemblyRegisterService, ModuleAssemblyRegisterService>();
-        services.TryAddScoped<IModuleUnloader, ModuleUnloader>();
-
-        // 註冊模組管理應用層服務
-        services.TryAddScoped<IModuleManagementApplicationService, ModuleManagementApplicationService>();
-
-        // 6. 動態外掛模組與背景監控服務 (HostedServices)
-        services.AddModularModules(config);
-
-        // 7. 整合告警基礎設施 (包含佇列、防洪機制與 Worker 註冊)
-        services.AddEnterpriseAlertInfrastructure();
-
-        services.AddHostedService<ModuleMonitorService>();
-        services.AddHostedService<ModuleFileWatcherService>();
-
-        // 8. 系統核心模組與內建控制器自動同步初始化服務
-        services.AddHostedService<SystemModuleDatabaseInitializerHostedService>();
-
+        RegisterCoreServices(services);
+        RegisterRepositories<TDbContext>(services);
+        RegisterHostedServices(services, config);
 
         return services;
     }
@@ -99,14 +57,24 @@ public static class ModulePluginExtensions
     /// <summary>
     /// 保留相容性之非泛型多載，適用於無 DbContext 依賴之基礎模組註冊。
     /// </summary>
-    /// <param name="services">DI 服務集合</param>
-    /// <param name="config">組態設定</param>
-    /// <returns>服務集合</returns>
     public static IServiceCollection AddModulePlugin(this IServiceCollection services, IConfiguration config)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(config);
 
+        RegisterCoreServices(services);
+        services.TryAddScoped(typeof(IDynamicControllerRepository<>), typeof(DynamicControllerRepository<>));
+
+        services.AddModularModules(config);
+        services.AddHostedService<ModuleMonitorService>();
+        services.AddHostedService<ModuleFileWatcherService>();
+        services.AddHostedService<SystemModuleDatabaseInitializerHostedService>();
+
+        return services;
+    }
+
+    private static void RegisterCoreServices(IServiceCollection services)
+    {
         services.TryAddSingleton<ModuleRegistry>();
         services.TryAddSingleton<IModuleRegistry>(sp => sp.GetRequiredService<ModuleRegistry>());
         services.TryAddSingleton<ServiceRegistryMonitor>();
@@ -117,27 +85,35 @@ public static class ModulePluginExtensions
         services.TryAddScoped<ModuleLifecycleService>();
         services.TryAddScoped<IModuleAssemblyRegisterService, ModuleAssemblyRegisterService>();
         services.TryAddScoped<IModuleUnloader, ModuleUnloader>();
-
         services.TryAddScoped<IModuleManagementApplicationService, ModuleManagementApplicationService>();
+    }
+
+    private static void RegisterRepositories<TDbContext>(IServiceCollection services) where TDbContext : DbContext
+    {
+        services.TryAddScoped<IDynamicControllerRepository<ControllerMetadata>>(sp =>
+        {
+            var context = sp.GetRequiredService<TDbContext>();
+            var cache = sp.GetRequiredService<IMemoryCache>();
+            var logger = sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<DynamicControllerRepository<ControllerMetadata>>>();
+            return new DynamicControllerRepository<ControllerMetadata>(context, cache, logger);
+        });
 
         services.TryAddScoped(typeof(IDynamicControllerRepository<>), typeof(DynamicControllerRepository<>));
+    }
 
+    private static void RegisterHostedServices(IServiceCollection services, IConfiguration config)
+    {
         services.AddModularModules(config);
+        services.AddEnterpriseAlertInfrastructure();
+
         services.AddHostedService<ModuleMonitorService>();
         services.AddHostedService<ModuleFileWatcherService>();
         services.AddHostedService<SystemModuleDatabaseInitializerHostedService>();
-
-    
-
-        return services;
     }
 
     /// <summary>
     /// 註冊 Controller 掃描服務至 DI 容器
     /// </summary>
-    /// <typeparam name="TDbContext">目標 EF Core DbContext 類型</typeparam>
-    /// <param name="services">DI 服務集合</param>
-    /// <returns>服務集合</returns>
     public static IServiceCollection AddControllerScanner<TDbContext>(this IServiceCollection services)
         where TDbContext : DbContext
     {
@@ -149,9 +125,6 @@ public static class ModulePluginExtensions
     /// <summary>
     /// 系統啟動時執行自動掃描與註冊
     /// </summary>
-    /// <typeparam name="TDbContext">目標 EF Core DbContext 類型</typeparam>
-    /// <param name="host">應用程式 Host</param>
-    /// <param name="moduleAssemblyFilter">組件過濾邏輯</param>
     public static async Task UseControllerScanner<TDbContext>(this IHost host, Func<string, bool> moduleAssemblyFilter)
         where TDbContext : DbContext
     {
@@ -160,7 +133,7 @@ public static class ModulePluginExtensions
 
         using var scope = host.Services.CreateScope();
         var scanner = scope.ServiceProvider.GetRequiredService<IControllerScannerService<TDbContext>>();
-        var logger = scope.ServiceProvider.GetRequiredService<ILogger<IControllerScannerService<TDbContext>>>();
+        var logger = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<IControllerScannerService<TDbContext>>>();
 
         try
         {
@@ -180,8 +153,6 @@ public static class ModulePluginExtensions
     /// <summary>
     /// 透過註冊模組、執行遷移和確保控制器一致性來初始化模組化系統。
     /// </summary>
-    /// <param name="host">應用程式 Host</param>
-    /// <returns>初始化後的 Host</returns>
     public static async Task<IHost> InitializeModularSystemAsync(this IHost host)
     {
         ArgumentNullException.ThrowIfNull(host);
@@ -189,11 +160,9 @@ public static class ModulePluginExtensions
         using var scope = host.Services.CreateScope();
         var provider = scope.ServiceProvider;
 
-        var loggerFactory = provider.GetRequiredService<ILoggerFactory>();
-        var logger = loggerFactory.CreateLogger("ModularSystemInitialization");
+        var logger = provider.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("ModularSystemInitialization");
         var registry = provider.GetRequiredService<IModuleRegistry>();
         var lifecycleService = provider.GetRequiredService<ModuleLifecycleService>();
-        var repo = provider.GetRequiredService<IDynamicControllerRepository<ControllerMetadata>>();
         var assemblies = provider.GetServices<ModuleAssemblyContainer>();
 
         logger.LogInformation(">>> 開始執行各功能模組初始化...");
@@ -201,54 +170,7 @@ public static class ModulePluginExtensions
         var modules = ModuleLoaderExtensions.GetAllInitializers();
         foreach (var module in modules)
         {
-            try
-            {
-                registry.RegisterModule(module);
-
-                var migrationService = provider.GetService<IMigrationService>();
-                if (migrationService != null)
-                {
-                    await migrationService.DiagnosticMigrations().ConfigureAwait(false);
-
-                    var pending = await migrationService.GetPendingMigrationsAsync().ConfigureAwait(false);
-                    var pendingList = pending.ToList();
-
-                    if (pendingList.Count > 0)
-                    {
-                        logger.LogInformation(">>> 發現模組 {Name} 有 {Count} 個待處理遷移...", module.ModuleName, pendingList.Count);
-                        try
-                        {
-                            await migrationService.MigrateAsync().ConfigureAwait(false);
-                            logger.LogInformation(">>> 模組 {Name} 資料庫遷移成功。", module.ModuleName);
-                        }
-                        catch (MigrationException mex)
-                        {
-                            logger.LogError(mex, ">>> 模組 {Name} 遷移失敗: {Message}", module.ModuleName, mex.Message);
-                            throw;
-                        }
-                    }
-                    else
-                    {
-                        logger.LogInformation(">>> 模組 {Name} 遷移已是最新狀態。", module.ModuleName);
-                    }
-                }
-
-                if (host is IApplicationBuilder appBuilder)
-                {
-                    await lifecycleService.RegisterAndInitializeAsync(module, appBuilder).ConfigureAwait(false);
-                }
-                else
-                {
-                    logger.LogWarning(">>> [Warning] 當前宿主 (IHost) 未實作 IApplicationBuilder，跳過 Web 相關中間件註冊。");
-                }
-
-                logger.LogInformation(">>> 模組 {Name} 初始化完成。", module.ModuleName);
-            }
-            catch (Exception ex)
-            {
-                LogModuleException(ex, module.ModuleName);
-                throw;
-            }
+            await InitializeSingleModuleAsync(module, provider, registry, lifecycleService, host, logger).ConfigureAwait(false);
         }
 
         foreach (var container in assemblies)
@@ -264,10 +186,75 @@ public static class ModulePluginExtensions
         return host;
     }
 
+    private static async Task InitializeSingleModuleAsync(
+        IModuleInitializer module,
+        IServiceProvider provider,
+        IModuleRegistry registry,
+        ModuleLifecycleService lifecycleService,
+        IHost host,
+        Microsoft.Extensions.Logging.ILogger logger)
+    {
+        try
+        {
+            registry.RegisterModule(module);
+
+            var migrationService = provider.GetService<IMigrationService>();
+            if (migrationService != null)
+            {
+                await ProcessModuleMigrationsAsync(migrationService, module.ModuleName, logger).ConfigureAwait(false);
+            }
+
+            if (host is IApplicationBuilder appBuilder)
+            {
+                await lifecycleService.RegisterAndInitializeAsync(module, appBuilder).ConfigureAwait(false);
+            }
+            else
+            {
+                logger.LogWarning(">>> [Warning] 當前宿主 (IHost) 未實作 IApplicationBuilder，跳過 Web 相關中間件註冊。");
+            }
+
+            logger.LogInformation(">>> 模組 {Name} 初始化完成。", module.ModuleName);
+        }
+        catch (Exception ex)
+        {
+            LogModuleException(ex, module.ModuleName);
+            throw;
+        }
+    }
+
+    private static async Task ProcessModuleMigrationsAsync(
+        IMigrationService migrationService,
+        string moduleName,
+        Microsoft.Extensions.Logging.ILogger logger)
+    {
+        await migrationService.DiagnosticMigrations().ConfigureAwait(false);
+
+        var pending = await migrationService.GetPendingMigrationsAsync().ConfigureAwait(false);
+        var pendingList = pending.ToList();
+
+        if (pendingList.Count > 0)
+        {
+            logger.LogInformation(">>> 發現模組 {Name} 有 {Count} 個待處理遷移...", moduleName, pendingList.Count);
+            try
+            {
+                await migrationService.MigrateAsync().ConfigureAwait(false);
+                logger.LogInformation(">>> 模組 {Name} 資料庫遷移成功。", moduleName);
+            }
+            catch (MigrationException mex)
+            {
+                logger.LogError(mex, ">>> 模組 {Name} 遷移失敗: {Message}", moduleName, mex.Message);
+                throw;
+            }
+        }
+        else
+        {
+            logger.LogInformation(">>> 模組 {Name} 遷移已是最新狀態。", moduleName);
+        }
+    }
+
     /// <summary>
     /// 確保檔案系統 (Plugins 目錄) 與 資料庫 (ControllerMetadata 表) 兩者狀態同步
     /// </summary>
-    /// <param name="serviceProvider">服務提供者範疇</param>
     public static async Task EnsureControllerConsistency(IServiceProvider serviceProvider)
     {
         ArgumentNullException.ThrowIfNull(serviceProvider);

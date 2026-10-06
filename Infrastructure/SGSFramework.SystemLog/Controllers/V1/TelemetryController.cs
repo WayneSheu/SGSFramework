@@ -20,7 +20,7 @@ using SGSFramework.SystemLog.DTOs;
 /// </summary>
 [ApiController]
 [Authorize]
-[ApiVersion("1.0")]
+[ApiVersion("1")]
 [Route("api/v{version:apiVersion}/telemetry")]
 [Produces("application/json")]
 [ControllerTitle("前端日誌管理", Icon = "fa-solid fa-chart-line", Order = 90, Description = "提供前端 UI/RCL 異常監控、未捕捉 Exception 與遙測日誌上報服務")]
