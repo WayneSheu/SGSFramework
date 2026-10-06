@@ -11,15 +11,17 @@ using SGSFramework.SPAModulePlugin.Infrastructure.Services;
 public static class SPAModulePluginExtensions
 {
     /// <summary>
-    /// 註冊 SGSFramework SPA 動態外掛框架服務
+    /// 註冊 SPA 外掛模組管裡、探索與實體磁碟儲存服務
     /// </summary>
     public static IServiceCollection AddSPAModulePlugin(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.AddSingleton<ISPAModuleSecurityVerifier, SPAModuleSecurityVerifier>();
-        services.AddScoped<ISPAModuleRepository, SPAModuleRepository>();
+        // 1. 註冊 SPA 模組探索與 Manifest 授權解析服務 (修復 IRequestHandler 注入失敗的問題)
         services.AddScoped<ISPAModuleDiscoveryService, SPAModuleDiscoveryService>();
+
+        // 2. 註冊靜態檔案解壓縮與目錄管理服務
+        services.AddScoped<ISPAModuleStorageService, SPAModuleStorageService>();
 
         return services;
     }

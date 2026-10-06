@@ -1,8 +1,10 @@
 ﻿// Path: src/SGSFramework/Infrastructure/SGSFramework.SPAModulePlugin/Application/DTOs/SPAModuleUploadResponseDto.cs
 namespace SGSFramework.SPAModulePlugin.Application.DTOs;
 
+using SGSFramework.SPAModulePlugin.Domain.Enums;
+
 /// <summary>
-/// SPA 模組上傳成功回應 DTO
+/// SPA 模組上傳與部署回應 DTO
 /// </summary>
 public sealed record SPAModuleUploadResponseDto
 {
@@ -12,27 +14,22 @@ public sealed record SPAModuleUploadResponseDto
     public string ModuleName { get; init; } = string.Empty;
 
     /// <summary>
-    /// 模組顯示名稱
+    /// 前端框架類型
     /// </summary>
-    public string DisplayName { get; init; } = string.Empty;
+    public SPAFrameworkType FrameworkType { get; init; }
 
     /// <summary>
-    /// 模組版本號
+    /// 實體部署相對路徑
     /// </summary>
-    public string Version { get; init; } = string.Empty;
+    public string DeployedRelativePath { get; init; } = string.Empty;
 
     /// <summary>
-    /// 上傳與解壓縮部署目標路徑
-    /// </summary>
-    public string TargetPath { get; init; } = string.Empty;
-
-    /// <summary>
-    /// 處理檔案數量
+    /// 成功解壓縮與部署的檔案總數
     /// </summary>
     public int ProcessedFilesCount { get; init; }
 
     /// <summary>
-    /// 上傳部署時間戳記
+    /// 部署完成時間
     /// </summary>
     public DateTime UploadedAt { get; init; } = DateTime.UtcNow;
 }

@@ -1,0 +1,12 @@
+{
+  "moduleId": "index",
+  "displayName": "index",
+  "frameworkType": 1,
+  "entryPoint": "index.js",
+  "routePath": "/index",
+  "requiredPermission": "SYSTEM.SPAMODULE.READ",
+  "fileHash": "",
+  "dependentAssets": [
+    "index.css"
+  ]
+}
