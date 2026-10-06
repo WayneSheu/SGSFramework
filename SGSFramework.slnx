@@ -18,6 +18,7 @@
     <Project Path="Infrastructure/SGSFramework.Identity/SGSFramework.Identity.csproj" />
     <Project Path="Infrastructure/SGSFramework.ModulePlugin/SGSFramework.ModulePlugin.csproj" />
     <Project Path="Infrastructure/SGSFramework.Persistent/SGSFramework.Persistent.csproj" />
+    <Project Path="Infrastructure/SGSFramework.SPAModulePlugin/SGSFramework.SPAModulePlugin.csproj" Id="f1a50e74-94e3-4428-a8d2-5702290d3e4a" />
     <Project Path="Infrastructure/SGSFramework.SystemLog/SGSFramework.SystemLog.csproj" />
     <Project Path="Infrastructure/SGSFramework.VerifyLedger/SGSFramework.VerifyLedger.csproj" />
     <Project Path="SGSFramework.Alert/SGSFramework.Alert.csproj" Id="daca5d79-559f-4083-bd82-c9cc494fbf08" />

@@ -14,6 +14,7 @@ using SGSFramework.Core.Exceptions;
 using SGSFramework.Core.Extensions;
 using SGSFramework.ModulePlugin.Extensions;
 using SGSFramework.ModulePlugin.Systems.Controller.Providers;
+using SGSFramework.SPAModulePlugin.Application.Queries;
 using SGSFramework.SystemLog.Extensions;
 
 try
@@ -59,7 +60,10 @@ try
     // 6. 註冊 MediatR 服務與 CQRS Handlers 掃描
     builder.Services.AddMediatR(cfg =>
     {
-        cfg.RegisterServicesFromAssembly(typeof(GetFullMenuTreeQueryHandler).Assembly);
+        cfg.RegisterServicesFromAssemblies(
+         typeof(GetFullMenuTreeQueryHandler).Assembly,
+         typeof(GetAuthorizedSPAModulesQueryHandler).Assembly //掃描 SPAModulePlugin 的 Handlers
+     );
     });
 
     #region 身分驗證環境配置 (IIS / Kestrel)

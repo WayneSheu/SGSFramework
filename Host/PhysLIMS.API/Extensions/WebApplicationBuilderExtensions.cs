@@ -19,6 +19,8 @@ using SGSFramework.Core.Migrations;
 using SGSFramework.Core.SSOs;
 using SGSFramework.Identity.Extensions;
 using SGSFramework.Persistent.Extensions;
+using SGSFramework.SPAModulePlugin.Extensions;
+using SGSFramework.SPAModulePlugin.Presentation.Controllers.v1;
 using SGSFramework.VerifyLedger.Extensions;
 using System.Reflection;
 
@@ -236,4 +238,5 @@ public static class WebApplicationBuilderExtensions
 
         return services;
     }
+
 }
