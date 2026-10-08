@@ -27,11 +27,15 @@ public static class WebApplicationPipelineExtensions
         // ----------------------------------------------------
         // Blazor WASM 與 Vue 靜態資源託管配置（確保 WebRoot 目錄存在，避免靜態檔案處置拋出警告）
         // ----------------------------------------------------
+        // ----------------------------------------------------
+        // 【執行期】靜態資源託管防護（確保目錄存在）
+        // ----------------------------------------------------
         var webRootPath = app.Environment.WebRootPath;
         if (!string.IsNullOrEmpty(webRootPath) && !Directory.Exists(webRootPath))
         {
             Directory.CreateDirectory(webRootPath);
         }
+
         // 指定 Blazor WebAssembly 在 /blazor 前綴下掛載 _framework 資源
         app.UseBlazorFrameworkFiles("/blazor");
         // 啟用預設檔案（如 index.html）與靜態檔案託管

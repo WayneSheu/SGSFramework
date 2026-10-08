@@ -1,0 +1,67 @@
+﻿  <ItemGroup>
+    <Folder Include="Infrastructure\Repositories\" />
+  </ItemGroup>
+
+
+</Project>  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageId>LogAnalyzer.Mcp.Server</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>YourEnterprise</Authors>
+    <Description>企業級日誌分析 Model Context Protocol (MCP) 伺服器套件</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
+  </ItemGroup>
+
+</Project><PropertyGroup>
+	<TargetFramework>net10.0</TargetFramework>
+	<ImplicitUsings>enable</ImplicitUsings>
+	<Nullable>enable</Nullable>
+	<PackageId>LogAnalyzer.Mcp.Server</PackageId>
+	<Version>1.0.0</Version>
+	<Authors>YourEnterprise</Authors>
+	<Description>企業級日誌分析 Model Context Protocol (MCP) 伺服器套件</Description>
+</PropertyGroup>
+
+<ItemGroup>
+	<PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.0.0" />
+	<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageId>LogAnalyzer.Mcp.Server</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>YourEnterprise</Authors>
+    <Description>企業級日誌分析 Model Context Protocol (MCP) 伺服器套件</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
+  <Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>	   <PackageId>LogAnalyzer.Mcp.Server</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>YourEnterprise</Authors>
+    <Description>企業級日誌分析 Model Context Protocol (MCP) 伺服器套件</Description>	  <PackageId>LogAnalyzer.Mcp.Server</PackageId>
+	  <Version>1.0.0</Version>
+	  <Authors>YourEnterprise</Authors>
+	    <ItemGroup>
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
+  </ItemGroup>	<ItemGroup>
+		<PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
+	

@@ -1,5 +1,4 @@
-﻿// Path: src/SGSFramework/Host/PhysLIMS.API/Extensions/SpaFallbackExtensions.cs
-#nullable enable
+﻿#nullable enable
 
 namespace PhysLIMS.API.Extensions;
 
@@ -13,15 +12,15 @@ using System.IO;
 
 public static class SpaFallbackExtensions
 {
-    // 排除 api, scalar, openapi, blazor 後端路徑與具副檔名之靜態檔案
-    private const string VueSpaRouteRegex = @"^(?!(api|scalar|openapi|blazor)(/|$))[^.]*$";
-
-    public static IEndpointConventionBuilder MapProtectedSpaFallback(
-        this IEndpointRouteBuilder endpoints,
+    /// <summary>
+    /// Vue 3 SPA 後備路由 (排除 /api, /scalar, /openapi, /blazor 等後端與特定 SPA 路徑)
+    /// </summary>
+    public static void MapProtectedSpaFallback(
+        this WebApplication app,
         IWebHostEnvironment environment,
         string fallbackFile = "index.html")
     {
-        ArgumentNullException.ThrowIfNull(endpoints);
+        ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(environment);
 
         string webRoot = GetValidatedWebRootPath(environment);
@@ -29,12 +28,30 @@ public static class SpaFallbackExtensions
 
         if (!File.Exists(indexPath))
         {
-            return new NullEndpointConventionBuilder();
+            var logger = app.Services.GetService<ILoggerFactory>()?.CreateLogger(nameof(SpaFallbackExtensions));
+            logger?.LogWarning("[SPA Fallback] 未發現 Vue 3 頁面檔案：{Path}，跳過掛載。", indexPath);
+            return;
         }
 
-        return endpoints.MapFallbackToFile($"{{*path:regex({VueSpaRouteRegex})}}", fallbackFile);
+        // 使用 MapWhen 分流，既能保持優雅的封裝，又能確保 100% 精準攔截非後端/Blazor 請求
+        app.MapWhen(context =>
+            !context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase) &&
+            !context.Request.Path.StartsWithSegments("/scalar", StringComparison.OrdinalIgnoreCase) &&
+            !context.Request.Path.StartsWithSegments("/openapi", StringComparison.OrdinalIgnoreCase) &&
+            !context.Request.Path.StartsWithSegments("/blazor", StringComparison.OrdinalIgnoreCase),
+            builder =>
+            {
+                builder.UseRouting();
+                builder.UseEndpoints(endpoints =>
+                {
+                    endpoints.MapFallbackToFile(fallbackFile);
+                });
+            });
     }
 
+    /// <summary>
+    /// Blazor WASM SPA 後備路由
+    /// </summary>
     public static IEndpointConventionBuilder MapBlazorSpaFallback(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -49,8 +66,9 @@ public static class SpaFallbackExtensions
         {
             logger?.LogInformation("[SPA Fallback] 成功掛載 Blazor WASM Fallback 路由: {Path}", blazorIndexPath);
 
-            // 正確匹配 /blazor, /blazor/, /blazor/xxx 等前端路由
-            return endpoints.MapFallbackToFile("blazor/{*path:regex(^[^.]*$)}", "blazor/index.html");
+            // 精準匹配 /blazor, /blazor/, /blazor/xxx
+            endpoints.MapFallbackToFile("blazor", "blazor/index.html");
+            return endpoints.MapFallbackToFile("blazor/{*path}", "blazor/index.html");
         }
 
         logger?.LogWarning("[SPA Fallback] 未發現 Blazor 頁面檔案：{Path}，將無法處理 Blazor SPA 路由！", blazorIndexPath);
