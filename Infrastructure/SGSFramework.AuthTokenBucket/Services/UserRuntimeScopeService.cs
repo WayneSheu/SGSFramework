@@ -1,4 +1,9 @@
-﻿namespace SGSFramework.AuthTokenBucket.Services;
+﻿// ==========================================
+// 檔案路徑: src/SGSFramework.AuthTokenBucket/Services/UserRuntimeScopeService.cs
+// 架構層級: AuthTokenBucket / Services
+// ==========================================
+
+namespace SGSFramework.AuthTokenBucket.Services;
 
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Caching.Memory;
@@ -44,6 +49,7 @@ public class UserRuntimeScopeService(
     private static readonly TimeSpan CacheExpiration = TimeSpan.FromMinutes(15);
     private const string SystemAdminRole = "sysadmin";
     private const string SuperAdminRole = "SuperAdmin";
+    private const string SystemAdminChineseRole = "系統管理員";
 
     public async Task<UserPermissionProfileDto> InitializeUserScopeAsync(
         string userId,
@@ -205,6 +211,7 @@ public class UserRuntimeScopeService(
 
                 allPermissions.Add(SystemAdminRole);
                 allPermissions.Add(SuperAdminRole);
+                allPermissions.Add(SystemAdminChineseRole);
                 return allPermissions;
             }
 
@@ -379,7 +386,7 @@ public class UserRuntimeScopeService(
     #region Private Helpers
 
     /// <summary>
-    /// 解析位元位置授權：支援 Bitmask (0-63) 或 延伸 BitPosition 陣列清單[cite: 11]
+    /// 解析位元位置授權：支援 Bitmask (0-63) 或 延伸 BitPosition 陣列清單
     /// </summary>
     private static bool ValidateBitPositionPermission(IEnumerable<string> rawPermissions, string targetKey, int bitPosition)
     {
@@ -390,13 +397,11 @@ public class UserRuntimeScopeService(
 
             string bitValue = parts[1];
 
-            // 模式 A: 舊有 64 位元 Bitmask (例: "MODULE:18446744073709551615")[cite: 11, 13]
             if (bitPosition < 64 && long.TryParse(bitValue, out long bitmask))
             {
                 if ((bitmask & (1L << bitPosition)) != 0) return true;
             }
 
-            // 模式 B: 擴充超大位元陣列清單 (例: "MODULE:0,1,5,65,128")[cite: 11]
             var grantedBits = bitValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             foreach (var bitStr in grantedBits)
             {
@@ -431,8 +436,11 @@ public class UserRuntimeScopeService(
     {
         if (user == null) return false;
 
-        return await _userManager.IsInRoleAsync(user, SuperAdminRole).ConfigureAwait(false) ||
-               await _userManager.IsInRoleAsync(user, SystemAdminRole).ConfigureAwait(false);
+        // 優化：優先檢查實體旗標，並比對多種可能配置的系統管理員角色名稱
+        return user.IsSystemAdmin ||
+               await _userManager.IsInRoleAsync(user, SuperAdminRole).ConfigureAwait(false) ||
+               await _userManager.IsInRoleAsync(user, SystemAdminRole).ConfigureAwait(false) ||
+               await _userManager.IsInRoleAsync(user, SystemAdminChineseRole).ConfigureAwait(false);
     }
 
     private static AccessibleLabDto CreateFallbackAdminLab()
@@ -533,7 +541,6 @@ public class UserRuntimeScopeService(
                 string module = parts[0];
                 string bitValue = parts[1];
 
-                // 解析 64 位元 Bitmask[cite: 11, 13]
                 if (long.TryParse(bitValue, out long mask))
                 {
                     for (int bit = 0; bit < 64; bit++)
@@ -545,7 +552,7 @@ public class UserRuntimeScopeService(
                         }
                     }
                 }
-                else // 解析延伸 BitPositions (例: "0,1,78,128")[cite: 11]
+                else
                 {
                     var bitArray = bitValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                     foreach (var bitStr in bitArray)

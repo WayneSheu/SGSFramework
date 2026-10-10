@@ -3,8 +3,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SGSFramework.Identity.Abstractions;
 using System;
-using System.Collections.Generic;
-using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace SGSFramework.Identity.HostedServices
 {
@@ -26,7 +26,8 @@ namespace SGSFramework.Identity.HostedServices
             using var scope = _serviceProvider.CreateScope();
             var seeder = scope.ServiceProvider.GetRequiredService<IAdminSeederService>();
 
-            await seeder.SeedAdminAsync(cancellationToken);
+            // 修正：改用 CancellationToken.None，避免啟動生命週期 Token 觸發 OperationCanceledException 導致中斷
+            await seeder.SeedAdminAsync(CancellationToken.None);
 
             _logger.LogInformation(">>> [System Startup] 預設系統管理員檢查與初始化程序完成。");
         }

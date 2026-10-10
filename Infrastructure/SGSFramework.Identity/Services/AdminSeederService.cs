@@ -8,6 +8,7 @@
 namespace SGSFramework.Identity.Services
 {
     using Microsoft.AspNetCore.Identity;
+    using Microsoft.EntityFrameworkCore;
     using Microsoft.Extensions.Logging;
     using Microsoft.Extensions.Options;
     using SGSFramework.AuthTokenBucket.Abstractions;
@@ -26,26 +27,29 @@ namespace SGSFramework.Identity.Services
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly RoleManager<ApplicationRole> _roleManager;
         private readonly ISystemRolePermissionSeedService _permissionSeederService;
-        private readonly SeedAdminOptions _options;
+        private readonly SeedAdminOptions _adminOptions;
+        private readonly SystemRolePermissionSeedOptions _seedOptions;
         private readonly ILogger<AdminSeederService> _logger;
 
         public AdminSeederService(
             UserManager<ApplicationUser> userManager,
             RoleManager<ApplicationRole> roleManager,
             ISystemRolePermissionSeedService permissionSeederService,
-            IOptions<SeedAdminOptions> options,
+            IOptions<SeedAdminOptions> adminOptions,
+            IOptions<SystemRolePermissionSeedOptions> seedOptions,
             ILogger<AdminSeederService> logger)
         {
             _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
             _roleManager = roleManager ?? throw new ArgumentNullException(nameof(roleManager));
             _permissionSeederService = permissionSeederService ?? throw new ArgumentNullException(nameof(permissionSeederService));
-            _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+            _adminOptions = adminOptions?.Value ?? throw new ArgumentNullException(nameof(adminOptions));
+            _seedOptions = seedOptions?.Value ?? throw new ArgumentNullException(nameof(seedOptions));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         public async Task SeedAdminAsync(CancellationToken cancellationToken = default)
         {
-            if (!_options.EnableAutoSeed)
+            if (!_adminOptions.EnableAutoSeed)
             {
                 _logger.LogInformation("[SeedAdmin] 設定已停用自動初始化預設管理員與角色。");
                 return;
@@ -53,32 +57,37 @@ namespace SGSFramework.Identity.Services
 
             try
             {
-                // ==========================================
-                // 1. 初始化系統預設角色範本 (包含 Code、Description 與職責說明)
-                // ==========================================
-                var defaultRoles = new Dictionary<string, (string Code, string Description)>
-                {
-                    { "SuperAdmin", ("ROLE_SUPER_ADMIN", "系統技術最高管理員：僅負責系統部署、資料庫遷移與基礎設施維護，嚴禁介入業務實驗室角色指派。") },
-                    { "LabManager", ("ROLE_LAB_MANAGER", "實驗室主管：負責管理該實驗室成員、指派角色與配置模組權限 (具備該實驗室所有管理與操作 Bitmask)。") },
-                    { "LabOperator",("ROLE_LAB_OPERATOR", "實驗室操作員：負責日常數據輸入、檢測與實驗資料維護 (具備業務模組的讀寫 Bitmask)。") },
-                    { "LabAuditor", ("ROLE_LAB_AUDITOR", "實驗室稽核員：負責檢視實驗室內所有數據與異動軌跡 (具備該實驗室所有模組的唯讀 Bitmask)。") }
-                };
+                _logger.LogInformation("[SeedAdmin] 開始初始化系統預設角色，共計偵讀到 {Count} 筆規則配置。", _seedOptions.Roles?.Count ?? 0);
 
-                foreach (var rolePair in defaultRoles)
+                if (_seedOptions.Roles == null || _seedOptions.Roles.Count == 0)
+                {
+                    _logger.LogWarning("[SeedAdmin] 警告：_seedOptions.Roles 為空，請檢查 appsettings 中的 SystemRolePermissionSeed 結構。");
+                }
+
+                // ==========================================
+                // 1. 透過 Options 配置動態初始化系統預設角色範本
+                // ==========================================
+                foreach (var rule in _seedOptions.Roles)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    var roleName = rolePair.Key;
-                    var roleCode = rolePair.Value.Code;
-                    var description = rolePair.Value.Description;
+                    var roleName = rule.RoleName;
+                    var roleCode = rule.RoleCode;
+                    var description = rule.Description;
 
-                    var role = await _roleManager.FindByNameAsync(roleName).ConfigureAwait(false);
+                    if (string.IsNullOrWhiteSpace(roleName)) continue;
+
+                    var role = await _roleManager.FindByNameAsync(roleName).ConfigureAwait(false)
+                                ?? await _roleManager.Roles.FirstOrDefaultAsync(r => r.Code == roleCode, cancellationToken);
+
+                    string normalizedName = _roleManager.NormalizeKey(roleName);
+
                     if (role == null)
                     {
                         role = new ApplicationRole
                         {
                             Name = roleName,
-                            NormalizedName = roleName.ToUpperInvariant(),
+                            NormalizedName = normalizedName,
                             Code = roleCode,
                             Description = description,
                             IsSystemRole = true
@@ -87,30 +96,38 @@ namespace SGSFramework.Identity.Services
                         var createRoleResult = await _roleManager.CreateAsync(role).ConfigureAwait(false);
                         if (!createRoleResult.Succeeded)
                         {
-                            _logger.LogError("[SeedAdmin] 建立角色失敗 [{RoleName}]: {Errors}",
-                                roleName, string.Join(", ", createRoleResult.Errors.Select(e => e.Description)));
+                            string errors = string.Join("; ", createRoleResult.Errors.Select(e => $"{e.Code}: {e.Description}"));
+                            _logger.LogError("[SeedAdmin] 建立角色失敗 [{RoleName} / Code: {RoleCode}]: {Errors}",
+                                roleName, roleCode, errors);
                             continue;
                         }
-                        _logger.LogInformation("[SeedAdmin] 成功建立角色: {RoleName} (代碼: {Code})，說明: {Description}", roleName, roleCode, description);
+                        _logger.LogInformation("[SeedAdmin] 成功建立角色: {RoleName} (代碼: {Code})", roleName, roleCode);
                     }
                     else
                     {
                         bool needsUpdate = false;
-                        if (role.Code != roleCode)
-                        {
-                            role.Code = roleCode;
-                            needsUpdate = true;
-                        }
-                        if (role.Description != description)
-                        {
-                            role.Description = description;
-                            needsUpdate = true;
-                        }
+                        if (role.Name != roleName) { role.Name = roleName; needsUpdate = true; }
+                        if (role.NormalizedName != normalizedName) { role.NormalizedName = normalizedName; needsUpdate = true; }
+                        if (role.Code != roleCode) { role.Code = roleCode; needsUpdate = true; }
+                        if (role.Description != description) { role.Description = description; needsUpdate = true; }
+                        if (!role.IsSystemRole) { role.IsSystemRole = true; needsUpdate = true; }
 
                         if (needsUpdate)
                         {
-                            await _roleManager.UpdateAsync(role).ConfigureAwait(false);
-                            _logger.LogInformation("[SeedAdmin] 成功更新角色資訊: {RoleName} (代碼: {Code})", roleName, roleCode);
+                            var updateResult = await _roleManager.UpdateAsync(role).ConfigureAwait(false);
+                            if (updateResult.Succeeded)
+                            {
+                                _logger.LogInformation("[SeedAdmin] 成功更新角色資訊: {RoleName} (代碼: {Code})", roleName, roleCode);
+                            }
+                            else
+                            {
+                                string errors = string.Join("; ", updateResult.Errors.Select(e => $"{e.Code}: {e.Description}"));
+                                _logger.LogError("[SeedAdmin] 更新角色失敗 [{RoleName}]: {Errors}", roleName, errors);
+                            }
+                        }
+                        else
+                        {
+                            _logger.LogInformation("[SeedAdmin] 角色已存在且無需更新: {RoleName} (代碼: {Code})", roleName, roleCode);
                         }
                     }
                 }
@@ -118,30 +135,30 @@ namespace SGSFramework.Identity.Services
                 // ==========================================
                 // 2. 建立最高技術管理員帳號 (IsSystemAdmin = true)
                 // ==========================================
-                if (string.IsNullOrWhiteSpace(_options.Password))
+                if (string.IsNullOrWhiteSpace(_adminOptions.Password))
                 {
                     _logger.LogError("[SeedAdmin] 未設定預設管理員密碼，停止帳號初始化作業！");
                     return;
                 }
 
-                var adminUser = await _userManager.FindByNameAsync(_options.Username).ConfigureAwait(false)
-                                ?? await _userManager.FindByEmailAsync(_options.Email).ConfigureAwait(false);
+                var adminUser = await _userManager.FindByNameAsync(_adminOptions.Username).ConfigureAwait(false)
+                                ?? await _userManager.FindByEmailAsync(_adminOptions.Email).ConfigureAwait(false);
 
                 if (adminUser == null)
                 {
                     adminUser = new ApplicationUser
                     {
-                        IsSystemAdmin = true, // 標註為系統技術管理員，強制阻斷業務指派權限
-                        UserName = _options.Username,
-                        Email = _options.Email,
+                        IsSystemAdmin = true,
+                        UserName = _adminOptions.Username,
+                        Email = _adminOptions.Email,
                         EmailConfirmed = true,
                         LockoutEnabled = false
                     };
 
-                    var createResult = await _userManager.CreateAsync(adminUser, _options.Password).ConfigureAwait(false);
+                    var createResult = await _userManager.CreateAsync(adminUser, _adminOptions.Password).ConfigureAwait(false);
                     if (!createResult.Succeeded)
                     {
-                        _logger.LogError("[SeedAdmin] 建立預設 SuperAdmin 帳號失敗: {Errors}",
+                        _logger.LogError("[SeedAdmin] 建立預設管理員帳號失敗: {Errors}",
                             string.Join(", ", createResult.Errors.Select(e => e.Description)));
                         return;
                     }
@@ -150,11 +167,37 @@ namespace SGSFramework.Identity.Services
                 }
 
                 // ==========================================
-                // 3. 綁定 SuperAdmin 角色與全域 Claim
+                // 3. 動態取得管理員角色名稱並安全綁定角色與全域 Claim
                 // ==========================================
-                if (!await _userManager.IsInRoleAsync(adminUser, "SuperAdmin").ConfigureAwait(false))
+                var adminRoleRule = _seedOptions.Roles.FirstOrDefault(r => r.AssignAll)
+                                    ?? _seedOptions.Roles.FirstOrDefault();
+                string targetRoleName = adminRoleRule?.RoleName ?? "系統管理員";
+
+                if (!await _roleManager.RoleExistsAsync(targetRoleName).ConfigureAwait(false))
                 {
-                    await _userManager.AddToRoleAsync(adminUser, "SuperAdmin").ConfigureAwait(false);
+                    var fallbackRole = new ApplicationRole
+                    {
+                        Name = targetRoleName,
+                        NormalizedName = _roleManager.NormalizeKey(targetRoleName),
+                        Code = adminRoleRule?.RoleCode ?? "SA",
+                        Description = adminRoleRule?.Description ?? "系統自動補建之預設管理員角色",
+                        IsSystemRole = true
+                    };
+                    await _roleManager.CreateAsync(fallbackRole).ConfigureAwait(false);
+                }
+
+                if (!await _userManager.IsInRoleAsync(adminUser, targetRoleName).ConfigureAwait(false))
+                {
+                    var addRoleResult = await _userManager.AddToRoleAsync(adminUser, targetRoleName).ConfigureAwait(false);
+                    if (addRoleResult.Succeeded)
+                    {
+                        _logger.LogInformation("[SeedAdmin] 成功將使用者 {Username} 綁定至角色: {RoleName}", adminUser.UserName, targetRoleName);
+                    }
+                    else
+                    {
+                        _logger.LogError("[SeedAdmin] 將使用者綁定至角色 [{RoleName}] 失敗: {Errors}",
+                            targetRoleName, string.Join(", ", addRoleResult.Errors.Select(e => e.Description)));
+                    }
                 }
 
                 var claims = await _userManager.GetClaimsAsync(adminUser).ConfigureAwait(false);

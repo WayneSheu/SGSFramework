@@ -1,6 +1,6 @@
 ﻿// ==========================================
 // 檔案路徑: src/SGSFramework.Identity/Services/SystemRolePermissionSeedService.cs
-// 架構層級: Identity / Services[cite: 22]
+// 架構層級: Identity / Services[cite: 19]
 // ==========================================
 
 #nullable enable
@@ -10,6 +10,7 @@ namespace SGSFramework.Identity.Services
     using Microsoft.AspNetCore.Identity;
     using Microsoft.EntityFrameworkCore;
     using Microsoft.Extensions.Logging;
+    using Microsoft.Extensions.Options;
     using SGSFramework.AuthTokenBucket.Abstractions;
     using SGSFramework.Core.Abstractions.DbContexts;
     using SGSFramework.Core.Abstractions.Entities.Controller;
@@ -19,6 +20,7 @@ namespace SGSFramework.Identity.Services
     using SGSFramework.Core.Abstractions.Permissions.Enums;
     using SGSFramework.Core.Abstractions.Permissions.Repositories;
     using SGSFramework.Identity.Abstractions;
+    using SGSFramework.Identity.Options;
     using System;
     using System.Collections.Generic;
     using System.Linq;
@@ -34,6 +36,7 @@ namespace SGSFramework.Identity.Services
         private readonly IPermissionRegistry _permissionRegistry;
         private readonly IPermissionBitmaskService _bitmaskService;
         private readonly IRolePermissionRepository _rolePermissionRepository;
+        private readonly SystemRolePermissionSeedOptions _seedOptions;
         private readonly ILogger<SystemRolePermissionSeedService<TDbContext>> _logger;
 
         private const string ClaimTypePermission = "Permission";
@@ -44,6 +47,7 @@ namespace SGSFramework.Identity.Services
             IPermissionRegistry permissionRegistry,
             IPermissionBitmaskService bitmaskService,
             IRolePermissionRepository rolePermissionRepository,
+            IOptions<SystemRolePermissionSeedOptions> seedOptions,
             ILogger<SystemRolePermissionSeedService<TDbContext>> logger)
         {
             _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
@@ -51,6 +55,7 @@ namespace SGSFramework.Identity.Services
             _permissionRegistry = permissionRegistry ?? throw new ArgumentNullException(nameof(permissionRegistry));
             _bitmaskService = bitmaskService ?? throw new ArgumentNullException(nameof(bitmaskService));
             _rolePermissionRepository = rolePermissionRepository ?? throw new ArgumentNullException(nameof(rolePermissionRepository));
+            _seedOptions = seedOptions?.Value ?? throw new ArgumentNullException(nameof(seedOptions));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -191,20 +196,28 @@ namespace SGSFramework.Identity.Services
                     .ToListAsync(cancellationToken)
                     .ConfigureAwait(false);
 
-                var permissionList = metadataList.Select(m => new PermissionMetadataDto(
-                    m.PermissionKey ?? string.Empty,
-                    m.Description ?? string.Empty,
-                    m.ControllerTitle ?? string.Empty,
-                    m.ModuleTitle ?? string.Empty,
-                    m.Category.ToString()
-                )).Where(p => !string.IsNullOrWhiteSpace(p.Code)).ToList();
+                var allPermissionCodes = metadataList
+                    .Select(m => m.PermissionKey ?? string.Empty)
+                    .Where(p => !string.IsNullOrWhiteSpace(p))
+                    .ToList();
 
-                _logger.LogInformation("[SystemRolePermissionSeed] 成功同步權限元數據並篩選出 {Count} 筆有效權限 (0-63 Bit)，開始進行系統角色權限指派...", permissionList.Count);
+                _logger.LogInformation("[SystemRolePermissionSeed] 成功同步權限元數據並篩選出 {Count} 筆有效權限 (0-63 Bit)，開始依據 Options 配置進行動態角色派發...", allPermissionCodes.Count);
 
-                await AssignPermissionsToRoleAsync("SuperAdmin", permissionList.Select(p => p.Code).ToList(), cancellationToken);
-                await AssignPermissionsToRoleAsync("LabManager", permissionList.Where(p => p.ModuleGroup == "組織管理" || p.Category.Contains("實驗室")).Select(p => p.Code).ToList(), cancellationToken);
-                await AssignPermissionsToRoleAsync("LabOperator", permissionList.Where(p => p.RiskLevel != "Critical" && (p.Code.Contains(".READ") || p.Code.Contains(".UPDATE"))).Select(p => p.Code).ToList(), cancellationToken);
-                await AssignPermissionsToRoleAsync("LabAuditor", permissionList.Where(p => p.Code.Contains(".READ")).Select(p => p.Code).ToList(), cancellationToken);
+                foreach (var rule in _seedOptions.Roles)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    _logger.LogInformation("[SystemRolePermissionSeed] 正在初始化角色: {RoleName} (代碼: {RoleCode}), 職責說明: {Description}",
+                        rule.RoleName, rule.RoleCode, rule.Description);
+
+                    List<string> assignedCodes = rule.AssignAll
+                        ? allPermissionCodes
+                        : metadataList.Where(m => MatchesRule(m, rule))
+                                      .Select(m => m.PermissionKey!)
+                                      .ToList();
+
+                    await AssignPermissionsToRoleAsync(rule.RoleName, assignedCodes, cancellationToken);
+                }
 
                 _logger.LogInformation("[SystemRolePermissionSeed] 所有系統角色的動態權限派發與資料庫矩陣寫入作業已完成。");
             }
@@ -213,6 +226,42 @@ namespace SGSFramework.Identity.Services
                 _logger.LogError(ex, "[SystemRolePermissionSeed] 同步與派發權限時發生未預期例外。");
                 throw;
             }
+        }
+
+        private static bool MatchesRule(PermissionMetadata permission, RolePermissionAssignmentRule rule)
+        {
+            string key = permission.PermissionKey ?? string.Empty;
+            string categoryStr = permission.Category.ToString();
+
+            if (rule.ExcludeKeys.Any(ex => IsKeyMatched(key, ex)))
+            {
+                return false;
+            }
+
+            bool categoryMatched = rule.Categories.Count == 0 || rule.Categories.Contains(categoryStr, StringComparer.OrdinalIgnoreCase);
+            bool keyMatched = rule.IncludeKeys.Count == 0 || rule.IncludeKeys.Any(inc => IsKeyMatched(key, inc));
+
+            if (rule.IncludeKeys.Count > 0 && rule.Categories.Count > 0)
+            {
+                return keyMatched && categoryMatched;
+            }
+
+            return keyMatched || categoryMatched;
+        }
+
+        private static bool IsKeyMatched(string key, string pattern)
+        {
+            if (pattern.EndsWith(".*"))
+            {
+                string prefix = pattern[..^1];
+                return key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+            }
+            else if (pattern.StartsWith("*."))
+            {
+                string suffix = pattern[1..];
+                return key.EndsWith(suffix, StringComparison.OrdinalIgnoreCase);
+            }
+            return key.Equals(pattern, StringComparison.OrdinalIgnoreCase);
         }
 
         private async Task RecalculatePermissionHierarchyAsync(CancellationToken cancellationToken)
@@ -359,13 +408,5 @@ namespace SGSFramework.Identity.Services
 
             return ActionCategory.Basic;
         }
-
-        private record PermissionMetadataDto(
-            string Code,
-            string Description,
-            string Category,
-            string ModuleGroup,
-            string RiskLevel
-        );
     }
 }

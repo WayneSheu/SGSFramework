@@ -27,17 +27,21 @@ namespace SGSFramework.Identity.Extensions
             ArgumentNullException.ThrowIfNull(services);
             ArgumentNullException.ThrowIfNull(configuration);
 
-            // 綁定 Configuration 區段
+            // 1. 綁定 SeedAdminOptions 區段
             services.Configure<SeedAdminOptions>(
                 configuration.GetSection(SeedAdminOptions.SectionName));
 
-            // 修正：帶入泛型 TDbContext 註冊 PermissionSeederService
+            // 2. 補上：綁定 SystemRolePermissionSeedOptions 區段，解決 Roles 為空的問題
+            services.Configure<SystemRolePermissionSeedOptions>(
+                configuration.GetSection(SystemRolePermissionSeedOptions.SectionName));
+
+            // 3. 帶入泛型 TDbContext 註冊 PermissionSeederService
             services.AddScoped<ISystemRolePermissionSeedService, SystemRolePermissionSeedService<TDbContext>>();
 
-            // 註冊 Seeder 服務
+            // 4. 註冊 Seeder 服務
             services.AddScoped<IAdminSeederService, AdminSeederService>();
 
-            // 註冊 Startup HostedService 自動掛載
+            // 5. 註冊 Startup HostedService 自動掛載
             services.AddHostedService<AdminSeedHostedService>();
 
             return services;
