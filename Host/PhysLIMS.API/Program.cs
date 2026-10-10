@@ -22,7 +22,7 @@ try
 {
     var builder = WebApplication.CreateBuilder(args);
     // ----------------------------------------------------
-    // 【建置期】更正 WebRootPath，確保 Debug/Production 皆優先指向 AppContext/wwwroot
+    // 【建置期】 WebRootPath，確保 Debug/Production 皆優先指向 AppContext/wwwroot
     // ----------------------------------------------------
     var currentBinWebRoot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
     if (Directory.Exists(currentBinWebRoot))

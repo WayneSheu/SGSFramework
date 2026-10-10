@@ -1,54 +1,71 @@
 ﻿// ==========================================
-// 檔案路徑: Infrastructure/SGSFramework.AuthTokenBucket/Services/PermissionSeedService.cs
-// 架構層級: Infrastructure Layer (Service Implementation)[cite: 23]
+// 檔案路徑: src/SGSFramework.Identity/Services/SystemRolePermissionSeedService.cs
+// 架構層級: Identity / Services[cite: 22]
 // ==========================================
 
 #nullable enable
 
-namespace SGSFramework.AuthTokenBucket.Services
+namespace SGSFramework.Identity.Services
 {
+    using Microsoft.AspNetCore.Identity;
     using Microsoft.EntityFrameworkCore;
     using Microsoft.Extensions.Logging;
     using SGSFramework.AuthTokenBucket.Abstractions;
     using SGSFramework.Core.Abstractions.DbContexts;
     using SGSFramework.Core.Abstractions.Entities.Controller;
+    using SGSFramework.Core.Abstractions.Entities.Identities;
     using SGSFramework.Core.Abstractions.Permissions;
     using SGSFramework.Core.Abstractions.Permissions.Entities;
     using SGSFramework.Core.Abstractions.Permissions.Enums;
+    using SGSFramework.Core.Abstractions.Permissions.Repositories;
+    using SGSFramework.Identity.Abstractions;
     using System;
+    using System.Collections.Generic;
     using System.Linq;
+    using System.Security.Claims;
     using System.Threading;
     using System.Threading.Tasks;
 
-    public class PermissionSeedService<TDbContext> : IPermissionSeedService
+    public class SystemRolePermissionSeedService<TDbContext> : ISystemRolePermissionSeedService
         where TDbContext : DbContext, ITokenDbContext
     {
         private readonly TDbContext _dbContext;
+        private readonly RoleManager<ApplicationRole> _roleManager;
         private readonly IPermissionRegistry _permissionRegistry;
-        private readonly ILogger<PermissionSeedService<TDbContext>> _logger;
+        private readonly IPermissionBitmaskService _bitmaskService;
+        private readonly IRolePermissionRepository _rolePermissionRepository;
+        private readonly ILogger<SystemRolePermissionSeedService<TDbContext>> _logger;
 
-        public PermissionSeedService(
+        private const string ClaimTypePermission = "Permission";
+
+        public SystemRolePermissionSeedService(
             TDbContext dbContext,
+            RoleManager<ApplicationRole> roleManager,
             IPermissionRegistry permissionRegistry,
-            ILogger<PermissionSeedService<TDbContext>> logger)
+            IPermissionBitmaskService bitmaskService,
+            IRolePermissionRepository rolePermissionRepository,
+            ILogger<SystemRolePermissionSeedService<TDbContext>> logger)
         {
             _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+            _roleManager = roleManager ?? throw new ArgumentNullException(nameof(roleManager));
             _permissionRegistry = permissionRegistry ?? throw new ArgumentNullException(nameof(permissionRegistry));
+            _bitmaskService = bitmaskService ?? throw new ArgumentNullException(nameof(bitmaskService));
+            _rolePermissionRepository = rolePermissionRepository ?? throw new ArgumentNullException(nameof(rolePermissionRepository));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        public async Task SeedAndSyncPermissionsAsync(CancellationToken cancellationToken = default)
+        public async Task SeedPermissionsFromExcelAsync(CancellationToken cancellationToken = default)
         {
-            ArgumentNullException.ThrowIfNull(_dbContext);
-
             try
             {
+                _logger.LogInformation("[SystemRolePermissionSeed] 開始執行權限元數據同步與角色授權矩陣初始化作業...");
+
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var rawPermissions = _permissionRegistry.GetAllPermissions();
                 if (rawPermissions == null || rawPermissions.Count == 0)
                 {
-                    _logger.LogWarning("從權限註冊表中未取得任何權限定義，略過同步。");
+                    _logger.LogWarning("[SystemRolePermissionSeed] 從權限註冊表中未取得任何權限定義，略過同步。");
                     return;
                 }
 
@@ -117,7 +134,6 @@ namespace SGSFramework.AuthTokenBucket.Services
                         .ConfigureAwait(false);
 
                     bool isModified = false;
-
                     if (existingRecord != null)
                     {
                         if (!string.Equals(existingRecord.PermissionKey, key, StringComparison.Ordinal)) { existingRecord.PermissionKey = key; isModified = true; }
@@ -129,7 +145,6 @@ namespace SGSFramework.AuthTokenBucket.Services
                         if (!string.Equals(existingRecord.ActionName, actionName, StringComparison.Ordinal)) { existingRecord.ActionName = actionName; isModified = true; }
                         if (!string.Equals(existingRecord.ActionTitle, actionTitle, StringComparison.Ordinal)) { existingRecord.ActionTitle = actionTitle; isModified = true; }
                         if (!string.Equals(existingRecord.PermissionTitle, permissionTitle, StringComparison.Ordinal)) { existingRecord.PermissionTitle = permissionTitle; isModified = true; }
-
                         if (existingRecord.Category != category) { existingRecord.Category = category; isModified = true; }
 
                         if (string.IsNullOrEmpty(existingRecord.Description) || existingRecord.Description.StartsWith("Auto-scanned permission:"))
@@ -168,50 +183,130 @@ namespace SGSFramework.AuthTokenBucket.Services
                     }
                 }
 
-                var allPermissions = await _dbContext.Set<PermissionMetadata>()
+                await RecalculatePermissionHierarchyAsync(cancellationToken).ConfigureAwait(false);
+
+                var metadataList = await _dbContext.Set<PermissionMetadata>()
+                    .AsNoTracking()
+                    .Where(m => m.BitPosition >= 0 && m.BitPosition <= 63)
                     .ToListAsync(cancellationToken)
                     .ConfigureAwait(false);
 
-                bool hierarchyChanged = false;
+                var permissionList = metadataList.Select(m => new PermissionMetadataDto(
+                    m.PermissionKey ?? string.Empty,
+                    m.Description ?? string.Empty,
+                    m.ControllerTitle ?? string.Empty,
+                    m.ModuleTitle ?? string.Empty,
+                    m.Category.ToString()
+                )).Where(p => !string.IsNullOrWhiteSpace(p.Code)).ToList();
 
-                foreach (var group in allPermissions.GroupBy(p => p.ControllerName, StringComparer.OrdinalIgnoreCase))
-                {
-                    if (string.IsNullOrEmpty(group.Key)) continue;
+                _logger.LogInformation("[SystemRolePermissionSeed] 成功同步權限元數據並篩選出 {Count} 筆有效權限 (0-63 Bit)，開始進行系統角色權限指派...", permissionList.Count);
 
-                    var readPermission = group.FirstOrDefault(p =>
-                        p.PermissionKey.EndsWith(".READ", StringComparison.OrdinalIgnoreCase) ||
-                        p.PermissionKey.EndsWith("_READ", StringComparison.OrdinalIgnoreCase) ||
-                        p.ActionName.StartsWith("Get", StringComparison.OrdinalIgnoreCase) ||
-                        p.ActionName.StartsWith("List", StringComparison.OrdinalIgnoreCase))
-                        ?? group.OrderBy(p => p.BitPosition).FirstOrDefault();
+                await AssignPermissionsToRoleAsync("SuperAdmin", permissionList.Select(p => p.Code).ToList(), cancellationToken);
+                await AssignPermissionsToRoleAsync("LabManager", permissionList.Where(p => p.ModuleGroup == "組織管理" || p.Category.Contains("實驗室")).Select(p => p.Code).ToList(), cancellationToken);
+                await AssignPermissionsToRoleAsync("LabOperator", permissionList.Where(p => p.RiskLevel != "Critical" && (p.Code.Contains(".READ") || p.Code.Contains(".UPDATE"))).Select(p => p.Code).ToList(), cancellationToken);
+                await AssignPermissionsToRoleAsync("LabAuditor", permissionList.Where(p => p.Code.Contains(".READ")).Select(p => p.Code).ToList(), cancellationToken);
 
-                    if (readPermission != null)
-                    {
-                        foreach (var perm in group)
-                        {
-                            int? targetParentId = (perm.Id == readPermission.Id) ? null : readPermission.Id;
-
-                            if (perm.ParentId != targetParentId)
-                            {
-                                var parentNode = targetParentId.HasValue ? allPermissions.FirstOrDefault(p => p.Id == targetParentId.Value) : null;
-                                perm.AssignParent(parentNode);
-                                perm.RecalculateHierarchy();
-                                hierarchyChanged = true;
-                            }
-                        }
-                    }
-                }
-
-                if (hierarchyChanged)
-                {
-                    await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                    _logger.LogInformation("已成功完成 PermissionMetadata (含 Category) 與 ControllerMetadata 之模組與階層化結構完整對齊同步。");
-                }
+                _logger.LogInformation("[SystemRolePermissionSeed] 所有系統角色的動態權限派發與資料庫矩陣寫入作業已完成。");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "同步與種子化權限資料時發生未預期異常。");
+                _logger.LogError(ex, "[SystemRolePermissionSeed] 同步與派發權限時發生未預期例外。");
                 throw;
+            }
+        }
+
+        private async Task RecalculatePermissionHierarchyAsync(CancellationToken cancellationToken)
+        {
+            var allPermissions = await _dbContext.Set<PermissionMetadata>()
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            bool hierarchyChanged = false;
+            foreach (var group in allPermissions.GroupBy(p => p.ControllerName, StringComparer.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrEmpty(group.Key)) continue;
+
+                var readPermission = group.FirstOrDefault(p =>
+                    p.PermissionKey.EndsWith(".READ", StringComparison.OrdinalIgnoreCase) ||
+                    p.PermissionKey.EndsWith("_READ", StringComparison.OrdinalIgnoreCase) ||
+                    p.ActionName.StartsWith("Get", StringComparison.OrdinalIgnoreCase) ||
+                    p.ActionName.StartsWith("List", StringComparison.OrdinalIgnoreCase))
+                    ?? group.OrderBy(p => p.BitPosition).FirstOrDefault();
+
+                if (readPermission != null)
+                {
+                    foreach (var perm in group)
+                    {
+                        int? targetParentId = (perm.Id == readPermission.Id) ? null : readPermission.Id;
+                        if (perm.ParentId != targetParentId)
+                        {
+                            var parentNode = targetParentId.HasValue ? allPermissions.FirstOrDefault(p => p.Id == targetParentId.Value) : null;
+                            perm.AssignParent(parentNode);
+                            perm.RecalculateHierarchy();
+                            hierarchyChanged = true;
+                        }
+                    }
+                }
+            }
+
+            if (hierarchyChanged)
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                _logger.LogInformation("[SystemRolePermissionSeed] 已成功完成 PermissionMetadata 階層化結構對齊。");
+            }
+        }
+
+        private async Task AssignPermissionsToRoleAsync(string roleName, List<string> permissionCodes, CancellationToken cancellationToken)
+        {
+            var role = await _roleManager.FindByNameAsync(roleName).ConfigureAwait(false);
+            if (role == null)
+            {
+                _logger.LogWarning("[SystemRolePermissionSeed] 找不到目標角色 [{RoleName}]，無法派發權限。", roleName);
+                return;
+            }
+
+            string roleId = role.Id.ToString();
+
+            var existingClaims = await _roleManager.GetClaimsAsync(role).ConfigureAwait(false);
+            var existingPermissionSet = new HashSet<string>(
+                existingClaims.Where(c => c.Type == ClaimTypePermission).Select(c => c.Value),
+                StringComparer.OrdinalIgnoreCase
+            );
+
+            int addedCount = 0;
+            foreach (var code in permissionCodes.Distinct())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (!existingPermissionSet.Contains(code))
+                {
+                    var claim = new Claim(ClaimTypePermission, code);
+                    var result = await _roleManager.AddClaimAsync(role, claim).ConfigureAwait(false);
+                    if (result.Succeeded)
+                    {
+                        addedCount++;
+                    }
+                }
+            }
+
+            var targetPermissions = permissionCodes
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Select(p => p.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            Dictionary<string, long> moduleBitmaskDict = await _bitmaskService
+                .CalculateModuleBitmasksAsync(targetPermissions, cancellationToken)
+                .ConfigureAwait(false);
+
+            bool dbSuccess = await _rolePermissionRepository
+                .SaveRoleGlobalPermissionsAsync(roleId, moduleBitmaskDict, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (dbSuccess)
+            {
+                _logger.LogInformation("[SystemRolePermissionSeed] 角色 [{RoleName}] 權限同步完成：新增 Claims {AddedCount} 筆，更新 Role_Global_Permissions 模組數 {ModuleCount}。",
+                    roleName, addedCount, moduleBitmaskDict.Count);
             }
         }
 
@@ -221,11 +316,7 @@ namespace SGSFramework.AuthTokenBucket.Services
             if (!string.IsNullOrWhiteSpace(permissionKey))
             {
                 var segments = permissionKey.Split('.', StringSplitOptions.RemoveEmptyEntries);
-                if (segments.Length >= 3)
-                {
-                    permissionAction = segments[^1];
-                }
-                else if (segments.Length > 0)
+                if (segments.Length > 0)
                 {
                     permissionAction = segments[^1];
                 }
@@ -268,5 +359,13 @@ namespace SGSFramework.AuthTokenBucket.Services
 
             return ActionCategory.Basic;
         }
+
+        private record PermissionMetadataDto(
+            string Code,
+            string Description,
+            string Category,
+            string ModuleGroup,
+            string RiskLevel
+        );
     }
 }

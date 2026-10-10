@@ -66,6 +66,12 @@ public static class WebApplicationPipelineExtensions
         return app;
     }
 
+    /// <summary>
+    /// 執行啟動時的資料庫初始化與權限/選單種子資料掛載。
+    /// </summary>
+    /// <param name="app"></param>
+    /// <param name="config"></param>
+    /// <returns></returns>
     public static async Task ExecuteStartupSeedersAsync(this WebApplication app, IConfiguration config)
     {
         ArgumentNullException.ThrowIfNull(app);

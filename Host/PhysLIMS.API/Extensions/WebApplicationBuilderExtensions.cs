@@ -232,7 +232,8 @@ public static class WebApplicationBuilderExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(config);
 
-        services.AddProductionAdminSeeder(config);
+        // 修正：明確指定 PhysLIMSDbContext 泛型型別引數
+        services.AddProductionAdminSeeder<PhysLIMSDbContext>(config);
         services.AddLedgerVerificationServices();
         services.AddCodeSecurity(config);
 

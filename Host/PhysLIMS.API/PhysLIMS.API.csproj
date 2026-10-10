@@ -51,6 +51,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include="Data\SeedDatas\" />
     <Folder Include="logs\" />
     <Folder Include="wwwroot\blazor\" />
   </ItemGroup>

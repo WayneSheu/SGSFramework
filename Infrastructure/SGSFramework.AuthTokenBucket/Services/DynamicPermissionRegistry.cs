@@ -17,14 +17,16 @@ using System.ComponentModel;
 using System.Linq;
 using System.Reflection;
 
-/// 
-/// 執行階段動態權限註冊表實作 (支援從 RequiresPermissionAttribute 第二個參數提取 PermissionTitle)
-/// 
+/// <summary>
+/// 執行階段動態權限註冊表實作 (已優化：改為以功能群組為單位的 0-63 獨立 BitPosition 編號)
+/// </summary>
 public class DynamicPermissionRegistry : IPermissionRegistry
 {
     private readonly ConcurrentDictionary<string, PermissionMetadata> _permissions = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<int, string> _reverseIndex = new();
-    private int _currentBitIndex = 0;
+
+    // 優化：改為追蹤每個功能群組（例如 "ORG.LABORATORY"）各自的 BitPosition 索引，確保每個群組獨立從 0 開始
+    private readonly ConcurrentDictionary<string, int> _groupBitIndices = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _syncRoot = new();
 
     public DynamicPermissionRegistry()
@@ -137,7 +139,14 @@ public class DynamicPermissionRegistry : IPermissionRegistry
                 return existing.BitPosition;
             }
 
-            int newBitPosition = _currentBitIndex++;
+            string groupKey = ExtractFeaturePrefix(permissionKey);
+            int newBitPosition = _groupBitIndices.AddOrUpdate(groupKey, 0, (k, current) => current + 1);
+
+            if (newBitPosition > 63)
+            {
+                throw new InvalidOperationException($"[Security Guard] 功能群組 [{groupKey}] 的權限數量已超過 64 個上限 (BitPosition: {newBitPosition})，請進行模組或功能群組拆分。");
+            }
+
             var (moduleName, controllerName, actionName) = ParsePermissionKeyStructure(permissionKey);
             string registryKey = $"{controllerName}.{actionName}";
 
@@ -177,6 +186,26 @@ public class DynamicPermissionRegistry : IPermissionRegistry
             1 => ("SGSFramework.System", "Default", parts[0]),
             _ => ("SGSFramework.System", "Default", permissionKey)
         };
+    }
+
+    /// <summary>
+    /// 與 PermissionBitmaskService 保持一致高效能的群組前綴擷取邏輯[cite: 18]
+    /// </summary>
+    private static string ExtractFeaturePrefix(string permissionKey)
+    {
+        var span = permissionKey.AsSpan();
+        int firstDotIndex = span.IndexOf('.');
+
+        if (firstDotIndex >= 0)
+        {
+            int nextDotOffset = span.Slice(firstDotIndex + 1).IndexOf('.');
+            if (nextDotOffset >= 0)
+            {
+                return span.Slice(0, firstDotIndex + 1 + nextDotOffset).ToString();
+            }
+        }
+
+        return permissionKey;
     }
 
     public string? ResolvePermissionKey(string moduleName, int bitPosition)
@@ -231,7 +260,8 @@ public class DynamicPermissionRegistry : IPermissionRegistry
         {
             if (!_permissions.ContainsKey(registryKey))
             {
-                permission.BitPosition = _currentBitIndex++;
+                string groupKey = ExtractFeaturePrefix(permission.PermissionKey);
+                permission.BitPosition = _groupBitIndices.AddOrUpdate(groupKey, 0, (k, current) => current + 1);
             }
             _permissions[registryKey] = permission;
             _reverseIndex[permission.BitPosition] = permission.PermissionKey;
@@ -268,7 +298,14 @@ public class DynamicPermissionRegistry : IPermissionRegistry
             }
             else
             {
-                int bitPos = _currentBitIndex++;
+                string groupKey = ExtractFeaturePrefix(permissionKey);
+                int bitPos = _groupBitIndices.AddOrUpdate(groupKey, 0, (k, current) => current + 1);
+
+                if (bitPos > 63)
+                {
+                    throw new InvalidOperationException($"[Security Guard] 功能群組 [{groupKey}] 的權限數量已超過 64 個上限 (BitPosition: {bitPos})。");
+                }
+
                 var permission = new PermissionMetadata
                 {
                     Id = bitPos + 1,

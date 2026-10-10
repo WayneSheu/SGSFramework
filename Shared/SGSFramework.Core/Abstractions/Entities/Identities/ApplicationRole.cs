@@ -13,10 +13,13 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
     /// </summary>
     public class ApplicationRole : IdentityRole<Guid>, IRoleEntity
     {
-        /// <summary>
-        /// 角色描述（選填，允許為 Null）
-        /// </summary>
+        public string? Code { get; set; }
         public string? Description { get; set; }
+
+        /// <summary>
+        /// 是否為系統內建角色。預設為 false（代表一般自訂角色）；系統初始化範本會明確設為 true。
+        /// </summary>
+        public bool IsSystemRole { get; set; } = false;
     }
 
     /// <summary>
@@ -26,15 +29,37 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
     {
         public void Configure(EntityTypeBuilder<ApplicationRole> builder)
         {
-            // 於資料庫層級強制設定 Name 為 NOT NULL
-            builder.Property(r => r.Name)
-                   .IsRequired()
-                   .HasMaxLength(256);
+            // 對應 ASP.NET Core Identity 預設的角色資料表名稱 (或依專案慣例調整)
+            builder.ToTable("AspNetRoles");
 
-            // 設定 Description 為 NULL
+            // 主鍵
+            builder.HasKey(r => r.Id);
+
+            // 欄位屬性限制
+            builder.Property(r => r.Name)
+                .HasMaxLength(256)
+                .IsRequired();
+
+            builder.Property(r => r.NormalizedName)
+                .HasMaxLength(256)
+                .IsRequired();
+
+            builder.Property(r => r.Code)
+                .HasMaxLength(64)
+                .IsRequired(false);
+
             builder.Property(r => r.Description)
-                   .IsRequired(false)
-                   .HasMaxLength(500);
+                .HasMaxLength(512)
+                .IsRequired(false);
+
+            builder.Property(r => r.IsSystemRole)
+                .IsRequired()
+                .HasDefaultValue(false);
+
+            // 索引優化：針對 Code 建立唯一索引以確保系統角色代碼不重複
+            builder.HasIndex(r => r.Code)
+                .IsUnique()
+                .HasFilter("[Code] IS NOT NULL");
         }
     }
 }
