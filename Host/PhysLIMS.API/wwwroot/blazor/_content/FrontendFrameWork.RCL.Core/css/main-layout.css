@@ -1,0 +1,223 @@
+﻿/* ==========================================================================
+   全域變數與主題設定
+   ========================================================================== */
+:root {
+    /* 基礎佈局變數 */
+    --sidebar-width: 250px;
+    --sidebar-collapsed-width: 50px;
+    --header-height: 52px;
+    --footer-height: 40px;
+    /* 明亮模式色彩 (Light Theme) */
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8f9fa;
+    --text-primary: #212529;
+    --text-secondary: #6c757d;
+    --border-color: rgba(0, 0, 0, 0.08);
+    /* Header 專用主題色 */
+    --header-bg: var(--accent-fill-rest, #0078d4);
+    --header-text: #ffffff;
+}
+
+.theme-dark {
+    /* 暗色模式色彩 (Dark Theme) */
+    --bg-primary: #1e1e2d;
+    --bg-secondary: #151521;
+    --text-primary: #e2e8f0;
+    --text-secondary: #a1a5b7;
+    --border-color: rgba(255, 255, 255, 0.08);
+    /* Header 暗色模式深層漸層 */
+    --header-bg: #1b1b26;
+    --header-text: #ffffff;
+}
+
+/* ==========================================================================
+   全域防溢出與重置
+   ========================================================================== */
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+    overflow-x: hidden; /* 防止水平邊界溢出觸發瀏覽器捲軸 */
+    font-family: var(--font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif);
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    box-sizing: border-box;
+}
+
+*, *::before, *::after {
+    box-sizing: inherit;
+}
+
+/* ==========================================================================
+   Blazor 主架構 (Main Layout)
+   ========================================================================== */
+.page {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    width: 100vw;
+    overflow-x: hidden;
+    background-color: var(--bg-primary);
+}
+
+.main-body {
+    display: flex;
+    flex: 1;
+    width: 100%;
+    overflow: hidden;
+}
+
+/* 主要內容區域 (Content Area) */
+.content-area {
+    flex: 1;
+    padding: 1.25rem;
+    overflow-y: auto;
+    background-color: var(--bg-primary);
+}
+
+/* ==========================================================================
+   Header 元件優化 (Header.razor)
+   ========================================================================== */
+.app-header-container {
+    height: var(--header-height);
+    width: 100%;
+    padding: 0 16px;
+    background-color: var(--header-bg);
+    color: var(--header-text);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+    box-sizing: border-box;
+    overflow: hidden; /* 徹底修正右上角微小溢出捲軸問題 */
+    display: flex;
+    align-items: center;
+    z-index: 1000;
+}
+
+/* Logo 樣式與防擠壓 */
+.header-logo-container {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.header-logo-img {
+    height: 28px;
+    width: auto;
+    object-fit: contain;
+}
+
+/* 標題文字樣式：防斷行、文字過長顯示省略號 */
+.header-title-text {
+    font-weight: 600;
+    font-size: 1.1rem;
+    white-space: nowrap !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--header-text) !important;
+    margin-left: 8px;
+    flex-shrink: 0;
+}
+
+/* ==========================================================================
+   Header 內 Fluent UI 元件視覺修正 (Stealth 模式白化與對比)
+   ========================================================================== */
+/* 修正 Header 內 FluentButton (Stealth) 在藍色/深色背景下的對比度 */
+.app-header-container fluent-button[appearance="stealth"],
+.app-header-container fluent-menu-button[appearance="stealth"] {
+    --neutral-foreground-rest: #ffffff;
+    --neutral-fill-stealth-hover: rgba(255, 255, 255, 0.15);
+    --neutral-fill-stealth-active: rgba(255, 255, 255, 0.25);
+    color: #ffffff !important;
+}
+
+    /* 穿透 Shadow DOM 強制改寫圖示與文字顏色 */
+    .app-header-container fluent-button[appearance="stealth"]::part(control),
+    .app-header-container fluent-menu-button[appearance="stealth"]::part(control) {
+        color: #ffffff !important;
+    }
+
+.app-header-container fluent-icon {
+    fill: #ffffff !important;
+}
+
+/* ==========================================================================
+   NavMenu 側邊欄動畫與狀態切換 (配合 FluentNavMenu 內建開關)
+   ========================================================================== */
+.navmenu-container {
+    height: 100%;
+    background-color: var(--bg-secondary);
+    border-right: 1px solid var(--border-color);
+    overflow-y: auto;
+    overflow-x: hidden;
+    flex-shrink: 0;
+    will-change: width;
+    /* 加速動畫並使用貝茲曲線確保流暢體驗 */
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+    /* 展開狀態 */
+    .navmenu-container.expanded {
+        width: var(--sidebar-width);
+    }
+
+    /* 折疊狀態：微縮尺寸，內容顯隱由 Fluent UI 原生 Collapsible 管理 */
+    .navmenu-container.collapsed {
+        width: var(--sidebar-collapsed-width);
+    }
+
+    /* 移除 Bootstrap 舊樣式干擾並套用 Fluent UI 原生 Hover/Active 視覺 */
+    .navmenu-container fluent-nav-menu {
+        background-color: transparent;
+        border: none;
+        width: 100%;
+    }
+
+    .navmenu-container fluent-nav-link::part(region) {
+        border-radius: 4px;
+        margin: 2px 8px;
+        white-space: nowrap;
+    }
+
+/* ==========================================================================
+   頁尾 (Footer)
+   ========================================================================== */
+.app-footer {
+    height: var(--footer-height);
+    padding: 0 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    border-top: 1px solid var(--border-color);
+    background-color: var(--bg-secondary);
+    flex-shrink: 0;
+}
+
+/* ==========================================================================
+   UserInFo 元件樣式 (UserInfo.razor)
+   ========================================================================== */
+
+.top-row.auth-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 3.5rem;
+    background-color: #0078d4; /* Fluent UI 主色調 */
+    color: white;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+}
+
+.brand-title h3 {
+    margin: 0;
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+.user-info-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}

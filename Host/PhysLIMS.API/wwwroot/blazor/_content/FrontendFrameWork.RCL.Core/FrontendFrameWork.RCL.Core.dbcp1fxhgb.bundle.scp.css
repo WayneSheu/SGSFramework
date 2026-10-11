@@ -1,0 +1,89 @@
+/* _content/FrontendFrameWork.RCL.Core/Components/Layouts/UserInfo.razor.rz.scp.css */
+/* 設定 TopBar 頭像處為白色，並確保彈窗內部文字還原為深色 (解決文字看不見的問題) */
+[b-357qmas90l] fluent-profile-menu {
+    --neutral-foreground-rest: #323130 !important;
+}
+
+    [b-357qmas90l] fluent-profile-menu::part(button) {
+        color: #ffffff !important;
+    }
+
+    /* 擴充 Popover 寬度並強制隱藏原生 View account 區塊 */
+    [b-357qmas90l] fluent-profile-menu::part(popover),
+    [b-357qmas90l] .fluent-profile-menu-popover {
+        min-width: 260px !important;
+    }
+
+    [b-357qmas90l] fluent-profile-menu a,
+    [b-357qmas90l] fluent-profile-menu .footer,
+    [b-357qmas90l] fluent-profile-menu [part="footer"] {
+        display: none !important;
+    }
+
+.m365-card-header[b-357qmas90l] {
+    padding: 12px 12px 4px 12px;
+    background-color: #ffffff;
+}
+
+/* 強制 Persona 內部文字為深色 */
+[b-357qmas90l] .m365-card-header * {
+    color: #242424 !important;
+}
+
+.m365-menu-body[b-357qmas90l] {
+    padding: 0 12px 12px 12px;
+    background-color: #ffffff;
+}
+
+.m365-button-group[b-357qmas90l] {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* 縮小按鈕高度與邊距，並拉齊 Login 風格 */
+.m365-btn[b-357qmas90l] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    outline: none;
+    border: none;
+    transition: background-color 0.15s ease-in-out;
+}
+
+/* 登出此裝置 - 標準藍 */
+.m365-btn-primary[b-357qmas90l] {
+    color: #ffffff !important;
+    background-color: #2b70c0;
+}
+
+    .m365-btn-primary:hover[b-357qmas90l] {
+        background-color: #235ba0;
+    }
+
+    .m365-btn-primary:active[b-357qmas90l] {
+        background-color: #1c4a83;
+    }
+
+/* 登出所有裝置 - 警告紅 */
+.m365-btn-danger[b-357qmas90l] {
+    color: #ffffff !important;
+    background-color: #d13438;
+}
+
+    .m365-btn-danger:hover[b-357qmas90l] {
+        background-color: #b1272c;
+    }
+
+    .m365-btn-danger:active[b-357qmas90l] {
+        background-color: #8a1f23;
+    }

@@ -155,6 +155,10 @@ try
     // 7. 啟用靜態檔案與 MIME 支援
     //掛載 Blazor 框架專屬資源與 MIME 設定
     app.UseEnterpriseStaticFiles();
+
+    // 顯式啟用 Blazor Framework 靜態資產對應 (自動處理 _framework 下所有 .wasm, .js, .dll)
+    app.UseBlazorFrameworkFiles("/blazor");
+
     // 【修正 2】在路由前置攔截並校正 /blazor 網址斜線
     app.Use(async (context, next) =>
     {
