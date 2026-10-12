@@ -11,11 +11,13 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SGSFramework.AuditLog.Interceptors;
 using SGSFramework.Core.Abstractions.Database;
+using SGSFramework.Core.Abstractions.Messagings;
+using SGSFramework.Core.Persistence;
 using SGSFramework.Persistent.Abstractions.Dbcontexts;
 using SGSFramework.Persistent.Configurations.Options;
 using SGSFramework.Persistent.Converters;
-using SGSFramework.Persistent.Extensions;
 using SGSFramework.Persistent.Interceptors;
+using SGSFramework.Persistent.Repositories.Generally;
 using SGSFramework.Persistent.Repositories.Hierarchy;
 using SGSFramework.Persistent.Repositories.Traditionals;
 using SGSFramework.Persistent.Repositories.Vector;
@@ -101,7 +103,21 @@ namespace SGSFramework.Persistent.Extensions
                 extraOptions?.Invoke(options);
             });
 
+
+            // 註冊智慧欄位路由服務
+            // 1. 將 IQueryRoutingService 註冊為單例 (Singleton)
+            //    建構函式現在只依賴全域的 IServiceProvider，可完美成功解構
+            services.AddSingleton<IQueryRoutingService, QueryRoutingService>();
+
+            // 2. 註冊泛型向量倉儲 (GenericVectorRepository)
+            // 開放泛型註冊：現在 GenericVectorRepository 的建構函式只依賴 TDbContext，可以完美解析！
             services.AddScoped(typeof(ITraditionalRepository<,>), typeof(TraditionalRepository<,>));
+            // 這裡同時註冊了 IHierarchicalRepository 的實作，確保層級結構化倉儲也能在 Blazor 中使用
+            services.AddScoped(typeof(IHierarchicalRepository<,>), typeof(HierarchicalRepository<,>));
+
+            // 註冊開放泛型查詢倉儲 (Open Generic QueryRepository 結合當前 TContext)
+            services.AddScoped(typeof(IQueryRepository<>), typeof(QueryRepository<>));
+
             return services;
         }
 
@@ -192,9 +208,20 @@ namespace SGSFramework.Persistent.Extensions
                     .AddEntityFrameworkStores<TContext>()
                     .AddDefaultTokenProviders();
 
-            // 註冊開放泛型 (Open Generics)，使系統能動態衍生出如 ITraditionalRepository<BlazorDbContext, ActivityData>
-            services.AddScoped(typeof(ITraditionalRepository<,>), typeof(TraditionalRepository<,>));
 
+            // 註冊智慧欄位路由服務
+            // 1. 將 IQueryRoutingService 註冊為單例 (Singleton)
+            //    建構函式現在只依賴全域的 IServiceProvider，可完美成功解構
+            services.AddSingleton<IQueryRoutingService, QueryRoutingService>();
+
+            // 2. 註冊泛型向量倉儲 (GenericVectorRepository)
+            // 開放泛型註冊：現在 GenericVectorRepository 的建構函式只依賴 TDbContext，可以完美解析！
+            services.AddScoped(typeof(ITraditionalRepository<,>), typeof(TraditionalRepository<,>));
+            // 這裡同時註冊了 IHierarchicalRepository 的實作，確保層級結構化倉儲也能在 Blazor 中使用
+            services.AddScoped(typeof(IHierarchicalRepository<,>), typeof(HierarchicalRepository<,>));
+
+            // 註冊開放泛型查詢倉儲 (Open Generic QueryRepository 結合當前 TContext)
+            services.AddScoped(typeof(IQueryRepository<>), typeof(QueryRepository<>));
 
             return services;
         }
@@ -268,7 +295,19 @@ namespace SGSFramework.Persistent.Extensions
             services.AddScoped(sp =>
                 sp.GetRequiredService<IDbContextFactory<TContext>>().CreateDbContext());
 
+            // 註冊智慧欄位路由服務
+            // 1. 將 IQueryRoutingService 註冊為單例 (Singleton)
+            //    建構函式現在只依賴全域的 IServiceProvider，可完美成功解構
+            services.AddSingleton<IQueryRoutingService, QueryRoutingService>();
+
+            // 2. 註冊泛型向量倉儲 (GenericVectorRepository)
+            // 開放泛型註冊：現在 GenericVectorRepository 的建構函式只依賴 TDbContext，可以完美解析！
             services.AddScoped(typeof(ITraditionalRepository<,>), typeof(TraditionalRepository<,>));
+            // 這裡同時註冊了 IHierarchicalRepository 的實作，確保層級結構化倉儲也能在 Blazor 中使用
+            services.AddScoped(typeof(IHierarchicalRepository<,>), typeof(HierarchicalRepository<,>));
+
+            services.AddScoped(typeof(IQueryRepository<>), typeof(QueryRepository<>));
+
             return services;
         }
 
@@ -373,10 +412,15 @@ namespace SGSFramework.Persistent.Extensions
             // 1. 將 IQueryRoutingService 註冊為單例 (Singleton)
             //    建構函式現在只依賴全域的 IServiceProvider，可完美成功解構
             services.AddSingleton<IQueryRoutingService, QueryRoutingService>();
+
+            // 2. 註冊泛型向量倉儲 (GenericVectorRepository)
             // 開放泛型註冊：現在 GenericVectorRepository 的建構函式只依賴 TDbContext，可以完美解析！
             services.AddScoped(typeof(ITraditionalRepository<,>), typeof(TraditionalRepository<,>));
             // 這裡同時註冊了 IHierarchicalRepository 的實作，確保層級結構化倉儲也能在 Blazor 中使用
             services.AddScoped(typeof(IHierarchicalRepository<,>), typeof(HierarchicalRepository<,>));
+
+            // 註冊開放泛型查詢倉儲 (Open Generic QueryRepository 結合當前 TContext)
+            services.AddScoped(typeof(IQueryRepository<>), typeof(QueryRepository<>));
 
             return services;
         }

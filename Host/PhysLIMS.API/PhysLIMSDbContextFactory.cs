@@ -60,6 +60,9 @@ namespace PhysLIMS.API
                 services.AddTransient<AuditInterceptor>();
                 services.AddTransient<PermissionAuditInterceptor>();
 
+                // 讓 DI 容器能夠將 PhysLIMSDbContext 當作基底 DbContext 注入
+                 services.AddScoped<DbContext>(sp => sp.GetRequiredService<PhysLIMSDbContext>());
+
                 var serviceProvider = services.BuildServiceProvider();
 
                 // 4. 解析 Interceptors 實例

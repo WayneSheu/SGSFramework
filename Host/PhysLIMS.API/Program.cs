@@ -2,6 +2,7 @@
 using MediatR;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Web.Administration;
 using PhysLIMS.API.Dbcontexts;
 using PhysLIMS.API.Extensions;
@@ -13,8 +14,10 @@ using SGSFramework.ApiInfrastructure.Middlewares;
 using SGSFramework.AuthTokenBucket.Queries.Menuitems;
 using SGSFramework.Core.Exceptions;
 using SGSFramework.Core.Extensions;
+using SGSFramework.Core.Persistence;
 using SGSFramework.ModulePlugin.Extensions;
 using SGSFramework.ModulePlugin.Systems.Controller.Providers;
+using SGSFramework.Persistent.Repositories.Generally;
 using SGSFramework.SPAModulePlugin.Application.Queries;
 using SGSFramework.SystemLog.Extensions;
 
@@ -30,12 +33,21 @@ try
         builder.Environment.WebRootPath = currentBinWebRoot;
     }
 
-    // 1. 初始化系統日誌與核心框架
-    builder.AddSystemLog();
-    Log.Information("Starting WebAPI Application.");
-
     IConfiguration config = builder.Configuration;
     builder.AddSGSFrameworkCore();
+
+    // =========================================================================
+    // 💡 關鍵架構修正：將資料庫基礎設施與 PhysLIMSDbContext 優先註冊
+    // 確保 IQueryRepository<> 所依賴的 DbContext 抽象與具體實作在 DI 容器中先行就緒
+    // =========================================================================
+    builder.Services.AddCoreDatabaseInfrastructure(config);
+    builder.Services.AddScoped<DbContext>(sp => sp.GetRequiredService<PhysLIMSDbContext>());
+    // 🌟 【關鍵補遺】明確註冊開放泛型查詢倉儲，讓 SystemLog 模組能透過介面操作資料庫
+    builder.Services.AddScoped(typeof(IQueryRepository<>), typeof(QueryRepository<>));
+
+    // 於資料庫與 Repository 依賴就緒後，再初始化系統日誌與相關查詢服務
+    builder.AddSystemLog();
+    Log.Information("Starting WebAPI Application.");
 
     // 【安全性強化】將 Data Protection 金鑰持久化至專案實體資料夾，避免 IIS App Pool 回收導致登入失效
     var keysFolder = Path.Combine(builder.Environment.ContentRootPath, "keys");
@@ -50,9 +62,6 @@ try
 
     // 2. 註冊多版本 API 控制與 OpenAPI/Scalar 文件 (v1, v2)
     builder.Services.AddEnterpriseApiVersioningAndDocs();
-
-    // 3. 註冊資料庫基礎設施與 PhysLIMSDbContext 組合 (含 AuditLog 與 Persistent)
-    builder.Services.AddCoreDatabaseInfrastructure(config);
 
     // 4. 控制器、動態外掛模組與組件掃描註冊
     builder.Services.AddControllerInfrastructure(config);
@@ -172,7 +181,7 @@ try
 
     // 顯式啟用路由中間件 (必須在 UseAuthentication 之前或緊接其後)
     app.UseRouting();
-    
+
     app.UseAuthentication();
     app.UseAuthorization();
 
@@ -194,7 +203,7 @@ try
     app.MapControllers();
 
     // 6. 於 MapControllers 完成後，觸發 Dynamic Action 異動通知刷洗 Endpoint 數據源
-    var changeProvider = app.Services.GetRequiredService<IDynamicActionDescriptorChangeProvider>(); 
+    var changeProvider = app.Services.GetRequiredService<IDynamicActionDescriptorChangeProvider>();
     changeProvider.NotifyChanges();
     // ====================================================
     // 雙 SPA (Blazor WASM / Vue 3) 路由分流
@@ -202,10 +211,10 @@ try
     // 使用 SpaFallbackExtensions 提供的擴充方法掛載 Blazor WASM (精準匹配 /blazor, /blazor/, /blazor/xxx)
     app.MapBlazorSpaFallback();
 
-    // Vue 3 專屬後備管道 (非 API/Scalar/OpenAPI/Blazor 之請求全數歸 Vue 3 接管)[cite: 53]
+    // Vue 3 專屬後備管道 (非 API/Scalar/OpenAPI/Blazor 之請求全數歸 Vue 3 接管)
     app.MapProtectedSpaFallback(app.Environment, "index.html");
 
-    await app.RunAsync().ConfigureAwait(false); 
+    await app.RunAsync().ConfigureAwait(false);
 }
 catch (Exception ex)
 {

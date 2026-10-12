@@ -1,24 +1,29 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿// Path: Infrastructure/SGSFramework.SystemLog/Services/SystemLogQueryService.cs
+#nullable enable
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using SGSFramework.Core.Abstractions.Logings;
+using SGSFramework.Core.Paginations;
+using SGSFramework.Core.Persistence;
 using SGSFramework.SystemLog.DTOs;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace SGSFramework.SystemLog.Services
 {
     /// <summary>
-    /// 數據庫日誌查詢服務實作 (使用 EF Core AsNoTracking 高效讀取 MSSQL Ledger/Log 表)
+    /// 數據庫日誌查詢服務企業級實作（優化策略模式、強型別防禦與高效能映射）
     /// </summary>
     public class SystemLogQueryService : ISystemLogQueryService
     {
-        private readonly DbContext _dbContext;
+        private readonly IQueryRepository<Core.Abstractions.Logings.SystemLog> _systemLogRepo;
+        private readonly IQueryRepository<Core.Abstractions.Logings.SecurityLog> _securityLogRepo;
         private readonly ILogger<SystemLogQueryService> _logger;
 
-        public SystemLogQueryService(DbContext dbContext, ILogger<SystemLogQueryService> logger)
+        public SystemLogQueryService(
+            IQueryRepository<Core.Abstractions.Logings.SystemLog> systemLogRepo,
+            IQueryRepository<Core.Abstractions.Logings.SecurityLog> securityLogRepo,
+            ILogger<SystemLogQueryService> logger)
         {
-            _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+            _systemLogRepo = systemLogRepo ?? throw new ArgumentNullException(nameof(systemLogRepo));
+            _securityLogRepo = securityLogRepo ?? throw new ArgumentNullException(nameof(securityLogRepo));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -28,70 +33,91 @@ namespace SGSFramework.SystemLog.Services
 
             try
             {
-                var query = _dbContext.Set<SGSFramework.Core.Abstractions.Logings.SystemLog>().AsNoTracking();
+                var query = _systemLogRepo.GetQueryable();
 
-                // 過濾條件組合
-                if (!string.IsNullOrWhiteSpace(request.Level))
-                    query = query.Where(x => x.Level == request.Level);
-
-                if (!string.IsNullOrWhiteSpace(request.TenantId))
-                    query = query.Where(x => x.TenantId == request.TenantId);
-
-                if (!string.IsNullOrWhiteSpace(request.UserId))
-                    query = query.Where(x => x.UserId == request.UserId);
-
-                if (!string.IsNullOrWhiteSpace(request.ModuleName))
-                    query = query.Where(x => x.ModuleName == request.ModuleName);
-
-                if (!string.IsNullOrWhiteSpace(request.CorrelationId))
-                    query = query.Where(x => x.CorrelationId == request.CorrelationId);
-
-                if (request.StartTime.HasValue)
-                    query = query.Where(x => x.TimeStamp >= request.StartTime.Value);
-
-                if (request.EndTime.HasValue)
-                    query = query.Where(x => x.TimeStamp <= request.EndTime.Value);
-
-                if (!string.IsNullOrWhiteSpace(request.Keyword))
+                // 1. 篩選條件處理 (Filter)
+                if (request.Filter != null)
                 {
-                    query = query.Where(x => (x.Message != null && x.Message.Contains(request.Keyword))
-                                          || (x.Exception != null && x.Exception.Contains(request.Keyword)));
+                    if (!string.IsNullOrWhiteSpace(request.Filter.Level))
+                        query = query.Where(x => x.Level == request.Filter.Level);
+
+                    if (!string.IsNullOrWhiteSpace(request.Filter.TenantId))
+                        query = query.Where(x => x.TenantId == request.Filter.TenantId);
+
+                    if (!string.IsNullOrWhiteSpace(request.Filter.UserId))
+                        query = query.Where(x => x.UserId == request.Filter.UserId);
+
+                    if (!string.IsNullOrWhiteSpace(request.Filter.ModuleName))
+                        query = query.Where(x => x.ModuleName == request.Filter.ModuleName);
+
+                    if (request.Filter.StartTimestamp.HasValue)
+                        query = query.Where(x => x.TimeStamp >= request.Filter.StartTimestamp.Value);
+
+                    if (request.Filter.EndTimestamp.HasValue)
+                        query = query.Where(x => x.TimeStamp <= request.Filter.EndTimestamp.Value);
                 }
 
-                long totalCount = await query.LongCountAsync(cancellationToken);
+                // 2. 全文檢索 (SearchTerm)
+                if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+                {
+                    var term = request.SearchTerm.Trim();
+                    query = query.Where(x => (x.Message != null && x.Message.Contains(term)) ||
+                                             (x.Exception != null && x.Exception.Contains(term)));
+                }
 
-                int pageIndex = Math.Max(1, request.PageIndex);
-                int pageSize = Math.Clamp(request.PageSize, 1, 500);
+                // 3. 註冊排序策略上下文
+                var sortContext = new SortStrategyContext<Core.Abstractions.Logings.SystemLog>()
+                    .Register("Timestamp", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.TimeStamp))
+                    .Register("Level", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.Level))
+                    .Register("Id", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.Id));
 
-                var items = await query
-                    .OrderByDescending(x => x.TimeStamp)
-                    .Skip((pageIndex - 1) * pageSize)
-                    .Take(pageSize)
-                    .Select(x => new SystemLogDto(
-                        x.Id,
-                        x.TimeStamp,
-                        x.Level,
-                        x.Message,
-                        x.Exception,
-                        x.TenantId,
-                        x.UserId,
-                        x.ModuleName,
-                        x.Operation,
-                        x.CorrelationId,
-                        x.IP,
-                        x.Url,
-                        x.Payload,
-                        x.AlertId,
-                        x.CreatedAt
-                    ))
-                    .ToListAsync(cancellationToken);
+                var sorts = request.Sorts?.Count > 0
+                    ? request.Sorts
+                    : new[] { new SortCriteria { SortBy = "Timestamp", Direction = SortDirection.Descending } };
 
-                return new PagedResult<SystemLogDto>(items.AsReadOnly(), totalCount, pageIndex, pageSize);
+                var queryParameters = new PagedQueryParameters<object>
+                {
+                    Type = request.Type,
+                    PageIndex = request.PageIndex,
+                    PageSize = request.PageSize,
+                    SearchTerm = request.SearchTerm,
+                    Sorts = sorts,
+                    LastSortValue = request.LastSortValue,
+                    LastIdValue = request.LastIdValue
+                };
+
+                // 4. 執行高效能分頁（確保 ToPagedResultAsync 內部包含 Count 查詢以避免回傳 totalCount 為 -1）
+                var pagedEntities = await query.ToPagedResultAsync(
+                    parameters: queryParameters,
+                    sortContext: sortContext,
+                    idSelector: x => x.Id,
+                    cancellationToken: cancellationToken);
+
+                // 5. 轉換為對應的 SystemLogDto 結構
+                var dtos = pagedEntities.Items.Select(e => new SystemLogDto(
+                    Id: e.Id,
+                    TimeStamp: e.TimeStamp,
+                    Level: e.Level,
+                    Message: e.Message,
+                    Exception: e.Exception,
+                    TenantId: e.TenantId,
+                    UserId: e.UserId,
+                    ModuleName: e.ModuleName,
+                    Operation: e.Operation,
+                    CorrelationId: e.CorrelationId,
+                    IP: e.IP,
+                    Url: e.Url,
+                    Payload: e.Payload,
+                    AlertId: e.AlertId,
+                    CreatedAt: e.CreatedAt
+                )).ToList();
+
+                return new PagedResult<SystemLogDto>(dtos, pagedEntities.TotalCount, pagedEntities.PageIndex, pagedEntities.PageSize);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "查詢 core.SystemLogs 發生非預期錯誤");
-                throw;
+                _logger.LogError(ex, "查詢系統日誌清單時發生未預期的內核錯誤。");
+                throw new InvalidOperationException("查詢系統日誌清單失敗。", ex);
             }
         }
 
@@ -101,111 +127,153 @@ namespace SGSFramework.SystemLog.Services
 
             try
             {
-                var query = _dbContext.Set<SecurityLog>().AsNoTracking();
+                var query = _securityLogRepo.GetQueryable();
 
-                if (!string.IsNullOrWhiteSpace(request.Level))
-                    query = query.Where(x => x.Level == request.Level);
-
-                if (!string.IsNullOrWhiteSpace(request.EventCategory))
-                    query = query.Where(x => x.EventCategory == request.EventCategory);
-
-                if (!string.IsNullOrWhiteSpace(request.UserId))
-                    query = query.Where(x => x.UserId == request.UserId);
-
-                if (!string.IsNullOrWhiteSpace(request.CorrelationId))
-                    query = query.Where(x => x.CorrelationId == request.CorrelationId);
-
-                if (request.StartTime.HasValue)
-                    query = query.Where(x => x.Timestamp >= request.StartTime.Value);
-
-                if (request.EndTime.HasValue)
-                    query = query.Where(x => x.Timestamp <= request.EndTime.Value);
-
-                if (!string.IsNullOrWhiteSpace(request.Keyword))
+                // 1. 篩選條件處理 (Filter)
+                if (request.Filter != null)
                 {
-                    query = query.Where(x => (x.Message != null && x.Message.Contains(request.Keyword))
-                                          || (x.Properties != null && x.Properties.Contains(request.Keyword)));
+                    if (!string.IsNullOrWhiteSpace(request.Filter.EventCategory))
+                    {
+                        query = query.Where(x => x.EventCategory == request.Filter.EventCategory);
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(request.Filter.UserId))
+                    {
+                        query = query.Where(x => x.UserId == request.Filter.UserId);
+                    }
+
+                    if (request.Filter.StartTimestamp.HasValue)
+                    {
+                        query = query.Where(x => x.Timestamp >= request.Filter.StartTimestamp.Value);
+                    }
+
+                    if (request.Filter.EndTimestamp.HasValue)
+                    {
+                        query = query.Where(x => x.Timestamp <= request.Filter.EndTimestamp.Value);
+                    }
                 }
 
-                long totalCount = await query.LongCountAsync(cancellationToken);
+                // 2. 全文檢索 (SearchTerm)
+                if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+                {
+                    var term = request.SearchTerm.Trim();
+                    query = query.Where(x => (x.Message != null && x.Message.Contains(term)) ||
+                                             (x.UserId != null && x.UserId.Contains(term)) ||
+                                             (x.ClientIp != null && x.ClientIp.Contains(term)));
+                }
 
-                int pageIndex = Math.Max(1, request.PageIndex);
-                int pageSize = Math.Clamp(request.PageSize, 1, 500);
+                // 3. 註冊排序策略上下文
+                var sortContext = new SortStrategyContext<Core.Abstractions.Logings.SecurityLog>()
+                    .Register("Timestamp", new ExpressionSortStrategy<Core.Abstractions.Logings.SecurityLog>(x => x.Timestamp))
+                    .Register("EventCategory", new ExpressionSortStrategy<Core.Abstractions.Logings.SecurityLog>(x => x.EventCategory))
+                    .Register("Id", new ExpressionSortStrategy<Core.Abstractions.Logings.SecurityLog>(x => x.Id));
 
-                var items = await query
-                    .OrderByDescending(x => x.Timestamp)
-                    .Skip((pageIndex - 1) * pageSize)
-                    .Take(pageSize)
-                    .Select(x => new SecurityLogDto(
-                        x.Id,
-                        x.Timestamp,
-                        x.Level,
-                        x.Message,
-                        x.Exception,
-                        x.LogType,
-                        x.EventCategory,
-                        x.UserId,
-                        x.ClientIp,
-                        x.CorrelationId,
-                        x.Properties,
-                        x.AlertId
-                    ))
-                    .ToListAsync(cancellationToken);
+                var sorts = request.Sorts?.Count > 0
+                    ? request.Sorts
+                    : new[] { new SortCriteria { SortBy = "Timestamp", Direction = SortDirection.Descending } };
 
-                return new PagedResult<SecurityLogDto>(items.AsReadOnly(), totalCount, pageIndex, pageSize);
+                var queryParameters = new PagedQueryParameters<object>
+                {
+                    Type = request.Type,
+                    PageIndex = request.PageIndex,
+                    PageSize = request.PageSize,
+                    SearchTerm = request.SearchTerm,
+                    Sorts = sorts,
+                    LastSortValue = request.LastSortValue,
+                    LastIdValue = request.LastIdValue
+                };
+
+                // 4. 執行高效能分頁
+                var pagedEntities = await query.ToPagedResultAsync(
+                    parameters: queryParameters,
+                    sortContext: sortContext,
+                    idSelector: x => x.Id,
+                    cancellationToken: cancellationToken);
+
+                // 5. 轉換為對應的 SecurityLogDto 結構
+                var dtos = pagedEntities.Items.Select(e => new SecurityLogDto(
+                    Id: e.Id,
+                    Timestamp: e.Timestamp,
+                    Level: e.Level,
+                    Message: e.Message,
+                    Exception: e.Exception,
+                    LogType: e.LogType,
+                    EventCategory: e.EventCategory,
+                    UserId: e.UserId,
+                    ClientIp: e.ClientIp,
+                    CorrelationId: e.CorrelationId,
+                    Properties: e.Properties,
+                    AlertId: e.AlertId
+                )).ToList();
+
+                return new PagedResult<SecurityLogDto>(dtos, pagedEntities.TotalCount, pagedEntities.PageIndex, pagedEntities.PageSize);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "查詢 core.SecurityLog 發生非預期錯誤");
-                throw;
+                _logger.LogError(ex, "查詢資安日誌清單時發生未預期的內核錯誤。");
+                throw new InvalidOperationException("查詢資安日誌清單失敗。", ex);
             }
         }
 
         public async Task<SystemLogDto?> GetSystemLogByIdAsync(long id, CancellationToken cancellationToken = default)
         {
-            return await _dbContext.Set<SGSFramework.Core.Abstractions.Logings.SystemLog>()
-                .AsNoTracking()
-                .Where(x => x.Id == id)
-                .Select(x => new SystemLogDto(
-                    x.Id,
-                    x.TimeStamp,
-                    x.Level,
-                    x.Message,
-                    x.Exception,
-                    x.TenantId,
-                    x.UserId,
-                    x.ModuleName,
-                    x.Operation,
-                    x.CorrelationId,
-                    x.IP,
-                    x.Url,
-                    x.Payload,
-                    x.AlertId,
-                    x.CreatedAt
-                ))
-                .FirstOrDefaultAsync(cancellationToken);
+            try
+            {
+                var entity = await _systemLogRepo.GetByIdAsync(id, cancellationToken);
+                if (entity == null) return null;
+
+                return new SystemLogDto(
+                    Id: entity.Id,
+                    TimeStamp: entity.TimeStamp,
+                    Level: entity.Level,
+                    Message: entity.Message,
+                    Exception: entity.Exception,
+                    TenantId: entity.TenantId,
+                    UserId: entity.UserId,
+                    ModuleName: entity.ModuleName,
+                    Operation: entity.Operation,
+                    CorrelationId: entity.CorrelationId,
+                    IP: entity.IP,
+                    Url: entity.Url,
+                    Payload: entity.Payload,
+                    AlertId: entity.AlertId,
+                    CreatedAt: entity.CreatedAt
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "依主鍵識別碼 ({Id}) 檢索系統日誌時發生異常。", id);
+                throw new InvalidOperationException("檢索系統日誌失敗。", ex);
+            }
         }
 
         public async Task<SecurityLogDto?> GetSecurityLogByIdAsync(int id, CancellationToken cancellationToken = default)
         {
-            return await _dbContext.Set<SecurityLog>()
-                .AsNoTracking()
-                .Where(x => x.Id == id)
-                .Select(x => new SecurityLogDto(
-                    x.Id,
-                    x.Timestamp,
-                    x.Level,
-                    x.Message,
-                    x.Exception,
-                    x.LogType,
-                    x.EventCategory,
-                    x.UserId,
-                    x.ClientIp,
-                    x.CorrelationId,
-                    x.Properties,
-                    x.AlertId
-                ))
-                .FirstOrDefaultAsync(cancellationToken);
+            try
+            {
+                var entity = await _securityLogRepo.GetByIdAsync(id, cancellationToken);
+                if (entity == null) return null;
+
+                return new SecurityLogDto(
+                    Id: entity.Id,
+                    Timestamp: entity.Timestamp,
+                    Level: entity.Level,
+                    Message: entity.Message,
+                    Exception: entity.Exception,
+                    LogType: entity.LogType,
+                    EventCategory: entity.EventCategory,
+                    UserId: entity.UserId,
+                    ClientIp: entity.ClientIp,
+                    CorrelationId: entity.CorrelationId,
+                    Properties: entity.Properties,
+                    AlertId: entity.AlertId
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "依主鍵識別碼 ({Id}) 檢索資安日誌時發生異常。", id);
+                throw new InvalidOperationException("檢索資安日誌失敗。", ex);
+            }
         }
     }
 }

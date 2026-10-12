@@ -10,10 +10,19 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
     {
         public bool IsSystemAdmin { get; set; }=false;
 
+
+        public string? EmployeeNo { get; set; } =string.Empty;
+
         /// <summary>
         /// 使用者真實姓名
         /// </summary>
         public string FullName { get; set; } = string.Empty;
+
+
+        /// <summary>
+        /// 帳號目前狀態
+        /// </summary>
+        public UserStatus Status { get; set; } = UserStatus.Active;
 
         /// <summary>
         /// 帳號最後登入時間
@@ -30,7 +39,16 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
 
         public string DeletedBy { get; set; } = string.Empty;
 
-        public DateTimeOffset? DeletedAt { get; set; } 
+        public DateTimeOffset? DeletedAt { get; set; }
+
+
+        /// <summary>
+        /// 檢查帳號當前是否允許正常登入與操作
+        /// </summary>
+        public bool CanLogin()
+        {
+            return !IsDeleted && Status == UserStatus.Active;
+        }
 
 
     }

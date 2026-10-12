@@ -148,6 +148,15 @@ public interface IUserManagementService<TUser, TRole, TKey>
         string clientIp = "127.0.0.1",
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// 更新使用者狀態
+    /// </summary>
+    /// <param name="userId"></param>
+    /// <param name="status"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    Task<Result<bool>> UpdateUserStatusAsync(TKey userId, int status, CancellationToken cancellationToken = default);
+
 }
 
 /// <summary>

@@ -816,6 +816,64 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
             return Result.Failure<bool>(Error.Unexpected("User.ChangePassword.Exception", "變更密碼時發生內部系統錯誤。"));
         }
     }
+
+    /// <inheritdoc />
+    public async Task<Result<bool>> UpdateUserStatusAsync(
+        TKey userId,
+        int status,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var user = await _userManager.FindByIdAsync(userId.ToString()!).ConfigureAwait(false);
+            if (user == null || user.IsDeleted)
+            {
+                return Result.Failure<bool>(Error.NotFound("User.NotFound", $"找不到識別碼為 {userId} 的使用者。"));
+            }
+
+            if (!Enum.IsDefined(typeof(UserStatus), status))
+            {
+                return Result.Failure<bool>(Error.Validation("User.Status.Invalid", "無效的使用者狀態數值。"));
+            }
+
+            var newStatus = (UserStatus)status;
+            user.Status = newStatus;
+
+            // 企業實務：若切換為 Disabled 或 Locked，可同步觸發 ASP.NET Core Identity Lockout 機制
+            if (newStatus == UserStatus.Disabled || newStatus == UserStatus.Locked)
+            {
+                await _userManager.SetLockoutEnabledAsync(user, true).ConfigureAwait(false);
+                await _userManager.SetLockoutEndDateAsync(user, DateTimeOffset.MaxValue).ConfigureAwait(false);
+            }
+            else if (newStatus == UserStatus.Active)
+            {
+                await _userManager.SetLockoutEndDateAsync(user, null).ConfigureAwait(false);
+            }
+
+            var result = await _userManager.UpdateAsync(user).ConfigureAwait(false);
+            if (!result.Succeeded)
+            {
+                string errors = string.Join("; ", result.Errors.Select(e => e.Description));
+                _logger.LogWarning("更新使用者狀態失敗 {UserId}: {Errors}", userId, errors);
+                return Result.Failure<bool>(Error.Validation("User.Status.Failed", $"變更使用者狀態失敗: {errors}"));
+            }
+
+            _logger.LogInformation("成功更新使用者狀態: {UserId}, Status: {Status}", userId, newStatus);
+            return Result.Success(true);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("[UserManagementService] 更新使用者狀態作業已被取消。UserId: {UserId}", userId);
+            return Result.Failure<bool>(Error.Validation("User.Status.Cancelled", "更新使用者狀態作業已取消。"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "更新使用者狀態時發生例外。UserId: {UserId}", userId);
+            return Result.Failure<bool>(Error.Unexpected("User.Status.Exception", "變更使用者狀態時發生內部系統錯誤。"));
+        }
+    }
 }
 
 /// <summary>

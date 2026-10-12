@@ -63,7 +63,6 @@ public sealed class UserManagementController(
     [EndpointDescription("取得系統所有有效使用者清單，包含帳號、Email、驗證狀態與所屬角色等資訊")]
     [ProducesResponseType(typeof(Result<List<UserDto>>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-
     public async Task<IActionResult> GetUsers(CancellationToken cancellationToken = default)
     {
         try
@@ -170,6 +169,9 @@ public sealed class UserManagementController(
         }
     }
 
+    /// <summary>
+    /// 建立新使用者帳號
+    /// </summary>
     [HttpPost("register")]
     [Function("Register", "建立使用者", Icon = "fa-solid fa-user-gear", Order = 3, Description = "透過指定的策略模式建立新使用者帳號(支援自訂帳號與 Email 雙重唯一性校驗)並指派實驗室與角色")]
     [RequiresPermission("SYSTEM.USERMANAGEMENT.CREATE", "建立使用者")]
@@ -245,7 +247,6 @@ public sealed class UserManagementController(
     /// <summary>
     /// 確認使用者電子郵件
     /// </summary>
-    
     [HttpPost("confirm-email")]
     [Function("ConfirmEmail", "確認電子郵件", Icon = "fa-solid fa-envelope-circle-check", Order = 11, Description = "透過驗證權杖確認使用者的電子郵件地址")]
     [AllowAnonymous]
@@ -295,7 +296,7 @@ public sealed class UserManagementController(
     /// </summary>
     [HttpPut("{id:guid}")]
     [Function("UpdateUser", "更新使用者", Icon = "fa-solid fa-user-pen", Order = 4, Description = "更新指定使用者的基本屬性及角色授權配置")]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.UPDATE","編輯使用者")]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.UPDATE", "編輯使用者")]
     [EndpointSummary("更新使用者")]
     [EndpointDescription("更新指定使用者的基本屬性及角色授權配置。")]
     [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
@@ -385,19 +386,21 @@ public sealed class UserManagementController(
     }
 
     /// <summary>
-    /// 切換使用者啟用/停用狀態
+    /// 切換使用者啟用/停用狀態（支援進階企業狀態管理列舉）
     /// </summary>
     [HttpPatch("{id:guid}/status")]
     [Function("ToggleUserStatus", "切換使用者狀態", Icon = "fa-solid fa-user-lock", Order = 6, Description = "啟用或停用指定使用者的系統存取權限")]
-    [RequiresPermission("SYSTEM.USERMANAGEMENT.UPDATE","編輯使用者")]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.UPDATE", "編輯使用者")]
     [EndpointSummary("切換使用者狀態")]
     [EndpointDescription("啟用或停用指定使用者的系統存取權限。")]
     [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ToggleUserStatus(
         [FromRoute] Guid id,
-        [FromQuery] bool isActive,
+        [FromQuery] bool? isActive,
+        [FromQuery] int? status,
         CancellationToken cancellationToken = default)
     {
         if (id == Guid.Empty)
@@ -413,7 +416,28 @@ public sealed class UserManagementController(
 
         try
         {
-            var result = await _userService.ToggleUserStatusAsync(id, isActive, cancellationToken).ConfigureAwait(false);
+            Result<bool> result;
+
+            // 支援傳入新版具體列舉狀態值，若無則相容舊版 bool 參數
+            if (status.HasValue)
+            {
+                result = await _userService.UpdateUserStatusAsync(id, status.Value, cancellationToken).ConfigureAwait(false);
+            }
+            else if (isActive.HasValue)
+            {
+                result = await _userService.ToggleUserStatusAsync(id, isActive.Value, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Status = StatusCodes.Status400BadRequest,
+                    Title = "無效的請求參數",
+                    Detail = "必須提供狀態參數 (isActive 或 status)。",
+                    Instance = HttpContext.Request.Path
+                });
+            }
+
             return HandleResult(result);
         }
         catch (Exception ex)
@@ -484,7 +508,6 @@ public sealed class UserManagementController(
     [ProducesResponseType(typeof(Result<UserRoleAssignmentDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
- 
     public async Task<IActionResult> GetUserRoleAssignment(
         [FromRoute] Guid userId,
         CancellationToken cancellationToken = default)

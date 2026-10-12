@@ -9,7 +9,6 @@ using Serilog.Core;
 using Serilog.Events;
 using SGSFramework.Core.Abstractions.Logings;
 using SGSFramework.Core.Abstractions.Notifications;
-using SGSFramework.Core.Abstractions.Processors;
 using SGSFramework.Core.Mask;
 using SGSFramework.SystemLog.BackgroundServices;
 using SGSFramework.SystemLog.Channels;
@@ -17,6 +16,7 @@ using SGSFramework.SystemLog.Notifications;
 using SGSFramework.SystemLog.Options;
 using SGSFramework.SystemLog.Services;
 using SGSFramework.SystemLog.Sinks;
+
 
 namespace SGSFramework.SystemLog.Extensions
 {
@@ -71,6 +71,9 @@ namespace SGSFramework.SystemLog.Extensions
             // =========================================================================
             builder.Services.AddSingleton<IAlertCoordinator, AlertCoordinator>();
             builder.Services.AddSingleton<INotificationStrategy, EmailNotificationStrategy>();
+            // 註冊泛型查詢倉儲 (QueryRepository)
+
+
             builder.Services.AddScoped<ISystemLogQueryService, SystemLogQueryService>();
 
             // =========================================================================

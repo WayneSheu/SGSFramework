@@ -1,4 +1,5 @@
-﻿using SGSFramework.SystemLog.DTOs;
+﻿using SGSFramework.Core.Paginations;
+using SGSFramework.SystemLog.DTOs;
 using System;
 using System.Collections.Generic;
 using System.Text;

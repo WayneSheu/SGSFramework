@@ -1,0 +1,17 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Text;
+
+namespace SGSFramework.SystemLog.DTOs
+{
+    /// <summary>
+    /// 安全性日誌篩選條件
+    /// </summary>
+    public record SecurityLogFilter
+    {
+        public string? EventCategory { get; init; }
+        public string? UserId { get; init; }
+        public DateTimeOffset? StartTimestamp { get; init; }
+        public DateTimeOffset? EndTimestamp { get; init; }
+    }
+}
