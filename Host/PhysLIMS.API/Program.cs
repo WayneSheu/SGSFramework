@@ -161,14 +161,22 @@ try
     // 3. 安全授權與跨域中間件 (順序嚴格對齊：CORS -> 認證 -> 授權)
     app.UseCors("CorsPolicy");
     app.UseMiddleware<CorsLoggingMiddleware>();
-    // 7. 啟用靜態檔案與 MIME 支援
-    //掛載 Blazor 框架專屬資源與 MIME 設定
+
+    // 7. 啟用全域靜態檔案與 MIME 支援 (負責根目錄與 Vue 3)
     app.UseEnterpriseStaticFiles();
 
-    // 顯式啟用 Blazor Framework 靜態資產對應 (自動處理 _framework 下所有 .wasm, .js, .dll)
-    app.UseBlazorFrameworkFiles("/blazor");
+    // 2. 為 Blazor WASM 建立獨立的實體檔案提供者 (對應 /blazor 路徑)
+    var blazorRootPath = Path.Combine(app.Environment.WebRootPath, "blazor");
+    if (Directory.Exists(blazorRootPath))
+    {
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(blazorRootPath),
+            RequestPath = "/blazor"
+        });
+    }
 
-    // 【修正 2】在路由前置攔截並校正 /blazor 網址斜線
+    // 3. 根目錄斜線校正
     app.Use(async (context, next) =>
     {
         if (context.Request.Path.Equals("/blazor", StringComparison.OrdinalIgnoreCase))

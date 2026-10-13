@@ -20,6 +20,10 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
         /// 是否為系統內建角色。預設為 false（代表一般自訂角色）；系統初始化範本會明確設為 true。
         /// </summary>
         public bool IsSystemRole { get; set; } = false;
+
+        public RoleStatus Status { get; set; } = RoleStatus.Active;
+
+        public bool IsDeleted { get; set; } = false;
     }
 
     /// <summary>

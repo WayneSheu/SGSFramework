@@ -1,7 +1,9 @@
 ﻿// 檔案路徑: Domain/SGSFramework.Identity.Abstractions/IRoleManagementService.cs
 
 using Microsoft.AspNetCore.Identity;
+using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Identity.DTOs;
+using SGSFramework.Identity.DTOs.Roles;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -22,6 +24,12 @@ namespace SGSFramework.Identity.Abstractions
         Task<RoleDto?> GetRoleByIdAsync(string roleId, CancellationToken cancellationToken = default);
         Task<(bool Succeeded, IEnumerable<string> Errors)> CreateRoleAsync(CreateRoleRequest request, CancellationToken cancellationToken = default);
         Task<(bool Succeeded, IEnumerable<string> Errors)> UpdateRoleAsync(UpdateRoleRequest request, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// 變更指定角色的狀態（啟用/停用/鎖定）
+        /// </summary>
+        Task<(bool Succeeded, IEnumerable<string> Errors)> UpdateRoleStatusAsync(TKey roleId, RoleStatus newStatus, CancellationToken cancellationToken = default);
+
         Task<(bool Succeeded, IEnumerable<string> Errors)> DeleteRoleAsync(string roleId, CancellationToken cancellationToken = default);
 
         // AD Group 對應服務介面

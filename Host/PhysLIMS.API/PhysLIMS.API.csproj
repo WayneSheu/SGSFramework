@@ -55,4 +55,10 @@
     <Folder Include="logs\" />
     <Folder Include="wwwroot\blazor\" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="FrontendFrameWork.Shared">
+      <HintPath>..\..\..\FrontendFrameWork\FrontendFrameWork\FrontendFrameWork.Shared\bin\Release\net10.0\FrontendFrameWork.Shared.dll</HintPath>
+    </Reference>
+  </ItemGroup>
 </Project>

@@ -502,6 +502,9 @@ namespace PhysLIMS.API.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
 
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsSystemRole")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
@@ -516,6 +519,10 @@ namespace PhysLIMS.API.Migrations
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
 

@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Services;
+using SGSFramework.Core.Abstractions.Adapters;
 using SGSFramework.Core.Abstractions.Entities.Base;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Logings;
@@ -38,6 +39,7 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
     private readonly UserManager<TUser> _userManager;
     private readonly RoleManager<TRole> _roleManager;
     private readonly ILogger<UserManagementService<TUser, TRole, TKey>> _logger;
+    private readonly IOrganizationIntegrationService _orgIntegrationService;
     private readonly TokenBucketEngine<TUser> _tokenEngine;
     private readonly ISecurityLogger _securityLogger;
     private readonly IUnitOfWork _unitOfWork;
@@ -45,6 +47,7 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
     public UserManagementService(
         UserManager<TUser> userManager,
         RoleManager<TRole> roleManager,
+        IOrganizationIntegrationService orgIntegrationService,
         ILogger<UserManagementService<TUser, TRole, TKey>> logger,
         TokenBucketEngine<TUser> tokenEngine,
         ISecurityLogger securityLogger,
@@ -52,6 +55,7 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
     {
         _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
         _roleManager = roleManager ?? throw new ArgumentNullException(nameof(roleManager));
+        _orgIntegrationService = orgIntegrationService ?? throw new ArgumentNullException(nameof(orgIntegrationService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _tokenEngine = tokenEngine ?? throw new ArgumentNullException(nameof(tokenEngine));
         _securityLogger = securityLogger ?? throw new ArgumentNullException(nameof(securityLogger));
@@ -80,13 +84,23 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
 
                 var roles = await _userManager.GetRolesAsync(user).ConfigureAwait(false);
 
+                // 取得使用者可存取的組織與主要實驗室
+                string userIdStr = user.Id.ToString() ?? string.Empty;
+                var accessibleOrgs = await _orgIntegrationService.GetUserAccessibleOrganizationsAsync(userIdStr, cancellationToken).ConfigureAwait(false);
+                var primaryOrg = accessibleOrgs.FirstOrDefault(o => o.IsPrimary) ?? accessibleOrgs.FirstOrDefault();
+
                 userDtos.Add(new UserDto
                 {
-                    Id = user.Id.ToString() ?? string.Empty,
+                    Id = userIdStr,
                     Username = user.UserName ?? string.Empty,
                     Email = user.Email ?? string.Empty,
                     EmailConfirmed = user.EmailConfirmed,
                     LockoutEnabled = user.LockoutEnabled,
+                    EmployeeNo = user.EmployeeNo ?? string.Empty,
+                    FullName = user.FullName ?? string.Empty,
+                    PrimaryLabId = primaryOrg?.TenantLabId,
+                    PrimaryLabCode = primaryOrg?.Code,
+                    PrimaryLabName = primaryOrg?.Name,
                     Roles = roles.ToList()
                 });
             }
@@ -120,7 +134,9 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
             {
                 string searchTerm = queryParameters.SearchTerm.Trim();
                 query = query.Where(u => (u.UserName != null && u.UserName.Contains(searchTerm)) ||
-                                         (u.Email != null && u.Email.Contains(searchTerm)));
+                                         (u.Email != null && u.Email.Contains(searchTerm)) ||
+                                         (u.FullName != null && u.FullName.Contains(searchTerm)) ||
+                                         (u.EmployeeNo != null && u.EmployeeNo.Contains(searchTerm)));
             }
 
             int totalCount = await query.CountAsync(cancellationToken).ConfigureAwait(false);
@@ -132,13 +148,25 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
 
-            var items = userEntities.Select(u => new UserResponse
+            var items = new List<UserResponse>(userEntities.Count);
+            foreach (var u in userEntities)
             {
-                Id = u.Id is Guid gId ? gId : (Guid.TryParse(u.Id.ToString(), out var parsedId) ? parsedId : Guid.Empty),
-                UserName = u.UserName ?? string.Empty,
-                Email = u.Email ?? string.Empty,
-                EmailConfirmed = u.EmailConfirmed
-            }).ToList();
+                string userIdStr = u.Id.ToString() ?? string.Empty;
+                var accessibleOrgs = await _orgIntegrationService.GetUserAccessibleOrganizationsAsync(userIdStr, cancellationToken).ConfigureAwait(false);
+                var primaryOrg = accessibleOrgs.FirstOrDefault(o => o.IsPrimary) ?? accessibleOrgs.FirstOrDefault();
+
+                items.Add(new UserResponse
+                {
+                    Id = u.Id is Guid gId ? gId : (Guid.TryParse(u.Id.ToString(), out var parsedId) ? parsedId : Guid.Empty),
+                    UserName = u.UserName ?? string.Empty,
+                    Email = u.Email ?? string.Empty,
+                    EmailConfirmed = u.EmailConfirmed,
+                    EmployeeNo = u.EmployeeNo ?? string.Empty,
+                    FullName = u.FullName ?? string.Empty,
+                    PrimaryLabId = primaryOrg?.TenantLabId,
+                    PrimaryLabName = primaryOrg?.Name
+                });
+            }
 
             var pagedResult = new PagedResult<UserResponse>(items, totalCount, queryParameters.PageIndex, queryParameters.PageSize);
             return Result.Success(pagedResult);
@@ -157,18 +185,26 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
     {
         try
         {
-            var user = await _userManager.FindByIdAsync(userId.ToString()!).ConfigureAwait(false);
+            string userIdStr = userId?.ToString() ?? string.Empty;
+            var user = await _userManager.FindByIdAsync(userIdStr).ConfigureAwait(false);
             if (user == null || user.IsDeleted)
             {
                 return Result.Failure<UserResponse>(Error.NotFound("User.NotFound", $"找不到識別碼為 {userId} 的使用者。"));
             }
+
+            var accessibleOrgs = await _orgIntegrationService.GetUserAccessibleOrganizationsAsync(userIdStr, cancellationToken).ConfigureAwait(false);
+            var primaryOrg = accessibleOrgs.FirstOrDefault(o => o.IsPrimary) ?? accessibleOrgs.FirstOrDefault();
 
             var response = new UserResponse
             {
                 Id = user.Id is Guid gId ? gId : (Guid.TryParse(user.Id.ToString(), out var parsedId) ? parsedId : Guid.Empty),
                 UserName = user.UserName ?? string.Empty,
                 Email = user.Email ?? string.Empty,
-                EmailConfirmed = user.EmailConfirmed
+                EmailConfirmed = user.EmailConfirmed,
+                EmployeeNo = user.EmployeeNo ?? string.Empty,
+                FullName = user.FullName ?? string.Empty,
+                PrimaryLabId = primaryOrg?.TenantLabId,
+                PrimaryLabName = primaryOrg?.Name
             };
 
             return Result.Success(response);
@@ -884,11 +920,12 @@ public sealed class UserManagementService : UserManagementService<ApplicationUse
     public UserManagementService(
         UserManager<ApplicationUser> userManager,
         RoleManager<ApplicationRole> roleManager,
+           IOrganizationIntegrationService orgIntegrationService,
         ILogger<UserManagementService<ApplicationUser, ApplicationRole, Guid>> logger,
         TokenBucketEngine<ApplicationUser> tokenEngine,
         ISecurityLogger securityLogger,
         IUnitOfWork unitOfWork)
-        : base(userManager, roleManager, logger, tokenEngine, securityLogger, unitOfWork)
+        : base(userManager, roleManager, orgIntegrationService, logger, tokenEngine, securityLogger, unitOfWork)
     {
     }
 }

@@ -4,18 +4,19 @@ using System.Text;
 
 namespace SGSFramework.Identity.DTOs.Users
 {
-    /// <summary> 
-    /// 使用者資訊回應 DTO 
-    /// </summary> 
-    public sealed record UserResponse
+    public class UserResponse
     {
-        public Guid Id { get; init; }
-        public string UserName { get; init; } = string.Empty;
-        public string Email { get; init; } = string.Empty;
-        public bool EmailConfirmed { get; init; } = false;
-        public bool IsActive { get; init; }
-        public DateTimeOffset CreatedAt { get; init; }
-        public IReadOnlyList<string> Roles { get; init; } = Array.Empty<string>();
-        public Guid? PrimaryLabId { get; init; }
+        public Guid Id { get; set; }
+        public string UserName { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public bool EmailConfirmed { get; set; }
+
+        // 【新增】企業欄位擴充
+        public string EmployeeNo { get; set; } = string.Empty;
+        public string FullName { get; set; } = string.Empty;
+
+        // 【新增】所屬主要區域實驗室資訊
+        public Guid? PrimaryLabId { get; set; }
+        public string? PrimaryLabName { get; set; }
     }
 }
