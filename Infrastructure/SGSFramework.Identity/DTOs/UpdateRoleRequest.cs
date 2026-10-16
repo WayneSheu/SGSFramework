@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Azure.Core;
+using SGSFramework.Core.Abstractions.Entities.Identities;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Text;
@@ -12,10 +14,18 @@ namespace SGSFramework.Identity.DTOs
 
         public string Code { get; set; } = string.Empty;
 
+        public RoleScopeType ScopeType  { get; set; } = default!;
+        
+        public int HierarchyLevel { get; set; } = default!;
+        public Guid? TenantLabId  { get; set; } = default!;
+
 
         [Required(ErrorMessage = "角色名稱為必填項目")]
         [StringLength(256, ErrorMessage = "角色名稱長度不能超過 256 個字元")]
         public string NewRoleName { get; set; } = string.Empty;
+
+
+
 
         public string Description { get; set; } = string.Empty;
     }

@@ -17,7 +17,7 @@ public static class ScalarExtensions
                 .WithLayout(ScalarLayout.Modern)
                 .WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient);
 
-            // [修正] 改用 AddDocument 正確對應多版本 OpenAPI 文件端點，避免誤用 AddServer 造成路徑 404
+            // 正確對應多版本 OpenAPI 文件端點，避免誤用 AddServer 造成路徑 404
             options.AddDocument("v1", "v1 API", "/openapi/v1.json")
                    .AddDocument("v2", "v2 API", "/openapi/v2.json");
 

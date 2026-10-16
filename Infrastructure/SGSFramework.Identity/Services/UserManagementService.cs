@@ -1,6 +1,6 @@
 ﻿// ==========================================
 // 檔案路徑: src/Infrastructure/SGSFramework.Identity/Services/UserManagementService.cs
-// 架構層級: Infrastructure / Service Implementation Layer (Added AssignUserRolesAsync)
+// 架構層級: Infrastructure / Service Implementation Layer
 // ==========================================
 
 #nullable enable
@@ -17,6 +17,7 @@ using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Logings;
 using SGSFramework.Core.Abstractions.Transactions;
 using SGSFramework.Core.Errors;
+using SGSFramework.Core.Extensions;
 using SGSFramework.Core.Paginations;
 using SGSFramework.Core.Results;
 using SGSFramework.Identity.Abstractions;
@@ -84,7 +85,6 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
 
                 var roles = await _userManager.GetRolesAsync(user).ConfigureAwait(false);
 
-                // 取得使用者可存取的組織與主要實驗室
                 string userIdStr = user.Id.ToString() ?? string.Empty;
                 var accessibleOrgs = await _orgIntegrationService.GetUserAccessibleOrganizationsAsync(userIdStr, cancellationToken).ConfigureAwait(false);
                 var primaryOrg = accessibleOrgs.FirstOrDefault(o => o.IsPrimary) ?? accessibleOrgs.FirstOrDefault();
@@ -264,7 +264,6 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
         }
     }
 
-
     /// <inheritdoc />
     public async Task<Result<bool>> AssignUserRolesAsync(
         TKey userId,
@@ -325,9 +324,7 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                     }
                 }
 
-                // 【關鍵修正】必須呼叫 SaveChangesAsync 將變更寫入資料庫，交易 Commit 才會生效
                 await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
                 _logger.LogInformation("成功更新使用者角色指派。UserId: {UserId}, Roles: {Roles}", userId, string.Join(", ", targetRoles));
@@ -364,7 +361,8 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
             {
                 UserName = request.UserName,
                 Email = request.Email,
-                EmailConfirmed = true
+                EmailConfirmed = true,
+                Status = UserStatus.Active // 使用強型別 Enum 初始狀態
             };
 
             var result = await _userManager.CreateAsync(user, request.Password).ConfigureAwait(false);
@@ -415,7 +413,8 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                 UserName = request.UserName,
                 Email = request.Email,
                 EmailConfirmed = false,
-                LockoutEnabled = true
+                LockoutEnabled = true,
+                Status = UserStatus.Pending // 註冊預設為待啟用，透過 EnumExtensions 可取得顯示名稱 "待啟用"
             };
 
             var result = await _userManager.CreateAsync(user, request.Password).ConfigureAwait(false);
@@ -433,7 +432,8 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                 eventCategory: "UserManagement.Register",
                 userId: user.Id.ToString() ?? string.Empty,
                 clientIp: clientIp,
-                messageTemplate: "使用者註冊成功。帳號: {Username}, Email: {Email}",
+                messageTemplate: "使用者註冊成功 (狀態: {StatusText})。帳號: {Username}, Email: {Email}",
+                user.Status.GetDisplayName(),
                 user.UserName ?? string.Empty,
                 user.Email ?? string.Empty
             );
@@ -481,7 +481,11 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                 return Result.Failure<bool>(Error.Validation("User.ConfirmEmail.Failed", $"電子郵件驗證失敗: {errors}"));
             }
 
-            _logger.LogInformation("成功確認使用者電子郵件: {UserId}", userId);
+            // 驗證成功後自動將狀態切換為 Active (啟用中)
+            user.Status = UserStatus.Active;
+            await _userManager.UpdateAsync(user).ConfigureAwait(false);
+
+            _logger.LogInformation("成功確認使用者電子郵件並更新狀態為 [{StatusText}]: {UserId}", user.Status.GetDisplayName(), userId);
             return Result.Success(true);
         }
         catch (Exception ex)
@@ -651,6 +655,9 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                 return Result.Failure<bool>(Error.NotFound("User.NotFound", $"找不到識別碼為 {userId} 的使用者。"));
             }
 
+            // 同步更新強型別 Enum 狀態與 DisplayName 記錄
+            user.Status = isActive ? UserStatus.Active : UserStatus.Disabled;
+
             var lockoutEnd = isActive ? (DateTimeOffset?)null : DateTimeOffset.MaxValue;
             await _userManager.SetLockoutEnabledAsync(user, !isActive).ConfigureAwait(false);
             var result = await _userManager.SetLockoutEndDateAsync(user, lockoutEnd).ConfigureAwait(false);
@@ -660,7 +667,10 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                 return Result.Failure<bool>(Error.Validation("User.Status.Failed", "變更使用者狀態失敗。"));
             }
 
-            _logger.LogInformation("成功變更使用者狀態: {UserId}, IsActive: {IsActive}", userId, isActive);
+            await _userManager.UpdateAsync(user).ConfigureAwait(false);
+
+            _logger.LogInformation("成功變更使用者狀態: {UserId}, Status: {StatusText} (IsActive: {IsActive})",
+                userId, user.Status.GetDisplayName(), isActive);
             return Result.Success(true);
         }
         catch (Exception ex)
@@ -716,6 +726,7 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                 user.IsDeleted = true;
                 user.DeletedAt = DateTimeOffset.UtcNow;
                 user.DeletedBy = currentUserId;
+                user.Status = UserStatus.Disabled; // 刪除時狀態轉為停用
 
                 user.UserName = $"deleted_user_{anonymizedTag}";
                 user.NormalizedUserName = $"DELETED_USER_{anonymizedTag.ToUpperInvariant()}";
@@ -757,11 +768,11 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                     eventCategory: "UserManagement.DeleteUser",
                     userId: currentUserId,
                     clientIp: clientIp,
-                    messageTemplate: "管理員 [{AdminId}] 軟刪除並匿名化使用者帳號。目標識別碼: {TargetUserId}, 原帳號: {OriginalUserName}, 原 Email: {OriginalEmail}",
+                    messageTemplate: "管理員 [{AdminId}] 軟刪除並匿名化使用者帳號。目標識別碼: {TargetUserId}, 狀態: {StatusText}, 原帳號: {OriginalUserName}",
                     currentUserId,
                     userIdStr,
-                    originalUserName,
-                    originalEmail
+                    user.Status.GetDisplayName(),
+                    originalUserName
                 );
 
                 return Result.Success(true);
@@ -877,7 +888,6 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
             var newStatus = (UserStatus)status;
             user.Status = newStatus;
 
-            // 企業實務：若切換為 Disabled 或 Locked，可同步觸發 ASP.NET Core Identity Lockout 機制
             if (newStatus == UserStatus.Disabled || newStatus == UserStatus.Locked)
             {
                 await _userManager.SetLockoutEnabledAsync(user, true).ConfigureAwait(false);
@@ -896,7 +906,8 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                 return Result.Failure<bool>(Error.Validation("User.Status.Failed", $"變更使用者狀態失敗: {errors}"));
             }
 
-            _logger.LogInformation("成功更新使用者狀態: {UserId}, Status: {Status}", userId, newStatus);
+            _logger.LogInformation("成功更新使用者狀態: {UserId}, Status: {StatusText} ({StatusCode})",
+                userId, newStatus.GetDisplayName(), (int)newStatus);
             return Result.Success(true);
         }
         catch (OperationCanceledException)
@@ -920,7 +931,7 @@ public sealed class UserManagementService : UserManagementService<ApplicationUse
     public UserManagementService(
         UserManager<ApplicationUser> userManager,
         RoleManager<ApplicationRole> roleManager,
-           IOrganizationIntegrationService orgIntegrationService,
+        IOrganizationIntegrationService orgIntegrationService,
         ILogger<UserManagementService<ApplicationUser, ApplicationRole, Guid>> logger,
         TokenBucketEngine<ApplicationUser> tokenEngine,
         ISecurityLogger securityLogger,

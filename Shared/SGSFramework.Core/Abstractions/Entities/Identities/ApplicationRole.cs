@@ -1,15 +1,15 @@
-﻿using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using SGSFramework.Core.Abstractions.Entities.Base;
+﻿#nullable enable
 
 namespace SGSFramework.Core.Abstractions.Entities.Identities
 {
+    using Microsoft.AspNetCore.Identity;
+    using Microsoft.EntityFrameworkCore;
+    using Microsoft.EntityFrameworkCore.Metadata.Builders;
+    using SGSFramework.Core.Abstractions.Entities.Base;
+    using System;
+
     /// <summary>
-    /// 代表應用程式中的角色實體，繼承自 IdentityRole<Guid>，使用 Guid 作為角色的唯一識別碼。
-    /// </summary>
-    /// <summary>
-    /// 自訂應用程式角色實體
+    /// 企業級自訂應用程式角色實體 (支援 ARBAC 與多租戶實驗室隔離)
     /// </summary>
     public class ApplicationRole : IdentityRole<Guid>, IRoleEntity
     {
@@ -17,7 +17,22 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
         public string? Description { get; set; }
 
         /// <summary>
-        /// 是否為系統內建角色。預設為 false（代表一般自訂角色）；系統初始化範本會明確設為 true。
+        /// 角色範圍類型 (SystemDefault, Global, LabScoped)
+        /// </summary>
+        public RoleScopeType ScopeType { get; set; } = RoleScopeType.LabScoped;
+
+        /// <summary>
+        /// 角色管理階層數值（數字越大位階越高。例: SA=100, MO=50, MA=10）
+        /// </summary>
+        public int HierarchyLevel { get; set; } = 10;
+
+        /// <summary>
+        /// 區域實驗室專屬角色的所屬租戶實驗室 ID（全域或系統角色則為 Null）
+        /// </summary>
+        public Guid? TenantLabId { get; set; }
+
+        /// <summary>
+        /// 是否為系統內建角色。預設為 false；系統初始化範本會明確設為 true。
         /// </summary>
         public bool IsSystemRole { get; set; } = false;
 
@@ -33,13 +48,10 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
     {
         public void Configure(EntityTypeBuilder<ApplicationRole> builder)
         {
-            // 對應 ASP.NET Core Identity 預設的角色資料表名稱 (或依專案慣例調整)
             builder.ToTable("AspNetRoles");
 
-            // 主鍵
             builder.HasKey(r => r.Id);
 
-            // 欄位屬性限制
             builder.Property(r => r.Name)
                 .HasMaxLength(256)
                 .IsRequired();
@@ -56,6 +68,17 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
                 .HasMaxLength(512)
                 .IsRequired(false);
 
+            builder.Property(r => r.ScopeType)
+                .IsRequired()
+                .HasDefaultValue(RoleScopeType.LabScoped);
+
+            builder.Property(r => r.HierarchyLevel)
+                .IsRequired()
+                .HasDefaultValue(10);
+
+            builder.Property(r => r.TenantLabId)
+                .IsRequired(false);
+
             builder.Property(r => r.IsSystemRole)
                 .IsRequired()
                 .HasDefaultValue(false);
@@ -64,6 +87,9 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
             builder.HasIndex(r => r.Code)
                 .IsUnique()
                 .HasFilter("[Code] IS NOT NULL");
+
+            // 效能索引：加速依據實驗室與階層的查詢
+            builder.HasIndex(r => new { r.TenantLabId, r.HierarchyLevel });
         }
     }
 }

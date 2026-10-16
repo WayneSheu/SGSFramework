@@ -13,6 +13,13 @@ namespace SGSFramework.Identity.DTOs.Roles
         public string Description { get; set; } = string.Empty;
         public bool IsSystemRole { get; set; }
 
+        public RoleScopeType ScopeType { get; set; }
+        public string ScopeTypeName { get; set;} = string.Empty;
+
+        public int HierarchyLevel { get; set;}
+
+        public Guid?  TenantLabId { get; set; }
+
         /// <summary>
         /// 狀態顯示文字（對應 Enum 的 DisplayName 或 Description）
         /// </summary>

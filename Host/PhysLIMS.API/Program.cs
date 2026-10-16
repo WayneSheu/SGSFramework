@@ -75,6 +75,25 @@ try
     builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
     builder.Services.AddTokenBucketSecurity(config);
 
+    // ====================================================
+    // 【動態部署模式設定】讀取跨域來源與 SPA 託管開關
+    // ====================================================
+    var deploymentOptions = config.GetSection("DeploymentOptions");
+    var enableSpaHosting = deploymentOptions.GetValue<bool>("EnableSpaHosting", true);
+    var allowedOrigins = deploymentOptions.GetSection("AllowedOrigins").Get<string[]>() ?? ["*"];
+
+    // 擴充動態 CORS 政策（確保獨立部署模式下能安全跨域，共用部署模式下也不受影響）
+    builder.Services.AddCors(options =>
+    {
+        options.AddPolicy("CorsPolicy", policy =>
+        {
+            policy.WithOrigins(allowedOrigins)
+                  .AllowAnyHeader()
+                  .AllowAnyMethod()
+                  .AllowCredentials();
+        });
+    });
+
     // 6. 註冊 MediatR 服務與 CQRS Handlers 掃描
     builder.Services.AddMediatR(cfg =>
     {
@@ -129,7 +148,6 @@ try
 
     // ====================================================
     // 中間件管道配置 (Middleware Pipeline Execution Order)
-    // 完全對齊伺服器版 (修正動態路由刷新順序與 SPA 管道隔離)
     // ====================================================
     app.UseExceptionHandler();
 
@@ -162,65 +180,89 @@ try
     app.UseCors("CorsPolicy");
     app.UseMiddleware<CorsLoggingMiddleware>();
 
-    // 7. 啟用全域靜態檔案與 MIME 支援 (負責根目錄與 Vue 3)
-    app.UseEnterpriseStaticFiles();
-
-    // 2. 為 Blazor WASM 建立獨立的實體檔案提供者 (對應 /blazor 路徑)
-    var blazorRootPath = Path.Combine(app.Environment.WebRootPath, "blazor");
-    if (Directory.Exists(blazorRootPath))
+    // ====================================================
+    // 【企業級架構分流】依據 EnableSpaHosting 決定執行模式
+    // ====================================================
+    if (enableSpaHosting)// 启用「同站台共用部署」：後端同時託管靜態資源與雙 SPA 路由。
     {
-        app.UseStaticFiles(new StaticFileOptions
+        Log.Information("【架構模式】啟用「同站台共用部署」：後端同時託管靜態資源與雙 SPA 路由。");
+
+        // 7. 啟用全域靜態檔案與 MIME 支援 (負責根目錄與 Vue 3)
+        app.UseEnterpriseStaticFiles();
+
+        // 具體實體檔案提供者對應 /blazor 路由
+        var blazorRootPath = Path.Combine(app.Environment.WebRootPath, "blazor");
+        if (Directory.Exists(blazorRootPath))
         {
-            FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(blazorRootPath),
-            RequestPath = "/blazor"
+            app.UseStaticFiles(new StaticFileOptions
+            {
+                FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(blazorRootPath),
+                RequestPath = "/blazor"
+            });
+        }
+
+        // 根目錄斜線校正
+        app.Use(async (context, next) =>
+        {
+            if (context.Request.Path.Equals("/blazor", StringComparison.OrdinalIgnoreCase))
+            {
+                context.Response.Redirect("/blazor/", permanent: true);
+                return;
+            }
+            await next().ConfigureAwait(false);
         });
+
+        // 顯式啟用路由中間件
+        app.UseRouting();
+        app.UseAuthentication();
+        app.UseAuthorization();
+
+        // 4. OpenAPI 快取控制中間件
+        app.Use(async (context, next) =>
+        {
+            if (context.Request.Path.StartsWithSegments("/openapi", StringComparison.OrdinalIgnoreCase))
+            {
+                context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+                context.Response.Headers.Pragma = "no-cache";
+                context.Response.Headers.Expires = "0";
+            }
+            await next().ConfigureAwait(false);
+        });
+
+        // 5. 映射 API Controllers 與文件端點
+        app.MapOpenApi();
+        app.MapCustomScalarApiReference();
+        app.MapControllers();
+
+        var changeProvider = app.Services.GetRequiredService<IDynamicActionDescriptorChangeProvider>();
+        changeProvider.NotifyChanges();
+
+        // 6. 掛載雙 SPA (Blazor WASM / Vue 3) 後備路由
+        app.MapBlazorSpaFallback();
+        app.MapProtectedSpaFallback(app.Environment, "index.html");
     }
-
-    // 3. 根目錄斜線校正
-    app.Use(async (context, next) =>
+    else//前後端分開部署
     {
-        if (context.Request.Path.Equals("/blazor", StringComparison.OrdinalIgnoreCase))
+        Log.Information("【架構模式】啟用「獨立部署 (前後端分離)」：後端僅提供 WebAPI 與 OpenAPI 服務。");
+
+        app.UseRouting();
+        app.UseAuthentication();
+        app.UseAuthorization();
+
+        app.MapOpenApi();
+        app.MapCustomScalarApiReference();
+        app.MapControllers();
+
+        //當使用者造訪根目錄 (/) 時，自動重新導向至 Scalar API 文件頁面
+        app.MapGet("/", async context =>
         {
-            context.Response.Redirect("/blazor/", permanent: true);
-            return;
-        }
-        await next().ConfigureAwait(false);
-    });
+            context.Response.Redirect("/scalar/v1", permanent: false);
+            await Task.CompletedTask;
+        });
 
-    // 顯式啟用路由中間件 (必須在 UseAuthentication 之前或緊接其後)
-    app.UseRouting();
-
-    app.UseAuthentication();
-    app.UseAuthorization();
-
-    // 4. OpenAPI 快取控制中間件
-    app.Use(async (context, next) =>
-    {
-        if (context.Request.Path.StartsWithSegments("/openapi", StringComparison.OrdinalIgnoreCase))
-        {
-            context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
-            context.Response.Headers.Pragma = "no-cache";
-            context.Response.Headers.Expires = "0";
-        }
-        await next().ConfigureAwait(false);
-    });
-
-    // 5.  映射 API Controllers 與文件端點，建立 EndpointDataSource 路由樹
-    app.MapOpenApi();
-    app.MapCustomScalarApiReference();
-    app.MapControllers();
-
-    // 6. 於 MapControllers 完成後，觸發 Dynamic Action 異動通知刷洗 Endpoint 數據源
-    var changeProvider = app.Services.GetRequiredService<IDynamicActionDescriptorChangeProvider>();
-    changeProvider.NotifyChanges();
-    // ====================================================
-    // 雙 SPA (Blazor WASM / Vue 3) 路由分流
-    // ====================================================
-    // 使用 SpaFallbackExtensions 提供的擴充方法掛載 Blazor WASM (精準匹配 /blazor, /blazor/, /blazor/xxx)
-    app.MapBlazorSpaFallback();
-
-    // Vue 3 專屬後備管道 (非 API/Scalar/OpenAPI/Blazor 之請求全數歸 Vue 3 接管)
-    app.MapProtectedSpaFallback(app.Environment, "index.html");
+        var changeProvider = app.Services.GetRequiredService<IDynamicActionDescriptorChangeProvider>();
+        changeProvider.NotifyChanges();
+    }
 
     await app.RunAsync().ConfigureAwait(false);
 }

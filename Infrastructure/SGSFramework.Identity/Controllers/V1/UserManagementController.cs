@@ -57,6 +57,7 @@ public sealed class UserManagementController(
     /// 取得系統所有使用者清單（含所屬角色，自動過濾已軟刪除項目）
     /// </summary>
     [HttpGet]
+    [Obsolete("此說明會顯示在編譯警告中：本介面已過時，請改呼叫分頁版的 GetPagedUsers()。")]
     [Function("GetUsers", "查詢使用者列表", Icon = "fa-solid fa-users", Order = 9, Description = "取得系統所有有效使用者清單，包含帳號、Email、驗證狀態與所屬角色等資訊", IsMenu = true)]
     [RequiresPermission("SYSTEM.USERMANAGEMENT.READ")]
     [EndpointSummary("查詢使用者列表")]
@@ -68,6 +69,12 @@ public sealed class UserManagementController(
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            // 植入標準 RFC 8594 過時與 Sunset 回應標頭
+            Response.Headers.Append("Deprecation", "@1774915200"); // 2027-04-01 換算之 Unix Timestamp
+            Response.Headers.Append("Sunset", "Thu, 01 Apr 2027 00:00:00 GMT"); // 預定正式退役日
+            Response.Headers.Append("Link", "<https://api.enterprise.local/api/v1/users/paged>; rel=\"successor-version\""); // 指向新版分頁 API
+
 
             var result = await _userService.GetUsersAsync(cancellationToken).ConfigureAwait(false);
             return HandleResult(result);

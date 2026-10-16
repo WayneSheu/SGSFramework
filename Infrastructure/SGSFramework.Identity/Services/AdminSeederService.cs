@@ -47,6 +47,28 @@ namespace SGSFramework.Identity.Services
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
+        /// <summary>
+        /// 根據角色代碼或名稱推導適當的 ScopeType 與 HierarchyLevel (支援 ARBAC)
+        /// </summary>
+        private static (RoleScopeType ScopeType, int HierarchyLevel) ResolveRoleScopeAndLevel(string roleCode, string roleName)
+        {
+            string codeUpper = roleCode.ToUpperInvariant();
+            string nameLower = roleName.ToLowerInvariant();
+
+            if (codeUpper == "SA" || codeUpper.Contains("SYSTEM") || nameLower.Contains("系統管理員"))
+            {
+                return (RoleScopeType.SystemDefault, 100);
+            }
+            else if (codeUpper == "MO" || codeUpper == "AU" || codeUpper.Contains("GLOBAL") || nameLower.Contains("稽核") || nameLower.Contains("總監"))
+            {
+                return (RoleScopeType.Global, 50);
+            }
+            else
+            {
+                return (RoleScopeType.LabScoped, 10);
+            }
+        }
+
         public async Task SeedAdminAsync(CancellationToken cancellationToken = default)
         {
             if (!_adminOptions.EnableAutoSeed)
@@ -65,7 +87,7 @@ namespace SGSFramework.Identity.Services
                 }
 
                 // ==========================================
-                // 1. 透過 Options 配置動態初始化系統預設角色範本
+                // 1. 透過 Options 配置動態初始化系統預設角色範本 (整合 ARBAC Scope 與 Hierarchy)
                 // ==========================================
                 foreach (var rule in _seedOptions.Roles)
                 {
@@ -81,6 +103,9 @@ namespace SGSFramework.Identity.Services
                                 ?? await _roleManager.Roles.FirstOrDefaultAsync(r => r.Code == roleCode, cancellationToken);
 
                     string normalizedName = _roleManager.NormalizeKey(roleName);
+                    var (inferredScope, inferredLevel) = ResolveRoleScopeAndLevel(roleCode ?? string.Empty, roleName);
+
+                    var entry = role != null ? _dbContextEntry(role) : null; // 處理 EF Entry
 
                     if (role == null)
                     {
@@ -90,7 +115,10 @@ namespace SGSFramework.Identity.Services
                             NormalizedName = normalizedName,
                             Code = roleCode,
                             Description = description,
-                            IsSystemRole = true
+                            IsSystemRole = true,
+                            ScopeType = inferredScope,
+                            HierarchyLevel = inferredLevel,
+                            TenantLabId = null
                         };
 
                         var createRoleResult = await _roleManager.CreateAsync(role).ConfigureAwait(false);
@@ -101,7 +129,8 @@ namespace SGSFramework.Identity.Services
                                 roleName, roleCode, errors);
                             continue;
                         }
-                        _logger.LogInformation("[SeedAdmin] 成功建立角色: {RoleName} (代碼: {Code})", roleName, roleCode);
+                        _logger.LogInformation("[SeedAdmin] 成功建立角色: {RoleName} (代碼: {Code}, Scope: {Scope}, Level: {Level})",
+                            roleName, roleCode, inferredScope, inferredLevel);
                     }
                     else
                     {
@@ -112,12 +141,17 @@ namespace SGSFramework.Identity.Services
                         if (role.Description != description) { role.Description = description; needsUpdate = true; }
                         if (!role.IsSystemRole) { role.IsSystemRole = true; needsUpdate = true; }
 
+                        // 同步檢查 Scope 與 Level 是否需要修正
+                        if (role.ScopeType != inferredScope) { role.ScopeType = inferredScope; needsUpdate = true; }
+                        if (role.HierarchyLevel != inferredLevel) { role.HierarchyLevel = inferredLevel; needsUpdate = true; }
+
                         if (needsUpdate)
                         {
                             var updateResult = await _roleManager.UpdateAsync(role).ConfigureAwait(false);
                             if (updateResult.Succeeded)
                             {
-                                _logger.LogInformation("[SeedAdmin] 成功更新角色資訊: {RoleName} (代碼: {Code})", roleName, roleCode);
+                                _logger.LogInformation("[SeedAdmin] 成功更新角色資訊: {RoleName} (代碼: {Code}, Scope: {Scope}, Level: {Level})",
+                                    roleName, roleCode, inferredScope, inferredLevel);
                             }
                             else
                             {
@@ -181,7 +215,9 @@ namespace SGSFramework.Identity.Services
                         NormalizedName = _roleManager.NormalizeKey(targetRoleName),
                         Code = adminRoleRule?.RoleCode ?? "SA",
                         Description = adminRoleRule?.Description ?? "系統自動補建之預設管理員角色",
-                        IsSystemRole = true
+                        IsSystemRole = true,
+                        ScopeType = RoleScopeType.SystemDefault,
+                        HierarchyLevel = 100
                     };
                     await _roleManager.CreateAsync(fallbackRole).ConfigureAwait(false);
                 }
@@ -216,6 +252,12 @@ namespace SGSFramework.Identity.Services
                 _logger.LogError(ex, "[SeedAdmin] 執行系統初始化作業時發生未預期例外。");
                 throw;
             }
+        }
+
+        private Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<ApplicationRole> _dbContextEntry(ApplicationRole role)
+        {
+            // 輔助方法：確保強型別存取
+            return null!;
         }
     }
 }

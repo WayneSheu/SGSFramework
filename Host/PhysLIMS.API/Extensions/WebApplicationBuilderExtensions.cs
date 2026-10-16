@@ -58,6 +58,34 @@ public static class WebApplicationBuilderExtensions
         services.AddOpenApi("v1", options =>
         {
             options.ShouldInclude = (description) => true;
+            //API過時標記， 描述的最上方或結尾處自動附加 Deprecated 標籤
+            options.AddOperationTransformer((operation, context, cancellationToken) =>
+            {
+                // 取得該端點上的 ObsoleteAttribute 實例
+                var obsoleteAttr = context.Description.ActionDescriptor.EndpointMetadata
+                    .OfType<ObsoleteAttribute>()
+                    .FirstOrDefault();
+
+                if (obsoleteAttr != null)
+                {
+                    // 1. 標記為過時，讓 Scalar 顯示 Deprecated 標籤
+                    operation.Deprecated = true;
+
+                    // 2. 將 Obsolete 的自訂文字自動附加到 API 描述的最上方或結尾處
+                    var warningMessage = $"⚠️ **[系統警示] 此 API 已過時**：{obsoleteAttr.Message}\n\n---";
+
+                    if (string.IsNullOrEmpty(operation.Description))
+                    {
+                        operation.Description = warningMessage;
+                    }
+                    else
+                    {
+                        operation.Description = $"{warningMessage}\n\n{operation.Description}";
+                    }
+                }
+
+                return Task.CompletedTask;
+            });
 
             options.AddOperationTransformer<MenuAttributeTransformer>();
             options.AddDocumentTransformer<DynamicControllerDocumentFilter>();
