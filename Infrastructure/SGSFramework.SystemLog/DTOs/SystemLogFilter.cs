@@ -13,6 +13,7 @@ namespace SGSFramework.SystemLog.DTOs
         public string? TenantId { get; init; }
         public string? UserId { get; init; }
         public string? ModuleName { get; init; }
+        public string? AlertId { get; init; }
         public DateTimeOffset? StartTimestamp { get; init; }
         public DateTimeOffset? EndTimestamp { get; init; }
     }

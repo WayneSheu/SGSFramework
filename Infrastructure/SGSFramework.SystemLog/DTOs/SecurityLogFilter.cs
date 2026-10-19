@@ -9,7 +9,9 @@ namespace SGSFramework.SystemLog.DTOs
     /// </summary>
     public record SecurityLogFilter
     {
+        public string? Level { get; init; }
         public string? EventCategory { get; init; }
+        public string? AlertId { get; init; }
         public string? UserId { get; init; }
         public DateTimeOffset? StartTimestamp { get; init; }
         public DateTimeOffset? EndTimestamp { get; init; }

@@ -50,6 +50,13 @@ namespace SGSFramework.SystemLog.Services
                     if (!string.IsNullOrWhiteSpace(request.Filter.ModuleName))
                         query = query.Where(x => x.ModuleName == request.Filter.ModuleName);
 
+                    if (!string.IsNullOrWhiteSpace(request.Filter.AlertId))
+                    {
+                        // 前綴比對：可貼上完整或部分 AlertId，且仍可利用索引
+                        var alertId = request.Filter.AlertId.Trim();
+                        query = query.Where(x => x.AlertId != null && x.AlertId.StartsWith(alertId));
+                    }
+
                     if (request.Filter.StartTimestamp.HasValue)
                         query = query.Where(x => x.TimeStamp >= request.Filter.StartTimestamp.Value);
 
@@ -132,6 +139,17 @@ namespace SGSFramework.SystemLog.Services
                 // 1. 篩選條件處理 (Filter)
                 if (request.Filter != null)
                 {
+                    if (!string.IsNullOrWhiteSpace(request.Filter.Level))
+                    {
+                        query = query.Where(x => x.Level == request.Filter.Level);
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(request.Filter.AlertId))
+                    {
+                        var alertId = request.Filter.AlertId.Trim();
+                        query = query.Where(x => x.AlertId != null && x.AlertId.StartsWith(alertId));
+                    }
+
                     if (!string.IsNullOrWhiteSpace(request.Filter.EventCategory))
                     {
                         query = query.Where(x => x.EventCategory == request.Filter.EventCategory);
