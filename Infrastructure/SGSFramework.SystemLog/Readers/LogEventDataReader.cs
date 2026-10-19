@@ -36,7 +36,7 @@ public sealed class LogEventDataReader : IDataReader
             1 => current.Level.ToString(),                         // Level
             2 => current.RenderMessage(),                          // Message
             3 => current.Properties.Count > 0
-                ? System.Text.Json.JsonSerializer.Serialize(current.Properties)
+                ? SGSFramework.SystemLog.Extensions.LogEventPropertySerializer.Serialize(current.Properties)
                 : DBNull.Value,                                     // Payload
             4 => (object?)current.Exception?.ToString() ?? DBNull.Value, // Exception
             5 => (object?)GetProp("AlertId") ?? DBNull.Value,       // AlertId

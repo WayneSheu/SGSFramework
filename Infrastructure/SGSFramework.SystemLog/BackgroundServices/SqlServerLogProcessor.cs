@@ -97,7 +97,7 @@ namespace SGSFramework.SystemLog.BackgroundServices
                 row["IP"] = item.Properties.TryGetValue("IP", out var ip) ? ip.ToString()?.Trim('"') : DBNull.Value;
                 row["Url"] = item.Properties.TryGetValue("Url", out var url) ? url.ToString()?.Trim('"') : DBNull.Value;
 
-                row["Payload"] = item.Properties.Count > 0 ? System.Text.Json.JsonSerializer.Serialize(item.Properties) : string.Empty;
+                row["Payload"] = Extensions.LogEventPropertySerializer.Serialize(item.Properties);
 
                 // 雜湊鏈結與告警欄位預設值
                 row["PrevHash"] = DBNull.Value;
