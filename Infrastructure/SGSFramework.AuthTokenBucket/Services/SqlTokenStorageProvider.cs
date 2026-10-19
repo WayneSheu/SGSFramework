@@ -16,30 +16,30 @@ namespace SGSFramework.AuthTokenBucket.Services
     /// <summary>
     /// SQL-based implementation of the token storage provider. This class is responsible for managing user refresh tokens in a SQL database. It provides methods to add, update, and retrieve tokens based on user ID and device ID. The class uses Entity Framework Core for database operations.
     /// 基於 SQL 的令牌儲存提供者的實作。
-    /// 此類別負責在 SQL 資料庫中管理使用者刷新令牌。它提供了基於使用者 ID 和裝置 ID 新增、更新和檢索令牌的方法。
+    /// 此類別負責在 SQL 資料庫中管理使用者刷新令牌。它提供了基於使用者 ID 和裝置 ID 新增, 更新和檢索令牌的方法。
     /// 此類別使用 Entity Framework Core 進行資料庫操作。
     /// </summary>
     /// <typeparam name="TDbContext"></typeparam>
     public sealed class SqlTokenStorageProvider<TDbContext> : ITokenStorageProvider
         where TDbContext : DbContext, ITokenDbContext
     {
-        private readonly IAuditProvider _auditProvider;        
+        private readonly IAuditProvider _auditProvider;
         private readonly ILogger<SqlTokenStorageProvider<TDbContext>> _logger;
         private readonly ISecurityLogger _securityLogger;
         private readonly TDbContext _context;
 
-        public SqlTokenStorageProvider(TDbContext context,IAuditProvider auditProvider, ILogger<SqlTokenStorageProvider<TDbContext>> logger,ISecurityLogger securityLogger)
+        public SqlTokenStorageProvider(TDbContext context, IAuditProvider auditProvider, ILogger<SqlTokenStorageProvider<TDbContext>> logger, ISecurityLogger securityLogger)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
-            _auditProvider=auditProvider?? throw new ArgumentNullException(nameof(auditProvider));
-            _securityLogger = securityLogger?? throw new ArgumentNullException(nameof(securityLogger));  
+            _auditProvider = auditProvider ?? throw new ArgumentNullException(nameof(auditProvider));
+            _securityLogger = securityLogger ?? throw new ArgumentNullException(nameof(securityLogger));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         /// <summary>
         /// Retrieves the active session for a given user ID and device ID. This method returns the first non-dead, expired token that matches the criteria.
         /// 取得給定使用者 ID 和裝置 ID 的活動會話。
-        /// 此方法傳回第一個符合條件的非失效過期的UserRefreshToken 物件。
+        /// 此方法傳回第一個符合條件的非失效過期的 UserRefreshToken 物件。
         /// </summary>
         /// <param name="userId"></param>
         /// <param name="deviceId"></param>
@@ -57,7 +57,7 @@ namespace SGSFramework.AuthTokenBucket.Services
                     .AsNoTracking()
                     .Where(t => t.UserId == userId
                              && t.DeviceId == deviceId
-                             && !t.IsDead 
+                             && !t.IsDead
                              && t.ExpiresAt > DateTime.UtcNow)
                     .FirstOrDefaultAsync();
             }
@@ -76,20 +76,15 @@ namespace SGSFramework.AuthTokenBucket.Services
         {
             ArgumentNullException.ThrowIfNull(tokenEntity);
 
-            //實現復原策略（Resiliency Strategy）與自動重試機制（Automatic Retry）的核心 API。
-            //當配置了執行策略（例如 SqlServerRetryingExecutionStrategy），EF Core 在執行內建的 SaveChanges() 時會自動重試。
-            //若未配置執行策略，EF Core 不會自動重試。因此，在需要高可用性（HA）或容錯能力的應用程式中，建議使用 SqlServerRetryingExecutionStrategy。
             var strategy = _context.Database.CreateExecutionStrategy();
             await strategy.ExecuteAsync(async () =>
             {
-                //使用 BeginTransactionAsync 方法開始一個新的資料庫交易。
                 using var transaction = await _context.Database.BeginTransactionAsync();
                 try
                 {
-                    //檢查是否已經存在相同 UserId 和 DeviceId 的 UserRefreshToken 物件。如果存在，則更新其屬性；否則，新增一筆新記錄。
                     var existingSession = await _context.UserRefreshTokens
                         .FirstOrDefaultAsync(x => x.UserId == tokenEntity.UserId && x.DeviceId == tokenEntity.DeviceId);
-                    //如果已經存在相同 UserId 和 DeviceId 的 UserRefreshToken 物件，則更新其屬性；否則，新增一筆新記錄。
+
                     if (existingSession != null)
                     {
                         existingSession.RefreshTokenHash = tokenEntity.RefreshTokenHash;
@@ -100,9 +95,8 @@ namespace SGSFramework.AuthTokenBucket.Services
 
                         _context.UserRefreshTokens.Update(existingSession);
                     }
-                    else 
+                    else
                     {
-                        //
                         await _context.UserRefreshTokens.AddAsync(tokenEntity);
                     }
 
@@ -135,7 +129,6 @@ namespace SGSFramework.AuthTokenBucket.Services
             DateTime expiresAt,
             int gracePeriodSeconds)
         {
-            
             var strategy = _context.Database.CreateExecutionStrategy();
 
             return await strategy.ExecuteAsync(async () =>
@@ -143,19 +136,26 @@ namespace SGSFramework.AuthTokenBucket.Services
                 using var transaction = await _context.Database.BeginTransactionAsync();
                 try
                 {
-              
-                    // 
+                    var currentClientIp = _auditProvider.RemoteIp ?? string.Empty;
+
+                    // 🚀 【架構關鍵修復】強制嵌入 WITH (ROWLOCK, UPDLOCK) 行級更新鎖
+                    // 確保分散式多裝置高併發換票時在 MSSQL 2025 內嚴格線性排隊，徹底消除 Race Condition
                     var tokenInDb = await _context.UserRefreshTokens
-                        .FirstOrDefaultAsync(t => t.UserId == userId && t.DeviceId == deviceId && !t.IsDead);
-                    var currentClientIp = _auditProvider.RemoteIp??string.Empty;
+                        .FromSqlRaw(@"
+                            SELECT * FROM [core].[UserRefreshTokens] WITH (ROWLOCK, UPDLOCK)
+                            WHERE [UserId] = {0} AND [DeviceId] = {1} AND [IsDead] = 0",
+                            userId, deviceId)
+                        .FirstOrDefaultAsync();
+
                     if (tokenInDb == null)
                     {
-                        // If the token is not found, return null.
                         await transaction.RollbackAsync();
                         return null;
                     }
+
                     var oldJwtId = tokenInDb.Id;
-                    //
+
+                    // 分支一：正常換票成功
                     if (tokenInDb.RefreshTokenHash == oldHash)
                     {
                         tokenInDb.RefreshTokenHash = newHash;
@@ -167,21 +167,25 @@ namespace SGSFramework.AuthTokenBucket.Services
                         _context.UserRefreshTokens.Update(tokenInDb);
                         await _context.SaveChangesAsync();
                         await transaction.CommitAsync();
-                        //資安審計點記錄
+
+                        // 資安審計點記錄（已修復格式化變數對應）
                         _securityLogger.LogSecurity(
                             eventCode: "SEC-200-RotationStatus.Success",
                             eventCategory: "ValidateAndRotateToken",
                             userId: userId,
-                            clientIp: currentClientIp, // 帶入上下文 IP
-                            messageTemplate: "權杖煥發成功。用戶: {UserId},來源IP: {ClientIp},舊權杖Id{oldJId},新權杖ID{}", currentClientIp,oldJwtId,newJwtId
+                            clientIp: currentClientIp,
+                            messageTemplate: "權杖煥發成功。用戶: {UserId}, 來源IP: {ClientIp}, 舊權杖Id: {oldJwtId}, 新權杖ID: {newJwtId}",
+                            userId, currentClientIp, oldJwtId, newJwtId
                         );
+
                         return new RotationResult
                         {
                             Status = RotationStatus.Success,
                             ExpiresAt = expiresAt
                         };
                     }
-                    // 
+
+                    // 分支二：落入寬限期（Grace Period）內的前端重複發送，允許複用舊票
                     if (tokenInDb.RotatedAt.HasValue &&
                         (DateTime.UtcNow - tokenInDb.RotatedAt.Value).TotalSeconds <= gracePeriodSeconds)
                     {
@@ -193,17 +197,20 @@ namespace SGSFramework.AuthTokenBucket.Services
                         };
                     }
 
+                    // 分支三：超越寬限期的重複換票，判定為惡意重放攻擊！強制擊殺會話
                     tokenInDb.IsDead = true;
                     _context.UserRefreshTokens.Update(tokenInDb);
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();
-                    //資安審計點記錄
+
+                    // 資安審計點記錄
                     _securityLogger.LogSecurity(
                         eventCode: "SEC-403-Forbidden",
                         eventCategory: "ValidateAndRotateToken",
                         userId: userId,
-                        clientIp: currentClientIp, // 帶入上下文 IP
-                        messageTemplate: "偵測到重播攻擊。用戶: {UserId}, 來源IP: {ClientIp}", currentClientIp
+                        clientIp: currentClientIp,
+                        messageTemplate: "偵測到重播攻擊。用戶: {UserId}, 來源IP: {ClientIp}",
+                        userId, currentClientIp
                     );
 
                     return new RotationResult
@@ -289,9 +296,9 @@ namespace SGSFramework.AuthTokenBucket.Services
                 int affectedRows = await _context.UserRefreshTokens
                     .Where(x => x.UserId == userId)
                     .ExecuteUpdateAsync(setters => setters
-                        .SetProperty(x => x.IsFrozen,true)
+                        .SetProperty(x => x.IsFrozen, true)
                         .SetProperty(x => x.IsDead, true)
-                        .SetProperty(x => x.RiskReason,riskReason)
+                        .SetProperty(x => x.RiskReason, riskReason)
                         .SetProperty(x => x.RefreshTokenHash, string.Empty));
 
                 return affectedRows > 0;
@@ -524,7 +531,6 @@ namespace SGSFramework.AuthTokenBucket.Services
                         _context.UserRefreshTokens.UpdateRange(otherSessions);
                         await _context.SaveChangesAsync();
 
-                        // 💡 修正：記錄多裝置連線強制撤銷的稽核軌跡
                         using (Serilog.Context.LogContext.PushProperty("LogType", "Security"))
                         using (Serilog.Context.LogContext.PushProperty("UserId", userId))
                         using (Serilog.Context.LogContext.PushProperty("EventCategory", "Auth.SessionPurge"))

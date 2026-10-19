@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Caching.Memory; // 🚀 引入單機記憶體快取管理
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -17,7 +18,7 @@ using SGSFramework.Core.Helpers;
 using SGSFramework.Core.HttpAuditProviders;
 
 /// <summary>
-/// 安全防禦核心高併發水桶引擎 (優化重構版：策略模式解耦、支援完整 SuperAdmin 與全權限點宣告)
+/// 安全防禦核心高併發水桶引擎 (優化重構版：策略模式解耦、支援完整 SuperAdmin 與全權限點宣告、IMemoryCache 雙軌聯防熔斷)
 /// </summary>
 /// <typeparam name="TUser">使用者實體類型</typeparam>
 public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
@@ -30,6 +31,7 @@ public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
     private readonly ILogger<TokenBucketEngine<TUser>> _logger;
     private readonly ISecurityLogger _securityLogger;
     private readonly IAuditProvider _auditProvider;
+    private readonly IMemoryCache _memoryCache; // 🚀 注入記憶體快取提供者
 
     public TokenBucketEngine(
         ITokenStorageProvider storageProvider,
@@ -39,7 +41,8 @@ public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
         IOptions<AuthTokenBucketOptions> options,
         ILogger<TokenBucketEngine<TUser>> logger,
         ISecurityLogger securityLogger,
-        IAuditProvider auditProvider)
+        IAuditProvider auditProvider,
+        IMemoryCache memoryCache) // 🚀 建構子注入 IMemoryCache
     {
         _storageProvider = storageProvider ?? throw new ArgumentNullException(nameof(storageProvider));
         _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
@@ -50,6 +53,7 @@ public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _securityLogger = securityLogger ?? throw new ArgumentNullException(nameof(securityLogger));
         _auditProvider = auditProvider ?? throw new ArgumentNullException(nameof(auditProvider));
+        _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
     }
 
     public async Task<UserRefreshToken?> GetActiveSessionAsync(string userId, string deviceId)
@@ -140,9 +144,11 @@ public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
                 throw new SecurityTokenException("ACCOUNT_FROZEN_OR_INVALID_SESSION");
             }
 
+            // 🚀 【資安聯防升級】一旦確認遭受重放攻擊，立即對該用戶實施全域自動聯防熔斷鎖定
             if (result.Status == RotationStatus.ReplayAttackDetected)
             {
-                _logger.LogCritical("[Security-Alert] 偵測到 Token 惡意重放！用戶: {UserId}", userIdString);
+                _logger.LogCritical("[Security-Alert:SEC-EMERGENCY-REPLAY] 偵測到 Token 惡意重放！啟動資安聯防全域阻斷。用戶: {UserId}", userIdString);
+                await ExecuteGlobalLockdownAsync(userIdString, "系統自動熔斷：偵測到 Refresh Token 遭惡意重放。", _auditProvider.RemoteIp ?? "0.0.0.0");
                 throw new SecurityTokenException("TOKEN_REPLAY_ATTACK_DETECTED");
             }
 
@@ -178,31 +184,12 @@ public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
 
     public async Task<bool> EmergencyFreezeAsync(string userId, string reason)
     {
-        if (string.IsNullOrWhiteSpace(userId))
-        {
-            return false;
-        }
+        return await CoreLockdownInternalAsync(userId, reason, null);
+    }
 
-        try
-        {
-            var user = await _userManager.FindByIdAsync(userId);
-            if (user == null)
-            {
-                _logger.LogWarning("全域緊急熔斷失敗：找不到指定用戶。用戶ID: {UserId}", userId);
-                return false;
-            }
-
-            await _userManager.UpdateSecurityStampAsync(user);
-            bool isFrozen = await _storageProvider.FreezeAndRevokeAllSessionsAsync(userId, reason);
-
-            _logger.LogCritical("[Security-Event:SEC-911-LOCKDOWN] 已成功執行資安雙軌聯防熔斷。用戶: {UserId}, 原因: {Reason}", userId, reason);
-            return isFrozen;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "執行緊急熔斷時發生未預期例外，UserId: {UserId}", userId);
-            throw;
-        }
+    public async Task<bool> ExecuteGlobalLockdownAsync(string userId, string reason, string clientIp)
+    {
+        return await CoreLockdownInternalAsync(userId, reason, clientIp);
     }
 
     public async Task<bool> CompleteRemediationAsync(string userId)
@@ -215,6 +202,11 @@ public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
         try
         {
             bool isCleared = await _storageProvider.RemediateAndClearFrozenSessionsAsync(userId);
+
+            // 🚀 同步清理可能殘留的中介快取快照與權限快取
+            _memoryCache.Remove($"db-stamp:{userId}");
+            await _permissionResolver.EvictUserCacheAsync(userId);
+
             _logger.LogInformation("[Security-Event:SEC-200-REMEDIATION] 用戶實名補償成功，已完成環境解凍與稽核清理。用戶: {UserId}", userId);
             return isCleared;
         }
@@ -225,7 +217,10 @@ public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
         }
     }
 
-    public async Task<bool> ExecuteGlobalLockdownAsync(string userId, string reason, string clientIp)
+    /// <summary>
+    /// 🚀 核心熔斷私有整合方法（解耦多個 Lockdown 進入點，同步抹除 IMemoryCache 消除時間差漏洞）
+    /// </summary>
+    private async Task<bool> CoreLockdownInternalAsync(string userId, string reason, string? clientIp)
     {
         if (string.IsNullOrWhiteSpace(userId))
         {
@@ -241,25 +236,39 @@ public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
                 return false;
             }
 
+            // 1. 更新 Identity 安全戳記，使發行在外的 JWT 在下次中介軟體校驗時立即死卡
             await _userManager.UpdateSecurityStampAsync(user);
+
+            // 2. 持久層全會話全面登出封鎖
             bool isFrozen = await _storageProvider.FreezeAndRevokeAllSessionsAsync(userId, reason);
 
-            using (_logger.BeginScope(new Dictionary<string, object>
+            // 3. 🚀 資安最高規格補強：主動抹除單機 IMemoryCache，縮短 45 秒時間差死角
+            _memoryCache.Remove($"db-stamp:{userId}");
+            await _permissionResolver.EvictUserCacheAsync(userId);
+
+            if (!string.IsNullOrEmpty(clientIp))
             {
-                ["LogType"] = "Security",
-                ["UserId"] = userId,
-                ["EventCategory"] = "Auth.GlobalLockdown",
-                ["ClientIp"] = clientIp
-            }))
+                using (_logger.BeginScope(new Dictionary<string, object>
+                {
+                    ["LogType"] = "Security",
+                    ["UserId"] = userId,
+                    ["EventCategory"] = "Auth.GlobalLockdown",
+                    ["ClientIp"] = clientIp
+                }))
+                {
+                    _logger.LogCritical("[Security-Event:SEC-911-LOCKDOWN] 已成功執行資安雙軌聯防熔斷。用戶: {UserId}, 原因: {Reason}, 來源IP: {ClientIp}", userId, reason, clientIp);
+                }
+            }
+            else
             {
-                _logger.LogCritical("[Security-Event:SEC-911-LOCKDOWN] 已成功執行資安雙軌聯防熔斷。用戶: {UserId}, 原因: {Reason}, 來源IP: {ClientIp}", userId, reason, clientIp);
+                _logger.LogCritical("[Security-Event:SEC-911-LOCKDOWN] 已成功執行資安雙軌聯防熔斷。用戶: {UserId}, 原因: {Reason}", userId, reason);
             }
 
             return isFrozen;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "執行全域鎖定時發生未預期例外，UserId: {UserId}", userId);
+            _logger.LogError(ex, "執行全域鎖定熔斷時發生未預期例外，UserId: {UserId}", userId);
             throw;
         }
     }

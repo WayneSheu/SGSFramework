@@ -119,18 +119,17 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
     {
         public void Configure(EntityTypeBuilder<UserRefreshToken> builder)
         {
-            builder.ToTable("UserRefreshTokens","core");
+            builder.ToTable("UserRefreshTokens", "core");
             builder.HasKey(e => e.Id);
 
+            // 🚀 頂級優化：高併發 Token 輪轉與熔斷覆蓋索引，包含所有狀態與條件欄位，杜絕 Bookmark Lookup
+            builder.HasIndex(e => new { e.UserId, e.DeviceId, e.RefreshTokenHash, e.IsDead, e.IsFrozen })
+                   .HasDatabaseName("IX_UserRefreshTokens_Lockdown_Rotation_Seek");
+
+            // 保留唯一約束，用於初次建立或強制裝置限制時的精準檢索
             builder.HasIndex(e => new { e.UserId, e.DeviceId })
                    .IsUnique()
                    .HasDatabaseName("UX_UserRefreshTokens_UserId_DeviceId");
-
-            builder.HasIndex(e => new { e.UserId, e.DeviceId, e.IsDead })
-                   .HasDatabaseName("IX_UserRefreshTokens_UserId_DeviceId_IsDead");
-
-            builder.HasIndex(e => e.RefreshTokenHash)
-                   .HasDatabaseName("IX_UserRefreshTokens_RefreshTokenHash");
 
             builder.Property(e => e.UserId)
                    .HasMaxLength(100)
@@ -148,7 +147,7 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
                    .HasColumnName("RefreshTokenHash")
                    .HasMaxLength(64)
                    .IsRequired()
-                   .IsFixedLength();
+                   .IsFixedLength(); // 🚀 SHA256 固定長度效能優勢
 
             builder.Property(e => e.ClientIp)
                    .HasMaxLength(50)
@@ -156,7 +155,7 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
 
             builder.Property(e => e.CreatedAt)
                    .HasColumnType("datetime2")
-                   .HasDefaultValueSql("SYSUTCDATETIME()") // 🚀 支援 MSSQL 自動產生存生時間
+                   .HasDefaultValueSql("SYSUTCDATETIME()")
                    .IsRequired();
 
             builder.Property(e => e.ExpiresAt)
@@ -170,4 +169,5 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
                    .IsRequired();
         }
     }
+
 }

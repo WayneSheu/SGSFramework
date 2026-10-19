@@ -817,15 +817,12 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("RefreshTokenHash")
-                        .HasDatabaseName("IX_UserRefreshTokens_RefreshTokenHash");
-
                     b.HasIndex("UserId", "DeviceId")
                         .IsUnique()
                         .HasDatabaseName("UX_UserRefreshTokens_UserId_DeviceId");
 
-                    b.HasIndex("UserId", "DeviceId", "IsDead")
-                        .HasDatabaseName("IX_UserRefreshTokens_UserId_DeviceId_IsDead");
+                    b.HasIndex("UserId", "DeviceId", "RefreshTokenHash", "IsDead", "IsFrozen")
+                        .HasDatabaseName("IX_UserRefreshTokens_Lockdown_Rotation_Seek");
 
                     b.ToTable("UserRefreshTokens", "core");
                 });

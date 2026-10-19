@@ -21,5 +21,14 @@ namespace SGSFramework.AuthTokenBucket.Abstractions
         Task<(string PermissionMask, bool IsAdmin)> ResolveUserPermissionsAsync<TUser>(
             TUser user,
             UserManager<TUser> userManager) where TUser : ApplicationUser, new();
+
+
+
+        /// <summary>
+        /// 解析指定使用者的 Bitmask 權限遮罩字串與系統管理員身份
+        /// </summary>
+        /// <param name="userId"></param>
+        /// <returns></returns>
+        Task EvictUserCacheAsync(string userId);
     }
 }

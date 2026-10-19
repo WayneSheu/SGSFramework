@@ -68,10 +68,14 @@ public sealed class TokenManager : ITokenManager
                 new(ClaimTypes.Name, user.UserName ?? string.Empty),
                 new("device_id", deviceId),
                 new("permissions", bitmaskString ?? string.Empty),
-                new("perm_bits", bitmaskString ?? string.Empty), //確保 Filter 讀取權限位元遮罩
+                new("perm_bits", bitmaskString ?? string.Empty), // 確保 Filter 讀取權限位元遮罩
                 new("perm_mask", bitmaskString ?? string.Empty),
                 new("is_admin", isSystemAdmin ? "true" : "false"), // 確保寫入管理員宣告
-                new("IsSuperAdmin", isSystemAdmin ? "true" : "false")// 確保寫入管理員宣告
+                new("IsSuperAdmin", isSystemAdmin ? "true" : "false"), // 確保寫入管理員宣告
+                
+                // 🚀 【資安聯防關鍵修復】將當前資料庫的安全戳記（SecurityStamp）包裹進 JWT Claims 中
+                // 提供有無狀態 JWT 可被中介軟體隨時校驗的「時間戳快照」，以支援 0 秒全域強制熔斷
+                new("AspNet.Identity.SecurityStamp", user.SecurityStamp ?? string.Empty)
             };
 
             if (roles != null)
