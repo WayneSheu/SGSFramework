@@ -60,7 +60,7 @@ public class LogManagerController : ControllerBase
     /// </summary>
     [HttpPost("set-level")]
     [Function("SetLevel", "設定日誌層級", Icon = "fa-solid fa-sliders", Order = 2, Description = "即時修改 Serilog 最小日誌輸出層級 (Verbose, Debug, Information, Warning, Error, Fatal)")]
-    [RequiresPermission("YSTEM.LOGMANAGER.SETLEVEL", "設定日誌輸出層級")]
+    [RequiresPermission("SYSTEM.LOGMANAGER.SETLEVEL", "設定日誌輸出層級")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public IActionResult SetLevel([FromBody] LogEventLevel level)
