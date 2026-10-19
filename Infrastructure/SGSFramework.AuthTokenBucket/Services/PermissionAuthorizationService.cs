@@ -158,11 +158,11 @@ public sealed class PermissionAuthorizationService : IPermissionAuthorizationSer
     }
 
     /// <summary>
-    /// 完整相容 JWT 原生 "roles" / "role" 陣列與標準 ClaimTypes.Role
+    /// 完整相容 JWT 原生 "roles" / "role" 陣列與標準 ClaimTypes.Role，並支援全 Claim 掃描 sysadmin
     /// </summary>
     private static bool IsSuperAdmin(ClaimsPrincipal user)
     {
-        // 1. 特權 Claim 檢查
+        // 1. 特權 Claim 檢查 (明確指定 true)
         if (user.HasClaim(c =>
             (c.Type.Equals("IsSuperAdmin", StringComparison.OrdinalIgnoreCase) ||
              c.Type.Equals("is_super_admin", StringComparison.OrdinalIgnoreCase) ||
@@ -173,7 +173,7 @@ public sealed class PermissionAuthorizationService : IPermissionAuthorizationSer
         }
 
         // 2. 角色比對 (相容 ClaimTypes.Role、"roles"、"role")
-        var adminRoleNames = new[] { "SuperAdmin", "SystemAdmin", "SysAdmin", "Administrator" };
+        var adminRoleNames = new[] { "SuperAdmin", "SystemAdmin", "SysAdmin", "Administrator", "Admin" };
         if (user.Claims.Any(c =>
             (c.Type.Equals(ClaimTypes.Role, StringComparison.OrdinalIgnoreCase) ||
              c.Type.Equals("roles", StringComparison.OrdinalIgnoreCase) ||
@@ -183,14 +183,28 @@ public sealed class PermissionAuthorizationService : IPermissionAuthorizationSer
             return true;
         }
 
-        // 3. 系統帳號名稱檢查
+        // 3. 系統帳號名稱與識別碼檢查 (涵蓋 Name、NameIdentifier、Email、sub 以及任意 Claim 值)
         var userName = user.Identity?.Name
                     ?? user.FindFirst(ClaimTypes.Name)?.Value
+                    ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    ?? user.FindFirst("sub")?.Value
                     ?? user.FindFirst(ClaimTypes.Email)?.Value
                     ?? string.Empty;
 
-        return userName.Contains("sysadmin", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(userName, "admin", StringComparison.OrdinalIgnoreCase);
+        if (userName.Contains("sysadmin", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(userName, "admin", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // 4. 終極保險：只要任何一個 Claim 的 Value 等於 "sysadmin" 或 "admin"，即判定為最高管理員
+        if (user.Claims.Any(c => string.Equals(c.Value, "sysadmin", StringComparison.OrdinalIgnoreCase) ||
+                                 string.Equals(c.Value, "admin", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static Guid? ResolveActiveGuidLabId(ClaimsPrincipal user, HttpContext? httpContext)

@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Serilog.Core;
@@ -14,10 +15,11 @@ namespace SGSFramework.SystemLog.Controllers.V1;
 /// <summary>
 /// 系統與資安總帳日誌管理控制器 (資料庫版)
 /// </summary>
+[Authorize]
 [ApiController]
 [ApiVersion("1")]
 [Route("api/v{version:apiVersion}/system/log-manager")]
-[ControllerTitle("系統日誌管理", Icon = "fa-solid fa-receipt", Order = 90, Description = "動態調整 Serilog 紀錄層級與線上檢視 core.SystemLogs / core.SecurityLog 資料庫紀錄")]
+[ControllerTitle("系統日誌管理", Icon = "fa-solid fa-receipt", Order = 90,Description = "動態調整 Serilog 紀錄層級與線上檢視 core.SystemLogs / core.SecurityLog 資料庫紀錄")]
 [RequiresPermission("SYSTEM.LOGMANAGER.READ", "系統日誌管理")]
 [Produces(MediaTypeNames.Application.Json)]
 [Consumes(MediaTypeNames.Application.Json)]
@@ -58,7 +60,7 @@ public class LogManagerController : ControllerBase
     /// </summary>
     [HttpPost("set-level")]
     [Function("SetLevel", "設定日誌層級", Icon = "fa-solid fa-sliders", Order = 2, Description = "即時修改 Serilog 最小日誌輸出層級 (Verbose, Debug, Information, Warning, Error, Fatal)")]
-    [RequiresPermission("SYSTEM.LOGMANAGER.SETLEVE", "設定日誌輸出層級")]
+    [RequiresPermission("YSTEM.LOGMANAGER.SETLEVEL", "設定日誌輸出層級")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public IActionResult SetLevel([FromBody] LogEventLevel level)
@@ -87,7 +89,7 @@ public class LogManagerController : ControllerBase
     /// 分頁條件查詢系統日誌 (core.SystemLogs)
     /// </summary>
     [HttpPost("system-logs/search")]
-    [Function("QuerySystemLogs", "查詢系統日誌", Icon = "fa-solid fa-database", Order = 3, Description = "檢索儲存於 core.SystemLogs 表之系統營運日誌")]
+    [Function("QuerySystemLogs", "查詢系統日誌", Icon = "fa-solid fa-database", Order = 3,Description = "檢索儲存於 core.SystemLogs 表之系統營運日誌", IsMenu = true)]
     [RequiresPermission("SYSTEM.LOGMANAGER.READ")]
     [ProducesResponseType(typeof(PagedResult<SystemLogDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]

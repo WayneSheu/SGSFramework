@@ -20,8 +20,6 @@ namespace SGSFramework.Alert.Extensions
         public static IServiceCollection AddEnterpriseAlertInfrastructure(this IServiceCollection services)
         {
             ArgumentNullException.ThrowIfNull(services);
-
-
             services.AddMemoryCache();
             services.TryAddSingleton<IAlertFloodSuppressor, InMemoryAlertFloodSuppressor>();
             // 1. 建立高效能 In-Memory 告警佇列

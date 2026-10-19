@@ -11,11 +11,10 @@ using SGSFramework.Core.Identiies.CurrentUser;
 using SGSFramework.Core.Identiies.Tenants;
 using SGSFramework.Core.Identities.Services;
 using SGSFramework.Core.Services;
+using ZiggyCreatures.Caching.Fusion;
 
 namespace SGSFramework.Core.Extensions
 {
-
-
     public static class SGSFrameworkCoreExtensions
     {
         // 注入 SGSFramework.Core 的服務 
@@ -27,8 +26,18 @@ namespace SGSFramework.Core.Extensions
             builder.Services.AddSingleton<IGuidGenerator, SystemGuidGenerator>();
 
             // MemoryCache
-            builder.Services.AddMemoryCache(); // 務必加入此行
-   
+            builder.Services.AddMemoryCache();
+            // 註冊 FusionCache 並設定全域預設選項
+            // 🟢 FusionCache 2.x 建議的標準 Builder 模式寫法
+            builder.Services.AddFusionCache()
+                .TryWithAutoSetup()
+                .WithDefaultEntryOptions(new FusionCacheEntryOptions
+                {
+                    Duration = TimeSpan.FromMinutes(10),
+                    IsFailSafeEnabled = true,
+                    FailSafeMaxDuration = TimeSpan.FromHours(1)
+                });
+
 
             //註冊 HttpContextAccessor 以便在服務中存取 HttpContext (例如：取得使用者資訊、請求相關資料等)
             builder.Services.AddHttpContextAccessor();

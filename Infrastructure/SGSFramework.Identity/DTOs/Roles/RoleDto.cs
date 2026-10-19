@@ -16,6 +16,9 @@ namespace SGSFramework.Identity.DTOs.Roles
         public RoleScopeType ScopeType { get; set; }
         public string ScopeTypeName { get; set;} = string.Empty;
 
+        /// <summary>
+        /// 
+        /// </summary>
         public int HierarchyLevel { get; set;}
 
         public Guid?  TenantLabId { get; set; }

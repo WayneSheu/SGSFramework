@@ -3,6 +3,10 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
+
+	  <!-- 必須在此專案中開啟 XML 文件輸出，OpenAPI 才能抓到 DTO 註解 -->
+	  <GenerateDocumentationFile>true</GenerateDocumentationFile>
+	  <NoWarn>$(NoWarn);1591</NoWarn>
     <Nullable>enable</Nullable>
 	  <!-- 設定套件的資訊 -->
 	  <PackageId>SGSFramework.Identity</PackageId>

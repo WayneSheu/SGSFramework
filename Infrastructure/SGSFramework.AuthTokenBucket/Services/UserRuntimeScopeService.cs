@@ -6,7 +6,6 @@
 namespace SGSFramework.AuthTokenBucket.Services;
 
 using Microsoft.AspNetCore.Identity;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.Core.Abstractions.Adapters;
@@ -22,13 +21,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using ZiggyCreatures.Caching.Fusion;
 
 /// <summary>
-/// 多租戶與動態實驗室架構下的核心執行期上下文服務 (重構版：支援無限位元權限點與特權繞過)
+/// 多租戶與動態實驗室架構下的核心執行期上下文服務 (重構版：支援無限位元權限點與特權繞過，採用 IFusionCache)
 /// </summary>
 public class UserRuntimeScopeService(
     IOrganizationIntegrationService orgIntegrationService,
-    IMemoryCache cache,
+    IFusionCache cache,
     ILogger<UserRuntimeScopeService> logger,
     UserManager<ApplicationUser> userManager,
     IDynamicControllerRepository<ControllerMetadata> controllerRepo,
@@ -38,7 +38,7 @@ public class UserRuntimeScopeService(
     : IUserRuntimeScopeService
 {
     private readonly IOrganizationIntegrationService _orgIntegrationService = orgIntegrationService ?? throw new ArgumentNullException(nameof(orgIntegrationService));
-    private readonly IMemoryCache _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+    private readonly IFusionCache _cache = cache ?? throw new ArgumentNullException(nameof(cache));
     private readonly ILogger<UserRuntimeScopeService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly UserManager<ApplicationUser> _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
     private readonly IDynamicControllerRepository<ControllerMetadata> _controllerRepo = controllerRepo ?? throw new ArgumentNullException(nameof(controllerRepo));
@@ -468,12 +468,16 @@ public class UserRuntimeScopeService(
     {
         string cacheKey = $"perm_scope:{userId}:{labId}";
 
-        var permissions = await _cache.GetOrCreateAsync(cacheKey, async entry =>
-        {
-            entry.AbsoluteExpirationRelativeToNow = CacheExpiration;
-            var permissionDict = await FetchUserModulePermissionsFromDbAsync(userId, labId, cancellationToken).ConfigureAwait(false);
-            return permissionDict.Select(p => $"{p.Key}:{p.Value}").ToList();
-        }).ConfigureAwait(false);
+        var permissions = await _cache.GetOrSetAsync<List<string>>(
+            cacheKey,
+            async (_, ct) =>
+            {
+                var permissionDict = await FetchUserModulePermissionsFromDbAsync(userId, labId, ct).ConfigureAwait(false);
+                return permissionDict.Select(p => $"{p.Key}:{p.Value}").ToList();
+            },
+            CacheExpiration,
+            token: cancellationToken
+        ).ConfigureAwait(false);
 
         return permissions ?? [];
     }
@@ -484,12 +488,16 @@ public class UserRuntimeScopeService(
     {
         string cacheKey = $"perm_scope:global:{userId}";
 
-        var permissions = await _cache.GetOrCreateAsync(cacheKey, async entry =>
-        {
-            entry.AbsoluteExpirationRelativeToNow = CacheExpiration;
-            var permissionDict = await FetchUserGlobalPermissionsFromDbAsync(userId, cancellationToken).ConfigureAwait(false);
-            return permissionDict.Select(p => $"{p.Key}:{p.Value}").ToList();
-        }).ConfigureAwait(false);
+        var permissions = await _cache.GetOrSetAsync<List<string>>(
+            cacheKey,
+            async (_, ct) =>
+            {
+                var permissionDict = await FetchUserGlobalPermissionsFromDbAsync(userId, ct).ConfigureAwait(false);
+                return permissionDict.Select(p => $"{p.Key}:{p.Value}").ToList();
+            },
+            CacheExpiration,
+            token: cancellationToken
+        ).ConfigureAwait(false);
 
         return permissions ?? [];
     }

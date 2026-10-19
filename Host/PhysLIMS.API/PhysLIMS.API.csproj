@@ -2,10 +2,12 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+	<GenerateDocumentationFile>true</GenerateDocumentationFile>
+	<!-- 略過因為缺少公開成員 XML 註解而產生的編譯警告 (CS1591) -->
+	<NoWarn>$(NoWarn);1591</NoWarn>
 	<!-- 加入 NU1900 避免資安警報在 PMC 建置時阻斷指令 -->
 	<NoWarn>$(NoWarn);NU1900</NoWarn>
-	<!-- 避免未填寫 XML 註解時跳出警告 -->
-	<NoWarn>$(NoWarn);1591</NoWarn>
+
 	  <!-- 允許 OpenAPI Source Generator 使用 C# 攔截器功能 -->
   <InterceptorsNamespaces>$(InterceptorsNamespaces);Microsoft.AspNetCore.OpenApi.Generated</InterceptorsNamespaces>
     <Nullable>enable</Nullable>
