@@ -123,6 +123,68 @@ namespace SGSFramework.Identity.Services
                 .GroupBy(x => x.RoleId)
                 .ToDictionary(g => g.Key, g => g.Select(x => x.TenantLabId).ToList());
 
+        public async Task<(bool Succeeded, string Message)> SetRoleLabScopeAsync(
+            string roleId,
+            Guid tenantLabId,
+            bool assign,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(roleId);
+            if (tenantLabId == Guid.Empty) return (false, "實驗室識別碼無效。");
+
+            var role = await _roleManager.FindByIdAsync(roleId).ConfigureAwait(false);
+            if (role == null || _dbContext.Entry(role).Property<bool>("IsDeleted").CurrentValue)
+            {
+                return (false, "找不到指定的角色。");
+            }
+
+            var entry = _dbContext.Entry(role);
+            if (entry.Property<RoleScopeType>("ScopeType").CurrentValue != RoleScopeType.LabScoped)
+            {
+                return (false, $"角色 [{role.Name}] 不是實驗室專屬角色，無法指派區域實驗室。");
+            }
+            if (entry.Property<bool>("IsSystemRole").CurrentValue)
+            {
+                return (false, "系統內建預設角色受到保護，禁止修改。");
+            }
+            if (IsLocked(role))
+            {
+                return (false, LockedMessage(role, "調整適用實驗室"));
+            }
+
+            var roleGuid = RoleGuid(role);
+            var labIds = await LoadRoleLabIdsAsync(roleGuid, entry.Property<Guid?>("TenantLabId").CurrentValue, cancellationToken).ConfigureAwait(false);
+
+            if (assign == labIds.Contains(tenantLabId))
+            {
+                return (true, assign ? "角色已指派此實驗室。" : "角色未指派此實驗室。");
+            }
+
+            if (assign) labIds.Add(tenantLabId);
+            else labIds.Remove(tenantLabId);
+
+            if (labIds.Count == 0)
+            {
+                return (false, $"角色 [{role.Name}] 至少須保留一個區域實驗室；如不再使用請停用或刪除角色。");
+            }
+
+            await SaveRoleLabScopesAsync(roleGuid, labIds, cancellationToken).ConfigureAwait(false);
+            entry.Property("TenantLabId").CurrentValue = labIds[0];
+            var result = await _roleManager.UpdateAsync(role).ConfigureAwait(false);
+            if (!result.Succeeded)
+            {
+                return (false, string.Join("; ", result.Errors.Select(e => e.Description)));
+            }
+
+            await _roleAuditService.RecordAsync(roleGuid, role.Name!, RoleAuditActions.Updated,
+                $"經由實驗室管理{(assign ? "加入" : "移除")}適用實驗室，目前共 {labIds.Count} 個",
+                detail: new { TenantLabId = tenantLabId, Assigned = assign, TenantLabIds = labIds },
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            await _permissionChangeNotifier.NotifyRoleMembersAsync(role.Name!, "role-lab-scope-changed", cancellationToken).ConfigureAwait(false);
+
+            return (true, assign ? $"已將角色 [{role.Name}] 指派至此實驗室。" : $"已自此實驗室移除角色 [{role.Name}]。");
+        }
+
         private async Task SaveRoleLabScopesAsync(Guid roleId, IReadOnlyCollection<Guid> labIds, CancellationToken cancellationToken)
         {
             var set = _dbContext.Set<RoleLabScope>();

@@ -51,6 +51,7 @@ public class MenuItemController : ApiControllerBase
     /// 取得當前登入使用者權限內之渲染選單樹 (Vue / Blazor 導覽列用)
     /// </summary>
     [HttpGet("user-tree")]
+    [AuthenticatedOnly]
     [Function("GetUserMenuTree", "使用者動態選單", Icon = "fa-solid fa-sitemap", Order = 1, Description = "依據當前使用者權限過濾後回傳選單樹")]
     [EndpointSummary("使用者動態選單")]
     [EndpointDescription("依據當前使用者權限過濾後回傳選單樹。")]

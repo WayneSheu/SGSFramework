@@ -211,7 +211,8 @@ public sealed class PermissionAuthorizationService : IPermissionAuthorizationSer
     {
         if (httpContext != null)
         {
-            var labHeader = httpContext.Request.Headers["TenantLabId"].FirstOrDefault()
+            var labHeader = httpContext.Request.Headers["X-Lab-Id"].FirstOrDefault()
+                         ?? httpContext.Request.Headers["TenantLabId"].FirstOrDefault()
                          ?? httpContext.Request.Headers["X-Target-Lab-Id"].FirstOrDefault()
                          ?? httpContext.Request.Headers["LabId"].FirstOrDefault();
 

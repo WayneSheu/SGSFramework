@@ -14,6 +14,7 @@ namespace SGSFramework.AuthTokenBucket.Services;
 /// - 啟用中 (Active)：授予權限
 /// - 已鎖定 (Locked)：既有成員保留權限（新成員與權限異動已於管理端阻擋）
 /// - 已停用 (Disabled)：不授予任何權限，既有成員立即失去此角色的權限
+/// - 實驗室專屬 (LabScoped) 角色：僅於其指派的區域實驗室 (core.RoleLabScopes) 內生效，無實驗室上下文時不授予
 /// - 待審核 (PendingApproval)：新建角色尚未核准則不授予權限；啟用中角色送審權限變更期間維持既有權限
 /// </summary>
 public interface IRoleEffectivePermissionProvider
@@ -40,7 +41,8 @@ public sealed class RoleEffectivePermissionProvider(
     {
         ArgumentNullException.ThrowIfNull(user);
 
-        var roleIds = await GetEffectiveRoleIdsAsync(user, cancellationToken).ConfigureAwait(false);
+        // 無實驗室上下文：實驗室專屬角色不授予權限
+        var roleIds = await GetEffectiveRoleIdsAsync(user, labId: null, cancellationToken).ConfigureAwait(false);
         return await LoadGlobalRolePermissionsAsync(roleIds, cancellationToken).ConfigureAwait(false);
     }
 
@@ -48,10 +50,11 @@ public sealed class RoleEffectivePermissionProvider(
     {
         ArgumentNullException.ThrowIfNull(user);
 
-        var roleIds = await GetEffectiveRoleIdsAsync(user, cancellationToken).ConfigureAwait(false);
+        // 實驗室專屬角色僅於其指派的區域實驗室內生效
+        var roleIds = await GetEffectiveRoleIdsAsync(user, labId, cancellationToken).ConfigureAwait(false);
         if (roleIds.Count == 0) return [];
 
-        // 全域角色權限於任何實驗室範圍內皆有效
+        // 全域 / 系統角色於任何實驗室皆有效；實驗室專屬角色已依上方 labId 過濾
         var result = new List<string>(await LoadGlobalRolePermissionsAsync(roleIds, cancellationToken).ConfigureAwait(false));
 
         // 實驗室層級角色授權（位元向量，位元位置為權限註冊表的全域索引）
@@ -90,9 +93,10 @@ public sealed class RoleEffectivePermissionProvider(
     }
 
     /// <summary>
-    /// 取得使用者所屬且「未停用、未刪除」的角色 ID
+    /// 取得使用者所屬且「未停用、未刪除」的角色 ID；
+    /// 實驗室專屬角色僅在 labId 屬於其指派實驗室 (core.RoleLabScopes，舊資料以 TenantLabId) 時計入
     /// </summary>
-    private async Task<List<Guid>> GetEffectiveRoleIdsAsync(ApplicationUser user, CancellationToken cancellationToken)
+    private async Task<List<Guid>> GetEffectiveRoleIdsAsync(ApplicationUser user, Guid? labId, CancellationToken cancellationToken)
     {
         var roleNames = await _userManager.GetRolesAsync(user).ConfigureAwait(false);
         if (roleNames.Count == 0) return [];
@@ -100,7 +104,7 @@ public sealed class RoleEffectivePermissionProvider(
         var roles = await _dbContext.Set<ApplicationRole>()
             .AsNoTracking()
             .Where(r => r.Name != null && roleNames.Contains(r.Name) && !r.IsDeleted)
-            .Select(r => new { r.Id, r.Name, r.Status, r.EffectiveFrom, r.EffectiveTo })
+            .Select(r => new { r.Id, r.Name, r.Status, r.EffectiveFrom, r.EffectiveTo, r.ScopeType, r.TenantLabId })
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
@@ -122,6 +126,30 @@ public sealed class RoleEffectivePermissionProvider(
         var excluded = roles.Where(r => r.Status == RoleStatus.Disabled ||
                                         (r.Status == RoleStatus.PendingApproval && !underChangeReview.Contains(r.Id)) ||
                                         !IsEffective(r.EffectiveFrom, r.EffectiveTo)).ToList();
+        // 實驗室範圍：實驗室專屬角色需指派到目前的實驗室才計入
+        var labScopedIds = roles.Where(r => r.ScopeType == RoleScopeType.LabScoped).Select(r => r.Id).ToList();
+        if (labScopedIds.Count > 0)
+        {
+            var allowedLabRoleIds = new HashSet<Guid>();
+            if (labId.HasValue)
+            {
+                var scopes = await _dbContext.Set<RoleLabScope>().AsNoTracking()
+                    .Where(s => labScopedIds.Contains(s.RoleId))
+                    .Select(s => new { s.RoleId, s.TenantLabId })
+                    .ToListAsync(cancellationToken)
+                    .ConfigureAwait(false);
+
+                foreach (var role in roles.Where(r => r.ScopeType == RoleScopeType.LabScoped))
+                {
+                    var roleScopes = scopes.Where(s => s.RoleId == role.Id).Select(s => s.TenantLabId).ToList();
+                    var inScope = roleScopes.Count > 0 ? roleScopes.Contains(labId.Value) : role.TenantLabId == labId.Value;
+                    if (inScope) allowedLabRoleIds.Add(role.Id);
+                }
+            }
+
+            excluded.AddRange(roles.Where(r => r.ScopeType == RoleScopeType.LabScoped && !allowedLabRoleIds.Contains(r.Id) && !excluded.Contains(r)));
+        }
+
         if (excluded.Count > 0)
         {
             _logger.LogDebug("[RolePermission] 使用者 {UserId} 的停用或非生效期間角色不計入權限：{Roles}",

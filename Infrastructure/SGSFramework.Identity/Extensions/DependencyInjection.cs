@@ -65,6 +65,7 @@ namespace SGSFramework.Identity.Extensions
 
             // 定期權限覆核
             services.AddScoped<IAccessReviewService, AccessReviewService>();
+            services.AddScoped<ILabDirectoryService, LabDirectoryService>();
 
             // 支援泛型與具體 UserManagementService 註冊
             services.AddScoped(typeof(IUserManagementService<,,>), typeof(UserManagementService<,,>));

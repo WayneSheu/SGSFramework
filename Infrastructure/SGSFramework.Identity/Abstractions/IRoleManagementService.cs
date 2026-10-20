@@ -59,5 +59,15 @@ namespace SGSFramework.Identity.Abstractions
           string roleIdentifier,
           BatchAssignUsersRequest request,
           CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// 將區域實驗室加入或移出實驗室專屬角色的適用範圍（由實驗室管理端指派）。
+        /// 僅限實驗室專屬角色；已鎖定或系統內建角色不可調整；至少須保留一個實驗室。
+        /// </summary>
+        Task<(bool Succeeded, string Message)> SetRoleLabScopeAsync(
+          string roleId,
+          Guid tenantLabId,
+          bool assign,
+          CancellationToken cancellationToken = default);
     }
 }

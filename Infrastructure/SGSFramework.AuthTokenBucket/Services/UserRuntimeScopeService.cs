@@ -35,10 +35,12 @@ public class UserRuntimeScopeService(
     IMenuStrategyFactory menuStrategyFactory,
     IPermissionRegistry permissionRegistry,
     IUserPermissionRepository userPermissionRepository,
-    IRoleEffectivePermissionProvider roleEffectivePermissionProvider)
+    IRoleEffectivePermissionProvider roleEffectivePermissionProvider,
+    ILabFunctionScopeService labFunctionScopeService)
     : IUserRuntimeScopeService
 {
     private readonly IRoleEffectivePermissionProvider _roleEffectivePermissionProvider = roleEffectivePermissionProvider ?? throw new ArgumentNullException(nameof(roleEffectivePermissionProvider));
+    private readonly ILabFunctionScopeService _labFunctionScopeService = labFunctionScopeService ?? throw new ArgumentNullException(nameof(labFunctionScopeService));
     private readonly IOrganizationIntegrationService _orgIntegrationService = orgIntegrationService ?? throw new ArgumentNullException(nameof(orgIntegrationService));
     private readonly IFusionCache _cache = cache ?? throw new ArgumentNullException(nameof(cache));
     private readonly ILogger<UserRuntimeScopeService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -148,7 +150,8 @@ public class UserRuntimeScopeService(
                 userId, targetLabId, finalLabId);
         }
 
-        var permissions = await GetCachedOrFetchPermissionsAsync(userId, finalLabId, cancellationToken).ConfigureAwait(false);
+        // 與 API 授權同源：解析後的權限鍵（含全域直接權限、角色、實驗室專屬角色範圍與實驗室開放功能上限）
+        var permissions = (await GetUserPermissionsAsync(userId, finalLabId, cancellationToken).ConfigureAwait(false)).ToList();
 
         var user = await _userManager.FindByIdAsync(userId).ConfigureAwait(false);
         bool isAdmin = user != null && await IsSystemAdminAsync(user).ConfigureAwait(false);
@@ -238,12 +241,20 @@ public class UserRuntimeScopeService(
 
             if (targetLab == null)
             {
-                _logger.LogWarning("[PermissionCheck] 使用者 {UserId} 嘗試查詢未授權之實驗室範圍權限: {LabId}", userId, activeLabId);
-                return [];
+                // 無權存取的實驗室（例如前端殘留的切換紀錄）：退回主要實驗室，不授予該實驗室的任何權限
+                _logger.LogWarning("[PermissionCheck] 使用者 {UserId} 嘗試查詢未授權之實驗室範圍權限: {LabId}，改以主要實驗室計算。", userId, activeLabId);
+                var fallbackLab = validatedAccessibleLabs.FirstOrDefault(l => l.IsPrimary) ?? validatedAccessibleLabs.FirstOrDefault();
+                if (fallbackLab is null) return [];
+                activeLabId = fallbackLab.TenantLabId;
             }
 
             var rawPermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId.Value, cancellationToken).ConfigureAwait(false);
-            return ParsePermissionKeys(rawPermissions);
+
+            // 區域實驗室功能開放範圍：作為此實驗室內的權限上限（系統管理員已於上方放行）
+            var labPermissions = ParsePermissionKeys(rawPermissions);
+            var allowed = await _labFunctionScopeService.GetAllowedKeysAsync(activeLabId.Value, cancellationToken).ConfigureAwait(false);
+            if (allowed is not null) labPermissions.IntersectWith(allowed);
+            return labPermissions;
         }
         catch (Exception ex)
         {
@@ -281,7 +292,8 @@ public class UserRuntimeScopeService(
             }
 
             var userPermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId, cancellationToken).ConfigureAwait(false);
-            return ValidateBitPositionPermission(userPermissions, controllerId.ToString(), bitPosition);
+            return ValidateBitPositionPermission(userPermissions, controllerId.ToString(), bitPosition) &&
+                   await IsAllowedByLabScopeAsync(activeLabId, controllerId.ToString(), bitPosition, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -317,7 +329,8 @@ public class UserRuntimeScopeService(
             if (!isLabScopeValid) return false;
 
             var userPermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId, cancellationToken).ConfigureAwait(false);
-            return ValidateBitPositionPermission(userPermissions, module, bitPosition);
+            return ValidateBitPositionPermission(userPermissions, module, bitPosition) &&
+                   await IsAllowedByLabScopeAsync(activeLabId, module, bitPosition, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -477,6 +490,10 @@ public class UserRuntimeScopeService(
                 var permissionDict = await FetchUserModulePermissionsFromDbAsync(userId, labId, ct).ConfigureAwait(false);
                 var result = permissionDict.Select(p => $"{p.Key}:{p.Value}").ToList();
 
+                // 全域直接權限於任何實驗室皆有效（與權限總覽一致）；同模組鍵於 ParsePermissionKeys 解析後聯集
+                var globalDict = await FetchUserGlobalPermissionsFromDbAsync(userId, ct).ConfigureAwait(false);
+                result.AddRange(globalDict.Select(p => $"{p.Key}:{p.Value}"));
+
                 // 合併經由角色取得的權限（已排除停用角色）
                 result.AddRange(await FetchRolePermissionsAsync(userId, labId, ct).ConfigureAwait(false));
                 return result;
@@ -569,6 +586,16 @@ public class UserRuntimeScopeService(
             _logger.LogError(ex, "從資料庫獲取使用者全域權限發生異常。UserId: {UserId}", userId);
             return new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         }
+    }
+
+    /// <summary>區域實驗室功能開放範圍檢查；無法解析為權限鍵的位元點不受限制</summary>
+    private async Task<bool> IsAllowedByLabScopeAsync(Guid labId, string module, int bitPosition, CancellationToken cancellationToken)
+    {
+        var allowed = await _labFunctionScopeService.GetAllowedKeysAsync(labId, cancellationToken).ConfigureAwait(false);
+        if (allowed is null) return true;
+
+        var key = _permissionRegistry.ResolvePermissionKey(module, bitPosition);
+        return string.IsNullOrEmpty(key) || allowed.Contains(key);
     }
 
     private HashSet<string> ParsePermissionKeys(IEnumerable<string> rawPermissions)

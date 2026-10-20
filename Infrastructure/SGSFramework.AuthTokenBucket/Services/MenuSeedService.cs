@@ -169,6 +169,19 @@ public class MenuSeedService<TDbContext> : IMenuSeedService
                             continue;
                         }
 
+                        else if (!string.IsNullOrWhiteSpace(meta.Path) &&
+                                 !string.Equals(pageNode.Route, meta.Path, StringComparison.OrdinalIgnoreCase))
+                        {
+                            // 程式碼指定的頁面路徑變更（例如新增前端頁面）：同步既有節點的路由
+                            _logger.LogInformation("選單頁面 [{Key}] 路由由 {Old} 更新為 {New}。", pageKey, pageNode.Route, meta.Path);
+                            pageNode.Route = meta.Path;
+                            // 入口改由另一個功能提供時，名稱與圖示一併同步
+                            if (!string.IsNullOrWhiteSpace(meta.DisplayName)) pageNode.DisplayName = meta.DisplayName;
+                            if (!string.IsNullOrWhiteSpace(meta.Icon)) pageNode.Icon = meta.Icon;
+                            pageNode.ControllerId = meta.Id;
+                            isModified = true;
+                        }
+
                         processedPageKeys.Add(pageKey);
                     }
                 }

@@ -34,6 +34,12 @@ namespace SGSFramework.AuthTokenBucket.Filters
                 return;
             }
 
+            // 僅需登入的自身資料端點（[Authorize] 仍會確保已驗證）
+            if (context.ActionDescriptor.EndpointMetadata.OfType<AuthenticatedOnlyAttribute>().Any())
+            {
+                return;
+            }
+
             var permissionAttributes = context.ActionDescriptor.EndpointMetadata
                 .OfType<RequiresPermissionAttribute>()
                 .ToList();

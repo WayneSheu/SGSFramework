@@ -232,6 +232,7 @@ public static class AuthTokenBucketServiceCollectionExtensions
         services.AddScoped<IRoleAuditService, RoleAuditService>();
         services.AddScoped<IRoleGovernanceService, RoleGovernanceService>();
         // 註冊執行期作用域服務
+        services.AddScoped<ILabFunctionScopeService, LabFunctionScopeService>();
         services.AddScoped<IUserRuntimeScopeService, UserRuntimeScopeService>();
         // 註冊權限遮罩服務
         services.AddScoped<IPermissionBitmaskService, PermissionBitmaskService>();

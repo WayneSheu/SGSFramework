@@ -14,6 +14,7 @@ using SGSFramework.AuthTokenBucket.Controllers.V1.DTOs.RolePermissions;
 using SGSFramework.AuthTokenBucket.Controllers.V1.DTOs.UserPermissions;
 using SGSFramework.Core.Abstractions.Adapters;
 using SGSFramework.Core.Abstractions.DbContexts;
+using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Abstractions.Permissions.Entities;
@@ -39,6 +40,7 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
     private readonly IPermissionBitmaskService _bitmaskService;
     private readonly IPermissionChangeNotifier _permissionChangeNotifier;
     private readonly IRoleAuditService _roleAuditService;
+    private readonly ILabFunctionScopeService _labFunctionScopeService;
     private readonly ILogger<PermissionManagementService<TDbContext>> _logger;
 
     public PermissionManagementService(
@@ -53,6 +55,7 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
         IPermissionBitmaskService bitmaskService,
         IPermissionChangeNotifier permissionChangeNotifier,
         IRoleAuditService roleAuditService,
+        ILabFunctionScopeService labFunctionScopeService,
         ILogger<PermissionManagementService<TDbContext>> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
@@ -66,6 +69,7 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
         _bitmaskService = bitmaskService ?? throw new ArgumentNullException(nameof(bitmaskService));
         _permissionChangeNotifier = permissionChangeNotifier ?? throw new ArgumentNullException(nameof(permissionChangeNotifier));
         _roleAuditService = roleAuditService ?? throw new ArgumentNullException(nameof(roleAuditService));
+        _labFunctionScopeService = labFunctionScopeService ?? throw new ArgumentNullException(nameof(labFunctionScopeService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -442,22 +446,48 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                 .OrderBy(p => p)
                 .ToList();
 
-            // 3. 解析全域角色繼承權限（僅計入生效中的角色；權限變更送審中者為核准前的既有權限）
-            var globalRoleKeys = new List<string>();
+            // 3. 解析角色繼承權限（僅計入生效中的角色；權限變更送審中者為核准前的既有權限）
+            //    與執行期一致：全域 / 系統角色處處有效；實驗室專屬角色僅於其指派的實驗室內生效
+            var roleKeysById = new Dictionary<string, List<string>>();
             foreach (var roleId in effectiveRoleIds)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var roleMatrix = await GetRoleGlobalPermissionsAsync(roleId, cancellationToken).ConfigureAwait(false);
-                if (roleMatrix?.GrantedPermissionKeys is { Count: > 0 })
-                {
-                    globalRoleKeys.AddRange(roleMatrix.GrantedPermissionKeys);
-                }
+                roleKeysById[roleId] = roleMatrix?.GrantedPermissionKeys ?? [];
             }
 
-            globalRoleKeys = globalRoleKeys
+            var labScopedRoles = roles.Where(r => r.ScopeType == RoleScopeType.LabScoped && effectiveRoleIds.Contains(r.Id.ToString())).ToList();
+            var labScopedIds = labScopedRoles.Select(r => r.Id).ToList();
+            var roleLabScopes = await _dbContext.Set<RoleLabScope>().AsNoTracking()
+                .Where(s => labScopedIds.Contains(s.RoleId))
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            HashSet<Guid> LabsOf(ApplicationRole role)
+            {
+                var labs = roleLabScopes.Where(s => s.RoleId == role.Id).Select(s => s.TenantLabId).ToHashSet();
+                if (labs.Count == 0 && role.TenantLabId.HasValue) labs.Add(role.TenantLabId.Value);
+                return labs;
+            }
+
+            var globalRoleKeys = roleKeysById
+                .Where(kv => !labScopedIds.Contains(Guid.Parse(kv.Key)))
+                .SelectMany(kv => kv.Value)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(p => p)
                 .ToList();
+
+            List<string> LabRoleKeys(Guid labId) => globalRoleKeys
+                .Concat(labScopedRoles.Where(r => LabsOf(r).Contains(labId)).SelectMany(r => roleKeysById[r.Id.ToString()]))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(p => p)
+                .ToList();
+
+            foreach (var item in roleAuditList.Where(i => i.IsEffective))
+            {
+                var role = labScopedRoles.FirstOrDefault(r => r.Name == item.RoleName);
+                if (role is not null) item.Status = $"{item.Status} · 實驗室專屬（{LabsOf(role).Count} 個實驗室）";
+            }
 
             // 4. 解析全域有效權限
             var globalEffectiveKeys = globalDirectKeys
@@ -467,9 +497,10 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                 .ToList();
 
             // 轉換為豐富資訊之 PermissionAuditInfoItemDto
-            var globalDirectPermissions = EnrichPermissionDetails(globalDirectKeys);
-            var globalRolePermissions = EnrichPermissionDetails(globalRoleKeys);
-            var globalEffectivePermissions = EnrichPermissionDetails(globalEffectiveKeys);
+            var menuLookup = await BuildMenuLookupAsync(cancellationToken).ConfigureAwait(false);
+            var globalDirectPermissions = EnrichPermissionDetails(globalDirectKeys, menuLookup);
+            var globalRolePermissions = EnrichPermissionDetails(globalRoleKeys, menuLookup);
+            var globalEffectivePermissions = EnrichPermissionDetails(globalEffectiveKeys, menuLookup);
 
             var responseDto = new UserAuditPermissionsResponseDto
             {
@@ -510,7 +541,7 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                             .OrderBy(p => p)
                             .ToList();
 
-                        var labRoleKeys = globalRoleKeys;
+                        var labRoleKeys = LabRoleKeys(lab.TenantLabId);
 
                         var labEffectiveKeys = labDirectKeys
                             .Union(labRoleKeys, StringComparer.OrdinalIgnoreCase)
@@ -518,6 +549,9 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                             .Distinct()
                             .OrderBy(p => p)
                             .ToList();
+
+                        // 區域實驗室功能開放範圍：有效權限不得超出實驗室開放的功能
+                        labEffectiveKeys = (await _labFunctionScopeService.FilterAsync(lab.TenantLabId, labEffectiveKeys, cancellationToken).ConfigureAwait(false)).ToList();
 
                         var labAuditDto = new UserLabPermissionAuditDto
                         {
@@ -530,9 +564,9 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                             JobTitle = lab.JobTitle,
                             EffectiveDate = lab.EffectiveDate,
                             ExpiryDate = lab.ExpiryDate,
-                            LabDirectPermissions = EnrichPermissionDetails(labDirectKeys),
-                            LabRolePermissions = EnrichPermissionDetails(labRoleKeys),
-                            LabEffectivePermissions = EnrichPermissionDetails(labEffectiveKeys)
+                            LabDirectPermissions = EnrichPermissionDetails(labDirectKeys, menuLookup),
+                            LabRolePermissions = EnrichPermissionDetails(labRoleKeys, menuLookup),
+                            LabEffectivePermissions = EnrichPermissionDetails(labEffectiveKeys, menuLookup)
                         };
 
                         if (lab.IsPrimary)
@@ -569,7 +603,53 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
     /// <summary>
     /// 依據 PermissionKey 查表/對照 Registry 補全 Title 與 Description 資訊
     /// </summary>
-    private List<PermissionAuditInfoItemDto> EnrichPermissionDetails(IEnumerable<string> permissionKeys)
+    /// <summary>選單位置：功能（Module + Controller）對應到實際選單樹的區段 / 群組</summary>
+    private sealed record MenuPlacement(string SectionTitle, int SectionOrder, string GroupTitle, int GroupOrder);
+
+    /// <summary>選單頁面入口</summary>
+    private sealed record MenuEntry(string Title, string? Route);
+
+    private sealed record MenuLookup(
+        Dictionary<string, MenuPlacement> ByController,
+        Dictionary<string, MenuEntry> EntriesByKey);
+
+    private static string ControllerKey(string module, string controller) => $"{module}|{controller}".ToUpperInvariant();
+
+    /// <summary>
+    /// 依實際選單樹 (Section → Group → Page) 建立權限分組對照：
+    /// 選單頁面所屬的功能歸入該頁面所在群組；同一功能的其他動作權限一併歸入，與使用者看到的選單一致
+    /// </summary>
+    private async Task<MenuLookup> BuildMenuLookupAsync(CancellationToken cancellationToken)
+    {
+        var items = await _dbContext.MenuItems.AsNoTracking()
+            .Where(m => m.IsActive && m.IsVisible)
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        var byId = items.ToDictionary(m => m.Id);
+
+        var byController = new Dictionary<string, MenuPlacement>(StringComparer.OrdinalIgnoreCase);
+        var entries = new Dictionary<string, MenuEntry>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var page in items.Where(m => m.Type == MenuType.Page).OrderBy(m => m.DisplayOrder))
+        {
+            var key = !string.IsNullOrWhiteSpace(page.PermissionKey) ? page.PermissionKey! : page.Key;
+            entries.TryAdd(key, new MenuEntry(page.DisplayName, page.Route));
+
+            if (!_permissionRegistry.TryGetPermission(key, out var meta) || meta is null) continue;
+
+            MenuItem? group = null;
+            if (page.ParentId is { } groupId && byId.TryGetValue(groupId, out var groupNode)) group = groupNode;
+            var section = group?.ParentId is { } sectionId && byId.TryGetValue(sectionId, out var s) ? s : null;
+            if (group is null) continue;
+
+            byController.TryAdd(ControllerKey(meta.ModuleName, meta.ControllerName), new MenuPlacement(
+                section?.DisplayName ?? meta.ModuleTitle ?? meta.ModuleName, section?.DisplayOrder ?? int.MaxValue,
+                group.DisplayName, group.DisplayOrder));
+        }
+
+        return new MenuLookup(byController, entries);
+    }
+
+    private List<PermissionAuditInfoItemDto> EnrichPermissionDetails(IEnumerable<string> permissionKeys, MenuLookup? menu = null)
     {
         return permissionKeys.Select(key =>
         {
@@ -579,11 +659,27 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                 ? meta.PermissionTitle
                 : (!string.IsNullOrWhiteSpace(meta?.ActionTitle) ? meta.ActionTitle : key);
 
+            var functionTitle = !string.IsNullOrWhiteSpace(meta?.ControllerTitle) ? meta!.ControllerTitle! : meta?.ControllerName ?? "其他";
+            MenuPlacement? placement = null;
+            if (meta is not null) menu?.ByController.TryGetValue(ControllerKey(meta.ModuleName, meta.ControllerName), out placement);
+            MenuEntry? entry = null;
+            menu?.EntriesByKey.TryGetValue(key, out entry);
+
             return new PermissionAuditInfoItemDto
             {
                 PermissionKey = key,
                 Title = title,
-                Description = meta?.Description
+                Description = meta?.Description,
+                // 無選單入口的功能：以模組 / 功能標題作為分組（排序置後）
+                SectionTitle = placement?.SectionTitle ?? meta?.ModuleTitle ?? meta?.ModuleName ?? "其他",
+                SectionOrder = placement?.SectionOrder ?? int.MaxValue,
+                GroupTitle = placement?.GroupTitle ?? functionTitle,
+                GroupOrder = placement?.GroupOrder ?? int.MaxValue,
+                FunctionTitle = functionTitle,
+                ActionTitle = !string.IsNullOrWhiteSpace(meta?.ActionTitle) ? meta!.ActionTitle : title,
+                IsMenuEntry = entry is not null,
+                MenuTitle = entry?.Title,
+                MenuPath = entry?.Route
             };
         }).ToList();
     }

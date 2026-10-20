@@ -560,6 +560,7 @@ public sealed class AuthController(
     /// 切換作用中的實驗室上下文
     /// </summary>
     [HttpPost("switch-context")]
+    [AuthenticatedOnly]
     [Function("SwitchContext", "切換實驗室", Icon = "fa-solid fa-right-left", Order = 5, Description = "切換作用中的實驗室上下文")]
     [EndpointSummary("切換實驗室")]
     [EndpointDescription("切換作用中的實驗室上下文端點。")]
@@ -608,6 +609,36 @@ public sealed class AuthController(
                 Instance = HttpContext.Request.Path
             });
         }
+    }
+
+    /// <summary>
+    /// 取得當前使用者可切換的實驗室清單（主要 / 兼任），供頂部實驗室切換器使用
+    /// </summary>
+    [HttpGet("my-labs")]
+    [AuthenticatedOnly]
+    [Function("GetMyLaboratories", "我的實驗室", Icon = "fa-solid fa-flask", Order = 6, Description = "取得當前使用者可切換的實驗室清單")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetMyLabsAsync(CancellationToken cancellationToken = default)
+    {
+        string? userId = ResolveUserIdFromContextOrHeader();
+        if (string.IsNullOrEmpty(userId))
+        {
+            return BuildUnauthorizedResult("無法識別當前使用者的身份上下文。");
+        }
+
+        var labs = await _runtimeScopeService.GetAccessibleLabsAsync(userId, cancellationToken).ConfigureAwait(false);
+        return Ok((labs ?? [])
+            .OrderByDescending(l => l.IsPrimary)
+            .ThenBy(l => l.ParentLabCode)
+            .ThenBy(l => l.LabCode)
+            .Select(l => new
+            {
+                l.TenantLabId,
+                l.LabCode,
+                l.LabName,
+                l.IsPrimary,
+                l.ParentLabCode
+            }));
     }
 
     /// <summary>

@@ -1,6 +1,8 @@
 ﻿namespace SGSFramework.AuthTokenBucket.Queries.Menuitems;
 
 using MediatR;
+using Microsoft.AspNetCore.Http;
+using SGSFramework.AuthTokenBucket.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SGSFramework.Core.Abstractions.DbContexts;
@@ -27,12 +29,18 @@ public class GetUserMenuTreeQueryHandler : IRequestHandler<GetUserMenuTreeQuery,
     private readonly ITokenDbContext _dbContext;
     private readonly ICurrentUserService _currentUserService;
     private readonly ILogger<GetUserMenuTreeQueryHandler> _logger;
+    private readonly IUserRuntimeScopeService _runtimeScopeService;
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
     public GetUserMenuTreeQueryHandler(
         ITokenDbContext dbContext,
         ICurrentUserService currentUserService,
+        IUserRuntimeScopeService runtimeScopeService,
+        IHttpContextAccessor httpContextAccessor,
         ILogger<GetUserMenuTreeQueryHandler> logger)
     {
+        _runtimeScopeService = runtimeScopeService ?? throw new ArgumentNullException(nameof(runtimeScopeService));
+        _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _currentUserService = currentUserService ?? throw new ArgumentNullException(nameof(currentUserService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -45,8 +53,9 @@ public class GetUserMenuTreeQueryHandler : IRequestHandler<GetUserMenuTreeQuery,
         try
         {
             // 1. 取得當前使用者權限集合與管理員身份
-            var userPermissions = await _currentUserService.GetUserPermissionsAsync(cancellationToken).ConfigureAwait(false);
-            bool isAdmin = _currentUserService.IsAdmin;
+            // JWT 不攜帶 permission claim：改以執行期權限（直接權限 + 角色 + 實驗室範圍）為準，與 API 授權檢查同源
+            var userPermissions = await ResolveUserPermissionsAsync(cancellationToken).ConfigureAwait(false);
+            bool isAdmin = _currentUserService.IsAdmin || userPermissions.Contains("sysadmin");
 
             // 2. 從資料庫讀取所有已啟用 (IsActive) 且可視 (IsVisible) 的選單項目
             var allMenuItems = await _dbContext.MenuItems
@@ -149,5 +158,30 @@ public class GetUserMenuTreeQueryHandler : IRequestHandler<GetUserMenuTreeQuery,
             return Result.Failure<List<MenuItemDto>>(
                 Error.Failure("MENU_TREE_BUILD_ERROR", "建立使用者動態選單樹時發生內部系統錯誤。"));
         }
+    }
+
+    /// <summary>
+    /// 取得使用者於目前實驗室（Header / Claim，未指定時為主要實驗室）的有效權限，並合併 Token 內既有的權限 Claim
+    /// </summary>
+    private async Task<HashSet<string>> ResolveUserPermissionsAsync(CancellationToken cancellationToken)
+    {
+        var permissions = new HashSet<string>(
+            await _currentUserService.GetUserPermissionsAsync(cancellationToken).ConfigureAwait(false),
+            StringComparer.OrdinalIgnoreCase);
+
+        var userId = _currentUserService.UserId;
+        if (string.IsNullOrWhiteSpace(userId)) return permissions;
+
+        var httpContext = _httpContextAccessor.HttpContext;
+        var labValue = httpContext?.Request.Headers["X-Lab-Id"].FirstOrDefault()
+                       ?? httpContext?.Request.Headers["TenantLabId"].FirstOrDefault()
+                       ?? httpContext?.Request.Headers["X-Target-Lab-Id"].FirstOrDefault()
+                       ?? httpContext?.User.FindFirst("TenantLabId")?.Value
+                       ?? httpContext?.User.FindFirst("lab_id")?.Value;
+        Guid? labId = Guid.TryParse(labValue, out var parsed) ? parsed : null;
+
+        var runtime = await _runtimeScopeService.GetUserPermissionsAsync(userId, labId, cancellationToken).ConfigureAwait(false);
+        permissions.UnionWith(runtime);
+        return permissions;
     }
 }

@@ -766,6 +766,29 @@ namespace PhysLIMS.API.Migrations
                     b.ToTable("AspNetUsers", "core");
                 });
 
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.LabManager", b =>
+                {
+                    b.Property<Guid>("TenantLabId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ManagerUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("TenantLabId");
+
+                    b.HasIndex("ManagerUserId");
+
+                    b.ToTable("LabManagers", "core");
+                });
+
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.RemediationTicket", b =>
                 {
                     b.Property<string>("TicketId")
@@ -1303,6 +1326,44 @@ namespace PhysLIMS.API.Migrations
                         .HasDatabaseName("IX_core_OutboxMessages_FetchPending");
 
                     b.ToTable("OutboxMessages", "core");
+                });
+
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Entities.LabFunctionPolicy", b =>
+                {
+                    b.Property<Guid>("TenantLabId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsRestricted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("UpdatedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("TenantLabId");
+
+                    b.ToTable("LabFunctionPolicies", "core");
+                });
+
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Entities.LabFunctionScope", b =>
+                {
+                    b.Property<Guid>("TenantLabId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PermissionKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("TenantLabId", "PermissionKey");
+
+                    b.ToTable("LabFunctionScopes", "core");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Entities.PermissionMetadata", b =>
