@@ -85,6 +85,45 @@ public sealed class RoleManagementController(
     }
 
     /// <summary>
+    /// 權限變更審核（選單入口）：置於「角色管理」群組下；審核動作由 role-governance API 處理
+    /// </summary>
+    [HttpGet("change-requests")]
+    [Function("RoleChangeReview", "權限變更審核", Icon = "fa-solid fa-clipboard-check", Order = 20,
+        Description = "檢視並審核角色權限變更申請（雙重審批）", IsMenu = true, Path = "/sgsframework.system/rolegovernance")]
+    [RequiresPermission("SYSTEM.ROLEGOVERNANCE.READ", "檢視權限變更申請")]
+    [EndpointSummary("權限變更審核")]
+    [EndpointDescription("查詢角色權限變更申請；all=true 時包含已處理的申請。")]
+    public async Task<IActionResult> GetChangeRequests(
+        [FromServices] SGSFramework.AuthTokenBucket.Services.IRoleGovernanceService governanceService,
+        [FromQuery] bool all = false,
+        CancellationToken cancellationToken = default)
+    {
+        var list = await governanceService.GetChangeRequestsAsync(
+            all ? null : SGSFramework.Core.Abstractions.Permissions.Entities.RoleChangeRequestStatus.Pending,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        return Ok(list);
+    }
+
+    /// <summary>
+    /// 取得角色異動歷程（狀態、設定、權限、成員、AD 群組），供稽核使用
+    /// </summary>
+    [HttpGet("{id:guid}/history")]
+    [Function("GetRoleHistory", "檢視角色異動歷程", Icon = "fa-solid fa-clock-rotate-left", Order = 3, Description = "查詢指定角色的異動歷程與操作者")]
+    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.READ")]
+    [EndpointSummary("檢視角色異動歷程")]
+    [EndpointDescription("查詢指定角色的異動歷程（依時間由新到舊），含操作者、影響人數與異動明細。")]
+    [ProducesResponseType(typeof(Result<List<RoleAuditLog>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetRoleHistory(
+        [FromRoute] Guid id,
+        [FromServices] SGSFramework.AuthTokenBucket.Services.IRoleAuditService roleAuditService,
+        [FromQuery] int take = 100,
+        CancellationToken cancellationToken = default)
+    {
+        var history = await roleAuditService.GetHistoryAsync(id, take, cancellationToken).ConfigureAwait(false);
+        return HandleResult(Result.Success(history.ToList()));
+    }
+
+    /// <summary>
     /// 依據 ID 取得單一角色詳細資訊
     /// </summary>
     [HttpGet("{id:guid}")]
@@ -350,6 +389,86 @@ public sealed class RoleManagementController(
     }
 
     /// <summary>
+    /// 設定既有成員的過渡期（到期自動回收）；ExpiresAt 為 null 時改為永久成員
+    /// </summary>
+    [HttpPut("{id:guid}/users/expiration")]
+    [Function("SetRoleMemberExpiration", "設定過渡期", Icon = "fa-solid fa-hourglass-half", Order = 11, Description = "設定角色成員的有效期限，到期由排程自動回收")]
+    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.UPDATE", "編輯角色")]
+    [EndpointSummary("設定過渡期")]
+    [EndpointDescription("設定角色既有成員的有效期限（調職交接用），到期由排程自動解除角色指派；ExpiresAt 為 null 時改為永久成員。")]
+    [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> SetMemberExpiration(
+        [FromRoute] Guid id,
+        [FromBody] BatchAssignUsersRequest request,
+        [FromServices] SGSFramework.Identity.Services.IRoleExpirationService roleExpirationService,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var userGuids = request.UserIds
+            .Select(x => Guid.TryParse(x, out var g) ? g : Guid.Empty)
+            .Where(g => g != Guid.Empty)
+            .ToList();
+
+        var (succeeded, message) = await roleExpirationService
+            .SetExpirationAsync(id, userGuids, request.ExpiresAt, request.Reason, cancellationToken)
+            .ConfigureAwait(false);
+
+        return succeeded
+            ? HandleResult(Result.Success(true))
+            : HandleResult(Result.Failure(Error.Validation("Role.SetExpirationFailed", message)));
+    }
+
+    /// <summary>
+    /// 批次將使用者自指定角色移除
+    /// </summary>
+    [HttpPost("{idOrName}/users/batch-remove")]
+    [Function("BatchRemoveUsersFromRole", "批次移除角色成員", Icon = "fa-solid fa-user-minus", Order = 10, Description = "批次將多位使用者自指定的系統角色中移除")]
+    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.UPDATE", "編輯角色")]
+    [EndpointSummary("批次移除角色成員")]
+    [EndpointDescription("批次將多位使用者自指定的系統角色中移除；任一失敗則整批回滾，系統內建角色至少保留一位成員。")]
+    [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> BatchRemoveUsersFromRole(
+        [FromRoute] string idOrName,
+        [FromBody] BatchAssignUsersRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(idOrName);
+        ArgumentNullException.ThrowIfNull(request);
+
+        try
+        {
+            var (succeeded, message, errors) = await _roleManagementService.BatchRemoveUsersFromRoleAsync(idOrName, request, cancellationToken).ConfigureAwait(false);
+            if (!succeeded)
+            {
+                string errorDetail = errors != null && errors.Any() ? string.Join("; ", errors) : message;
+                return HandleResult(Result.Failure(Error.Validation("Role.BatchRemoveFailed", errorDetail)));
+            }
+
+            _logger.LogInformation("成功批次移除角色成員: {RoleIdentifier}", idOrName);
+            return HandleResult(Result.Success(true));
+        }
+        catch (OperationCanceledException)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "批次移除角色成員時發生異常。RoleIdentifier: {RoleIdentifier}", idOrName);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "批次移除角色成員時發生系統異常。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
+    /// <summary>
     /// 軟刪除指定角色
     /// </summary>
     [HttpDelete("{id:guid}")]
@@ -396,6 +515,90 @@ public sealed class RoleManagementController(
                 Status = StatusCodes.Status500InternalServerError,
                 Title = "伺服器內部錯誤",
                 Detail = "執行刪除角色作業時發生系統異常。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
+    /// <summary>
+    /// 新增角色與 AD 群組的對應（SSO 登入時，該群組成員自動取得此角色）
+    /// </summary>
+    [HttpPost("ad-group/map")]
+    [Function("MapAdGroup", "對應 AD 群組", Icon = "fa-solid fa-people-group", Order = 8, Description = "新增角色與 Active Directory 群組的對應")]
+    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.UPDATE", "編輯角色")]
+    [EndpointSummary("對應 AD 群組")]
+    [EndpointDescription("新增角色與 Active Directory 群組的對應，SSO 登入時該群組成員將自動取得此角色。")]
+    [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public Task<IActionResult> MapAdGroup(
+        [FromBody] MapAdGroupToRoleRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return ExecuteAdGroupChangeAsync(
+            () => _roleManagementService.MapAdGroupToRoleAsync(request, cancellationToken),
+            request.RoleId, request.AdGroupName, "Role.MapAdGroupFailed", "新增");
+    }
+
+    /// <summary>
+    /// 移除角色與 AD 群組的對應
+    /// </summary>
+    [HttpPost("ad-group/remove")]
+    [Function("RemoveAdGroup", "移除 AD 群組對應", Icon = "fa-solid fa-user-group", Order = 9, Description = "移除角色與 Active Directory 群組的對應")]
+    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.UPDATE", "編輯角色")]
+    [EndpointSummary("移除 AD 群組對應")]
+    [EndpointDescription("移除角色與 Active Directory 群組的對應。")]
+    [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public Task<IActionResult> RemoveAdGroup(
+        [FromBody] RemoveAdGroupFromRoleRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return ExecuteAdGroupChangeAsync(
+            () => _roleManagementService.RemoveAdGroupFromRoleAsync(request, cancellationToken),
+            request.RoleId, request.AdGroupName, "Role.RemoveAdGroupFailed", "移除");
+    }
+
+    private async Task<IActionResult> ExecuteAdGroupChangeAsync(
+        Func<Task<(bool Succeeded, string Message)>> action,
+        string roleId,
+        string adGroupName,
+        string errorCode,
+        string actionName)
+    {
+        if (!Guid.TryParse(roleId, out var parsedRoleId) || parsedRoleId == Guid.Empty || string.IsNullOrWhiteSpace(adGroupName))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "無效的請求參數",
+                Detail = "必須提供有效的角色識別碼與 AD 群組名稱。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+
+        try
+        {
+            var (succeeded, message) = await action().ConfigureAwait(false);
+            if (!succeeded)
+            {
+                return HandleResult(Result.Failure(Error.Validation(errorCode, message)));
+            }
+
+            _logger.LogInformation("AD 群組對應{Action}成功。RoleId: {RoleId}, AdGroup: {AdGroup}", actionName, roleId, adGroupName);
+            return HandleResult(Result.Success(true));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "AD 群組對應{Action}時發生異常。RoleId: {RoleId}, AdGroup: {AdGroup}", actionName, roleId, adGroupName);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = $"{actionName} AD 群組對應時發生系統異常。",
                 Instance = HttpContext.Request.Path
             });
         }

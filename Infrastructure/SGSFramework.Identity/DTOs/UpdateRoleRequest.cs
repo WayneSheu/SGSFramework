@@ -19,6 +19,12 @@ namespace SGSFramework.Identity.DTOs
         public int HierarchyLevel { get; set; } = default!;
         public Guid? TenantLabId  { get; set; } = default!;
 
+        /// <summary>生效起日（含）；null 表示立即生效</summary>
+        public DateTimeOffset? EffectiveFrom { get; set; }
+
+        /// <summary>生效迄日（含）；null 表示無期限</summary>
+        public DateTimeOffset? EffectiveTo { get; set; }
+
 
         [Required(ErrorMessage = "角色名稱為必填項目")]
         [StringLength(256, ErrorMessage = "角色名稱長度不能超過 256 個字元")]

@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.Controllers.V1.DTOs;
@@ -20,6 +21,7 @@ using SGSFramework.AuthTokenBucket.Controllers.V1.DTOs.PermissionUsers;
 using SGSFramework.AuthTokenBucket.Controllers.V1.DTOs.RolePermissions;
 using SGSFramework.AuthTokenBucket.Controllers.V1.DTOs.UserLabPermissions;
 using SGSFramework.AuthTokenBucket.Controllers.V1.DTOs.UserPermissions;
+using SGSFramework.AuthTokenBucket.Services;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Permissions.Repositories;
@@ -247,20 +249,28 @@ public sealed class PermissionController : ApiControllerBase
             // 自動從 HttpContext Claims 中安全地讀取當前操作者 UserId
             string? currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
 
-            var result = await _permissionService.UpdateRolePermissionsAsync(request, cancellationToken).ConfigureAwait(false); 
+            // 雙重審批：此端點不再直接套用，而是建立變更申請（含 SoD 檢查）；核准後才生效
+            var governance = HttpContext.RequestServices.GetRequiredService<IRoleGovernanceService>();
+            var result = await governance.SubmitRolePermissionChangeAsync(request, request.Reason, cancellationToken).ConfigureAwait(false);
             if (!result.Succeeded)
             {
-                return BadRequest(new ProblemDetails
+                var problem = new ProblemDetails
                 {
                     Status = StatusCodes.Status400BadRequest,
-                    Title = "全域權限更新失敗",
+                    Title = result.Violations is { Count: > 0 } ? "違反職能分立規則" : "全域權限更新失敗",
                     Detail = result.Message,
                     Instance = HttpContext.Request.Path
-                });
+                };
+                if (result.Violations is { Count: > 0 }) problem.Extensions["sodViolations"] = result.Violations;
+                return BadRequest(problem);
             }
 
-            _logger.LogInformation("成功更新角色 {RoleId} 的全域權限配置，操作者: {OperatorId}。", request.RoleId, currentUserId ?? "System");
-            return Ok(result);
+            _logger.LogInformation("角色 {RoleId} 權限變更：{Message}，操作者: {OperatorId}。", request.RoleId, result.Message, currentUserId ?? "System");
+
+            // 202：已建立待審申請；200：未啟用雙重審批，已直接套用
+            return result.AppliedImmediately
+                ? Ok(new { Succeeded = true, result.Message, Status = "Applied" })
+                : Accepted(new { Succeeded = true, result.Message, Status = "PendingApproval", result.RequestId });
         }
         catch (OperationCanceledException)
         {

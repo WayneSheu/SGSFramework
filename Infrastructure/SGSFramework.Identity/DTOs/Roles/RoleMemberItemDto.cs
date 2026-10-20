@@ -16,5 +16,11 @@ namespace SGSFramework.Identity.DTOs.Roles
         public Guid? PrimaryLabId { get; set; }
         public string? PrimaryLabCode { get; set; }
         public string? PrimaryLabName { get; set; }
+
+        /// <summary>過渡期到期時間；null 表示永久成員</summary>
+        public DateTimeOffset? ExpiresAt { get; set; }
+
+        /// <summary>過渡期原因</summary>
+        public string? ExpirationReason { get; set; }
     }
 }

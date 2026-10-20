@@ -2,7 +2,9 @@
 using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.Controllers.V1.DTOs.PermissionGrants;
+using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Permissions.Identities;
+using SGSFramework.Core.Extensions;
 
 namespace SGSFramework.AuthTokenBucket.Services
 {
@@ -14,13 +16,19 @@ namespace SGSFramework.AuthTokenBucket.Services
     {
         private readonly TContext _dbContext;
         private readonly ILogger<PermissionGrantService<TContext>> _logger;
+        private readonly IPermissionChangeNotifier _permissionChangeNotifier;
+        private readonly IRoleAuditService _roleAuditService;
 
         public PermissionGrantService(
             TContext dbContext, // 要求具體的 TContext 泛型型態
-            ILogger<PermissionGrantService<TContext>> logger)
+            ILogger<PermissionGrantService<TContext>> logger,
+            IPermissionChangeNotifier permissionChangeNotifier,
+            IRoleAuditService roleAuditService)
         {
             _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _permissionChangeNotifier = permissionChangeNotifier ?? throw new ArgumentNullException(nameof(permissionChangeNotifier));
+            _roleAuditService = roleAuditService ?? throw new ArgumentNullException(nameof(roleAuditService));
         }
 
         public async Task<RoleLabPermissionResponseDto> GetRoleLabPermissionsAsync(
@@ -87,6 +95,13 @@ namespace SGSFramework.AuthTokenBucket.Services
 
             try
             {
+                // 已停用 / 已鎖定的角色不再授予任何權限：禁止異動其實驗室權限設定
+                var role = await _dbContext.Set<ApplicationRole>().FindAsync([roleId], cancellationToken);
+                if (role is not null && role.Status != RoleStatus.Active)
+                {
+                    return (false, $"角色 [{role.Name}] 目前為「{role.Status.GetDisplayName()}」，無法異動權限設定。");
+                }
+
                 var grant = await _dbContext.Set<PermissionGrant>()
                     .FirstOrDefaultAsync(x => x.RoleId == roleId && x.LabId == labId, cancellationToken);
 
@@ -131,6 +146,18 @@ namespace SGSFramework.AuthTokenBucket.Services
                 await _dbContext.SaveChangesAsync(cancellationToken);
 
                 _logger.LogInformation("已成功儲存角色 [{RoleId}] 於實驗室 [{LabId}] 的 BitMask 向量設定。", roleId, labId);
+                // 角色成員於此實驗室的有效權限已改變：清除快取並即時通知前端
+                if (role?.Name is not null)
+                {
+                    await _permissionChangeNotifier.NotifyRoleMembersAsync(role.Name, "role-lab-permissions-updated", cancellationToken).ConfigureAwait(false);
+
+                    var memberCount = await _dbContext.Set<Microsoft.AspNetCore.Identity.IdentityUserRole<Guid>>()
+                        .CountAsync(x => x.RoleId == roleId, cancellationToken).ConfigureAwait(false);
+                    await _roleAuditService.RecordAsync(roleId, role.Name, RoleAuditActions.PermissionsUpdated,
+                        $"實驗室權限調整（實驗室 {labId}）：共授予 {request.GrantedBitPositions.Count()} 項，影響 {memberCount} 位成員",
+                        memberCount, new { LabId = labId, request.GrantedBitPositions }, cancellationToken).ConfigureAwait(false);
+                }
+
                 return (true, "權限配置更新成功。");
             }
             catch (Exception ex)

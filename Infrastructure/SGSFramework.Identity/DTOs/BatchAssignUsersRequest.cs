@@ -15,5 +15,16 @@ namespace SGSFramework.Identity.DTOs
         /// </summary>
         [Required(ErrorMessage = "使用者識別碼清單不得為空。")]
         public List<string> UserIds { get; init; } = new();
+
+        /// <summary>
+        /// 過渡期到期時間（僅加入成員時使用）；null 表示永久成員
+        /// </summary>
+        public DateTimeOffset? ExpiresAt { get; init; }
+
+        /// <summary>
+        /// 過渡期原因，例如「調任銷售部，業務交接」
+        /// </summary>
+        [StringLength(500)]
+        public string? Reason { get; init; }
     }
 }

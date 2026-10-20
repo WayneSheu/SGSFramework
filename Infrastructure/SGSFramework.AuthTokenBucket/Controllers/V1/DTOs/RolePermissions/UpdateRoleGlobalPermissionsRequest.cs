@@ -22,5 +22,11 @@ namespace SGSFramework.AuthTokenBucket.Controllers.V1.DTOs.RolePermissions
         /// </summary>
         [Required(ErrorMessage = "權限清單不可為 null。")]
         public List<string> PermissionKeys { get; init; } = [];
+
+        /// <summary>
+        /// 變更原因（雙重審批時供審核者參考）
+        /// </summary>
+        [StringLength(1000)]
+        public string? Reason { get; init; }
     }
 }

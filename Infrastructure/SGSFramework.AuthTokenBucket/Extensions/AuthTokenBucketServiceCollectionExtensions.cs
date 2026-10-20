@@ -226,6 +226,11 @@ public static class AuthTokenBucketServiceCollectionExtensions
         services.AddScoped<IMenuResolutionStrategy, DatabaseMenuResolutionStrategy>();
         // 註冊選單策略工廠
         services.AddScoped<IMenuStrategyFactory, MenuStrategyFactory>();
+        // 角色有效權限（納入執行期權限檢查，排除停用角色）與權限異動通知（清快取 + SignalR）
+        services.AddScoped<IRoleEffectivePermissionProvider, RoleEffectivePermissionProvider>();
+        services.AddScoped<IPermissionChangeNotifier, PermissionChangeNotifier>();
+        services.AddScoped<IRoleAuditService, RoleAuditService>();
+        services.AddScoped<IRoleGovernanceService, RoleGovernanceService>();
         // 註冊執行期作用域服務
         services.AddScoped<IUserRuntimeScopeService, UserRuntimeScopeService>();
         // 註冊權限遮罩服務

@@ -59,6 +59,13 @@ namespace SGSFramework.Identity.Extensions
             services.AddScoped(typeof(IRoleManagementService<,>), typeof(RoleManagementService<,>));
             services.AddScoped<IRoleManagementService<TRole, TKey>, RoleManagementService<TRole, TKey>>();
 
+            // 過渡期角色：期限管理與到期自動回收排程
+            services.AddScoped<IRoleExpirationService, RoleExpirationService>();
+            services.AddHostedService<RoleExpirationWorker>();
+
+            // 定期權限覆核
+            services.AddScoped<IAccessReviewService, AccessReviewService>();
+
             // 支援泛型與具體 UserManagementService 註冊
             services.AddScoped(typeof(IUserManagementService<,,>), typeof(UserManagementService<,,>));
             services.AddScoped<IUserManagementService, UserManagementService>();

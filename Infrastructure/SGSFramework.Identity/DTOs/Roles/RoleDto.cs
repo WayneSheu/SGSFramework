@@ -22,11 +22,15 @@ namespace SGSFramework.Identity.DTOs.Roles
         public int HierarchyLevel { get; set;}
 
         public Guid?  TenantLabId { get; set; }
+        public DateTimeOffset? EffectiveFrom { get; set; }
+        public DateTimeOffset? EffectiveTo { get; set; }
 
         /// <summary>
         /// 狀態顯示文字（對應 Enum 的 DisplayName 或 Description）
         /// </summary>
         public string Status { get; set; } = string.Empty;
+        /// <summary>狀態數值 (RoleStatus)：0 已停用、1 啟用中、2 已鎖定，供前端切換狀態使用</summary>
+        public int StatusValue { get; set; }
 
         public bool IsDeleted { get; set; }
         public List<string> MappedAdGroups { get; set; } = [];

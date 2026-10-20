@@ -18,6 +18,7 @@ using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Abstractions.Permissions.Entities;
 using SGSFramework.Core.Abstractions.Permissions.Repositories;
+using SGSFramework.Core.Extensions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -36,6 +37,8 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
     private readonly IOrganizationIntegrationService _orgIntegrationService;
     private readonly IPermissionRegistry _permissionRegistry;
     private readonly IPermissionBitmaskService _bitmaskService;
+    private readonly IPermissionChangeNotifier _permissionChangeNotifier;
+    private readonly IRoleAuditService _roleAuditService;
     private readonly ILogger<PermissionManagementService<TDbContext>> _logger;
 
     public PermissionManagementService(
@@ -48,6 +51,8 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
         IUserLabRepository userLabRepository,
         IPermissionRegistry permissionRegistry,
         IPermissionBitmaskService bitmaskService,
+        IPermissionChangeNotifier permissionChangeNotifier,
+        IRoleAuditService roleAuditService,
         ILogger<PermissionManagementService<TDbContext>> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
@@ -59,6 +64,8 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
         _userLabRepository = userLabRepository ?? throw new ArgumentNullException(nameof(userLabRepository));
         _permissionRegistry= permissionRegistry ?? throw new ArgumentNullException(nameof(permissionRegistry));
         _bitmaskService = bitmaskService ?? throw new ArgumentNullException(nameof(bitmaskService));
+        _permissionChangeNotifier = permissionChangeNotifier ?? throw new ArgumentNullException(nameof(permissionChangeNotifier));
+        _roleAuditService = roleAuditService ?? throw new ArgumentNullException(nameof(roleAuditService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -261,6 +268,24 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
         }
     }
 
+    /// <summary>將「模組鍵:位元遮罩」展開為完整權限鍵集合</summary>
+    private HashSet<string> ExpandPermissionKeys(IReadOnlyDictionary<string, long>? moduleMasks)
+    {
+        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (moduleMasks is null) return keys;
+
+        foreach (var (module, mask) in moduleMasks)
+        {
+            for (int bit = 0; bit < 64; bit++)
+            {
+                if ((mask & (1L << bit)) == 0) continue;
+                var key = _permissionRegistry.ResolvePermissionKey(module, bit);
+                keys.Add(string.IsNullOrEmpty(key) ? $"{module}#{bit}" : key);
+            }
+        }
+        return keys;
+    }
+
     /// <inheritdoc />
     public async Task<(bool Succeeded, string Message)> UpdateRolePermissionsAsync(UpdateRoleGlobalPermissionsRequest request, CancellationToken cancellationToken = default)
     {
@@ -274,6 +299,13 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
 
         try
         {
+            // 已停用 / 已鎖定的角色不再授予任何權限：禁止異動其權限設定
+            var role = await _roleManager.FindByIdAsync(request.RoleId).ConfigureAwait(false);
+            if (role is not null && role.Status != RoleStatus.Active)
+            {
+                return (false, $"角色 [{role.Name}] 目前為「{role.Status.GetDisplayName()}」，無法異動權限設定。");
+            }
+
             var targetPermissions = request.PermissionKeys?
                 .Where(p => !string.IsNullOrWhiteSpace(p))
                 .Select(p => p.Trim())
@@ -283,6 +315,11 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
             Dictionary<string, long> moduleBitmaskDict = await _bitmaskService
                 .CalculateModuleBitmasksAsync(targetPermissions, cancellationToken)
                 .ConfigureAwait(false);
+
+            // 異動前快照，供歷程記錄權限差異
+            var previousKeys = ExpandPermissionKeys(await _rolePermissionRepository
+                .GetGlobalPermissionsAsync(request.RoleId, cancellationToken)
+                .ConfigureAwait(false));
 
             bool success = await _rolePermissionRepository
                 .SaveRoleGlobalPermissionsAsync(request.RoleId, moduleBitmaskDict, cancellationToken)
@@ -298,6 +335,21 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                 "[PermissionManagementService] 成功更新角色 [{RoleId}] 全域權限，共影響 [{Count}] 個模組。",
                 request.RoleId,
                 moduleBitmaskDict.Count);
+
+            // 角色成員的有效權限已改變：清除快取並即時通知前端
+            if (role?.Name is not null)
+            {
+                await _permissionChangeNotifier.NotifyRoleMembersAsync(role.Name, "role-permissions-updated", cancellationToken).ConfigureAwait(false);
+
+                var currentKeys = ExpandPermissionKeys(moduleBitmaskDict);
+                var added = currentKeys.Except(previousKeys, StringComparer.OrdinalIgnoreCase).OrderBy(k => k).ToList();
+                var removed = previousKeys.Except(currentKeys, StringComparer.OrdinalIgnoreCase).OrderBy(k => k).ToList();
+                var memberCount = (await _userManager.GetUsersInRoleAsync(role.Name).ConfigureAwait(false)).Count;
+
+                await _roleAuditService.RecordAsync(role.Id, role.Name, RoleAuditActions.PermissionsUpdated,
+                    $"全域權限調整：新增 {added.Count} 項、移除 {removed.Count} 項，影響 {memberCount} 位成員",
+                    memberCount, new { Added = added, Removed = removed }, cancellationToken).ConfigureAwait(false);
+            }
 
             return (true, $"角色全域權限更新成功，共更新 {moduleBitmaskDict.Count} 個模組區段。");
         }
@@ -568,6 +620,8 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                 "[PermissionManagementService] 成功更新使用者 [{UserId}] 的直接權限遮罩，影響模組數: [{Count}]",
                 userId,
                 moduleBitmaskDict.Count);
+
+            await _permissionChangeNotifier.NotifyUsersAsync([userId], "user-permissions-updated", cancellationToken).ConfigureAwait(false);
 
             return (true, "使用者直接權限指派成功。");
         }

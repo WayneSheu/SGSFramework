@@ -53,5 +53,11 @@ namespace SGSFramework.Identity.Abstractions
           string roleIdentifier,
           BatchAssignUsersRequest request,
           CancellationToken cancellationToken = default);
+
+        // 批次將使用者自角色移除（交易一致；系統內建角色至少保留一位成員）
+        Task<(bool Succeeded, string Message, IEnumerable<string>? Errors)> BatchRemoveUsersFromRoleAsync(
+          string roleIdentifier,
+          BatchAssignUsersRequest request,
+          CancellationToken cancellationToken = default);
     }
 }

@@ -34,9 +34,11 @@ public class UserRuntimeScopeService(
     IDynamicControllerRepository<ControllerMetadata> controllerRepo,
     IMenuStrategyFactory menuStrategyFactory,
     IPermissionRegistry permissionRegistry,
-    IUserPermissionRepository userPermissionRepository)
+    IUserPermissionRepository userPermissionRepository,
+    IRoleEffectivePermissionProvider roleEffectivePermissionProvider)
     : IUserRuntimeScopeService
 {
+    private readonly IRoleEffectivePermissionProvider _roleEffectivePermissionProvider = roleEffectivePermissionProvider ?? throw new ArgumentNullException(nameof(roleEffectivePermissionProvider));
     private readonly IOrganizationIntegrationService _orgIntegrationService = orgIntegrationService ?? throw new ArgumentNullException(nameof(orgIntegrationService));
     private readonly IFusionCache _cache = cache ?? throw new ArgumentNullException(nameof(cache));
     private readonly ILogger<UserRuntimeScopeService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -473,13 +475,40 @@ public class UserRuntimeScopeService(
             async (_, ct) =>
             {
                 var permissionDict = await FetchUserModulePermissionsFromDbAsync(userId, labId, ct).ConfigureAwait(false);
-                return permissionDict.Select(p => $"{p.Key}:{p.Value}").ToList();
+                var result = permissionDict.Select(p => $"{p.Key}:{p.Value}").ToList();
+
+                // 合併經由角色取得的權限（已排除停用角色）
+                result.AddRange(await FetchRolePermissionsAsync(userId, labId, ct).ConfigureAwait(false));
+                return result;
             },
             CacheExpiration,
+            tags: [PermissionCacheTags.User(userId)],
             token: cancellationToken
         ).ConfigureAwait(false);
 
         return permissions ?? [];
+    }
+
+    /// <summary>
+    /// 取得使用者經由角色取得的權限；labId 為 null 時僅計算全域角色權限
+    /// </summary>
+    private async Task<IReadOnlyList<string>> FetchRolePermissionsAsync(string userId, Guid? labId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var user = await _userManager.FindByIdAsync(userId).ConfigureAwait(false);
+            if (user is null) return [];
+
+            return labId.HasValue
+                ? await _roleEffectivePermissionProvider.GetLabRolePermissionsAsync(user, labId.Value, cancellationToken).ConfigureAwait(false)
+                : await _roleEffectivePermissionProvider.GetGlobalRolePermissionsAsync(user, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // 失敗時僅以使用者直接權限運作（安全預設：不多給權限）
+            _logger.LogError(ex, "取得使用者角色權限發生異常。UserId: {UserId}, LabId: {LabId}", userId, labId);
+            return [];
+        }
     }
 
     private async Task<IEnumerable<string>> GetCachedOrFetchGlobalPermissionsAsync(
@@ -493,9 +522,14 @@ public class UserRuntimeScopeService(
             async (_, ct) =>
             {
                 var permissionDict = await FetchUserGlobalPermissionsFromDbAsync(userId, ct).ConfigureAwait(false);
-                return permissionDict.Select(p => $"{p.Key}:{p.Value}").ToList();
+                var result = permissionDict.Select(p => $"{p.Key}:{p.Value}").ToList();
+
+                // 合併經由角色取得的全域權限（已排除停用角色）
+                result.AddRange(await FetchRolePermissionsAsync(userId, null, ct).ConfigureAwait(false));
+                return result;
             },
             CacheExpiration,
+            tags: [PermissionCacheTags.User(userId)],
             token: cancellationToken
         ).ConfigureAwait(false);
 

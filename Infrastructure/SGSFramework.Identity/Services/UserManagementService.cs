@@ -44,6 +44,8 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
     private readonly TokenBucketEngine<TUser> _tokenEngine;
     private readonly ISecurityLogger _securityLogger;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IRoleAuditService _roleAuditService;
+    private readonly IPermissionChangeNotifier _permissionChangeNotifier;
 
     public UserManagementService(
         UserManager<TUser> userManager,
@@ -52,7 +54,9 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
         ILogger<UserManagementService<TUser, TRole, TKey>> logger,
         TokenBucketEngine<TUser> tokenEngine,
         ISecurityLogger securityLogger,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IRoleAuditService roleAuditService,
+        IPermissionChangeNotifier permissionChangeNotifier)
     {
         _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
         _roleManager = roleManager ?? throw new ArgumentNullException(nameof(roleManager));
@@ -61,6 +65,8 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
         _tokenEngine = tokenEngine ?? throw new ArgumentNullException(nameof(tokenEngine));
         _securityLogger = securityLogger ?? throw new ArgumentNullException(nameof(securityLogger));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+        _roleAuditService = roleAuditService ?? throw new ArgumentNullException(nameof(roleAuditService));
+        _permissionChangeNotifier = permissionChangeNotifier ?? throw new ArgumentNullException(nameof(permissionChangeNotifier));
     }
 
     /// <inheritdoc />
@@ -760,6 +766,18 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
 
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
+                // 離職 / 刪除：已解除所有角色指派，於各角色歷程留下紀錄並清除權限快取
+                foreach (var roleName in currentRoles)
+                {
+                    var removedRole = await _roleManager.FindByNameAsync(roleName).ConfigureAwait(false);
+                    if (removedRole is null) continue;
+                    await _roleAuditService.RecordAsync(
+                        Guid.TryParse(removedRole.Id?.ToString(), out var rid) ? rid : Guid.Empty, roleName,
+                        RoleAuditActions.MembersRemoved, $"使用者 {originalUserName} 帳號刪除，自動解除角色指派", 1,
+                        cancellationToken: cancellationToken).ConfigureAwait(false);
+                }
+                await _permissionChangeNotifier.NotifyUsersAsync([userIdStr], "user-deleted", cancellationToken).ConfigureAwait(false);
+
                 await _tokenEngine.EmergencyFreezeAsync(userIdStr, "使用者帳號已執行軟刪除與個資抹除，全面作廢憑證。").ConfigureAwait(false);
                 await _tokenEngine.CompleteRemediationAsync(userIdStr).ConfigureAwait(false);
 
@@ -935,8 +953,10 @@ public sealed class UserManagementService : UserManagementService<ApplicationUse
         ILogger<UserManagementService<ApplicationUser, ApplicationRole, Guid>> logger,
         TokenBucketEngine<ApplicationUser> tokenEngine,
         ISecurityLogger securityLogger,
-        IUnitOfWork unitOfWork)
-        : base(userManager, roleManager, orgIntegrationService, logger, tokenEngine, securityLogger, unitOfWork)
+        IUnitOfWork unitOfWork,
+        IRoleAuditService roleAuditService,
+        IPermissionChangeNotifier permissionChangeNotifier)
+        : base(userManager, roleManager, orgIntegrationService, logger, tokenEngine, securityLogger, unitOfWork, roleAuditService, permissionChangeNotifier)
     {
     }
 }

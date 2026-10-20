@@ -38,6 +38,12 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
 
         public RoleStatus Status { get; set; } = RoleStatus.Active;
 
+        /// <summary>生效起日（含）；null 表示立即生效。生效期間外角色不授予任何權限</summary>
+        public DateTimeOffset? EffectiveFrom { get; set; }
+
+        /// <summary>生效迄日（含）；null 表示無期限</summary>
+        public DateTimeOffset? EffectiveTo { get; set; }
+
         public bool IsDeleted { get; set; } = false;
     }
 

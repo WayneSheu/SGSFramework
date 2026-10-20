@@ -45,6 +45,14 @@ namespace SGSFramework.Identity.DTOs.Roles
         [Display(Name = "所屬實驗室 ID", Description = "當 ScopeType 為 LabScoped 時為必填，其餘範圍請保持空白。")]
         public Guid? TenantLabId { get; set; } = default!;
 
+        /// <summary>生效起日（含）；null 表示立即生效</summary>
+        [Display(Name = "生效起日")]
+        public DateTimeOffset? EffectiveFrom { get; set; }
+
+        /// <summary>生效迄日（含）；null 表示無期限</summary>
+        [Display(Name = "生效迄日")]
+        public DateTimeOffset? EffectiveTo { get; set; }
+
         /// <summary>
         /// 角色描述 (Description)
         /// </summary>

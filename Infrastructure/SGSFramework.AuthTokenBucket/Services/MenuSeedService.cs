@@ -56,6 +56,10 @@ public class MenuSeedService<TDbContext> : IMenuSeedService
             var existingMenuItems = await _dbContext.Set<MenuItem>().ToListAsync(cancellationToken);
             bool isModified = false;
 
+            // 同一權限鍵僅處理一次，避免多個選單入口共用權限鍵時於每次啟動來回搬移
+            var processedPageKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var vacatedGroupIds = new HashSet<Guid>();
+
             // Group By 模組 (Module) 以建立第一層 Section
             var moduleGroups = menuTargets.GroupBy(m => string.IsNullOrWhiteSpace(m.ModuleName) ? "System" : m.ModuleName);
 
@@ -152,7 +156,34 @@ public class MenuSeedService<TDbContext> : IMenuSeedService
                             existingMenuItems.Add(pageNode);
                             isModified = true;
                         }
+                        else if (pageNode.ParentId != groupNode.Id && processedPageKeys.Add(pageKey))
+                        {
+                            // 功能改由其他 Controller 提供（選單入口搬移）：既有頁面節點改掛到新的群組
+                            if (pageNode.ParentId.HasValue) vacatedGroupIds.Add(pageNode.ParentId.Value);
+                            pageNode.ParentId = groupNode.Id;
+                            pageNode.ControllerId = meta.Id;
+                            pageNode.DisplayOrder = meta.DisplayOrder;
+                            if (!string.IsNullOrWhiteSpace(meta.Path)) pageNode.Route = meta.Path;
+                            isModified = true;
+                            _logger.LogInformation("選單頁面 [{Key}] 已搬移至群組 [{Group}]。", pageKey, groupNode.DisplayName);
+                            continue;
+                        }
+
+                        processedPageKeys.Add(pageKey);
                     }
+                }
+            }
+
+            // 因搬移而清空的自動產生群組：隱藏，避免選單出現空資料夾
+            foreach (var groupId in vacatedGroupIds)
+            {
+                var group = existingMenuItems.FirstOrDefault(m => m.Id == groupId);
+                if (group is { Type: MenuType.Group, IsVisible: true } &&
+                    group.Key.StartsWith("GRP_", StringComparison.Ordinal) &&
+                    !existingMenuItems.Any(m => m.ParentId == groupId))
+                {
+                    group.IsVisible = false;
+                    isModified = true;
                 }
             }
 
