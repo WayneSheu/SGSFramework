@@ -26,6 +26,12 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
         /// 已鎖定（安全異常凍結）
         /// </summary>
         [Display(Name = "已鎖定")]
-        Locked = 2
+        Locked = 2,
+
+        /// <summary>
+        /// 待審核（新建角色預設狀態：須經他人核准後才啟用；審核前不授予權限、不可加入成員）
+        /// </summary>
+        [Display(Name = "待審核")]
+        PendingApproval = 3
     }
 }

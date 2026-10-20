@@ -16,6 +16,7 @@ namespace SGSFramework.Identity.Services
     using SGSFramework.Core.Abstractions.Adapters;
     using SGSFramework.Core.Abstractions.Entities.Identities;
     using SGSFramework.Core.Abstractions.Permissions;
+    using SGSFramework.Core.Abstractions.Permissions.Entities;
     using SGSFramework.Core.Extensions;
     using SGSFramework.Identity.Abstractions;
     using SGSFramework.Identity.DTOs;
@@ -41,6 +42,7 @@ namespace SGSFramework.Identity.Services
         private readonly IPermissionChangeNotifier _permissionChangeNotifier;
         private readonly IRoleAuditService _roleAuditService;
         private readonly IRoleExpirationService _roleExpirationService;
+        private readonly IRoleGovernanceService _roleGovernanceService;
         private readonly ILogger<RoleManagementService<TRole, TKey>> _logger;
 
         public RoleManagementService(
@@ -54,6 +56,7 @@ namespace SGSFramework.Identity.Services
             IPermissionChangeNotifier permissionChangeNotifier,
             IRoleAuditService roleAuditService,
             IRoleExpirationService roleExpirationService,
+            IRoleGovernanceService roleGovernanceService,
             ILogger<RoleManagementService<TRole, TKey>> logger)
         {
             _roleManager = roleManager ?? throw new ArgumentNullException(nameof(roleManager));
@@ -66,12 +69,72 @@ namespace SGSFramework.Identity.Services
             _permissionChangeNotifier = permissionChangeNotifier ?? throw new ArgumentNullException(nameof(permissionChangeNotifier));
             _roleAuditService = roleAuditService ?? throw new ArgumentNullException(nameof(roleAuditService));
             _roleExpirationService = roleExpirationService ?? throw new ArgumentNullException(nameof(roleExpirationService));
+            _roleGovernanceService = roleGovernanceService ?? throw new ArgumentNullException(nameof(roleGovernanceService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         /// <summary>
         /// 驗證角色範圍類型 (ScopeType) 與管理階層數值 (HierarchyLevel) 以及實驗室繫結之間的聯動防呆規則
         /// </summary>
+        /// <summary>角色代碼：選填；有值時須為英數、底線或連字號（最多 64 字），且不得與其他未刪除角色重複（不分大小寫）</summary>
+        private async Task<string?> ValidateRoleCodeAsync(string? code, string? excludeRoleId, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(code)) return null;
+
+            var trimmed = code.Trim();
+            if (trimmed.Length > 64 || !System.Text.RegularExpressions.Regex.IsMatch(trimmed, "^[A-Za-z0-9_-]+$"))
+            {
+                return "角色代碼僅能使用英文字母、數字、底線或連字號，且不超過 64 個字元。";
+            }
+
+            var normalized = trimmed.ToUpperInvariant();
+            var roles = await _roleManager.Roles.AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false);
+            bool taken = roles.Any(r =>
+            {
+                var entry = _dbContext.Entry(r);
+                if (entry.Property<bool>("IsDeleted").CurrentValue) return false;
+                if (excludeRoleId is not null && string.Equals(r.Id?.ToString(), excludeRoleId, StringComparison.OrdinalIgnoreCase)) return false;
+                return string.Equals((entry.Property<string>("Code").CurrentValue ?? string.Empty).Trim(), normalized, StringComparison.OrdinalIgnoreCase);
+            });
+
+            return taken ? $"角色代碼「{trimmed}」已被其他角色使用。" : null;
+        }
+
+        private static List<Guid> NormalizeLabIds(IEnumerable<Guid>? labIds, Guid? singleLabId) =>
+            (labIds ?? (singleLabId.HasValue ? [singleLabId.Value] : []))
+                .Where(id => id != Guid.Empty)
+                .Distinct()
+                .ToList();
+
+        /// <summary>讀取角色適用的區域實驗室；尚未建立對應資料的舊角色以 TenantLabId 代替</summary>
+        private async Task<List<Guid>> LoadRoleLabIdsAsync(Guid roleId, Guid? fallbackLabId, CancellationToken cancellationToken)
+        {
+            var labIds = await _dbContext.Set<RoleLabScope>().AsNoTracking()
+                .Where(x => x.RoleId == roleId)
+                .Select(x => x.TenantLabId)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return labIds.Count > 0 ? labIds : NormalizeLabIds(null, fallbackLabId);
+        }
+
+        private async Task<Dictionary<Guid, List<Guid>>> LoadAllRoleLabIdsAsync(CancellationToken cancellationToken) =>
+            (await _dbContext.Set<RoleLabScope>().AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false))
+                .GroupBy(x => x.RoleId)
+                .ToDictionary(g => g.Key, g => g.Select(x => x.TenantLabId).ToList());
+
+        private async Task SaveRoleLabScopesAsync(Guid roleId, IReadOnlyCollection<Guid> labIds, CancellationToken cancellationToken)
+        {
+            var set = _dbContext.Set<RoleLabScope>();
+            var existing = await set.Where(x => x.RoleId == roleId).ToListAsync(cancellationToken).ConfigureAwait(false);
+
+            set.RemoveRange(existing.Where(x => !labIds.Contains(x.TenantLabId)));
+            set.AddRange(labIds.Where(id => existing.All(x => x.TenantLabId != id))
+                .Select(id => new RoleLabScope { RoleId = roleId, TenantLabId = id }));
+
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         private static string FormatPeriod(DateTimeOffset? from, DateTimeOffset? to) =>
             $"{(from.HasValue ? from.Value.ToLocalTime().ToString("yyyy-MM-dd") : "立即")} ～ {(to.HasValue ? to.Value.ToLocalTime().ToString("yyyy-MM-dd") : "無期限")}";
 
@@ -169,6 +232,7 @@ namespace SGSFramework.Identity.Services
                     .ConfigureAwait(false);
 
                 var permLookup = await BuildPermissionMetadataLookupAsync(cancellationToken).ConfigureAwait(false);
+                var roleLabIds = await LoadAllRoleLabIdsAsync(cancellationToken).ConfigureAwait(false);
                 var roleDtos = new List<RoleDto>(roles.Count);
 
                 foreach (var role in roles)
@@ -285,11 +349,13 @@ namespace SGSFramework.Identity.Services
                         ScopeTypeName = scopeType.GetDisplayName(),
                         HierarchyLevel = hierarchyLevel,
                         TenantLabId = tenantLabId,
+                        TenantLabIds = roleLabIds.TryGetValue(RoleGuid(role), out var scopedLabs) ? scopedLabs : NormalizeLabIds(null, tenantLabId),
                         EffectiveFrom = entry.Property<DateTimeOffset?>("EffectiveFrom").CurrentValue,
                         EffectiveTo = entry.Property<DateTimeOffset?>("EffectiveTo").CurrentValue,
                         IsSystemRole = isSystemRole,
                         Status = statusVal.GetDisplayName(),
                         StatusValue = (int)statusVal,
+                        HasPendingPermissionChange = await HasPendingPermissionChangeAsync(roleIdStr, cancellationToken).ConfigureAwait(false),
                         IsDeleted = isDeleted,
                         MappedAdGroups = await GetMappedAdGroupsAsync(role).ConfigureAwait(false),
                         Members = members,
@@ -420,11 +486,13 @@ namespace SGSFramework.Identity.Services
                     ScopeTypeName = scopeType.GetDisplayName(),
                     HierarchyLevel = hierarchyLevel,
                     TenantLabId = tenantLabId,
+                    TenantLabIds = await LoadRoleLabIdsAsync(RoleGuid(role), tenantLabId, cancellationToken).ConfigureAwait(false),
                     EffectiveFrom = entry.Property<DateTimeOffset?>("EffectiveFrom").CurrentValue,
                     EffectiveTo = entry.Property<DateTimeOffset?>("EffectiveTo").CurrentValue,
                     IsSystemRole = isSystemRole,
                     Status = statusVal.GetDisplayName(),
                     StatusValue = (int)statusVal,
+                    HasPendingPermissionChange = await HasPendingPermissionChangeAsync(role.Id!.ToString()!, cancellationToken).ConfigureAwait(false),
                     IsDeleted = false,
                     MappedAdGroups = await GetMappedAdGroupsAsync(role).ConfigureAwait(false),
                     Members = members,
@@ -451,7 +519,9 @@ namespace SGSFramework.Identity.Services
                 // 若前端未明確指定 ScopeType，預設為「全域角色 (Global)」，並給予安全的預設階層數值 (例如 50)
                 var scopeType = request.ScopeType != default ? request.ScopeType : RoleScopeType.Global;
                 var hierarchyLevel = request.HierarchyLevel != 0 ? request.HierarchyLevel : 50;
-                Guid? tenantLabId = request.TenantLabId;
+                // 實驗室專屬角色可指派多個區域實驗室；TenantLabId 保留第一個供相容用途
+                var labIds = scopeType == RoleScopeType.LabScoped ? NormalizeLabIds(request.TenantLabIds, request.TenantLabId) : [];
+                Guid? tenantLabId = labIds.Count > 0 ? labIds[0] : null;
 
                 // 執行範圍與階層聯動防呆驗證
                 var (isValid, errorMessage) = ValidateRoleScopeAndHierarchy(scopeType, hierarchyLevel, tenantLabId);
@@ -466,6 +536,12 @@ namespace SGSFramework.Identity.Services
                     return (false, new[] { periodError });
                 }
 
+                var codeError = await ValidateRoleCodeAsync(request.Code, null, cancellationToken).ConfigureAwait(false);
+                if (codeError is not null)
+                {
+                    return (false, new[] { codeError });
+                }
+
                 var role = new TRole
                 {
                     Name = request.RoleName,
@@ -473,7 +549,7 @@ namespace SGSFramework.Identity.Services
                 };
 
                 var entry = _dbContext.Entry(role);
-                entry.Property("Code").CurrentValue = request.Code;
+                entry.Property("Code").CurrentValue = string.IsNullOrWhiteSpace(request.Code) ? null : request.Code.Trim().ToUpperInvariant();
                 entry.Property("Description").CurrentValue = request.Description;
                 entry.Property("ScopeType").CurrentValue = scopeType;
                 entry.Property("HierarchyLevel").CurrentValue = hierarchyLevel;
@@ -482,15 +558,18 @@ namespace SGSFramework.Identity.Services
                 entry.Property("EffectiveTo").CurrentValue = request.EffectiveTo;
                 entry.Property("IsSystemRole").CurrentValue = request.IsSystemRole;
                 entry.Property("IsDeleted").CurrentValue = false;
-                entry.Property("Status").CurrentValue = RoleStatus.Active;
+                // 新建角色預設「待審核」：須經他人核准後才啟用（未啟用雙重審批時直接啟用）
+                var initialStatus = _roleGovernanceService.RequireApproval ? RoleStatus.PendingApproval : RoleStatus.Active;
+                entry.Property("Status").CurrentValue = initialStatus;
 
                 var result = await _roleManager.CreateAsync(role).ConfigureAwait(false);
                 if (result.Succeeded)
                 {
+                    await SaveRoleLabScopesAsync(RoleGuid(role), labIds, cancellationToken).ConfigureAwait(false);
                     _logger.LogInformation("成功建立角色：{RoleName} (ID: {RoleId}, Scope: {Scope}, Level: {Level})",
                         role.Name, role.Id, scopeType, hierarchyLevel);
                     await _roleAuditService.RecordAsync(RoleGuid(role), role.Name!, RoleAuditActions.Created,
-                        $"建立角色（範圍：{scopeType.GetDisplayName()}，階層：{hierarchyLevel}）", cancellationToken: cancellationToken).ConfigureAwait(false);
+                        $"建立角色（範圍：{scopeType.GetDisplayName()}，階層：{hierarchyLevel}，狀態：{initialStatus.GetDisplayName()}）", cancellationToken: cancellationToken).ConfigureAwait(false);
                     return (true, Enumerable.Empty<string>());
                 }
 
@@ -543,9 +622,13 @@ namespace SGSFramework.Identity.Services
                 var targetScope = request.ScopeType != default ? request.ScopeType : entry.Property<RoleScopeType>("ScopeType").CurrentValue;
                 var targetLevel = request.HierarchyLevel != 0 ? request.HierarchyLevel : entry.Property<int>("HierarchyLevel").CurrentValue;
                 // 非實驗室專屬角色不得繫結實驗室：切換範圍時一併清除，避免沿用舊值導致驗證失敗
-                var targetLabId = targetScope == RoleScopeType.LabScoped
-                    ? request.TenantLabId ?? entry.Property<Guid?>("TenantLabId").CurrentValue
-                    : null;
+                var oldLabIds = await LoadRoleLabIdsAsync(RoleGuid(role), oldLabId, cancellationToken).ConfigureAwait(false);
+                var targetLabIds = targetScope != RoleScopeType.LabScoped
+                    ? []
+                    : request.TenantLabIds is not null || request.TenantLabId.HasValue
+                        ? NormalizeLabIds(request.TenantLabIds, request.TenantLabId)
+                        : oldLabIds;
+                Guid? targetLabId = targetLabIds.Count > 0 ? targetLabIds[0] : null;
 
                 var (isValid, errorMessage) = ValidateRoleScopeAndHierarchy(targetScope, targetLevel, targetLabId);
                 if (!isValid)
@@ -559,13 +642,19 @@ namespace SGSFramework.Identity.Services
                     return (false, new[] { periodError });
                 }
 
+                var codeError = await ValidateRoleCodeAsync(request.Code, request.RoleId, cancellationToken).ConfigureAwait(false);
+                if (codeError is not null)
+                {
+                    return (false, new[] { codeError });
+                }
+
                 role.Name = request.NewRoleName;
                 role.NormalizedName = _roleManager.NormalizeKey(request.NewRoleName);
 
                 // 與 ScopeType 等欄位一致：未提供時保留原值，避免僅編輯描述時誤清空角色代碼
                 if (!string.IsNullOrWhiteSpace(request.Code))
                 {
-                    entry.Property("Code").CurrentValue = request.Code;
+                    entry.Property("Code").CurrentValue = string.IsNullOrWhiteSpace(request.Code) ? null : request.Code.Trim().ToUpperInvariant();
                 }
                 entry.Property("Description").CurrentValue = request.Description;
                 entry.Property("ScopeType").CurrentValue = targetScope;
@@ -577,16 +666,17 @@ namespace SGSFramework.Identity.Services
                 var result = await _roleManager.UpdateAsync(role).ConfigureAwait(false);
                 if (result.Succeeded)
                 {
+                    await SaveRoleLabScopesAsync(RoleGuid(role), targetLabIds, cancellationToken).ConfigureAwait(false);
                     var changes = new List<string>();
                     if (!string.Equals(oldName, role.Name, StringComparison.Ordinal)) changes.Add($"名稱「{oldName}」→「{role.Name}」");
                     if (!string.Equals(oldDescription, request.Description ?? string.Empty, StringComparison.Ordinal)) changes.Add("描述已更新");
                     if (oldScope != targetScope) changes.Add($"範圍「{oldScope.GetDisplayName()}」→「{targetScope.GetDisplayName()}」");
-                    if (oldLabId != targetLabId) changes.Add("所屬實驗室已變更");
+                    if (!oldLabIds.ToHashSet().SetEquals(targetLabIds)) changes.Add($"適用實驗室 {oldLabIds.Count} → {targetLabIds.Count} 個");
                     if (oldFrom != request.EffectiveFrom || oldTo != request.EffectiveTo)
                         changes.Add($"生效期間：{FormatPeriod(request.EffectiveFrom, request.EffectiveTo)}");
                     await _roleAuditService.RecordAsync(RoleGuid(role), role.Name!, RoleAuditActions.Updated,
                         changes.Count > 0 ? string.Join("；", changes) : "更新角色設定",
-                        detail: new { OldDescription = oldDescription, NewDescription = request.Description, Scope = targetScope.ToString(), TenantLabId = targetLabId, request.EffectiveFrom, request.EffectiveTo },
+                        detail: new { OldDescription = oldDescription, NewDescription = request.Description, Scope = targetScope.ToString(), TenantLabIds = targetLabIds, request.EffectiveFrom, request.EffectiveTo },
                         cancellationToken: cancellationToken).ConfigureAwait(false);
 
                     // 範圍、實驗室或生效期間可能改變成員的有效權限
@@ -621,15 +711,47 @@ namespace SGSFramework.Identity.Services
                 }
 
                 var entry = _dbContext.Entry(role);
-                if (entry.Property<bool>("IsSystemRole").CurrentValue && newStatus == RoleStatus.Disabled)
-                {
-                    return (false, new[] { "系統核心預設角色禁止停用。" });
-                }
-
                 var oldStatus = entry.Property<RoleStatus>("Status").CurrentValue;
                 if (oldStatus == newStatus)
                 {
                     return (true, Enumerable.Empty<string>());
+                }
+
+                var isPendingReview = oldStatus == RoleStatus.PendingApproval;
+                if (newStatus == RoleStatus.PendingApproval)
+                {
+                    return (false, new[] { "「待審核」僅適用於新建角色，無法將既有角色改回待審核。" });
+                }
+
+                var roleGuid = RoleGuid(role);
+                if (await _dbContext.Set<RoleChangeRequest>().AsNoTracking()
+                        .AnyAsync(x => x.RoleId == roleGuid && x.Status == RoleChangeRequestStatus.Pending, cancellationToken)
+                        .ConfigureAwait(false))
+                {
+                    return (false, new[] { "此角色有待審核的權限變更申請，請至「權限變更審核」核准、駁回或撤回後，狀態將自動更新。" });
+                }
+
+                if (isPendingReview)
+                {
+                    // 待審核角色僅能「核准啟用」或「駁回停用」
+                    if (newStatus == RoleStatus.Locked)
+                    {
+                        return (false, new[] { "待審核角色僅能核准（啟用中）或駁回（已停用）。" });
+                    }
+
+                    if (newStatus == RoleStatus.Active)
+                    {
+                        var approvalError = await ValidateNewRoleApprovalAsync(role, cancellationToken).ConfigureAwait(false);
+                        if (approvalError is not null)
+                        {
+                            return (false, new[] { approvalError });
+                        }
+                    }
+                }
+                else if (entry.Property<bool>("IsSystemRole").CurrentValue && newStatus == RoleStatus.Disabled)
+                {
+                    // 駁回待審核的系統角色不受此限
+                    return (false, new[] { "系統核心預設角色禁止停用。" });
                 }
 
                 entry.Property("Status").CurrentValue = newStatus;
@@ -645,8 +767,11 @@ namespace SGSFramework.Identity.Services
                         await _permissionChangeNotifier.NotifyRoleMembersAsync(role.Name, "role-status-changed", cancellationToken).ConfigureAwait(false);
                     }
 
+                    var summary = isPendingReview
+                        ? (newStatus == RoleStatus.Active ? "新角色審核通過，已啟用" : "新角色審核駁回，已停用")
+                        : $"狀態「{oldStatus.GetDisplayName()}」→「{newStatus.GetDisplayName()}」，影響 {memberCount} 位成員";
                     await _roleAuditService.RecordAsync(RoleGuid(role), role.Name ?? string.Empty, RoleAuditActions.StatusChanged,
-                        $"狀態「{oldStatus.GetDisplayName()}」→「{newStatus.GetDisplayName()}」，影響 {memberCount} 位成員",
+                        summary,
                         memberCount, new { OldStatus = oldStatus.ToString(), NewStatus = newStatus.ToString() },
                         cancellationToken).ConfigureAwait(false);
                     return (true, Enumerable.Empty<string>());
@@ -691,9 +816,21 @@ namespace SGSFramework.Identity.Services
                 string originalName = role.Name ?? string.Empty;
 
                 // 刪除前記錄成員，刪除後通知其權限已變更
-                var affectedUserIds = role.Name is null
+                var affectedUsers = role.Name is null
                     ? []
-                    : (await _userManager.GetUsersInRoleAsync(role.Name).ConfigureAwait(false)).Select(u => u.Id.ToString()).ToList();
+                    : await _userManager.GetUsersInRoleAsync(role.Name).ConfigureAwait(false);
+                var affectedUserIds = affectedUsers.Select(u => u.Id.ToString()).ToList();
+
+                // 一併解除成員關係，避免使用者仍掛著已刪除角色（稽核畫面誤顯示繼承權限）
+                foreach (var member in affectedUsers)
+                {
+                    var removeResult = await _userManager.RemoveFromRoleAsync(member, role.Name!).ConfigureAwait(false);
+                    if (!removeResult.Succeeded)
+                    {
+                        _logger.LogWarning("刪除角色 {RoleName} 時移除成員 {UserId} 失敗：{Errors}",
+                            role.Name, member.Id, string.Join("; ", removeResult.Errors.Select(e => e.Description)));
+                    }
+                }
 
                 string anonymizedTag = roleId.Length >= 8 ? roleId[..8] : roleId;
 
@@ -781,7 +918,7 @@ namespace SGSFramework.Identity.Services
 
                 // 已停用 / 已鎖定的角色不再授予任何權限：禁止新指派（既有成員保留不受影響）
                 var roleStatus = _dbContext.Entry(roleEntity).Property<RoleStatus>("Status").CurrentValue;
-                if (roleStatus != RoleStatus.Active &&
+                if (roleStatus is not (RoleStatus.Active or RoleStatus.PendingApproval) &&
                     !await _userManager.IsInRoleAsync(targetUser, roleName).ConfigureAwait(false))
                 {
                     return (false, $"角色 [{roleName}] 目前為「{roleStatus.GetDisplayName()}」，無法指派給使用者。");
@@ -813,6 +950,43 @@ namespace SGSFramework.Identity.Services
 
         private static Guid RoleGuid(TRole role) =>
             Guid.TryParse(role.Id?.ToString(), out var id) ? id : Guid.Empty;
+
+        /// <summary>角色是否有待審核的權限變更申請（送審期間角色狀態為「待審核」）</summary>
+        private Task<bool> HasPendingPermissionChangeAsync(string roleId, CancellationToken cancellationToken) =>
+            Guid.TryParse(roleId, out var id)
+                ? _dbContext.Set<RoleChangeRequest>().AsNoTracking().AnyAsync(x => x.RoleId == id && x.Status == RoleChangeRequestStatus.Pending, cancellationToken)
+                : Task.FromResult(false);
+
+        /// <summary>
+        /// 新角色審核（雙重審批）：建立者不得核准自己建立的角色；
+        /// 例外與權限變更審核一致 —— 持有啟用中的系統內建角色且最高管理階層高於該角色者可自行核准。
+        /// </summary>
+        private async Task<string?> ValidateNewRoleApprovalAsync(TRole role, CancellationToken cancellationToken)
+        {
+            var actorValue = _httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                             ?? _httpContextAccessor.HttpContext?.User?.FindFirst("sub")?.Value;
+            if (!Guid.TryParse(actorValue, out var actorId))
+            {
+                return "無法識別目前操作者的身分驗證資訊。";
+            }
+
+            var roleId = RoleGuid(role);
+            var creatorId = await _dbContext.Set<RoleAuditLog>().AsNoTracking()
+                .Where(l => l.RoleId == roleId && l.Action == RoleAuditActions.Created)
+                .OrderBy(l => l.CreatedAt)
+                .Select(l => l.ActorUserId)
+                .FirstOrDefaultAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (creatorId == actorId &&
+                !await _roleGovernanceService.CanSelfApproveAsync(actorId, roleId, cancellationToken).ConfigureAwait(false))
+            {
+                return "雙重審批規定：角色建立者不得核准自己建立的角色，請由其他審核者處理。" +
+                       "（持有系統內建角色且管理階層高於此角色者除外）";
+            }
+
+            return null;
+        }
 
         /// <summary>鎖定 = 凍結角色配置：禁止修改設定、權限、AD 群組、新增成員與刪除（移除成員不受限）</summary>
         private bool IsLocked(TRole role) =>
@@ -947,9 +1121,9 @@ namespace SGSFramework.Identity.Services
                 return (false, $"找不到指定的角色 [{roleIdentifier}]。", null);
             }
 
-            // 已停用 / 已鎖定的角色不再授予任何權限，因此禁止加入新成員
+            // 已停用 / 已鎖定的角色不再授予任何權限，因此禁止加入新成員（待審核可先指派，核准後才生效）
             var roleStatus = _dbContext.Entry(role).Property<RoleStatus>("Status").CurrentValue;
-            if (roleStatus != RoleStatus.Active)
+            if (roleStatus is not (RoleStatus.Active or RoleStatus.PendingApproval))
             {
                 return (false, $"角色 [{role.Name}] 目前為「{roleStatus.GetDisplayName()}」，無法加入新成員。", null);
             }

@@ -849,6 +849,21 @@ namespace PhysLIMS.API.Migrations
                     b.ToTable("RoleAuditLogs", "core");
                 });
 
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.RoleLabScope", b =>
+                {
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TenantLabId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("RoleId", "TenantLabId");
+
+                    b.HasIndex("TenantLabId");
+
+                    b.ToTable("RoleLabScopes", "core");
+                });
+
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.UserLabMapping", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -1395,6 +1410,9 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<int>("AffectedUserCount")
                         .HasColumnType("int");
+
+                    b.Property<string>("PreviousRoleStatus")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("RemovedPermissionKeys")
                         .IsRequired()

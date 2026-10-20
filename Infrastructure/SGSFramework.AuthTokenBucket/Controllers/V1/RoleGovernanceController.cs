@@ -36,7 +36,7 @@ public sealed class RoleGovernanceController(IRoleGovernanceService governanceSe
     {
         // 不可在參數上給 nullable enum 預設值：Microsoft.AspNetCore.OpenApi 產生文件時會 InvalidCastException（Int32 → Nullable<enum>）
         RoleChangeRequestStatus? effectiveStatus = all ? null : status ?? RoleChangeRequestStatus.Pending;
-        var list = await _governance.GetChangeRequestsAsync(effectiveStatus, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var list = await _governance.GetChangeRequestViewsAsync(effectiveStatus, cancellationToken).ConfigureAwait(false);
         return Ok(list);
     }
 

@@ -30,6 +30,14 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Dtos
         public string NodePath { get; set; } = string.Empty;
         public int Level { get; set; }
 
+        /// <summary>是否啟用</summary>
+        public bool IsActive { get; set; } = true;
+
+        /// <summary>上層組織代碼 / 名稱（區域實驗室清單分組用）</summary>
+        public string? ParentCode { get; set; }
+
+        public string? ParentName { get; set; }
+
         /// <summary>
         /// 子組織/子實驗室節點清單
         /// </summary>

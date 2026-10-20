@@ -97,7 +97,7 @@ namespace SGSFramework.AuthTokenBucket.Services
             {
                 // 已停用 / 已鎖定的角色不再授予任何權限：禁止異動其實驗室權限設定
                 var role = await _dbContext.Set<ApplicationRole>().FindAsync([roleId], cancellationToken);
-                if (role is not null && role.Status != RoleStatus.Active)
+                if (role is not null && role.Status is not (RoleStatus.Active or RoleStatus.PendingApproval))
                 {
                     return (false, $"角色 [{role.Name}] 目前為「{role.Status.GetDisplayName()}」，無法異動權限設定。");
                 }

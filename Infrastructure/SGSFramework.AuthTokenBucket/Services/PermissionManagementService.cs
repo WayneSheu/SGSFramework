@@ -301,7 +301,7 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
         {
             // 已停用 / 已鎖定的角色不再授予任何權限：禁止異動其權限設定
             var role = await _roleManager.FindByIdAsync(request.RoleId).ConfigureAwait(false);
-            if (role is not null && role.Status != RoleStatus.Active)
+            if (role is not null && role.Status is not (RoleStatus.Active or RoleStatus.PendingApproval))
             {
                 return (false, $"角色 [{role.Name}] 目前為「{role.Status.GetDisplayName()}」，無法異動權限設定。");
             }
@@ -384,20 +384,45 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
 
             var roleNames = await _userManager.GetRolesAsync(user).ConfigureAwait(false);
             var roleAuditList = new List<RoleAuditInfoItemDto>();
+            var effectiveRoleIds = new List<string>();
 
-            // 1. 查詢角色詳情 (包含 Description)
-            foreach (var roleName in roleNames)
+            // 1. 查詢角色詳情，並套用與執行期授權 (RoleEffectivePermissionProvider) 相同的生效規則：
+            //    已刪除 / 已停用 / 新建待審核 / 不在生效期間的角色不計入繼承權限
+            var roles = await _roleManager.Roles.AsNoTracking()
+                .Where(r => r.Name != null && roleNames.Contains(r.Name))
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            var roleGuids = roles.Select(r => r.Id).ToList();
+            var pendingChanges = await _dbContext.Set<RoleChangeRequest>().AsNoTracking()
+                .Where(x => roleGuids.Contains(x.RoleId) && x.Status == RoleChangeRequestStatus.Pending)
+                .Select(x => new { x.RoleId, x.PreviousRoleStatus })
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            var now = DateTimeOffset.UtcNow;
+            foreach (var role in roles.OrderBy(r => r.IsDeleted).ThenBy(r => r.Name))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var role = await _roleManager.FindByNameAsync(roleName).ConfigureAwait(false);
-                if (role != null)
+                var pendingChange = pendingChanges.FirstOrDefault(p => p.RoleId == role.Id);
+                string? ineffectiveReason =
+                    role.IsDeleted ? "角色已刪除" :
+                    role.Status == RoleStatus.Disabled ? "角色已停用" :
+                    role.Status == RoleStatus.PendingApproval && pendingChange?.PreviousRoleStatus != RoleStatus.Active ? "新角色待審核，尚未啟用" :
+                    role.EffectiveFrom > now ? "角色尚未生效" :
+                    role.EffectiveTo < now ? "角色已過期" :
+                    null;
+
+                if (ineffectiveReason is null) effectiveRoleIds.Add(role.Id.ToString());
+
+                roleAuditList.Add(new RoleAuditInfoItemDto
                 {
-                    roleAuditList.Add(new RoleAuditInfoItemDto
-                    {
-                        RoleName = role.Name ?? roleName,
-                        Description = role.Description
-                    });
-                }
+                    RoleName = role.Name!,
+                    Description = role.Description,
+                    Status = role.IsDeleted ? "已刪除" : role.Status.GetDisplayName(),
+                    IsEffective = ineffectiveReason is null,
+                    IneffectiveReason = ineffectiveReason,
+                    HasPendingPermissionChange = pendingChange is not null
+                });
             }
 
             var claims = await _userManager.GetClaimsAsync(user).ConfigureAwait(false);
@@ -417,19 +442,15 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                 .OrderBy(p => p)
                 .ToList();
 
-            // 3. 解析全域角色繼承權限
+            // 3. 解析全域角色繼承權限（僅計入生效中的角色；權限變更送審中者為核准前的既有權限）
             var globalRoleKeys = new List<string>();
-            foreach (var roleItem in roleAuditList)
+            foreach (var roleId in effectiveRoleIds)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var role = await _roleManager.FindByNameAsync(roleItem.RoleName).ConfigureAwait(false);
-                if (role != null)
+                var roleMatrix = await GetRoleGlobalPermissionsAsync(roleId, cancellationToken).ConfigureAwait(false);
+                if (roleMatrix?.GrantedPermissionKeys is { Count: > 0 })
                 {
-                    var roleMatrix = await GetRoleGlobalPermissionsAsync(role.Id.ToString(), cancellationToken).ConfigureAwait(false);
-                    if (roleMatrix?.GrantedPermissionKeys is { Count: > 0 })
-                    {
-                        globalRoleKeys.AddRange(roleMatrix.GrantedPermissionKeys);
-                    }
+                    globalRoleKeys.AddRange(roleMatrix.GrantedPermissionKeys);
                 }
             }
 

@@ -22,6 +22,9 @@ namespace SGSFramework.Identity.DTOs.Roles
         public int HierarchyLevel { get; set;}
 
         public Guid?  TenantLabId { get; set; }
+
+        /// <summary>實驗室專屬角色適用的區域實驗室</summary>
+        public List<Guid> TenantLabIds { get; set; } = [];
         public DateTimeOffset? EffectiveFrom { get; set; }
         public DateTimeOffset? EffectiveTo { get; set; }
 
@@ -29,8 +32,11 @@ namespace SGSFramework.Identity.DTOs.Roles
         /// 狀態顯示文字（對應 Enum 的 DisplayName 或 Description）
         /// </summary>
         public string Status { get; set; } = string.Empty;
-        /// <summary>狀態數值 (RoleStatus)：0 已停用、1 啟用中、2 已鎖定，供前端切換狀態使用</summary>
+        /// <summary>狀態數值 (RoleStatus)：0 已停用、1 啟用中、2 已鎖定、3 待審核，供前端切換狀態使用</summary>
         public int StatusValue { get; set; }
+
+        /// <summary>是否有待審核的權限變更申請（此時狀態為「待審核」，須至權限變更審核處理）</summary>
+        public bool HasPendingPermissionChange { get; set; }
 
         public bool IsDeleted { get; set; }
         public List<string> MappedAdGroups { get; set; } = [];

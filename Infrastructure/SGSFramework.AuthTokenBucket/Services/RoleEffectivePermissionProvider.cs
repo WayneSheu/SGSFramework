@@ -14,6 +14,7 @@ namespace SGSFramework.AuthTokenBucket.Services;
 /// - 啟用中 (Active)：授予權限
 /// - 已鎖定 (Locked)：既有成員保留權限（新成員與權限異動已於管理端阻擋）
 /// - 已停用 (Disabled)：不授予任何權限，既有成員立即失去此角色的權限
+/// - 待審核 (PendingApproval)：新建角色尚未核准則不授予權限；啟用中角色送審權限變更期間維持既有權限
 /// </summary>
 public interface IRoleEffectivePermissionProvider
 {
@@ -108,7 +109,19 @@ public sealed class RoleEffectivePermissionProvider(
         bool IsEffective(DateTimeOffset? from, DateTimeOffset? to) =>
             (!from.HasValue || from.Value <= now) && (!to.HasValue || to.Value >= now);
 
-        var excluded = roles.Where(r => r.Status == RoleStatus.Disabled || !IsEffective(r.EffectiveFrom, r.EffectiveTo)).ToList();
+        // 待審核：若是「啟用中角色送審權限變更」，送審期間維持既有權限；新建角色（尚未核准）則不授予
+        var pendingIds = roles.Where(r => r.Status == RoleStatus.PendingApproval).Select(r => r.Id).ToList();
+        var underChangeReview = pendingIds.Count == 0
+            ? []
+            : await _dbContext.Set<RoleChangeRequest>().AsNoTracking()
+                .Where(x => pendingIds.Contains(x.RoleId) && x.Status == RoleChangeRequestStatus.Pending && x.PreviousRoleStatus == RoleStatus.Active)
+                .Select(x => x.RoleId)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+        var excluded = roles.Where(r => r.Status == RoleStatus.Disabled ||
+                                        (r.Status == RoleStatus.PendingApproval && !underChangeReview.Contains(r.Id)) ||
+                                        !IsEffective(r.EffectiveFrom, r.EffectiveTo)).ToList();
         if (excluded.Count > 0)
         {
             _logger.LogDebug("[RolePermission] 使用者 {UserId} 的停用或非生效期間角色不計入權限：{Roles}",

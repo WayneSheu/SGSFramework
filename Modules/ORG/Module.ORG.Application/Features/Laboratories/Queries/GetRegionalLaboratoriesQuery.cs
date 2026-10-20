@@ -56,7 +56,10 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Queries
                         Level = x.Level,
                         NodePath = x.NodePath,
                         Location = x.Location,
-                        Description = x.Description
+                        Description = x.Description,
+                        IsActive = x.IsActive,
+                        ParentCode = x.Parent != null ? x.Parent.Code : null,
+                        ParentName = x.Parent != null ? x.Parent.Name : null
                     })
                     .ToListAsync(cancellationToken);
 

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using SGSFramework.Core.Abstractions.Entities.Identities;
 using System;
 
 namespace SGSFramework.Core.Abstractions.Permissions.Entities
@@ -46,6 +47,12 @@ namespace SGSFramework.Core.Abstractions.Permissions.Entities
         public DateTimeOffset? ReviewedAt { get; set; }
 
         public string? ReviewComment { get; set; }
+
+        /// <summary>
+        /// 送出申請當下的角色狀態。送審期間角色標示為「待審核」，審核結束（核准 / 駁回 / 撤回）後據此恢復；
+        /// 原為「啟用中」者送審期間仍維持既有權限，原為「待審核」（新建角色）者核准時一併啟用。
+        /// </summary>
+        public RoleStatus? PreviousRoleStatus { get; set; }
     }
 
     public enum RoleChangeRequestStatus
