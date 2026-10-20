@@ -105,6 +105,28 @@ public static class AuthTokenBucketServiceCollectionExtensions
 
             jwtOptions.Events = new JwtBearerEvents
             {
+                // 簽章與效期驗證通過後，再確認該裝置工作階段未被撤銷（登出 / 全裝置登出 / 裝置數上限淘汰）
+                OnTokenValidated = async context =>
+                {
+                    var principal = context.Principal;
+                    var deviceId = principal?.FindFirst("device_id")?.Value;
+                    if (string.IsNullOrWhiteSpace(deviceId))
+                    {
+                        // 非本系統 TokenBucket 簽發（無裝置綁定）之憑證不在此檢查範圍
+                        return;
+                    }
+
+                    var userId = principal!.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                                 ?? principal.FindFirst("sub")?.Value
+                                 ?? principal.FindFirst("nameid")?.Value;
+
+                    var validator = context.HttpContext.RequestServices.GetRequiredService<ISessionValidator>();
+                    if (string.IsNullOrWhiteSpace(userId) ||
+                        !await validator.IsSessionActiveAsync(userId, deviceId, context.HttpContext.RequestAborted))
+                    {
+                        context.Fail("工作階段已撤銷或不存在，請重新登入。");
+                    }
+                },
                 OnAuthenticationFailed = context =>
                 {
                     var logger = context.HttpContext.RequestServices
@@ -132,6 +154,8 @@ public static class AuthTokenBucketServiceCollectionExtensions
 
         services.AddScoped<ITokenStorageProvider, SqlTokenStorageProvider<TDbContext>>();
         services.AddScoped<IUserRefreshTokenRepository, UserRefreshTokenRepository<TDbContext>>();
+        services.AddMemoryCache();
+        services.AddScoped<ISessionValidator, SessionValidator<TDbContext>>();
         
         // 註冊帶有 TDbContext 泛型型態的 PermissionManagementService
         services.AddScoped<IPermissionManagementService, PermissionManagementService<TDbContext>>();

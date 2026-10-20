@@ -661,6 +661,55 @@ public sealed class AuthController(
     }
 
     /// <summary>
+    /// 工作階段心跳檢查（前端每 60 秒呼叫，使閒置裝置在被撤銷後也能自動登出）
+    /// </summary>
+    /// <remarks>
+    /// 標記 [AllowAnonymous] 以略過控制器層級的權限要求，讓所有已登入使用者皆可呼叫；
+    /// JWT 驗證（含 OnTokenValidated 工作階段檢查）仍會執行，未通過時於此回傳 401。
+    /// 本端點不刷新、不延長任何憑證效期。
+    /// Access Token 僅「過期」時（閒置超過效期），改以忽略效期的簽章驗證解析身分後直接查詢工作階段，
+    /// 以區分「工作階段已撤銷（401）」與「僅需續約（204）」，避免閒置使用者被誤登出。
+    /// </remarks>
+    [HttpGet("session-status")]
+    [AllowAnonymous]
+    [Function("SessionStatus", "工作階段心跳", Icon = "fa-solid fa-heart-pulse", Order = 9, Description = "檢查當前裝置工作階段是否仍有效")]
+    [EndpointSummary("工作階段心跳")]
+    [EndpointDescription("檢查當前裝置的工作階段是否仍有效；已撤銷或憑證無效時回傳 401。")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetSessionStatusAsync(
+        [FromServices] ISessionValidator sessionValidator,
+        CancellationToken cancellationToken = default)
+    {
+        // 1. Token 有效：OnTokenValidated 已確認工作階段存在
+        if (User.Identity?.IsAuthenticated == true)
+        {
+            return NoContent();
+        }
+
+        // 2. Token 無效：可能僅過期，也可能被撤銷 / 竄改，需進一步判斷
+        string? authHeader = Request.Headers.Authorization.FirstOrDefault();
+        if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildUnauthorizedResult("未提供身分憑證。");
+        }
+
+        // GetPrincipalFromExpiredToken 仍驗證簽章，僅忽略效期，竄改的 Token 會回傳 null
+        var principal = _tokenManager.GetPrincipalFromExpiredToken(authHeader["Bearer ".Length..].Trim());
+        string? userId = principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? principal?.FindFirst("sub")?.Value;
+        string? deviceId = principal?.FindFirst("device_id")?.Value;
+
+        if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(deviceId) ||
+            !await sessionValidator.IsSessionActiveAsync(userId, deviceId, cancellationToken))
+        {
+            return BuildUnauthorizedResult("工作階段已撤銷或憑證無效，請重新登入。");
+        }
+
+        // 工作階段仍有效，僅 Access Token 過期：交由使用者下次操作時正常續約
+        return NoContent();
+    }
+
+    /// <summary>
     /// 單一裝置登出
     /// </summary>
     [HttpPost("logout")]

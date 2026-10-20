@@ -13,10 +13,12 @@ public sealed class UserRefreshTokenRepository<TDbContext> : IUserRefreshTokenRe
     where TDbContext : DbContext, ITokenDbContext
 {
     private readonly TDbContext _context;
+    private readonly ISessionValidator _sessionValidator;
 
-    public UserRefreshTokenRepository(TDbContext context)
+    public UserRefreshTokenRepository(TDbContext context, ISessionValidator sessionValidator)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
+        _sessionValidator = sessionValidator ?? throw new ArgumentNullException(nameof(sessionValidator));
     }
 
     /// <summary>
@@ -77,6 +79,9 @@ public sealed class UserRefreshTokenRepository<TDbContext> : IUserRefreshTokenRe
             await _context.UserRefreshTokens
                 .Where(t => t.UserId == userId && t.DeviceId == deviceId && !t.IsDead)
                 .ExecuteUpdateAsync(s => s.SetProperty(t => t.IsDead, true), cancellationToken);
+
+            // 立即清除驗證快取，使該裝置尚未過期的 Access Token 於下一次請求即失效
+            _sessionValidator.InvalidateDevice(userId, deviceId);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -93,6 +98,9 @@ public sealed class UserRefreshTokenRepository<TDbContext> : IUserRefreshTokenRe
             await _context.UserRefreshTokens
                 .Where(t => t.UserId == userId && !t.IsDead)
                 .ExecuteUpdateAsync(s => s.SetProperty(t => t.IsDead, true), cancellationToken);
+
+            // 立即清除該使用者所有裝置的驗證快取，使其他裝置於下一次請求即被登出
+            _sessionValidator.InvalidateUser(userId);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
