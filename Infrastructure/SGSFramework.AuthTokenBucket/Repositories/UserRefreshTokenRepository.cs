@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.Core.Abstractions.DbContexts;
+using SGSFramework.AuthTokenBucket.Services;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 
 namespace SGSFramework.AuthTokenBucket.Repositories;
@@ -14,11 +15,13 @@ public sealed class UserRefreshTokenRepository<TDbContext> : IUserRefreshTokenRe
 {
     private readonly TDbContext _context;
     private readonly ISessionValidator _sessionValidator;
+    private readonly ISessionNotifier _sessionNotifier;
 
-    public UserRefreshTokenRepository(TDbContext context, ISessionValidator sessionValidator)
+    public UserRefreshTokenRepository(TDbContext context, ISessionValidator sessionValidator, ISessionNotifier sessionNotifier)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _sessionValidator = sessionValidator ?? throw new ArgumentNullException(nameof(sessionValidator));
+        _sessionNotifier = sessionNotifier ?? throw new ArgumentNullException(nameof(sessionNotifier));
     }
 
     /// <summary>
@@ -82,6 +85,9 @@ public sealed class UserRefreshTokenRepository<TDbContext> : IUserRefreshTokenRe
 
             // 立即清除驗證快取，使該裝置尚未過期的 Access Token 於下一次請求即失效
             _sessionValidator.InvalidateDevice(userId, deviceId);
+
+            // 即時推播：同一裝置的其他分頁立即登出
+            await _sessionNotifier.NotifyDeviceRevokedAsync(userId, deviceId, "logout", cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -101,6 +107,9 @@ public sealed class UserRefreshTokenRepository<TDbContext> : IUserRefreshTokenRe
 
             // 立即清除該使用者所有裝置的驗證快取，使其他裝置於下一次請求即被登出
             _sessionValidator.InvalidateUser(userId);
+
+            // 即時推播：該使用者所有已連線裝置立即登出
+            await _sessionNotifier.NotifyUserRevokedAsync(userId, "logout-all", cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

@@ -36,6 +36,8 @@ public static class SpaFallbackExtensions
         // 使用 MapWhen 分流，既能保持優雅的封裝，又能確保 100% 精準攔截非後端/Blazor 請求
         app.MapWhen(context =>
             !context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase) &&
+            !context.Request.Path.StartsWithSegments("/hubs", StringComparison.OrdinalIgnoreCase) && // SignalR Hub
+
             !context.Request.Path.StartsWithSegments("/scalar", StringComparison.OrdinalIgnoreCase) &&
             !context.Request.Path.StartsWithSegments("/openapi", StringComparison.OrdinalIgnoreCase) &&
             !context.Request.Path.StartsWithSegments("/blazor", StringComparison.OrdinalIgnoreCase),

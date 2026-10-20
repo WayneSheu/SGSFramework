@@ -11,6 +11,7 @@ using Serilog;
 using SGSFramework.ApiInfrastructure.Bootstrappers;
 using SGSFramework.ApiInfrastructure.DependencyInjection;
 using SGSFramework.ApiInfrastructure.Middlewares;
+using SGSFramework.AuthTokenBucket.Extensions;
 using SGSFramework.AuthTokenBucket.Queries.Menuitems;
 using SGSFramework.Core.Exceptions;
 using SGSFramework.Core.Extensions;
@@ -233,6 +234,7 @@ try
         app.MapOpenApi();
         app.MapCustomScalarApiReference();
         app.MapControllers();
+        app.MapTokenBucketHubs(); // 工作階段即時通知 (SignalR)
 
         var changeProvider = app.Services.GetRequiredService<IDynamicActionDescriptorChangeProvider>();
         changeProvider.NotifyChanges();
@@ -252,6 +254,7 @@ try
         app.MapOpenApi();
         app.MapCustomScalarApiReference();
         app.MapControllers();
+        app.MapTokenBucketHubs(); // 工作階段即時通知 (SignalR)
 
         //當使用者造訪根目錄 (/) 時，自動重新導向至 Scalar API 文件頁面
         app.MapGet("/", async context =>

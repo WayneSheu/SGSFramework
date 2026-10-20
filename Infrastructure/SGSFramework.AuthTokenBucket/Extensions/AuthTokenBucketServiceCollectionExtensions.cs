@@ -105,6 +105,17 @@ public static class AuthTokenBucketServiceCollectionExtensions
 
             jwtOptions.Events = new JwtBearerEvents
             {
+                // 瀏覽器 WebSocket / SSE 無法自訂 Authorization 標頭，SignalR 改以 access_token 查詢參數傳遞 Token
+                OnMessageReceived = context =>
+                {
+                    var accessToken = context.Request.Query["access_token"];
+                    if (!string.IsNullOrEmpty(accessToken) &&
+                        context.HttpContext.Request.Path.StartsWithSegments("/hubs"))
+                    {
+                        context.Token = accessToken;
+                    }
+                    return Task.CompletedTask;
+                },
                 // 簽章與效期驗證通過後，再確認該裝置工作階段未被撤銷（登出 / 全裝置登出 / 裝置數上限淘汰）
                 OnTokenValidated = async context =>
                 {
@@ -156,6 +167,10 @@ public static class AuthTokenBucketServiceCollectionExtensions
         services.AddScoped<IUserRefreshTokenRepository, UserRefreshTokenRepository<TDbContext>>();
         services.AddMemoryCache();
         services.AddScoped<ISessionValidator, SessionValidator<TDbContext>>();
+
+        // 工作階段即時通知 (SignalR)：需於 Host 端呼叫 app.MapTokenBucketHubs()
+        services.AddSignalR();
+        services.AddSingleton<ISessionNotifier, SessionNotifier>();
         
         // 註冊帶有 TDbContext 泛型型態的 PermissionManagementService
         services.AddScoped<IPermissionManagementService, PermissionManagementService<TDbContext>>();
