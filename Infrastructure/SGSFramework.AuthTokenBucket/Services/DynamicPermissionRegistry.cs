@@ -208,14 +208,18 @@ public class DynamicPermissionRegistry : IPermissionRegistry
         return permissionKey;
     }
 
+    /// <summary>
+    /// 依「功能群組前綴 + 群組內位元位置」解析權限鍵。
+    /// 位元位置為各功能群組（例：SYSTEM.USERMANAGEMENT）各自從 0 起算，不同群組會重複，
+    /// 因此必須同時比對群組；全域 _reverseIndex 會被後註冊的群組覆蓋，不可作為解析依據。
+    /// </summary>
     public string? ResolvePermissionKey(string moduleName, int bitPosition)
     {
-        if (_reverseIndex.TryGetValue(bitPosition, out var permissionKey))
-        {
-            return permissionKey;
-        }
+        if (string.IsNullOrWhiteSpace(moduleName) || bitPosition < 0) return null;
 
-        var match = _permissions.Values.FirstOrDefault(p => p.BitPosition == bitPosition);
+        var match = _permissions.Values.FirstOrDefault(p =>
+            p.BitPosition == bitPosition &&
+            string.Equals(ExtractFeaturePrefix(p.PermissionKey), moduleName, StringComparison.OrdinalIgnoreCase));
         return match?.PermissionKey;
     }
 

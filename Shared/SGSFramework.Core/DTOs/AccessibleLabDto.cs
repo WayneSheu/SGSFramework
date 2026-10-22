@@ -37,6 +37,12 @@ namespace SGSFramework.Core.DTOs
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? ParentLabCode { get; set; }
 
+        /// <summary>僅經由稽核指派取得存取（非人事歸屬）；期間結束後自動失效</summary>
+        public bool IsAuditAssignment { get; set; }
+
+        /// <summary>稽核指派的迄日（僅 IsAuditAssignment 時有值）</summary>
+        public DateTimeOffset? AccessUntil { get; set; }
+
         /// <summary>
         /// 母實驗室名稱（子階自動清空不序列化）
         /// </summary>

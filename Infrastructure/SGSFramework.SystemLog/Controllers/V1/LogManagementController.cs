@@ -100,6 +100,11 @@ public class LogManagerController : ControllerBase
             var result = await _logQueryService.GetSystemLogsAsync(request, cancellationToken);
             return Ok(result);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // 用戶端中止請求（切換頁面、登出、逾時），非伺服器錯誤
+            return StatusCode(499);
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "查詢系統日誌清單時發生例外");
@@ -127,6 +132,10 @@ public class LogManagerController : ControllerBase
         {
             var result = await _logQueryService.GetSecurityLogsAsync(request, cancellationToken);
             return Ok(result);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return StatusCode(499);
         }
         catch (Exception ex)
         {

@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using SGSFramework.Application.Strategies;
@@ -144,7 +145,17 @@ public static class AuthTokenBucketServiceCollectionExtensions
                         .GetRequiredService<ILoggerFactory>()
                         .CreateLogger("JwtBearerAuthentication");
 
-                    logger.LogError(context.Exception, "JWT 簽章驗證失敗：{Message}", context.Exception.Message);
+                    // Access Token 過期屬正常流程（前端收到 401 後以 Refresh Token 換票重送），不視為錯誤
+                    if (context.Exception is SecurityTokenExpiredException expired)
+                    {
+                        logger.LogInformation("JWT Access Token 已過期（到期 UTC {Expires:yyyy-MM-dd HH:mm:ss}），回應 401 等待前端換票。Path: {Path}",
+                            expired.Expires, context.HttpContext.Request.Path);
+                        return Task.CompletedTask;
+                    }
+
+                    // 其餘才是真正的驗證失敗（簽章不符、簽發者 / 對象錯誤、格式損毀等）
+                    logger.LogError(context.Exception, "JWT 驗證失敗（{ExceptionType}）：{Message}",
+                        context.Exception.GetType().Name, context.Exception.Message);
                     return Task.CompletedTask;
                 }
             };
@@ -233,6 +244,8 @@ public static class AuthTokenBucketServiceCollectionExtensions
         services.AddScoped<IRoleGovernanceService, RoleGovernanceService>();
         // 註冊執行期作用域服務
         services.AddScoped<ILabFunctionScopeService, LabFunctionScopeService>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<ILabAuditService, LabAuditService>();
         services.AddScoped<IUserRuntimeScopeService, UserRuntimeScopeService>();
         // 註冊權限遮罩服務
         services.AddScoped<IPermissionBitmaskService, PermissionBitmaskService>();

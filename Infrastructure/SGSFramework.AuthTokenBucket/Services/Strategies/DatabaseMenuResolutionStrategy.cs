@@ -3,6 +3,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SGSFramework.Core.Abstractions.DbContexts;
+using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Abstractions.Menus;
 using System;
 using System.Collections.Generic;
@@ -101,7 +102,9 @@ public class DatabaseMenuResolutionStrategy : IMenuResolutionStrategy
                     bool hasAuthorizedChild = node.Children.Count > 0;
                     bool isNodeDirectlyAuthorized = authorizedItemIds.Contains(node.Id);
 
-                    if (isNodeDirectlyAuthorized || hasAuthorizedChild)
+                    // 區段 / 群組僅為容器：必須至少有一個可見的頁面才顯示（未設權限的容器本身會被視為公開，不能單獨保留）
+                    bool isContainer = node.Type is MenuType.Section or MenuType.Group;
+                    if (hasAuthorizedChild || (isNodeDirectlyAuthorized && !isContainer))
                     {
                         node.Children = node.Children.OrderBy(c => c.Order).ToList();
                         resultList.Add(node);

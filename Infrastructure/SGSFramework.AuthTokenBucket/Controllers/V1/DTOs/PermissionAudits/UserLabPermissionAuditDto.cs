@@ -68,5 +68,11 @@ namespace SGSFramework.AuthTokenBucket.Controllers.V1.DTOs.PermissionAudits
         /// 該實驗室最終生效之有效權限
         /// </summary>
         public List<PermissionAuditInfoItemDto> LabEffectivePermissions { get; set; } = new();
+
+        /// <summary>僅經由稽核指派進入的實驗室（非人事歸屬）</summary>
+        public bool IsAuditAssignment { get; set; }
+
+        /// <summary>此實驗室有效稽核指派的迄日（無則為 null）</summary>
+        public DateTimeOffset? AuditUntil { get; set; }
     }
 }

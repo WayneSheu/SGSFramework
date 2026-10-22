@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Identities;
+using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Abstractions.Menus;
 using SGSFramework.Core.Errors;
 using SGSFramework.Core.Results;
@@ -133,7 +134,9 @@ public class GetUserMenuTreeQueryHandler : IRequestHandler<GetUserMenuTreeQuery,
                     bool isNodeDirectlyAuthorized = authorizedItemIds.Contains(node.Id);
 
                     // 保留條件：本身具備權限，或其下包含任一合法存取之子節點
-                    if (isNodeDirectlyAuthorized || hasAuthorizedChild)
+                    // 區段 / 群組僅為容器：必須至少有一個可見的頁面才顯示（未設權限的容器本身會被視為公開，不能單獨保留）
+                    bool isContainer = node.Type is MenuType.Section or MenuType.Group;
+                    if (hasAuthorizedChild || (isNodeDirectlyAuthorized && !isContainer))
                     {
                         node.Children = node.Children.OrderBy(c => c.Order).ToList();
                         resultList.Add(node);

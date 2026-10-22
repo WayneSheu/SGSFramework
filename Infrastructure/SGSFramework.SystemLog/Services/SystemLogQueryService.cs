@@ -121,7 +121,7 @@ namespace SGSFramework.SystemLog.Services
 
                 return new PagedResult<SystemLogDto>(dtos, pagedEntities.TotalCount, pagedEntities.PageIndex, pagedEntities.PageSize);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError(ex, "查詢系統日誌清單時發生未預期的內核錯誤。");
                 throw new InvalidOperationException("查詢系統日誌清單失敗。", ex);
@@ -226,7 +226,7 @@ namespace SGSFramework.SystemLog.Services
 
                 return new PagedResult<SecurityLogDto>(dtos, pagedEntities.TotalCount, pagedEntities.PageIndex, pagedEntities.PageSize);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError(ex, "查詢資安日誌清單時發生未預期的內核錯誤。");
                 throw new InvalidOperationException("查詢資安日誌清單失敗。", ex);
@@ -258,7 +258,7 @@ namespace SGSFramework.SystemLog.Services
                     CreatedAt: entity.CreatedAt
                 );
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError(ex, "依主鍵識別碼 ({Id}) 檢索系統日誌時發生異常。", id);
                 throw new InvalidOperationException("檢索系統日誌失敗。", ex);
@@ -287,7 +287,7 @@ namespace SGSFramework.SystemLog.Services
                     AlertId: entity.AlertId
                 );
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError(ex, "依主鍵識別碼 ({Id}) 檢索資安日誌時發生異常。", id);
                 throw new InvalidOperationException("檢索資安日誌失敗。", ex);

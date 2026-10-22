@@ -36,11 +36,13 @@ public class UserRuntimeScopeService(
     IPermissionRegistry permissionRegistry,
     IUserPermissionRepository userPermissionRepository,
     IRoleEffectivePermissionProvider roleEffectivePermissionProvider,
-    ILabFunctionScopeService labFunctionScopeService)
+    ILabFunctionScopeService labFunctionScopeService,
+    ILabAuditService labAuditService)
     : IUserRuntimeScopeService
 {
     private readonly IRoleEffectivePermissionProvider _roleEffectivePermissionProvider = roleEffectivePermissionProvider ?? throw new ArgumentNullException(nameof(roleEffectivePermissionProvider));
     private readonly ILabFunctionScopeService _labFunctionScopeService = labFunctionScopeService ?? throw new ArgumentNullException(nameof(labFunctionScopeService));
+    private readonly ILabAuditService _labAuditService = labAuditService ?? throw new ArgumentNullException(nameof(labAuditService));
     private readonly IOrganizationIntegrationService _orgIntegrationService = orgIntegrationService ?? throw new ArgumentNullException(nameof(orgIntegrationService));
     private readonly IFusionCache _cache = cache ?? throw new ArgumentNullException(nameof(cache));
     private readonly ILogger<UserRuntimeScopeService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -284,7 +286,8 @@ public class UserRuntimeScopeService(
             // 特權過濾：系統管理員全域放行
             if (await IsSystemAdminAsync(user).ConfigureAwait(false)) return true;
 
-            bool isLabScopeValid = await _orgIntegrationService.IsInUserScopeAsync(userId, activeLabId, cancellationToken).ConfigureAwait(false);
+            bool isLabScopeValid = await _orgIntegrationService.IsInUserScopeAsync(userId, activeLabId, cancellationToken).ConfigureAwait(false)
+                || (Guid.TryParse(userId, out var auditUserId) && (await _labAuditService.GetActiveLabsAsync(auditUserId, cancellationToken).ConfigureAwait(false)).ContainsKey(activeLabId));
             if (!isLabScopeValid)
             {
                 _logger.LogWarning("使用者 {UserId} 嘗試越權存取未授權實驗室 {LabId}", userId, activeLabId);
@@ -325,7 +328,8 @@ public class UserRuntimeScopeService(
             // 特權過濾：系統管理員全域放行
             if (await IsSystemAdminAsync(user).ConfigureAwait(false)) return true;
 
-            bool isLabScopeValid = await _orgIntegrationService.IsInUserScopeAsync(userId, activeLabId, cancellationToken).ConfigureAwait(false);
+            bool isLabScopeValid = await _orgIntegrationService.IsInUserScopeAsync(userId, activeLabId, cancellationToken).ConfigureAwait(false)
+                || (Guid.TryParse(userId, out var auditUserId) && (await _labAuditService.GetActiveLabsAsync(auditUserId, cancellationToken).ConfigureAwait(false)).ContainsKey(activeLabId));
             if (!isLabScopeValid) return false;
 
             var userPermissions = await GetCachedOrFetchPermissionsAsync(userId, activeLabId, cancellationToken).ConfigureAwait(false);
@@ -376,7 +380,7 @@ public class UserRuntimeScopeService(
 
             var orgs = await _orgIntegrationService.GetUserAccessibleOrganizationsAsync(userId, cancellationToken).ConfigureAwait(false);
 
-            return orgs.Select(x => new AccessibleLabDto
+            var labs = orgs.Select(x => new AccessibleLabDto
             {
                 LabId = x.Id,
                 TenantLabId = x.TenantLabId,
@@ -390,6 +394,40 @@ public class UserRuntimeScopeService(
                 ParentLabCode = x.ParentLabCode,
                 ParentLabName = x.ParentLabName
             }).ToList();
+
+            // 有效稽核指派的實驗室：期間內可切換進入（稽核角色權限僅於此生效），期滿自動移除
+            var auditLabs = await _labAuditService.GetActiveLabsAsync(user.Id, cancellationToken).ConfigureAwait(false);
+            foreach (var (tenantLabId, until) in auditLabs)
+            {
+                var existing = labs.FirstOrDefault(l => l.TenantLabId == tenantLabId);
+                if (existing is not null)
+                {
+                    existing.AccessUntil = until; // 已是歸屬實驗室：僅標註稽核期限
+                    continue;
+                }
+
+                var org = await _orgIntegrationService.GetOrganizationByIdAsync(tenantLabId, cancellationToken).ConfigureAwait(false);
+                if (org is null || !org.IsActive) continue;
+
+                labs.Add(new AccessibleLabDto
+                {
+                    LabId = org.Id,
+                    TenantLabId = tenantLabId,
+                    LabCode = org.Code ?? string.Empty,
+                    LabName = org.Name,
+                    Path = org.NodePathString,
+                    HierarchyLevel = org.HierarchyLevel,
+                    IsPrimary = false,
+                    ParentLabId = org.ParentLabId,
+                    ParentTenantLabId = org.ParentTenantLabId,
+                    ParentLabCode = org.ParentLabCode,
+                    ParentLabName = org.ParentLabName,
+                    IsAuditAssignment = true,
+                    AccessUntil = until
+                });
+            }
+
+            return labs;
         }
         catch (Exception ex)
         {

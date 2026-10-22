@@ -30,5 +30,10 @@ namespace SGSFramework.AuthTokenBucket.Controllers.V1.DTOs.PermissionAudits
 
         /// <summary>是否有待審核的權限變更（繼承權限為核准前的既有權限）</summary>
         public bool HasPendingPermissionChange { get; set; }
+
+        /// <summary>實驗室專屬角色適用的區域實驗室（全域 / 系統角色為空）</summary>
+        public List<Guid> ScopeLabIds { get; set; } = [];
+
+        public List<string> ScopeLabNames { get; set; } = [];
     }
 }

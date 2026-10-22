@@ -22,6 +22,9 @@ namespace SGSFramework.Identity.DTOs
         /// <summary>實驗室專屬角色適用的區域實驗室（可多選）；有值時優先於 TenantLabId</summary>
         public List<Guid>? TenantLabIds { get; set; }
 
+        /// <summary>稽核角色旗標；null 表示不變更</summary>
+        public bool? RequiresAuditAssignment { get; set; }
+
         /// <summary>生效起日（含）；null 表示立即生效</summary>
         public DateTimeOffset? EffectiveFrom { get; set; }
 

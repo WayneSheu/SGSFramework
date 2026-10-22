@@ -68,5 +68,8 @@ namespace SGSFramework.Identity.DTOs.Roles
         /// </summary>
         [Display(Name = "是否為系統角色", Description = "是否為系統角色。")]
         public bool IsSystemRole { get; set; } = false;
+
+        /// <summary>稽核角色：權限僅於具有效稽核指派的區域實驗室生效</summary>
+        public bool RequiresAuditAssignment { get; set; }
     }
 }

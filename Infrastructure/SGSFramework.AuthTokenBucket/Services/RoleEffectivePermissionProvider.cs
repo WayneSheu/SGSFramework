@@ -15,6 +15,7 @@ namespace SGSFramework.AuthTokenBucket.Services;
 /// - 已鎖定 (Locked)：既有成員保留權限（新成員與權限異動已於管理端阻擋）
 /// - 已停用 (Disabled)：不授予任何權限，既有成員立即失去此角色的權限
 /// - 實驗室專屬 (LabScoped) 角色：僅於其指派的區域實驗室 (core.RoleLabScopes) 內生效，無實驗室上下文時不授予
+/// - 稽核角色 (RequiresAuditAssignment)：僅於具有效稽核指派 (core.LabAuditAssignments) 的實驗室生效
 /// - 待審核 (PendingApproval)：新建角色尚未核准則不授予權限；啟用中角色送審權限變更期間維持既有權限
 /// </summary>
 public interface IRoleEffectivePermissionProvider
@@ -104,7 +105,7 @@ public sealed class RoleEffectivePermissionProvider(
         var roles = await _dbContext.Set<ApplicationRole>()
             .AsNoTracking()
             .Where(r => r.Name != null && roleNames.Contains(r.Name) && !r.IsDeleted)
-            .Select(r => new { r.Id, r.Name, r.Status, r.EffectiveFrom, r.EffectiveTo, r.ScopeType, r.TenantLabId })
+            .Select(r => new { r.Id, r.Name, r.Status, r.EffectiveFrom, r.EffectiveTo, r.ScopeType, r.TenantLabId, r.RequiresAuditAssignment })
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
@@ -126,6 +127,20 @@ public sealed class RoleEffectivePermissionProvider(
         var excluded = roles.Where(r => r.Status == RoleStatus.Disabled ||
                                         (r.Status == RoleStatus.PendingApproval && !underChangeReview.Contains(r.Id)) ||
                                         !IsEffective(r.EffectiveFrom, r.EffectiveTo)).ToList();
+        // 稽核角色：僅於使用者在目前實驗室具有效稽核指派（起訖期間內、未撤銷）時計入；全域範圍一律不計入
+        if (roles.Any(r => r.RequiresAuditAssignment))
+        {
+            bool hasActiveAudit = labId.HasValue && await _dbContext.Set<LabAuditAssignment>().AsNoTracking()
+                .AnyAsync(a => a.UserId == user.Id && a.TenantLabId == labId.Value && a.RevokedAt == null &&
+                               a.EffectiveFrom <= now && a.EffectiveTo >= now, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!hasActiveAudit)
+            {
+                excluded.AddRange(roles.Where(r => r.RequiresAuditAssignment && !excluded.Contains(r)));
+            }
+        }
+
         // 實驗室範圍：實驗室專屬角色需指派到目前的實驗室才計入
         var labScopedIds = roles.Where(r => r.ScopeType == RoleScopeType.LabScoped).Select(r => r.Id).ToList();
         if (labScopedIds.Count > 0)

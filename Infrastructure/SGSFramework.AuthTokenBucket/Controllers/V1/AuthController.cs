@@ -263,7 +263,6 @@ public sealed class AuthController(
     [AllowAnonymous]
     [Authorize(AuthenticationSchemes = "Windows")]
     [Function("WindowsLogin", "網域AD登入", Icon = "fa-solid fa-windows", Order = 2, Description = "內部網路 Windows 網域無感單一登入端點")]
-
     [EndpointSummary("網域AD登入")]
     [EndpointDescription("使用Windows 網域登入。")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -637,7 +636,9 @@ public sealed class AuthController(
                 l.LabCode,
                 l.LabName,
                 l.IsPrimary,
-                l.ParentLabCode
+                l.ParentLabCode,
+                l.IsAuditAssignment,
+                l.AccessUntil
             }));
     }
 

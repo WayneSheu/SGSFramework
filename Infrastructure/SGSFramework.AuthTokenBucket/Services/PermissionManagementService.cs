@@ -41,6 +41,7 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
     private readonly IPermissionChangeNotifier _permissionChangeNotifier;
     private readonly IRoleAuditService _roleAuditService;
     private readonly ILabFunctionScopeService _labFunctionScopeService;
+    private readonly ILabAuditService _labAuditService;
     private readonly ILogger<PermissionManagementService<TDbContext>> _logger;
 
     public PermissionManagementService(
@@ -56,6 +57,7 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
         IPermissionChangeNotifier permissionChangeNotifier,
         IRoleAuditService roleAuditService,
         ILabFunctionScopeService labFunctionScopeService,
+        ILabAuditService labAuditService,
         ILogger<PermissionManagementService<TDbContext>> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
@@ -70,6 +72,7 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
         _permissionChangeNotifier = permissionChangeNotifier ?? throw new ArgumentNullException(nameof(permissionChangeNotifier));
         _roleAuditService = roleAuditService ?? throw new ArgumentNullException(nameof(roleAuditService));
         _labFunctionScopeService = labFunctionScopeService ?? throw new ArgumentNullException(nameof(labFunctionScopeService));
+        _labAuditService = labAuditService ?? throw new ArgumentNullException(nameof(labAuditService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -470,8 +473,13 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                 return labs;
             }
 
+            // 稽核角色：權限僅於具有效稽核指派的實驗室生效（全域範圍不計入）
+            var auditRoles = roles.Where(r => r.RequiresAuditAssignment && effectiveRoleIds.Contains(r.Id.ToString())).ToList();
+            var auditRoleIds = auditRoles.Select(r => r.Id).ToList();
+            var activeAuditLabs = await _labAuditService.GetActiveLabsAsync(user.Id, cancellationToken).ConfigureAwait(false);
+
             var globalRoleKeys = roleKeysById
-                .Where(kv => !labScopedIds.Contains(Guid.Parse(kv.Key)))
+                .Where(kv => !labScopedIds.Contains(Guid.Parse(kv.Key)) && !auditRoleIds.Contains(Guid.Parse(kv.Key)))
                 .SelectMany(kv => kv.Value)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(p => p)
@@ -479,14 +487,44 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
 
             List<string> LabRoleKeys(Guid labId) => globalRoleKeys
                 .Concat(labScopedRoles.Where(r => LabsOf(r).Contains(labId)).SelectMany(r => roleKeysById[r.Id.ToString()]))
+                .Concat(activeAuditLabs.ContainsKey(labId) ? auditRoles.SelectMany(r => roleKeysById[r.Id.ToString()]) : [])
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(p => p)
                 .ToList();
 
+            // 稽核角色：列出目前有效的稽核實驗室與迄日
+            foreach (var item in roleAuditList.Where(i => i.IsEffective && auditRoles.Any(r => r.Name == i.RoleName)))
+            {
+                var names = new List<string>();
+                foreach (var (labId, until) in activeAuditLabs)
+                {
+                    var org = await _orgIntegrationService.GetOrganizationByIdAsync(labId, cancellationToken).ConfigureAwait(false);
+                    names.Add($"{org?.Name ?? labId.ToString()[..8]}（至 {until.ToLocalTime():yyyy-MM-dd}）");
+                }
+
+                item.ScopeLabIds = activeAuditLabs.Keys.ToList();
+                item.ScopeLabNames = names;
+                item.Status = names.Count > 0
+                    ? $"{item.Status} · 稽核角色（稽核中：{string.Join("、", names)}）"
+                    : $"{item.Status} · 稽核角色（目前無有效稽核指派，權限不生效）";
+            }
+
             foreach (var item in roleAuditList.Where(i => i.IsEffective))
             {
                 var role = labScopedRoles.FirstOrDefault(r => r.Name == item.RoleName);
-                if (role is not null) item.Status = $"{item.Status} · 實驗室專屬（{LabsOf(role).Count} 個實驗室）";
+                if (role is null) continue;
+
+                // 列出實驗室專屬角色實際適用的實驗室，讓稽核者直接看出角色在哪些實驗室生效
+                var names = new List<string>();
+                foreach (var labId in LabsOf(role))
+                {
+                    var org = await _orgIntegrationService.GetOrganizationByIdAsync(labId, cancellationToken).ConfigureAwait(false);
+                    names.Add(org?.Name ?? labId.ToString()[..8]);
+                }
+
+                item.ScopeLabIds = LabsOf(role).ToList();
+                item.ScopeLabNames = names;
+                item.Status = $"{item.Status} · 實驗室專屬（{string.Join("、", names)}）";
             }
 
             // 4. 解析全域有效權限
@@ -513,71 +551,70 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                 SecondaryLabPermissions = new List<UserLabPermissionAuditDto>()
             };
 
-            // 5. 解析主區域與兼區域實驗室權限
+            // 5. 解析主區域、兼區域與稽核指派實驗室的權限（與執行期授權同源規則）
             if (Guid.TryParse(userId, out var userGuid))
             {
-                var accessibleLabs = await _userLabRepository.GetAccessibleLabsAsync(userGuid, cancellationToken).ConfigureAwait(false);
-                if (accessibleLabs != null && accessibleLabs.Count > 0)
+                async Task<UserLabPermissionAuditDto> BuildLabAsync(Guid labTenantId, bool isPrimary, string? jobTitle,
+                    DateTimeOffset? effectiveDate, DateTimeOffset? expiryDate, DateTimeOffset? auditUntil, bool isAuditOnly)
                 {
-                    foreach (var lab in accessibleLabs.Where(l => l.IsActive))
+                    var orgInfo = await _orgIntegrationService.GetOrganizationByIdAsync(labTenantId, cancellationToken).ConfigureAwait(false);
+
+                    var labBitmaskMap = await _userPermissionRepository.GetPermissionsByLabAsync(userId, labTenantId, cancellationToken).ConfigureAwait(false);
+                    var labDirectKeys = (await _bitmaskService.DecodeBitmaskToPermissionsAsync(labBitmaskMap, cancellationToken).ConfigureAwait(false))
+                        .OrderBy(p => p)
+                        .ToList();
+
+                    var labRoleKeys = LabRoleKeys(labTenantId);
+
+                    var labEffectiveKeys = labDirectKeys
+                        .Union(labRoleKeys, StringComparer.OrdinalIgnoreCase)
+                        .Union(globalDirectKeys, StringComparer.OrdinalIgnoreCase)
+                        .Distinct()
+                        .OrderBy(p => p)
+                        .ToList();
+
+                    // 區域實驗室功能開放範圍：有效權限不得超出實驗室開放的功能
+                    labEffectiveKeys = (await _labFunctionScopeService.FilterAsync(labTenantId, labEffectiveKeys, cancellationToken).ConfigureAwait(false)).ToList();
+
+                    return new UserLabPermissionAuditDto
                     {
-                        cancellationToken.ThrowIfCancellationRequested();
+                        TenantLabId = labTenantId,
+                        CategoryCode = orgInfo?.ParentLabCode ?? string.Empty,
+                        CategoryName = orgInfo?.ParentLabName ?? string.Empty,
+                        LabCode = orgInfo?.Code ?? string.Empty,
+                        LabName = orgInfo?.Name ?? string.Empty,
+                        IsPrimary = isPrimary,
+                        JobTitle = jobTitle,
+                        EffectiveDate = effectiveDate,
+                        ExpiryDate = expiryDate,
+                        IsAuditAssignment = isAuditOnly,
+                        AuditUntil = auditUntil,
+                        LabDirectPermissions = EnrichPermissionDetails(labDirectKeys, menuLookup),
+                        LabRolePermissions = EnrichPermissionDetails(labRoleKeys, menuLookup),
+                        LabEffectivePermissions = EnrichPermissionDetails(labEffectiveKeys, menuLookup)
+                    };
+                }
 
-                        if (tenantLabId.HasValue && tenantLabId.Value != Guid.Empty && tenantLabId.Value != lab.TenantLabId)
-                        {
-                            continue;
-                        }
+                bool InRequestedScope(Guid labTenantId) =>
+                    !tenantLabId.HasValue || tenantLabId.Value == Guid.Empty || tenantLabId.Value == labTenantId;
 
-                        var orgInfo = await _orgIntegrationService.GetOrganizationByIdAsync(lab.TenantLabId, cancellationToken).ConfigureAwait(false);
+                var accessibleLabs = await _userLabRepository.GetAccessibleLabsAsync(userGuid, cancellationToken).ConfigureAwait(false) ?? [];
+                foreach (var lab in accessibleLabs.Where(l => l.IsActive && InRequestedScope(l.TenantLabId)))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
 
-                        var labBitmaskMap = await _userPermissionRepository.GetPermissionsByLabAsync(
-                            userId,
-                            lab.TenantLabId,
-                            cancellationToken).ConfigureAwait(false);
+                    var labAuditDto = await BuildLabAsync(lab.TenantLabId, lab.IsPrimary, lab.JobTitle, lab.EffectiveDate, lab.ExpiryDate,
+                        activeAuditLabs.TryGetValue(lab.TenantLabId, out var until) ? until : null, isAuditOnly: false).ConfigureAwait(false);
 
-                        var labDirectKeys = (await _bitmaskService
-                            .DecodeBitmaskToPermissionsAsync(labBitmaskMap, cancellationToken)
-                            .ConfigureAwait(false))
-                            .OrderBy(p => p)
-                            .ToList();
+                    if (lab.IsPrimary) responseDto.PrimaryLabPermission = labAuditDto;
+                    else responseDto.SecondaryLabPermissions.Add(labAuditDto);
+                }
 
-                        var labRoleKeys = LabRoleKeys(lab.TenantLabId);
-
-                        var labEffectiveKeys = labDirectKeys
-                            .Union(labRoleKeys, StringComparer.OrdinalIgnoreCase)
-                            .Union(globalDirectKeys, StringComparer.OrdinalIgnoreCase)
-                            .Distinct()
-                            .OrderBy(p => p)
-                            .ToList();
-
-                        // 區域實驗室功能開放範圍：有效權限不得超出實驗室開放的功能
-                        labEffectiveKeys = (await _labFunctionScopeService.FilterAsync(lab.TenantLabId, labEffectiveKeys, cancellationToken).ConfigureAwait(false)).ToList();
-
-                        var labAuditDto = new UserLabPermissionAuditDto
-                        {
-                            TenantLabId = lab.TenantLabId,
-                            CategoryCode = orgInfo?.ParentLabCode ?? string.Empty,
-                            CategoryName = orgInfo?.ParentLabName ?? string.Empty,
-                            LabCode = orgInfo?.Code ?? string.Empty,
-                            LabName = orgInfo?.Name ?? string.Empty,
-                            IsPrimary = lab.IsPrimary,
-                            JobTitle = lab.JobTitle,
-                            EffectiveDate = lab.EffectiveDate,
-                            ExpiryDate = lab.ExpiryDate,
-                            LabDirectPermissions = EnrichPermissionDetails(labDirectKeys, menuLookup),
-                            LabRolePermissions = EnrichPermissionDetails(labRoleKeys, menuLookup),
-                            LabEffectivePermissions = EnrichPermissionDetails(labEffectiveKeys, menuLookup)
-                        };
-
-                        if (lab.IsPrimary)
-                        {
-                            responseDto.PrimaryLabPermission = labAuditDto;
-                        }
-                        else
-                        {
-                            responseDto.SecondaryLabPermissions.Add(labAuditDto);
-                        }
-                    }
+                // 僅經由稽核指派可進入的實驗室（非人事歸屬）
+                foreach (var (auditLabId, auditUntil) in activeAuditLabs.Where(a => accessibleLabs.All(l => l.TenantLabId != a.Key) && InRequestedScope(a.Key)))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    responseDto.SecondaryLabPermissions.Add(await BuildLabAsync(auditLabId, false, "稽核指派", null, auditUntil, auditUntil, isAuditOnly: true).ConfigureAwait(false));
                 }
             }
 

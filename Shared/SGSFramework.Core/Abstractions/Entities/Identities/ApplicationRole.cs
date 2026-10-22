@@ -38,6 +38,12 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
 
         public RoleStatus Status { get; set; } = RoleStatus.Active;
 
+        /// <summary>
+        /// 稽核角色：權限僅於使用者具有效「稽核指派」（LabAuditAssignment，起訖期間內）的區域實驗室生效；
+        /// 其他實驗室（含稽核員自己的主要實驗室）與全域範圍一律不授予。
+        /// </summary>
+        public bool RequiresAuditAssignment { get; set; }
+
         /// <summary>生效起日（含）；null 表示立即生效。生效期間外角色不授予任何權限</summary>
         public DateTimeOffset? EffectiveFrom { get; set; }
 
@@ -86,6 +92,10 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
                 .IsRequired(false);
 
             builder.Property(r => r.IsSystemRole)
+                .IsRequired()
+                .HasDefaultValue(false);
+
+            builder.Property(r => r.RequiresAuditAssignment)
                 .IsRequired()
                 .HasDefaultValue(false);
 

@@ -417,6 +417,7 @@ namespace SGSFramework.Identity.Services
                         IsSystemRole = isSystemRole,
                         Status = statusVal.GetDisplayName(),
                         StatusValue = (int)statusVal,
+                        RequiresAuditAssignment = entry.Property<bool>("RequiresAuditAssignment").CurrentValue,
                         HasPendingPermissionChange = await HasPendingPermissionChangeAsync(roleIdStr, cancellationToken).ConfigureAwait(false),
                         IsDeleted = isDeleted,
                         MappedAdGroups = await GetMappedAdGroupsAsync(role).ConfigureAwait(false),
@@ -554,6 +555,7 @@ namespace SGSFramework.Identity.Services
                     IsSystemRole = isSystemRole,
                     Status = statusVal.GetDisplayName(),
                     StatusValue = (int)statusVal,
+                    RequiresAuditAssignment = entry.Property<bool>("RequiresAuditAssignment").CurrentValue,
                     HasPendingPermissionChange = await HasPendingPermissionChangeAsync(role.Id!.ToString()!, cancellationToken).ConfigureAwait(false),
                     IsDeleted = false,
                     MappedAdGroups = await GetMappedAdGroupsAsync(role).ConfigureAwait(false),
@@ -619,6 +621,7 @@ namespace SGSFramework.Identity.Services
                 entry.Property("EffectiveFrom").CurrentValue = request.EffectiveFrom;
                 entry.Property("EffectiveTo").CurrentValue = request.EffectiveTo;
                 entry.Property("IsSystemRole").CurrentValue = request.IsSystemRole;
+                entry.Property("RequiresAuditAssignment").CurrentValue = request.RequiresAuditAssignment;
                 entry.Property("IsDeleted").CurrentValue = false;
                 // 新建角色預設「待審核」：須經他人核准後才啟用（未啟用雙重審批時直接啟用）
                 var initialStatus = _roleGovernanceService.RequireApproval ? RoleStatus.PendingApproval : RoleStatus.Active;
@@ -724,6 +727,8 @@ namespace SGSFramework.Identity.Services
                 entry.Property("TenantLabId").CurrentValue = targetLabId;
                 entry.Property("EffectiveFrom").CurrentValue = request.EffectiveFrom;
                 entry.Property("EffectiveTo").CurrentValue = request.EffectiveTo;
+                var oldAudit = entry.Property<bool>("RequiresAuditAssignment").CurrentValue;
+                if (request.RequiresAuditAssignment.HasValue) entry.Property("RequiresAuditAssignment").CurrentValue = request.RequiresAuditAssignment.Value;
 
                 var result = await _roleManager.UpdateAsync(role).ConfigureAwait(false);
                 if (result.Succeeded)
@@ -734,6 +739,8 @@ namespace SGSFramework.Identity.Services
                     if (!string.Equals(oldDescription, request.Description ?? string.Empty, StringComparison.Ordinal)) changes.Add("描述已更新");
                     if (oldScope != targetScope) changes.Add($"範圍「{oldScope.GetDisplayName()}」→「{targetScope.GetDisplayName()}」");
                     if (!oldLabIds.ToHashSet().SetEquals(targetLabIds)) changes.Add($"適用實驗室 {oldLabIds.Count} → {targetLabIds.Count} 個");
+                    if (request.RequiresAuditAssignment.HasValue && request.RequiresAuditAssignment.Value != oldAudit)
+                        changes.Add(request.RequiresAuditAssignment.Value ? "設為稽核角色（僅於有效稽核指派的實驗室生效）" : "取消稽核角色");
                     if (oldFrom != request.EffectiveFrom || oldTo != request.EffectiveTo)
                         changes.Add($"生效期間：{FormatPeriod(request.EffectiveFrom, request.EffectiveTo)}");
                     await _roleAuditService.RecordAsync(RoleGuid(role), role.Name!, RoleAuditActions.Updated,

@@ -1,11 +1,14 @@
-﻿using EFCore.BulkExtensions;
-using Microsoft.Data.SqlClient;
+﻿using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.Logging;
 using SGSFramework.Core.Abstractions.AuditLogs;
 using SGSFramework.Core.Abstractions.Entities.AuditLogs;
 using System;
 using System.Collections.Generic;
+using System.Data;
+using System.Data.Common;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -52,13 +55,11 @@ namespace SGSFramework.AuditLog.Services.Strategies
                 previousHash = log.StoredHash;
             }
 
-            var bulkConfig = GetBulkConfig();
-
             try
             {
-                await dbContext.BulkInsertAsync(batch, bulkConfig, cancellationToken: cancellationToken);
+                await BulkCopyAsync(dbContext, batch, cancellationToken);
             }
-            catch (Exception ex) when (ex is SqlException || ex is DbUpdateException)
+            catch (Exception ex) when (ex is SqlException || ex is DbUpdateException || ex is InvalidOperationException)
             {
                 _logger?.LogWarning(ex, "[AuditLog] SqlBulkCopy failed. Fallback to DbContext.SaveChangesAsync.");
 
@@ -77,32 +78,86 @@ namespace SGSFramework.AuditLog.Services.Strategies
                 SanitizeAuditLog(log);
             }
 
-            var bulkConfig = GetBulkConfig();
-
             try
             {
-                await dbContext.BulkInsertAsync(fallbackLogs, bulkConfig, cancellationToken: cancellationToken);
+                await BulkCopyAsync(dbContext, fallbackLogs, cancellationToken);
             }
-            catch (Exception ex) when (ex is SqlException || ex is DbUpdateException)
+            catch (Exception ex) when (ex is SqlException || ex is DbUpdateException || ex is InvalidOperationException)
             {
-                _logger?.LogWarning(ex, "[AuditLog Recover] Recover BulkInsert failed. Fallback to standard save.");
+                _logger?.LogWarning(ex, "[AuditLog Recover] Recover SqlBulkCopy failed. Fallback to standard save.");
                 await FallbackSaveAsync(dbContext, fallbackLogs, cancellationToken);
             }
         }
 
-        private static BulkConfig GetBulkConfig()
+        /// <summary>
+        /// 以原生 <see cref="SqlBulkCopy"/> 批次寫入 Ledger 資料表（不依賴第三方 ORM 擴充套件）。
+        /// 整批以單一交易寫入，中途失敗即整批回復，因此後續退回標準寫入不會產生重複紀錄。
+        /// </summary>
+        private static async Task BulkCopyAsync(TContext dbContext, List<AuditLogEntity> logs, CancellationToken cancellationToken)
         {
-            return new BulkConfig
+            var entityType = dbContext.Model.FindEntityType(typeof(AuditLogEntity))
+                ?? throw new InvalidOperationException($"Entity '{nameof(AuditLogEntity)}' is not configured in DbContext '{typeof(TContext).Name}'.");
+
+            string tableName = entityType.GetTableName() ?? throw new InvalidOperationException("AuditLogEntity 未對應資料表。");
+            string? schema = entityType.GetSchema() ?? entityType.Model.GetDefaultSchema();
+            var store = StoreObjectIdentifier.Table(tableName, schema);
+
+            // Id 由資料庫 IDENTITY 產生，不寫入；僅取有 CLR 屬性之欄位，避開 Ledger 陰影欄位 (如 ledger_start_transaction_id)
+            var columns = entityType.GetProperties()
+                .Where(p => p.PropertyInfo is not null && p.Name != nameof(AuditLogEntity.Id))
+                .Select(p => (Property: p, Column: p.GetColumnName(store)!))
+                .ToList();
+
+            using var table = new DataTable();
+            foreach (var (property, column) in columns)
             {
-                BatchSize = 2000,
-                // 停用 PreserveInsertOrder，防止 BulkExtensions 使用 null 主鍵尋找字典
-                PreserveInsertOrder = false,
-                // 避開主鍵反寫 (不將寫入後的自增 Id 回傳覆蓋記憶體實體)
-                SetOutputIdentity = false,
-                // 忽略 MSSQL Ledger 陰影欄位 (如 ledger_start_transaction_id)
-                EnableShadowProperties = false,
-                UseTempDB = false
-            };
+                table.Columns.Add(column, Nullable.GetUnderlyingType(property.ClrType) ?? property.ClrType);
+            }
+
+            foreach (var log in logs)
+            {
+                var row = table.NewRow();
+                foreach (var (property, column) in columns)
+                {
+                    row[column] = property.PropertyInfo!.GetValue(log) ?? DBNull.Value;
+                }
+                table.Rows.Add(row);
+            }
+
+            var connection = (SqlConnection)dbContext.Database.GetDbConnection();
+            bool openedHere = connection.State != ConnectionState.Open;
+            if (openedHere)
+            {
+                await connection.OpenAsync(cancellationToken);
+            }
+
+            try
+            {
+                // 已存在外部交易時沿用之；否則以內部交易包住整批 (BatchSize = 筆數，確保全有或全無)
+                var external = (dbContext.Database.CurrentTransaction as IInfrastructure<DbTransaction>)?.Instance as SqlTransaction;
+                var options = SqlBulkCopyOptions.TableLock | (external is null ? SqlBulkCopyOptions.UseInternalTransaction : SqlBulkCopyOptions.Default);
+
+                using var bulkCopy = new SqlBulkCopy(connection, options, external)
+                {
+                    DestinationTableName = string.IsNullOrEmpty(schema) ? $"[{tableName}]" : $"[{schema}].[{tableName}]",
+                    BatchSize = logs.Count,
+                    BulkCopyTimeout = 60
+                };
+
+                foreach (var (_, column) in columns)
+                {
+                    bulkCopy.ColumnMappings.Add(column, column);
+                }
+
+                await bulkCopy.WriteToServerAsync(table, cancellationToken);
+            }
+            finally
+            {
+                if (openedHere)
+                {
+                    await connection.CloseAsync();
+                }
+            }
         }
 
         private static void SanitizeAuditLog(AuditLogEntity log)

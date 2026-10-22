@@ -13,6 +13,9 @@ namespace SGSFramework.Identity.DTOs.Roles
         public string Description { get; set; } = string.Empty;
         public bool IsSystemRole { get; set; }
 
+        /// <summary>稽核角色：權限僅於具有效稽核指派的區域實驗室生效</summary>
+        public bool RequiresAuditAssignment { get; set; }
+
         public RoleScopeType ScopeType { get; set; }
         public string ScopeTypeName { get; set;} = string.Empty;
 
