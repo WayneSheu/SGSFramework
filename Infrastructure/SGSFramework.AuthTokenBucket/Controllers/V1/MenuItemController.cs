@@ -76,7 +76,7 @@ public class MenuItemController : ApiControllerBase
     /// </summary>
     [HttpGet("tree")]
     [Function("GetFullMenuTree", "系統選單樹", Icon = "fa-solid fa-tree", Order = 2, Description = "取得包含未啟用/隱藏節點之完整選單階層樹", IsMenu = true, Path = "/system/menu-management")]
-    [RequiresPermission("SYSTEM.MENU.RED")]
+    [RequiresPermission("SYSTEM.MENU.READ")]
 
     [EndpointSummary("系統選單樹")]
     [EndpointDescription("取得包含未啟用/隱藏節點之完整選單階層樹。")]
@@ -101,7 +101,7 @@ public class MenuItemController : ApiControllerBase
     /// </summary>
     [HttpGet("{id:guid}")]
     [Function("GetMenuItemById", "選單明細", Icon = "fa-solid fa-circle-info", Order = 3,Description ="依據識別碼取得單一選單節點詳細資料。")]
-    [RequiresPermission("SYSTEM.MENU.RED")]
+    [RequiresPermission("SYSTEM.MENU.READ")]
     
     [EndpointSummary("選單明細")]
     [EndpointDescription("依據識別碼取得單一選單節點詳細資料。")]

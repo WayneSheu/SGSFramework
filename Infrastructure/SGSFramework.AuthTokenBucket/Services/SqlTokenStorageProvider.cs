@@ -160,6 +160,7 @@ namespace SGSFramework.AuthTokenBucket.Services
                     {
                         tokenInDb.RefreshTokenHash = newHash;
                         tokenInDb.RotatedAt = DateTime.UtcNow;
+                        tokenInDb.LastActiveAt = tokenInDb.RotatedAt.Value;
                         tokenInDb.ExpiresAt = expiresAt;
 
                         var newJwtId = tokenInDb.Id;

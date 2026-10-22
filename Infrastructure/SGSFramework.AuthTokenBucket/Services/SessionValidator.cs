@@ -46,9 +46,29 @@ public sealed class SessionValidator<TDbContext> : ISessionValidator
         if (isActive)
         {
             _cache.Set(key, true, PositiveCacheDuration);
+            await TouchLastActiveAsync(userId, deviceId, cancellationToken);
         }
 
         return isActive;
+    }
+
+    /// <summary>
+    /// 記錄該裝置最後活動時間（線上人數統計依據）。僅於快取未命中時寫入，
+    /// 因此每個裝置最多每 <see cref="PositiveCacheDuration"/> 寫入一次；失敗不影響驗證結果。
+    /// </summary>
+    private async Task TouchLastActiveAsync(string userId, string deviceId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var now = DateTime.UtcNow;
+            await _context.UserRefreshTokens
+                .Where(t => t.UserId == userId && t.DeviceId == deviceId && !t.IsDead)
+                .ExecuteUpdateAsync(s => s.SetProperty(t => t.LastActiveAt, now), cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // 活動時間更新屬輔助資訊，失敗時不得影響請求驗證
+        }
     }
 
     public void InvalidateDevice(string userId, string deviceId)

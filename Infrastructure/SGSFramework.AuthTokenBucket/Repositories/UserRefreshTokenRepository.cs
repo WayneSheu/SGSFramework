@@ -43,7 +43,7 @@ public sealed class UserRefreshTokenRepository<TDbContext> : IUserRefreshTokenRe
 
             return await _context.UserRefreshTokens
                 .AsNoTracking()
-                .Where(token => token.ExpiresAt > utcNow && token.LastActiveAt >= thresholdTime)
+                .Where(token => !token.IsDead && !token.IsFrozen && token.ExpiresAt > utcNow && token.LastActiveAt >= thresholdTime)
                 .Select(token => token.UserId)
                 .Distinct()
                 .CountAsync(cancellationToken);
