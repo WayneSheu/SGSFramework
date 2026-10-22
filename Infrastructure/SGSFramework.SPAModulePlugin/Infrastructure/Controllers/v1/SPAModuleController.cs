@@ -44,7 +44,7 @@ public sealed class SPAModuleController : ControllerBase
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>授權 SPA 模組 Manifest 列表</returns>
     [HttpGet("manifest", Name = "GetAuthorizedSPAModules")]
-    [Function("manifest", "前端SPA模組清單", Icon = "fa-solid fa-list-check", Order = 1, Description = "取得目前登入使用者授權的 SPA 動態外掛模組清單", IsMenu = true)]
+    [Function("manifest", "前端SPA模組清單", Icon = "fa-solid fa-list-check", Order = 1, Description = "取得目前登入使用者授權的 SPA 動態外掛模組清單")]
     [RequiresPermission("SYSTEM.SPAMODULE.READ")]
     [ProducesResponseType(typeof(IReadOnlyList<SPAModuleManifest>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

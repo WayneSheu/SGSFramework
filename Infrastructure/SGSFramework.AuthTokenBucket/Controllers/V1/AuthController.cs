@@ -494,7 +494,7 @@ public sealed class AuthController(
     /// 獲取線上即時活動用戶數觀測
     /// </summary>
     [HttpGet("online-count")]
-    [Function("GetOnlineUserCount", "線上人數統計", Icon = "fa-solid fa-users", Order = 4, Description = "獲取線上即時活動用戶數觀測端點", IsMenu = true)]
+    [Function("GetOnlineUserCount", "線上人數統計", Icon = "fa-solid fa-users", Order = 4, Description = "獲取線上即時活動用戶數觀測端點", IsMenu = false)]
     [RequiresPermission("SYSTEM.AUTH.GETONLINEUSERCOUNT", "線上人數統計")]
     [EndpointSummary("線上人數統計")]
     [EndpointDescription("獲取線上即時活動用戶數觀測端點端點。")]

@@ -35,6 +35,18 @@ public class ModuleManagementController(
     private readonly ILogger<ModuleManagementController> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
+    /// SPA 模組管理（選單入口）：置於「模組管理」群組下；SPA 模組的實際作業由 spa-modules API 處理。
+    /// 此端點僅提供選單節點的歸屬，不回傳業務資料；頁面路徑沿用既有選單節點。
+    /// </summary>
+    [HttpGet("spa-entry")]
+    [Function("SpaModuleEntry", "SPA模組管理", Icon = "fa-solid fa-cubes", Order = 20,
+        Description = "前端 SPA 模組維護與動態載入卸載管理", IsMenu = true)]
+    [RequiresPermission("SYSTEM.SPAMODULE.READ", "SPA模組管理")]
+    [EndpointSummary("SPA模組管理")]
+    [EndpointDescription("選單入口，實際作業請使用 api/v1/spa-modules。")]
+    public IActionResult SpaModuleEntry() => Ok();
+
+    /// <summary>
     /// 查詢目前所有已載入掛載的商務模組完整資訊
     /// </summary>
     /// <param name="cancellationToken">異步取消權牌</param>

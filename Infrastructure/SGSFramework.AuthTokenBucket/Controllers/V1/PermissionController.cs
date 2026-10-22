@@ -78,6 +78,18 @@ public sealed class PermissionController : ApiControllerBase
     private const string PermissionTreeCacheKey = "Cache_System_Permission_Tree";
 
     /// <summary>
+    /// 定期權限覆核（選單入口）：置於「權限管理」群組下；覆核活動的實際作業由 access-reviews API 處理。
+    /// 此端點僅提供選單節點的歸屬與頁面路徑，不回傳業務資料。
+    /// </summary>
+    [HttpGet("access-review-entry")]
+    [Function("AccessReviewEntry", "定期權限覆核", Icon = "fa-solid fa-user-check", Order = 20,
+        Description = "定期檢視使用者的角色指派並回收不需要的權限", IsMenu = true, Path = "/sgsframework.system/accessreview")]
+    [RequiresPermission("SYSTEM.ACCESSREVIEW.READ", "檢視權限覆核")]
+    [EndpointSummary("定期權限覆核")]
+    [EndpointDescription("選單入口，實際覆核作業請使用 api/v1/access-reviews。")]
+    public IActionResult AccessReviewEntry() => Ok(new { Path = "/sgsframework.system/accessreview" });
+
+    /// <summary>
     /// 同步權限元數據並回傳 DTO 投影資料清單
     /// </summary>
     [HttpPost("metadata/sync")]

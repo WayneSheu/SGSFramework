@@ -27,7 +27,7 @@ public sealed class AccessReviewController(IAccessReviewService accessReviewServ
     /// <summary>查詢覆核活動與進度</summary>
     [HttpGet("campaigns")]
     [Function("GetAccessReviewCampaigns", "定期權限覆核", Icon = "fa-solid fa-user-check", Order = 1,
-        Description = "檢視權限覆核活動並執行覆核", IsMenu = true, Path = "/sgsframework.system/accessreview")]
+        Description = "檢視權限覆核活動並執行覆核")]
     [RequiresPermission("SYSTEM.ACCESSREVIEW.READ", "檢視權限覆核")]
     public async Task<IActionResult> GetCampaigns(CancellationToken cancellationToken = default) =>
         Ok(await _service.GetCampaignsAsync(cancellationToken).ConfigureAwait(false));

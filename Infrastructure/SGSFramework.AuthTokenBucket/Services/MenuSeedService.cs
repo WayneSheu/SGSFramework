@@ -187,13 +187,27 @@ public class MenuSeedService<TDbContext> : IMenuSeedService
                 }
             }
 
+            // 僅處理「中繼資料仍存在、但 IsMenu 已為 false」者；外掛模組暫時未載入（中繼資料不存在）時不隱藏
+            var nonMenuControllerIds = controllerMetadatas.Where(m => !m.IsMenu).Select(m => m.Id).ToHashSet();
+
+            // 程式碼已不再標記為選單入口的自動產生頁面（IsMenu 改為 false）：隱藏，並一併檢查其群組是否已無可見項目
+            foreach (var stale in existingMenuItems.Where(m => m.Type == MenuType.Page && m.ControllerId.HasValue && m.IsVisible &&
+                                                              !processedPageKeys.Contains(m.Key) &&
+                                                              nonMenuControllerIds.Contains(m.ControllerId!.Value)).ToList())
+            {
+                stale.IsVisible = false;
+                if (stale.ParentId.HasValue) vacatedGroupIds.Add(stale.ParentId.Value);
+                isModified = true;
+                _logger.LogInformation("選單頁面 [{Key}] 已不再是選單入口，已隱藏。", stale.Key);
+            }
+
             // 因搬移而清空的自動產生群組：隱藏，避免選單出現空資料夾
             foreach (var groupId in vacatedGroupIds)
             {
                 var group = existingMenuItems.FirstOrDefault(m => m.Id == groupId);
                 if (group is { Type: MenuType.Group, IsVisible: true } &&
                     group.Key.StartsWith("GRP_", StringComparison.Ordinal) &&
-                    !existingMenuItems.Any(m => m.ParentId == groupId))
+                    !existingMenuItems.Any(m => m.ParentId == groupId && m.IsVisible))
                 {
                     group.IsVisible = false;
                     isModified = true;
