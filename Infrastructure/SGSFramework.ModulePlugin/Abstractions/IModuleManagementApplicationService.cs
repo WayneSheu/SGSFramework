@@ -11,7 +11,7 @@ namespace SGSFramework.ModulePlugin.Abstractions
     public interface IModuleManagementApplicationService
     {
         /// <summary>
-        /// 取得所有啟用的模組詳細資訊
+        /// 取得資料庫中所有已註冊模組的詳細資訊 (含已停用、未載入的模組)
         /// </summary>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>

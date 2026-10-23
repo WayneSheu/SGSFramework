@@ -47,12 +47,12 @@ public class ModuleManagementController(
     public IActionResult SpaModuleEntry() => Ok();
 
     /// <summary>
-    /// 查詢目前所有已載入掛載的商務模組完整資訊
+    /// 查詢資料庫中所有已註冊的商務模組完整資訊 (含已停用模組)
     /// </summary>
     /// <param name="cancellationToken">異步取消權牌</param>
     /// <returns>模組詳細資訊列表</returns>
     [HttpGet(Name = "GetActiveModulesDetails")]
-    [Function("GetActiveModulesDetails", "查詢模組清單", Icon = "fa-solid fa-list-check", Order = 1, Description = "查詢目前所有已載入掛載的商務模組完整資訊",IsMenu =true)]
+    [Function("GetActiveModulesDetails", "查詢模組清單", Icon = "fa-solid fa-list-check", Order = 1, Description = "查詢所有已註冊的商務模組完整資訊 (含已停用模組)",IsMenu =true)]
     [RequiresPermission("SYSTEM.MODULEMANAGEMENT.READ")]
     [ProducesResponseType(typeof(IEnumerable<ModuleDetailResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]

@@ -40,11 +40,11 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
 
     public async Task<IEnumerable<ModuleDetailResponse>> GetActiveModulesDetailsAsync(CancellationToken cancellationToken = default)
     {
-        var loadedModuleNames = _moduleRegistry.GetLoadedModules()?.ToList() ?? new List<string>();
+        // 回傳資料庫中所有模組 (含已停用且未載入者)，讓管理介面可重新啟用；不再依記憶體載入狀態過濾
         var allDbModules = await _moduleRepo.GetAllModulesAsync(cancellationToken).ConfigureAwait(false);
 
         return allDbModules
-            .Where(m => loadedModuleNames.Contains(m.ModuleName, StringComparer.OrdinalIgnoreCase) || m.IsActive)
+            .OrderBy(m => m.ModuleName, StringComparer.OrdinalIgnoreCase)
             .Select(m => new ModuleDetailResponse
             {
                 ModuleName = m.ModuleName,

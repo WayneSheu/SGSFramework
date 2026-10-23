@@ -3,6 +3,8 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using SGSFramework.ApiInfrastructure.Services.DatabaseSchemas;
 using SGSFramework.ApiInfrastructure.Filters;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.Filters;
@@ -50,6 +52,8 @@ public static class ServiceCollectionExtensions
         mvcBuilder.AddApplicationPart(typeof(SPAModuleController).Assembly);
 
         services.AddScoped<IControllerMetadataService, ControllerMetadataService>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<IDatabaseSchemaService, SqlServerDatabaseSchemaService>();
         services.AddSPAModulePlugin();
 
         return services;
