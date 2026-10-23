@@ -100,13 +100,25 @@ public class DynamicControllerRepository<T>(
 
                     if (targetEntity != null)
                     {
-                        targetEntity.IsActive = true;
+                        // 程式碼仍存在即重新啟用，但保留管理者手動停用的決策
+                        targetEntity.IsActive = !targetEntity.IsManuallyDisabled;
                         _context.Entry(targetEntity).State = EntityState.Modified;
 
                         var controllerType = GetCachedType(controller.ControllerTypeName);
                         if (controllerType != null && targetEntity is ControllerMetadata metadataEntity)
                         {
                             metadataEntity.SyncFromAttribute(controllerType);
+
+                            // 選單入口設定以程式碼 [Function] / [ControllerTitle] 為準 (與新增分支相同由反射取得，不依賴呼叫端是否帶入)，
+                            // 讓既有紀錄也能反映 IsMenu / Path 異動，供 MenuSeedService 新增或隱藏頁面節點
+                            var existingTitleAttr = controllerType.GetCustomAttribute<ControllerTitleAttribute>();
+                            var existingMethod = controllerType.GetMethod(metadataEntity.ActionName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase | BindingFlags.FlattenHierarchy);
+                            var existingFuncAttr = existingMethod?.GetCustomAttribute<FunctionAttribute>();
+
+                            metadataEntity.IsMenu = existingFuncAttr?.IsMenu ?? false;
+                            metadataEntity.Path = existingFuncAttr?.Path;
+                            metadataEntity.ControllerIcon = existingTitleAttr?.Icon;
+                            metadataEntity.ControllerOrder = existingTitleAttr?.Order ?? 0;
                         }
 
                         if (targetEntity is ControllerMetadata metaExisting && controller is ControllerMetadata metaNew)

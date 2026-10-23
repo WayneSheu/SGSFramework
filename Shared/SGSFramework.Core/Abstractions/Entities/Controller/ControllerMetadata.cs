@@ -139,6 +139,29 @@ public class ControllerMetadata : IControllerMetadata
     [Comment("標記是否啟用")]
     public bool IsActive { get; set; } = true;
 
+    /// <summary>
+    /// 是否由管理者於「系統功能管理」手動停用。
+    /// IsActive 同時反映「程式碼中是否仍存在 / 模組是否啟用」，故以此旗標保留人工決策，避免啟動同步時被覆蓋。
+    /// </summary>
+    [DisplayName("手動停用")]
+    [Comment("是否由管理者手動停用；啟動同步或模組重新啟用時不會覆蓋為啟用。")]
+    public bool IsManuallyDisabled { get; set; } = false;
+
+    /// <summary>
+    /// 手動停用時對使用者的公告內容 (顯示於系統公告與 API 拒絕訊息)
+    /// </summary>
+    [DisplayName("停用公告")]
+    [Comment("手動停用時對使用者的公告內容。")]
+    public string? DisabledNotice { get; set; }
+
+    [DisplayName("停用時間")]
+    [Comment("手動停用的時間 (UTC)。")]
+    public DateTimeOffset? DisabledAt { get; set; }
+
+    [DisplayName("預計恢復時間")]
+    [Comment("手動停用時公告的預計恢復時間 (UTC)，僅供公告不會自動恢復。")]
+    public DateTimeOffset? ExpectedRestoreAt { get; set; }
+
     [DisplayName("建立日期")]
     [Comment("建立日期")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -161,12 +184,14 @@ public class ControllerMetadataConfig : IEntityTypeConfiguration<ControllerMetad
         builder.Property(x => x.DisplayName).IsRequired().HasMaxLength(100);
         builder.Property(x => x.Icon).HasMaxLength(100);
         builder.Property(x => x.Path).HasMaxLength(200);
+        builder.Property(x => x.DisabledNotice).HasMaxLength(500);
         builder.Property(x => x.PermissionKey).IsRequired().HasMaxLength(100);
         builder.Property(x => x.AttributesJson).HasColumnType("nvarchar(max)");
 
         builder.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
         builder.Property(e => e.IsActive).HasDefaultValue(true);
         builder.Property(e => e.IsMenu).HasDefaultValue(false);
+        builder.Property(e => e.IsManuallyDisabled).HasDefaultValue(false);
 
         // 高頻選單查詢複合索引
         builder.HasIndex(x => x.IsMenu).HasDatabaseName("IX_Metadata_IsMenu");

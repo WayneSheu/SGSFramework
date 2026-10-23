@@ -71,6 +71,20 @@ public class GetUserMenuTreeQueryHandler : IRequestHandler<GetUserMenuTreeQuery,
                 return Result.Success(new List<MenuItemDto>());
             }
 
+            // 2.1 排除對應功能已於「系統功能管理」手動停用的頁面 (其 API 亦會被 FunctionStatusAuthorizationFilter 拒絕)
+            var disabledControllerIds = await _dbContext.Set<ControllerMetadata>()
+                .AsNoTracking()
+                .Where(c => c.IsManuallyDisabled)
+                .Select(c => c.Id)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (disabledControllerIds.Count > 0)
+            {
+                var disabledSet = disabledControllerIds.ToHashSet();
+                allMenuItems.RemoveAll(m => m.ControllerId.HasValue && disabledSet.Contains(m.ControllerId.Value));
+            }
+
             // 3. 轉為對應最新 MenuItemDto 屬性欄位之字典
             var menuDtoDict = allMenuItems.ToDictionary(
                 m => m.Id,

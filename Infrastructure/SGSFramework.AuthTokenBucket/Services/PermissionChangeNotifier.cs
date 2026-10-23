@@ -18,6 +18,12 @@ public interface IPermissionChangeNotifier
 
     /// <summary>通知某角色的所有成員（角色狀態或角色權限異動時使用）</summary>
     Task NotifyRoleMembersAsync(string roleName, string reason, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 廣播給所有已連線使用者（影響全體的異動，例如系統功能啟用 / 停用），前端收到後重新載入選單與系統公告。
+    /// 不清除個別使用者的權限快取（有效權限未改變）。
+    /// </summary>
+    Task BroadcastAsync(string reason, CancellationToken cancellationToken = default);
 }
 
 /// <summary>權限快取標籤，供 UserRuntimeScopeService 建立快取時標記、異動時批次清除</summary>
@@ -72,5 +78,23 @@ public sealed class PermissionChangeNotifier(
 
         var members = await userManager.GetUsersInRoleAsync(roleName).ConfigureAwait(false);
         await NotifyUsersAsync(members.Select(m => m.Id.ToString()), reason, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task BroadcastAsync(string reason, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await hubContext.Clients.All.SendAsync(
+                PermissionsChangedEvent,
+                new { Reason = reason, ChangedAt = DateTimeOffset.UtcNow },
+                cancellationToken).ConfigureAwait(false);
+
+            logger.LogInformation("[PermissionChange] 已廣播異動通知給所有連線使用者。原因: {Reason}", reason);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // 廣播失敗不影響已完成的資料異動；使用者重新整理後即取得最新選單
+            logger.LogWarning(ex, "[PermissionChange] 廣播異動通知失敗。原因: {Reason}", reason);
+        }
     }
 }

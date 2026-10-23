@@ -25,5 +25,16 @@ namespace SGSFramework.Identity.DTOs
         public string? ParentMenuName { get; init; }
         public string PermissionKey { get; init; } = string.Empty;
         public bool IsActive { get; init; }
+
+        /// <summary>是否由管理者手動停用（停用後 API 會被拒絕、選單隱藏）</summary>
+        public bool IsManuallyDisabled { get; init; }
+
+        /// <summary>停用時對使用者的公告內容</summary>
+        public string? DisabledNotice { get; init; }
+
+        public DateTimeOffset? DisabledAt { get; init; }
+
+        /// <summary>預計恢復時間（僅供公告）</summary>
+        public DateTimeOffset? ExpectedRestoreAt { get; init; }
     }
 }

@@ -234,7 +234,8 @@ namespace SGSFramework.ModulePlugin.Systems.Controller.Services
                     existingItem.ParentMenuName = newItem.ParentMenuName;
                     existingItem.BitPosition = newItem.BitPosition;
                     existingItem.AttributesJson = newItem.AttributesJson;
-                    existingItem.IsActive = true;
+                    // 保留管理者手動停用的決策
+                    existingItem.IsActive = !existingItem.IsManuallyDisabled;
                 }
                 else
                 {

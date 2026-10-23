@@ -33,6 +33,8 @@ public static class ServiceCollectionExtensions
 
         var mvcBuilder = services.AddControllers(options =>
         {
+            // 先擋下已手動停用的功能，再進行權限比對
+            options.Filters.Add<FunctionStatusAuthorizationFilter>();
             options.Filters.Add<PermissionAuthorizationFilter>();
         })
         .ConfigureApplicationPartManager(manager =>

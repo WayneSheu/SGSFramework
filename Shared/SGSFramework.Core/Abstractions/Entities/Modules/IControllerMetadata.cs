@@ -26,6 +26,11 @@ namespace SGSFramework.Core.Abstractions.Entities.Modules
         string? ParentMenuName { get; set; }
         bool IsActive { get; set; }
 
+        /// <summary>
+        /// 是否由管理者手動停用；啟動同步或模組重新啟用時不得覆蓋為啟用
+        /// </summary>
+        bool IsManuallyDisabled { get; set; }
+
         // === 新增：位元遮罩解耦與 Attributes 中繼資料 ===
         /// <summary>
         /// 該 Action 在模組內對應的位元位置 (0 ~ 63)，用於 Bitmask 快速運算

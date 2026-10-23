@@ -281,6 +281,15 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("nvarchar(max)")
                         .HasComment("動作說明 (供前端 Axios / HttpClient 顯示)。");
 
+                    b.Property<DateTimeOffset?>("DisabledAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("手動停用的時間 (UTC)。");
+
+                    b.Property<string>("DisabledNotice")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("手動停用時對使用者的公告內容。");
+
                     b.Property<string>("DisplayName")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -290,6 +299,10 @@ namespace PhysLIMS.API.Migrations
                     b.Property<int>("DisplayOrder")
                         .HasColumnType("int")
                         .HasComment("動作排序 (供前端 Axios / HttpClient 顯示)。");
+
+                    b.Property<DateTimeOffset?>("ExpectedRestoreAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("手動停用時公告的預計恢復時間 (UTC)，僅供公告不會自動恢復。");
 
                     b.Property<string>("Icon")
                         .HasMaxLength(100)
@@ -301,6 +314,12 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(true)
                         .HasComment("標記是否啟用");
+
+                    b.Property<bool>("IsManuallyDisabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasComment("是否由管理者手動停用；啟動同步或模組重新啟用時不會覆蓋為啟用。");
 
                     b.Property<bool>("IsMenu")
                         .ValueGeneratedOnAdd()
@@ -368,6 +387,70 @@ namespace PhysLIMS.API.Migrations
                         {
                             t.HasComment("API 控制器與 Action 中繼資料實體");
                         });
+                });
+
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Controller.FunctionStatusLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActionName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ActorName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ClientIp")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid>("ControllerMetadataId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ControllerName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTimeOffset?>("ExpectedRestoreAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Notice")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("PermissionKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ControllerMetadataId", "CreatedAt");
+
+                    b.ToTable("FunctionStatusLogs", "core");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Controller.MenuItem", b =>

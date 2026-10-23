@@ -109,7 +109,8 @@ namespace SGSFramework.ModulePlugin.Systems.Module.Strategies
 
                     await _dbContext.Set<ControllerMetadata>()
                         .Where(c => c.ModuleName == moduleName)
-                        .ExecuteUpdateAsync(s => s.SetProperty(c => c.IsActive, isActive), cancellationToken)
+                        // 模組重新啟用時，手動停用的功能維持停用
+                        .ExecuteUpdateAsync(s => s.SetProperty(c => c.IsActive, c => isActive && !c.IsManuallyDisabled), cancellationToken)
                         .ConfigureAwait(false);
 
                     await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);

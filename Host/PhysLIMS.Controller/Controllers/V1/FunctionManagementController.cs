@@ -44,7 +44,7 @@ public sealed class FunctionManagementController : ApiControllerBase
     /// <param name="cancellationToken">非同步取消權牌</param>
     /// <returns>控制器與功能中繼資料清單集合</returns>
     [HttpGet]
-    [Function("GetAllFunctionMetadatas", "系統功能列表", Icon = "fa-solid fa-list", Order = 1, Description = "取得系統所有 Controller 與 Function 中繼資料清單")]
+    [Function("GetAllFunctionMetadatas", "系統功能列表", Icon = "fa-solid fa-list", Order = 1, Description = "取得系統所有 Controller 與 Function 中繼資料清單", IsMenu = true, Path = "/sgsframework.system/functionmanagement")]
     [RequiresPermission("SYSTEM.FUNCTIONMANAGEMENT.READ")]
     [EndpointSummary("系統功能列表")]
     [EndpointDescription("取得系統內所有已加載的功能相關資料。")]
@@ -56,7 +56,8 @@ public sealed class FunctionManagementController : ApiControllerBase
     {
         try
         {
-            var metadatas = await _controllerMetadataService.GetAllControllerMetadatasAsync(cancellationToken);
+            // 管理頁面需列出已停用功能，才能重新啟用
+            var metadatas = await _controllerMetadataService.GetAllControllerMetadatasAsync(includeInactive: true, cancellationToken);
             int recordCount = metadatas is ICollection<ControllerMetadataDto> coll ? coll.Count : metadatas.Count();
 
             _logger.LogInformation("成功查詢系統功能中繼資料列表，總筆數: {Count}", recordCount);
@@ -118,10 +119,39 @@ public sealed class FunctionManagementController : ApiControllerBase
 
         try
         {
-            var updatedMetadata = await _controllerMetadataService.UpdateFunctionStatusAsync(id, request.IsActive, request.Reason, cancellationToken);
+            var change = new FunctionStatusChange(
+                request.IsActive,
+                request.Reason,
+                request.Notice,
+                request.ExpectedRestoreAt,
+                HttpContext.Connection.RemoteIpAddress?.ToString());
+
+            var updatedMetadata = await _controllerMetadataService.UpdateFunctionStatusAsync(id, change, cancellationToken);
 
             _logger.LogInformation("功能狀態成功變更。ID: {Id}, IsActive: {IsActive}", id, request.IsActive);
             return Ok(updatedMetadata);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "變更功能狀態之請求內容無效。ID: {Id}", id);
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "無效的請求參數",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "拒絕變更受保護功能之狀態。ID: {Id}", id);
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "不允許的操作",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
+            });
         }
         catch (KeyNotFoundException ex)
         {
@@ -150,5 +180,39 @@ public sealed class FunctionManagementController : ApiControllerBase
                 Instance = HttpContext.Request.Path
             });
         }
+    }
+
+    /// <summary>
+    /// 取得指定功能之狀態異動歷程 (稽核用)
+    /// </summary>
+    /// <param name="id">功能識別碼 (Guid)</param>
+    /// <param name="cancellationToken">非同步取消權牌</param>
+    /// <returns>異動歷程 (新到舊)</returns>
+    [HttpGet("functions/{id:guid}/status-logs")]
+    [Function("GetFunctionStatusLogs", "功能異動紀錄", Icon = "fa-solid fa-clock-rotate-left", Order = 3, Description = "查詢指定功能之啟用 / 停用異動歷程 (操作者、時間、來源 IP、原因)")]
+    [RequiresPermission("SYSTEM.FUNCTIONMANAGEMENT.READ")]
+    [EndpointSummary("功能狀態異動歷程")]
+    [ProducesResponseType(typeof(IReadOnlyList<FunctionStatusLogDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetFunctionStatusLogs([FromRoute] Guid id, CancellationToken cancellationToken = default)
+    {
+        var logs = await _controllerMetadataService.GetFunctionStatusLogsAsync(id, cancellationToken);
+        return Ok(logs);
+    }
+
+    /// <summary>
+    /// 取得目前停用中功能的系統公告 (所有已登入使用者皆可查看)
+    /// </summary>
+    /// <param name="cancellationToken">非同步取消權牌</param>
+    /// <returns>停用功能公告清單</returns>
+    [HttpGet("notices")]
+    [Function("GetActiveNotices", "停用功能公告", Icon = "fa-solid fa-bullhorn", Order = 4, Description = "查詢目前停用中功能之系統公告")]
+    [AuthenticatedOnly]
+    [EndpointSummary("停用功能公告")]
+    [ProducesResponseType(typeof(IReadOnlyList<FunctionNoticeDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetActiveNotices(CancellationToken cancellationToken = default)
+    {
+        var notices = await _controllerMetadataService.GetActiveNoticesAsync(cancellationToken);
+        return Ok(notices);
     }
 }
