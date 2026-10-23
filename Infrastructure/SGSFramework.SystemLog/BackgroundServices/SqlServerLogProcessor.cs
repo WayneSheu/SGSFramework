@@ -5,7 +5,8 @@ using System.Data;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
+using SGSFramework.Core.Configurations;
 using Microsoft.Extensions.Logging;
 using Serilog.Events;
 
@@ -22,10 +23,10 @@ namespace SGSFramework.SystemLog.BackgroundServices
         private readonly string _connectionString;
         private readonly ILogger<SqlServerLogProcessor> _logger;
 
-        public SqlServerLogProcessor(IConfiguration configuration, ILogger<SqlServerLogProcessor> logger)
+        public SqlServerLogProcessor(IOptions<PersistentConnectionOptions> connectionOptions, ILogger<SqlServerLogProcessor> logger)
         {
-            _connectionString = configuration.GetValue<string>("PersistentSettings:ConnectionStrings:DefaultConnection")
-                ?? throw new InvalidOperationException("未配置 DefaultConnection 資料庫連線字串。");
+            ArgumentNullException.ThrowIfNull(connectionOptions);
+            _connectionString = connectionOptions.Value.DefaultConnection;
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 

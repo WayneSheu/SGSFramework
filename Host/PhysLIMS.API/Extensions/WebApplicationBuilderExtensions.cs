@@ -7,11 +7,13 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.OpenApi;
 using PhysLIMS.API.Dbcontexts;
+using SGSFramework.ApiInfrastructure.Configurations;
 using SGSFramework.ApiInfrastructure.Filters;
 using SGSFramework.ApiInfrastructure.Transformers;
 using SGSFramework.AuditLog.Extensions;
 using SGSFramework.AuthTokenBucket.Extensions;
 using SGSFramework.CodeSecurity.Extensions;
+using SGSFramework.Core.Configurations;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.ApiDoc.Extensions;
@@ -29,6 +31,8 @@ using System.Reflection;
 /// </summary>
 public static class WebApplicationBuilderExtensions
 {
+    private const string JwtSettingsSectionName = "JwtSettings";
+
     /// <summary>
     /// 配置企業級 API 版本控制與多版本 OpenAPI/Scalar 文件
     /// </summary>
@@ -158,7 +162,7 @@ public static class WebApplicationBuilderExtensions
 
         services.AddModuleDatabaseWithAudit<PhysLIMSDbContext>(
             configuration: config,
-            connectionStringKey: "PersistentSettings:ConnectionStrings",
+            connectionStringKey: PersistentConnectionOptions.SectionName,
             schemaName: "core",
             configureOptions: options =>
             {
@@ -172,14 +176,13 @@ public static class WebApplicationBuilderExtensions
         services.AddScoped<ITokenDbContext>(sp => sp.GetRequiredService<PhysLIMSDbContext>());
         services.AddScoped<DbContext>(sp => sp.GetRequiredService<PhysLIMSDbContext>());
 
+        // Identity 預設規則改由 appsettings 的 PersistentSettings:IdentitySettings 提供 (建置期驗證)，
+        // 系統配置頁儲存的規則會於啟動後由 IdentityPolicyStartupLoader 覆蓋
+        var identitySettings = config.GetValidatedOptions<IdentitySettingsOptions>(IdentitySettingsOptions.SectionName);
+
         services.AddGenericIdentityPackage<PhysLIMSDbContext, ApplicationUser, ApplicationRole, Guid>(options =>
         {
-            options.Password.RequireDigit = true;
-            options.Password.RequiredLength = 8;
-            options.Password.RequireNonAlphanumeric = true;
-            options.Password.RequireUppercase = true;
-            options.Password.RequireLowercase = true;
-            options.User.RequireUniqueEmail = true;
+            identitySettings.ApplyTo(options);
             options.SignIn.RequireConfirmedAccount = false;
         });
 
@@ -203,15 +206,18 @@ public static class WebApplicationBuilderExtensions
             .Distinct()
             .ToArray();
 
+        // 整個 JwtSettings 區段直接綁定至 AuthTokenBucketOptions (過期時間、裝置上限、寬限期皆由組態決定，不再寫死)
+        var jwtSection = config.GetRequiredSection(JwtSettingsSectionName);
+
         services.AddTokenBucketAuthentication<PhysLIMSDbContext, ApplicationUser>(options =>
         {
-            options.SecretKey = config["JwtSettings:Secret"]
-                            ?? throw new InvalidOperationException("核心資安配置錯誤：未在 appsettings.json 中找到 'JwtSettings:Secret' 設定項。");
-            options.Issuer = config["JwtSettings:Issuer"]!;
-            options.Audience = config["JwtSettings:Audience"]!;
-            options.MaxDeviceCount = 6;
-            options.RefreshTokenExpirationDays = 7;
-            options.RefreshTokenGracePeriodSeconds = 8;
+            jwtSection.Bind(options);
+
+            // 相容舊版鍵名 JwtSettings:Secret (含既有環境變數 JwtSettings__Secret)
+            if (string.IsNullOrWhiteSpace(options.SecretKey))
+            {
+                options.SecretKey = jwtSection["Secret"] ?? string.Empty;
+            }
         },
         scannedAssemblies);
 
@@ -229,20 +235,14 @@ public static class WebApplicationBuilderExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(config);
 
+        // 建置期即驗證，組態錯誤時於啟動階段立即失敗
+        var corsSettings = config.GetValidatedOptions<CorsSettingsOptions>(CorsSettingsOptions.SectionName);
+
         services.AddCors(options =>
         {
-            options.AddPolicy("CorsPolicy", policy =>
+            options.AddPolicy(CorsSettingsOptions.PolicyName, policy =>
             {
-                var allowedOrigins = config
-                    .GetSection("CorsSettings:AllowedOrigins")
-                    .Get<string[]>();
-
-                if (allowedOrigins is null || allowedOrigins.Length == 0 || allowedOrigins.All(string.IsNullOrWhiteSpace))
-                {
-                    throw new InvalidOperationException("核心資安配置錯誤：未在 appsettings 中找到有效的 'CorsSettings:AllowedOrigins' 設定。");
-                }
-
-                policy.WithOrigins(allowedOrigins)
+                policy.WithOrigins(corsSettings.AllowedOrigins)
                       .AllowAnyMethod()
                       .AllowAnyHeader()
                       .AllowCredentials();

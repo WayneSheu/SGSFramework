@@ -1,7 +1,8 @@
 ﻿// Path: src/SGSFramework/ApiInfrastructure/Middlewares/CorsLoggingMiddleware.cs
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using SGSFramework.ApiInfrastructure.Configurations;
 using System.Net;
 
 namespace SGSFramework.ApiInfrastructure.Middlewares;
@@ -17,16 +18,15 @@ public class CorsLoggingMiddleware
         _logger = logger;
     }
 
-    public async Task InvokeAsync(HttpContext context, IConfiguration configuration)
+    public async Task InvokeAsync(HttpContext context, IOptions<CorsSettingsOptions> corsOptions)
     {
         var origin = context.Request.Headers["Origin"].ToString();
 
         // 僅針對帶有 Origin Header 的跨域請求進行監控
         if (!string.IsNullOrEmpty(origin))
         {
-            var allowedOrigins = configuration
-                .GetSection("CorsSettings:AllowedOrigins")
-                .Get<string[]>() ?? Array.Empty<string>();
+            // 與 CORS 政策共用同一份強型別組態，確保監控判斷與實際放行規則一致
+            var allowedOrigins = corsOptions.Value.AllowedOrigins;
 
             // 檢查 Origin 是否在允許清單中
             bool isAllowed = allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase);

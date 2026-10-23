@@ -52,6 +52,11 @@ public static class ServiceCollectionExtensions
         mvcBuilder.AddApplicationPart(typeof(SPAModuleController).Assembly);
 
         services.AddScoped<IControllerMetadataService, ControllerMetadataService>();
+
+        // 系統配置管理：設定服務 + Identity 規則執行期套用 (啟動時自資料庫載入)
+        services.AddScoped<ISystemSettingsService, SystemSettingsService>();
+        services.AddSingleton<IdentityPolicyRuntime>();
+        services.AddHostedService<IdentityPolicyStartupLoader>();
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<IDatabaseSchemaService, SqlServerDatabaseSchemaService>();
         services.AddSPAModulePlugin();

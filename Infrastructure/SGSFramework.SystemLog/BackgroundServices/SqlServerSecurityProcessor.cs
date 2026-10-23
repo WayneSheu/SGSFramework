@@ -1,6 +1,7 @@
 ﻿#nullable enable
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
+using SGSFramework.Core.Configurations;
 using Serilog.Events;
 using SGSFramework.Core.Abstractions.Processors;
 using System;
@@ -16,11 +17,10 @@ namespace SGSFramework.SystemLog.BackgroundServices
     {
         private readonly string _connectionString;
 
-        public SqlServerSecurityProcessor(IConfiguration configuration)
+        public SqlServerSecurityProcessor(IOptions<PersistentConnectionOptions> connectionOptions)
         {
-            ArgumentNullException.ThrowIfNull(configuration);
-            _connectionString = configuration.GetSection("PersistentSettings:ConnectionStrings")["DefaultConnection"]
-                ?? throw new InvalidOperationException("DefaultConnection connection string is missing.");
+            ArgumentNullException.ThrowIfNull(connectionOptions);
+            _connectionString = connectionOptions.Value.DefaultConnection;
         }
 
         public async Task ProcessBatchAsync(IEnumerable<LogEvent> items, CancellationToken ct)

@@ -397,7 +397,7 @@ namespace SGSFramework.Persistent.Extensions
                 options.User.RequireUniqueEmail = identitySection.GetValue("User:RequireUniqueEmail", true);
 
                 options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(
-                    identitySection.GetValue("Lockout:DefaultLockoutTimeSpanMinutes", 15));
+                    identitySection.GetValue("Lockout:DefaultLockoutTimeSpan", 15));
                 options.Lockout.MaxFailedAccessAttempts =
                     identitySection.GetValue("Lockout:MaxFailedAccessAttempts", 5);
 

@@ -1,5 +1,5 @@
-﻿using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
+using SGSFramework.ApiInfrastructure.Configurations;
 using SGSFramework.ApiInfrastructure.Services;
 using System;
 using System.Collections.Generic;
@@ -13,9 +13,9 @@ namespace SGSFramework.ApiInfrastructure.Bootstrappers
     /// </summary>
     public static class IisBootstrapTask
     {
-        public static void Execute(IConfiguration configuration, ILogger logger)
+        public static void Execute(IisHostingOptions options, ILogger logger)
         {
-            ArgumentNullException.ThrowIfNull(configuration);
+            ArgumentNullException.ThrowIfNull(options);
             ArgumentNullException.ThrowIfNull(logger);
 
             // 檢查當前程序是否具備 Windows 管理員權限
@@ -35,7 +35,7 @@ namespace SGSFramework.ApiInfrastructure.Bootstrappers
                     LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<IisEnvironmentConfigurator>()
                 );
 
-                string poolName = configuration["IIS:AppPoolName"] ?? "PhysLIMS.API";
+                string poolName = options.AppPoolName;
 
                 configurator.ConfigureAppPoolEnvironmentVariable(poolName, "ASPNETCORE_ENVIRONMENT", "Production");
                 configurator.ConfigureAppPoolEnvironmentVariable(poolName, "PhysLIMS_LedgerEnabled", "true");

@@ -1,7 +1,8 @@
 ﻿// Path: src/SGSFramework/Infrastructure/SGSFramework.Persistent/ScriptRunners/DatabaseInitializer.cs
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using SGSFramework.Core.Configurations;
 using SGSFramework.Core.Abstractions.Database;
 
 namespace SGSFramework.Persistent.ScriptRunners;
@@ -9,22 +10,22 @@ namespace SGSFramework.Persistent.ScriptRunners;
 public class DatabaseInitializer : IDatabaseInitializer
 {
     private readonly IScriptExecutionStrategy _executionStrategy;
-    private readonly IConfiguration _configuration;
+    private readonly IOptions<PersistentConnectionOptions> _connectionOptions;
     private readonly ILogger<DatabaseInitializer> _logger;
 
     public DatabaseInitializer(
         IScriptExecutionStrategy executionStrategy,
-        IConfiguration configuration,
+        IOptions<PersistentConnectionOptions> connectionOptions,
         ILogger<DatabaseInitializer> logger)
     {
         _executionStrategy = executionStrategy ?? throw new ArgumentNullException(nameof(executionStrategy));
-        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        _connectionOptions = connectionOptions ?? throw new ArgumentNullException(nameof(connectionOptions));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task InitializeDatabaseAsync(CancellationToken cancellationToken = default)
     {
-        string? migrationConnectionString = _configuration.GetSection("PersistentSettings:ConnectionStrings")["BootstrappingConnection"];
+        string? migrationConnectionString = _connectionOptions.Value.BootstrappingConnection;
 
         if (string.IsNullOrWhiteSpace(migrationConnectionString))
         {

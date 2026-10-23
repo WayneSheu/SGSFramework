@@ -8,7 +8,9 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Options;
 using PhysLIMS.API.Dbcontexts;
+using SGSFramework.ApiInfrastructure.Configurations;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.Core.Abstractions.Database;
 using System.IO;
@@ -70,17 +72,15 @@ public static class WebApplicationPipelineExtensions
     /// 執行啟動時的資料庫初始化與權限/選單種子資料掛載。
     /// </summary>
     /// <param name="app"></param>
-    /// <param name="config"></param>
     /// <returns></returns>
-    public static async Task ExecuteStartupSeedersAsync(this WebApplication app, IConfiguration config)
+    public static async Task ExecuteStartupSeedersAsync(this WebApplication app)
     {
         ArgumentNullException.ThrowIfNull(app);
-        ArgumentNullException.ThrowIfNull(config);
 
         using var scope = app.Services.GetRequiredService<IServiceScopeFactory>().CreateScope();
         var services = scope.ServiceProvider;
 
-        var autoMigrate = config.GetValue<bool>("Database:AutoMigrate", true);
+        var autoMigrate = services.GetRequiredService<IOptions<DatabaseStartupOptions>>().Value.AutoMigrate;
         if (app.Environment.IsDevelopment() || autoMigrate)
         {
             var initializer = services.GetRequiredService<IDatabaseInitializer>();

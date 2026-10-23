@@ -1,18 +1,21 @@
-// Path: src/SGSFramework/Host/PhysLIMS.API/Program.cs
+﻿// Path: src/SGSFramework/Host/PhysLIMS.API/Program.cs
 using MediatR;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.Web.Administration;
 using PhysLIMS.API.Dbcontexts;
 using PhysLIMS.API.Extensions;
 using Scalar.AspNetCore;
 using Serilog;
 using SGSFramework.ApiInfrastructure.Bootstrappers;
+using SGSFramework.ApiInfrastructure.Configurations;
 using SGSFramework.ApiInfrastructure.DependencyInjection;
 using SGSFramework.ApiInfrastructure.Middlewares;
 using SGSFramework.AuthTokenBucket.Extensions;
 using SGSFramework.AuthTokenBucket.Queries.Menuitems;
+using SGSFramework.Core.Configurations;
 using SGSFramework.Core.Exceptions;
 using SGSFramework.Core.Extensions;
 using SGSFramework.Core.Persistence;
@@ -36,6 +39,9 @@ try
 
     IConfiguration config = builder.Configuration;
     builder.AddSGSFrameworkCore();
+
+    // 系統配置管理：集中註冊強型別 Options (DataAnnotations + ValidateOnStart)
+    builder.Services.AddSystemConfiguration(config);
 
     // =========================================================================
     // 💡 關鍵架構修正：將資料庫基礎設施與 PhysLIMSDbContext 優先註冊
@@ -77,23 +83,11 @@ try
     builder.Services.AddTokenBucketSecurity(config);
 
     // ====================================================
-    // 【動態部署模式設定】讀取跨域來源與 SPA 託管開關
+    // 【動態部署模式設定】讀取 SPA 託管開關 (跨域來源統一由 CorsSettings 管理，見 AddEnterpriseCorsPolicy)
     // ====================================================
-    var deploymentOptions = config.GetSection("DeploymentOptions");
-    var enableSpaHosting = deploymentOptions.GetValue<bool>("EnableSpaHosting", true);
-    var allowedOrigins = deploymentOptions.GetSection("AllowedOrigins").Get<string[]>() ?? ["*"];
-
-    // 擴充動態 CORS 政策（確保獨立部署模式下能安全跨域，共用部署模式下也不受影響）
-    builder.Services.AddCors(options =>
-    {
-        options.AddPolicy("CorsPolicy", policy =>
-        {
-            policy.WithOrigins(allowedOrigins)
-                  .AllowAnyHeader()
-                  .AllowAnyMethod()
-                  .AllowCredentials();
-        });
-    });
+    var enableSpaHosting = config
+        .GetValidatedOptions<DeploymentOptions>(DeploymentOptions.SectionName)
+        .EnableSpaHosting;
 
     // 6. 註冊 MediatR 服務與 CQRS Handlers 掃描
     builder.Services.AddMediatR(cfg =>
@@ -139,7 +133,9 @@ try
 
     try
     {
-        IisBootstrapTask.Execute(config, bootstrapLogger);
+        IisBootstrapTask.Execute(
+            app.Services.GetRequiredService<IOptions<IisHostingOptions>>().Value,
+            bootstrapLogger);
     }
     catch (Exception ex)
     {
@@ -162,7 +158,7 @@ try
     }
 
     // 1. 優先執行資料庫 Migration 與基礎 Schema 建置
-    await app.ExecuteStartupSeedersAsync(config).ConfigureAwait(false);
+    await app.ExecuteStartupSeedersAsync().ConfigureAwait(false);
 
     // 2. 動態控制器模組載入與外掛初始化（必須在 MapControllers 之前完成 Assembly 載入）
     try
@@ -178,7 +174,7 @@ try
     }
 
     // 3. 安全授權與跨域中間件 (順序嚴格對齊：CORS -> 認證 -> 授權)
-    app.UseCors("CorsPolicy");
+    app.UseCors(CorsSettingsOptions.PolicyName);
     app.UseMiddleware<CorsLoggingMiddleware>();
 
     // ====================================================

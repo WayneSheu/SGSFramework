@@ -11,10 +11,12 @@ using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Abstractions.Entities.Modules;
 using SGSFramework.Core.Abstractions.Logings;
+using SGSFramework.Core.Configurations;
 using SGSFramework.Core.Controllers.Services;
 using SGSFramework.Core.Migrations;
 using SGSFramework.Core.Security.Services;
 using SGSFramework.ModulePlugin.Abstractions;
+using SGSFramework.ModulePlugin.Configurations;
 using SGSFramework.ModulePlugin.Systems.Controller.Repositories;
 using SGSFramework.ModulePlugin.Systems.Module.Containers;
 using SGSFramework.ModulePlugin.Systems.Module.Contexts;
@@ -57,14 +59,16 @@ public static class ModuleLoaderExtensions
         {
             var partManager = services.GetApplicationPartManager();
 
-            string trustedThumbprint = configuration["ModularSettings:TrustedThumbprint"]
-                ?? throw new InvalidOperationException("未設定受信任的模組簽章憑證指紋 (TrustedThumbprint)，系統拒絕啟動以確保安全性。");
+            // 建置期即驗證 ModularSettings (TrustedThumbprint 必填)，並同步註冊為 IOptions<ModularOptions> 供執行期注入
+            var modularOptions = configuration.GetValidatedOptions<ModularOptions>(ModularOptions.SectionName);
+            services.AddValidatedOptions<ModularOptions>(ModularOptions.SectionName);
+            string trustedThumbprint = modularOptions.TrustedThumbprint;
 
             services.AddSingleton(sp => new AssemblySecurityVerifier(
                 sp.GetRequiredService<ILogger<AssemblySecurityVerifier>>(),
                 trustedThumbprint));
 
-            string absolutePluginPath = GetPluginsDirectory(configuration);
+            string absolutePluginPath = GetPluginsDirectory(modularOptions.PluginsPath);
             Log.Information(">>> [IIS/Host Path Fix] 開始掃描外掛目錄 (絕對路徑解析): {Path}", absolutePluginPath);
 
             if (!Directory.Exists(absolutePluginPath))
@@ -427,9 +431,8 @@ public static class ModuleLoaderExtensions
         }
     }
 
-    private static string GetPluginsDirectory(IConfiguration configuration)
+    private static string GetPluginsDirectory(string? configPath)
     {
-        string? configPath = configuration["ModularSettings:PluginsPath"];
         string relativeOrAbsolutePath = string.IsNullOrWhiteSpace(configPath) ? "plugins" : configPath;
 
         return Path.IsPathRooted(relativeOrAbsolutePath)
