@@ -1,5 +1,7 @@
 ﻿#nullable enable
 using System;
+using System.ComponentModel;
+using Microsoft.EntityFrameworkCore;
 using SGSFramework.Core.Helpers;
 
 namespace SGSFramework.Core.Abstractions.Outbox;
@@ -7,36 +9,50 @@ namespace SGSFramework.Core.Abstractions.Outbox;
 /// <summary>
 /// Outbox 訊息實體，用於實作「發佈者確認」模式 (Publisher Confirmed)
 /// </summary>
+[DisplayName("Outbox 訊息")]
+[Comment("Outbox 訊息實體，用於實作「發佈者確認」模式 (Publisher Confirmed)")]
 public class OutboxMessage
 {
     /// <summary>
     /// 訊息唯一識別碼
     /// </summary>
+    [DisplayName("識別主鍵")]
+    [Comment("識別主鍵")]
     public Guid Id { get; set; }
 
     /// <summary>
     /// 關聯 ID：代表整個業務流程的追蹤編號 (由前端或 API 傳入)
     /// </summary>
+    [DisplayName("關聯 ID")]
+    [Comment("關聯 ID：代表整個業務流程的追蹤編號 (由前端或 API 傳入)")]
     public string? CorrelationId { get; set; }
 
     /// <summary>
     /// 誘發 ID：代表觸發此事件的具體 Command 名稱或 ID
     /// </summary>
+    [DisplayName("誘發 ID")]
+    [Comment("誘發 ID：代表觸發此事件的具體 Command 名稱或 ID")]
     public string? CausationId { get; set; }
 
     /// <summary>
     /// 事件的完整型別名稱 (包含 Namespace)，用於還原物件
     /// </summary>
+    [DisplayName("事件型別")]
+    [Comment("事件的完整型別名稱 (包含 Namespace)，用於還原物件")]    
     public string Type { get; set; } = string.Empty;
 
     /// <summary>
     /// 事件序列化後的 JSON 內容
     /// </summary>
+    [DisplayName("事件內容")]
+    [Comment("事件序列化後的 JSON 內容")]    
     public string Content { get; set; } = string.Empty;
 
     /// <summary>
     /// 事件發生的原始時間 (UTC)
     /// </summary>
+    [DisplayName("發生時間 (UTC)")]
+    [Comment("事件發生的原始時間 (UTC)")]    
     public DateTime OccurredOnUtc { get; set; }
 
     /// <summary>
@@ -44,28 +60,38 @@ public class OutboxMessage
     /// 若為 NULL 且 IsDead 為 false，表示待處理；
     /// 若為 1900-01-01，表示正被某個 Worker 鎖定處理中。
     /// </summary>
+    [DisplayName("處理時間 (UTC)")]
+    [Comment("訊息被成功處理的時間。若為 NULL 且 IsDead 為 false，表示待處理；若為 1900-01-01，表示正被某個 Worker 鎖定處理中。")]
     public DateTime? ProcessedOnUtc { get; set; }
 
     /// <summary>
     /// 預計下次重試的時間 (UTC)。
     /// 用於實作「指數退避」，避免失敗後立即重試造成系統壓力。
     /// </summary>
+    [DisplayName("預計下次重試時間 (UTC)")]
+    [Comment("預計下次重試的時間 (UTC)。用於實作「指數退避」，避免失敗後立即重試造成系統壓力。")]
     public DateTime? ScheduledAtUtc { get; set; }
 
     /// <summary>
     /// 目前已重試的次數
     /// </summary>
+    [DisplayName("重試次數")]
+    [Comment("目前已重試的次數")]
     public int RetryCount { get; set; } = 0;
 
     /// <summary>
     /// 是否已成為「死信」(Dead Letter)。
     /// 當 RetryCount 超過閾值後標記為 true，背景服務將不再主動抓取。
     /// </summary>
+    [DisplayName("是否為死信")]
+    [Comment("當 RetryCount 超過閾值後標記為 true，背景服務將不再主動抓取。")]
     public bool IsDead { get; set; } = false;
 
     /// <summary>
     /// 最後一次處理失敗的錯誤訊息內容，便於維運排錯
     /// </summary>
+    [DisplayName("最後一次處理失敗的錯誤訊息")]
+    [Comment("最後一次處理失敗的錯誤訊息內容，便於維運排錯")]
     public string? LastError { get; set; }
 
     /// <summary>

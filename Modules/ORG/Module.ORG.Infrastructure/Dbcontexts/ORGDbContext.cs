@@ -108,6 +108,10 @@ namespace SGS.Modules.ORG.Infrastructure.Dbcontexts
             {
                 eb.HasNoKey();
                 eb.ToView("vw_UserAccessibleLabs", "org");
+
+                // BaseDbContext 會對所有實體 SetSchema；檢視表無資料表名稱，殘留的資料表 Schema 會讓
+                // EF Core 10 在快照中產生 ToTable(null, "org")，而該呼叫本身會拋出例外，導致後續無法新增 Migration
+                eb.Metadata.SetSchema(null);
             });
         }
     }

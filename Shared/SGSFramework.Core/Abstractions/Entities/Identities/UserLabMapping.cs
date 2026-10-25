@@ -64,6 +64,9 @@ public class UserLabMapping : IAuditable
     [DisplayName("最後更新時間")]
     [Comment("最後更新時間")]
     public DateTimeOffset? UpdatedAtUtc { get; set; }
+
+    [DisplayName("最後更新人員識別鍵")]
+    [Comment("最後更新人員識別鍵")]
     public string? UpdatedBy { get; set; }
 
     public virtual ApplicationUser User { get; set; } = null!;

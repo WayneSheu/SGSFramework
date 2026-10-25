@@ -11,6 +11,7 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
     /// </summary>
     [Table("UserRefreshTokens", Schema = "core")]
     [Display(Name = "使用者裝置安全 Session 與長效憑證")]
+    [Comment("儲存使用者裝置安全 Session 與長效憑證的資料表實體 (相容性與資安一體化規格)")]
     public sealed class UserRefreshToken
     {
         [Key]
@@ -52,6 +53,7 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
         [Required]
         [StringLength(64)]
         [Display(Name = "當前有效的 Refresh Token 雜湊值")]
+        [Comment("當前有效的 Refresh Token 雜湊值 (SHA256，避免明文外洩)")]
         [Column("RefreshTokenHash")]
         public string RefreshTokenHash { get; set; } = string.Empty;
 

@@ -134,22 +134,40 @@ namespace SGSFramework.Core.Abstractions.Permissions.Entities
     /// 職能分立規則 (SoD, Separation of Duties)：兩項互斥權限不得同時存在於同一角色。
     /// 例如「建立付款單」與「核准付款單」。
     /// </summary>
+    [DisplayName("職能分立規則")]
+    [Comment("職能分立規則 (SoD, Separation of Duties)：兩項互斥權限不得同時存在於同一角色。例如「建立付款單」與「核准付款單」。")]
     public class SodRule
     {
+        [DisplayName("識別主鍵")]
+        [Comment("識別主鍵")]
         public Guid Id { get; set; } = Guid.NewGuid();
 
+        [DisplayName("規則名稱")]
+        [Comment("規則名稱")]
         public string Name { get; set; } = string.Empty;
 
+        [DisplayName("規則說明")]
+        [Comment("規則說明")]   
         public string? Description { get; set; }
 
+        [DisplayName("權限鍵 A")]
+        [Comment("權限鍵 A")]  
         public string PermissionKeyA { get; set; } = string.Empty;
 
+        [DisplayName("權限鍵 B")]
+        [Comment("權限鍵 B")]  
         public string PermissionKeyB { get; set; } = string.Empty;
 
+        [DisplayName("是否啟用")]
+        [Comment("是否啟用")]   
         public bool IsEnabled { get; set; } = true;
-
+        
+        [DisplayName("建立者")]
+        [Comment("建立者")]    
         public string? CreatedBy { get; set; }
 
+        [DisplayName("建立時間")]
+        [Comment("建立時間")]   
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     }
 

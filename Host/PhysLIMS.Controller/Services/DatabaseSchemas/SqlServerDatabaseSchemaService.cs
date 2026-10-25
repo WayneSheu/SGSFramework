@@ -173,8 +173,9 @@ public sealed class SqlServerDatabaseSchemaService : IDatabaseSchemaService
                 continue;
             }
 
-            // 說明優先序：資料庫 MS_Description > EF Core [Comment] / HasComment > [DisplayName]
-            var modelDescription = modelDescriptions.GetValueOrDefault($"{table.Schema}.{table.Name}");
+            // 說明優先序：資料庫 MS_Description > EF Core [Comment] / HasComment > [DisplayName] > 系統資料表內建說明
+            var modelDescription = modelDescriptions.GetValueOrDefault($"{table.Schema}.{table.Name}")
+                ?? SystemTableDescriptions.Find(table.Name);
 
             var tableIndexes = indexes.GetValueOrDefault(table.ObjectId) ?? [];
             var tableFks = foreignKeys.GetValueOrDefault(table.ObjectId) ?? [];
@@ -216,7 +217,7 @@ public sealed class SqlServerDatabaseSchemaService : IDatabaseSchemaService
                     c.DefaultValue,
                     c.Collation,
                     fkReferences.GetValueOrDefault(c.Name),
-                    Coalesce(c.Description, modelDescription?.ColumnDescriptions.GetValueOrDefault(c.Name))))
+                    Coalesce(c.Description, modelDescription?.ColumnDescriptions.GetValueOrDefault(c.Name) ?? SystemTableDescriptions.FindColumn(c.Name))))
                 .ToList();
 
             result.Add(new TableSchemaDto(

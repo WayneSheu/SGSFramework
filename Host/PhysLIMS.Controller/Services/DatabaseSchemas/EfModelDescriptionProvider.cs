@@ -106,6 +106,10 @@ public sealed class EfModelDescriptionProvider : IEntityDescriptionProvider
         }
     }
 
+    /// <summary>
+    /// 顯示名稱：[DisplayName] 優先，其次為 DataAnnotations 的 [Display(Name = ...)]
+    /// </summary>
     private static string? DisplayNameOf(MemberInfo? member) =>
-        member?.GetCustomAttribute<DisplayNameAttribute>()?.DisplayName;
+        member?.GetCustomAttribute<DisplayNameAttribute>()?.DisplayName
+        ?? member?.GetCustomAttribute<System.ComponentModel.DataAnnotations.DisplayAttribute>()?.GetName();
 }

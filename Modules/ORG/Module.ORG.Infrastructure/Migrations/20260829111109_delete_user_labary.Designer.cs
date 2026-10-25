@@ -155,7 +155,7 @@ namespace SGS.Modules.ORG.Infrastructure.Migrations
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.ToTable(null, "core");
+                    b.ToTable((string)null);
 
                     b.ToView("vw_UserAccessibleLabs", "org");
                 });

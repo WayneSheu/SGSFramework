@@ -18,7 +18,7 @@ namespace SGS.Modules.ORG.Infrastructure.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("org")
-                .HasAnnotation("ProductVersion", "10.0.11")
+                .HasAnnotation("ProductVersion", "10.0.12")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -27,68 +27,85 @@ namespace SGS.Modules.ORG.Infrastructure.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
+                        .HasColumnType("int")
+                        .HasComment("組織/實驗室 ID");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<string>("Code")
                         .IsRequired()
                         .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
+                        .HasColumnType("nvarchar(20)")
+                        .HasComment("組織/實驗室代碼");
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("建立時間");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("建立者");
 
                     b.Property<string>("DeletedBy")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("刪除者");
 
                     b.Property<DateTimeOffset?>("DeletedOnUtc")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("刪除時間");
 
                     b.Property<string>("Description")
                         .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
+                        .HasColumnType("nvarchar(200)")
+                        .HasComment("組織/實驗室描述");
 
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
-                        .HasDefaultValue(true);
+                        .HasDefaultValue(true)
+                        .HasComment("是否啟用");
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
+                        .HasColumnType("bit")
+                        .HasComment("是否已刪除");
 
                     b.Property<int>("Level")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int")
-                        .HasDefaultValue(0);
+                        .HasDefaultValue(0)
+                        .HasComment("層級 (Level)");
 
                     b.Property<string>("Location")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("組織/實驗室位置");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasColumnType("nvarchar(50)")
+                        .HasComment("組織/實驗室名稱");
 
                     b.Property<string>("NodePath")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("節點路徑");
 
                     b.Property<int?>("ParentId")
-                        .HasColumnType("int");
+                        .HasColumnType("int")
+                        .HasComment("父節點 ID");
 
                     b.Property<Guid?>("TenantLabId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("僅 Level 2 區域實驗室實體可寫入 DB 的 TenantLabId");
 
                     b.Property<DateTimeOffset?>("UpdatedAtUtc")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("更新時間");
 
                     b.Property<string>("UpdatedBy")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("更新者");
 
                     b.HasKey("Id");
 
@@ -105,6 +122,8 @@ namespace SGS.Modules.ORG.Infrastructure.Migrations
 
                     b.ToTable("Organization", "org", t =>
                         {
+                            t.HasComment("組織/實驗室實體 (Hierarchical Entity)");
+
                             t.HasCheckConstraint("CK_Organization_TenantLabId_Level2Only", "([TenantLabId] IS NULL) OR ([Level] = 2)");
                         });
                 });
@@ -152,7 +171,7 @@ namespace SGS.Modules.ORG.Infrastructure.Migrations
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.ToTable(null, "core");
+                    b.ToTable((string)null);
 
                     b.ToView("vw_UserAccessibleLabs", "org");
                 });
@@ -161,122 +180,155 @@ namespace SGS.Modules.ORG.Infrastructure.Migrations
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
+                        .HasColumnType("bigint")
+                        .HasComment("稽核日誌識別主鍵");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
                     b.Property<string>("Action")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("操作類型");
 
                     b.Property<string>("ChangedColumns")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("變更欄位");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("建立時間");
 
                     b.Property<string>("GapReason")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("差異原因");
 
                     b.Property<bool>("IsRepaired")
-                        .HasColumnType("bit");
+                        .HasColumnType("bit")
+                        .HasComment("是否已修復");
 
                     b.Property<string>("KeyValues")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("主鍵值");
 
                     b.Property<string>("NewValues")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("新值");
 
                     b.Property<string>("OldValues")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("舊值");
 
                     b.Property<string>("OriginalStoredHash")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("原始儲存雜湊值");
 
                     b.Property<string>("PreviousHash")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("前一筆雜湊值");
 
                     b.Property<string>("RemoteIp")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("遠端 IP 位址");
 
                     b.Property<DateTimeOffset?>("RepairedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("修復時間");
 
                     b.Property<string>("Schema")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("資料表綱要");
 
                     b.Property<string>("StoredHash")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("儲存雜湊值");
 
                     b.Property<string>("TableName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("資料表名稱");
 
                     b.Property<DateTimeOffset>("Timestamp")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("時間戳記");
 
                     b.Property<string>("TraceId")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("全鏈路追蹤 ID (對應 W3C TraceId 格式 32 位元 HEX)");
 
                     b.Property<string>("UserId")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("使用者識別");
 
                     b.HasKey("Id");
 
-                    b.ToTable("AuditLogs", "org");
+                    b.ToTable("AuditLogs", "org", t =>
+                        {
+                            t.HasComment("資料稽核日誌實體");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Outbox.OutboxMessage", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
 
                     b.Property<string>("CausationId")
                         .HasMaxLength(200)
                         .IsUnicode(false)
-                        .HasColumnType("varchar(200)");
+                        .HasColumnType("varchar(200)")
+                        .HasComment("誘發 ID：代表觸發此事件的具體 Command 名稱或 ID");
 
                     b.Property<string>("Content")
                         .IsRequired()
                         .IsUnicode(true)
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("事件序列化後的 JSON 內容");
 
                     b.Property<string>("CorrelationId")
                         .HasMaxLength(100)
                         .IsUnicode(false)
-                        .HasColumnType("varchar(100)");
+                        .HasColumnType("varchar(100)")
+                        .HasComment("關聯 ID：代表整個業務流程的追蹤編號 (由前端或 API 傳入)");
 
                     b.Property<bool>("IsDead")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
-                        .HasDefaultValue(false);
+                        .HasDefaultValue(false)
+                        .HasComment("當 RetryCount 超過閾值後標記為 true，背景服務將不再主動抓取。");
 
                     b.Property<string>("LastError")
                         .IsUnicode(true)
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("最後一次處理失敗的錯誤訊息內容，便於維運排錯");
 
                     b.Property<DateTime>("OccurredOnUtc")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("datetime2")
+                        .HasComment("事件發生的原始時間 (UTC)");
 
                     b.Property<DateTime?>("ProcessedOnUtc")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("datetime2")
+                        .HasComment("訊息被成功處理的時間。若為 NULL 且 IsDead 為 false，表示待處理；若為 1900-01-01，表示正被某個 Worker 鎖定處理中。");
 
                     b.Property<int>("RetryCount")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int")
-                        .HasDefaultValue(0);
+                        .HasDefaultValue(0)
+                        .HasComment("目前已重試的次數");
 
                     b.Property<DateTime?>("ScheduledAtUtc")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("datetime2")
+                        .HasComment("預計下次重試的時間 (UTC)。用於實作「指數退避」，避免失敗後立即重試造成系統壓力。");
 
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasMaxLength(500)
                         .IsUnicode(false)
-                        .HasColumnType("varchar(500)");
+                        .HasColumnType("varchar(500)")
+                        .HasComment("事件的完整型別名稱 (包含 Namespace)，用於還原物件");
 
                     b.HasKey("Id");
 
@@ -286,7 +338,10 @@ namespace SGS.Modules.ORG.Infrastructure.Migrations
                     b.HasIndex("ProcessedOnUtc", "IsDead", "ScheduledAtUtc")
                         .HasDatabaseName("IX_org_OutboxMessages_FetchPending");
 
-                    b.ToTable("OutboxMessages", "org");
+                    b.ToTable("OutboxMessages", "org", t =>
+                        {
+                            t.HasComment("Outbox 訊息實體，用於實作「發佈者確認」模式 (Publisher Confirmed)");
+                        });
                 });
 
             modelBuilder.Entity("SGS.Modules.ORG.Infrastructure.Entities.Org.Organization", b =>

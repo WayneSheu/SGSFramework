@@ -97,5 +97,8 @@ public class PhysLIMSDbContext : BaseIdentityDbContext<ApplicationUser, Applicat
                   .IsRequired()
                   .OnDelete(DeleteBehavior.Cascade);
         });
+
+        // 5. Identity 內建資料表與繼承欄位說明 (框架類別無法加 [Comment])
+        IdentityCommentConfiguration.Apply(modelBuilder);
     }
 }

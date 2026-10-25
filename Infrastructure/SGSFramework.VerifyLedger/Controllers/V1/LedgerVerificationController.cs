@@ -47,23 +47,8 @@ namespace SGSFramework.VerifyLedger.Controllers.V1
         {
             try
             {
-                var contextTypes = AppDomain.CurrentDomain.GetAssemblies()
-                    .Where(a => !a.IsDynamic)
-                    .SelectMany(a =>
-                    {
-                        try
-                        {
-                            return a.GetTypes();
-                        }
-                        catch (ReflectionTypeLoadException ex)
-                        {
-                            return ex.Types.OfType<Type>();
-                        }
-                    })
-                    .Where(t => t is { IsClass: true, IsAbstract: false, IsGenericTypeDefinition: false } && t != typeof(DbContext) && typeof(DbContext).IsAssignableFrom(t));
-
                 var result = new List<LedgerEntityInfo>();
-                foreach (var contextType in contextTypes)
+                foreach (var contextType in FindDbContextTypes())
                 {
                     // 僅列出 DI 已註冊者，驗證服務才能解析對應的 DbContext
                     if (_serviceProvider.GetService(contextType) is not DbContext context)
@@ -108,29 +93,9 @@ namespace SGSFramework.VerifyLedger.Controllers.V1
 
             try
             {
-                var contextType = AppDomain.CurrentDomain.GetAssemblies()
-                    .SelectMany(s => s.GetTypes())
-                    .FirstOrDefault(t => typeof(DbContext).IsAssignableFrom(t) &&
-                                         (t.Name.Equals(contextName, StringComparison.OrdinalIgnoreCase) ||
-                                          t.Name.Equals($"{contextName}DbContext", StringComparison.OrdinalIgnoreCase)));
-
-                if (contextType == null)
+                if (!TryResolveTarget(contextName, entityName, out var contextType, out var entityType, out var notFound))
                 {
-                    _logger.LogWarning("找不到指定的 DbContext 型別: {ContextName}", contextName);
-                    return NotFound($"系統中找不到指定的資料庫內容控制項: {contextName}");
-                }
-
-                var entityType = AppDomain.CurrentDomain.GetAssemblies()
-                    .SelectMany(s => s.GetTypes())
-                    .FirstOrDefault(t => typeof(ILedgerEntity).IsAssignableFrom(t) &&
-                                         t.IsClass &&
-                                         !t.IsAbstract &&
-                                         t.Name.Equals(entityName, StringComparison.OrdinalIgnoreCase));
-
-                if (entityType == null)
-                {
-                    _logger.LogWarning("找不到指定的 Ledger 實體型別: {EntityName}", entityName);
-                    return NotFound($"系統中找不到指定或未實作 ILedgerEntity 的實體: {entityName}");
+                    return notFound;
                 }
 
                 var openServiceType = typeof(ILedgerVerificationService<,>);
@@ -192,29 +157,9 @@ namespace SGSFramework.VerifyLedger.Controllers.V1
 
             try
             {
-                var contextType = AppDomain.CurrentDomain.GetAssemblies()
-                    .SelectMany(s => s.GetTypes())
-                    .FirstOrDefault(t => typeof(DbContext).IsAssignableFrom(t) &&
-                                         (t.Name.Equals(contextName, StringComparison.OrdinalIgnoreCase) ||
-                                          t.Name.Equals($"{contextName}DbContext", StringComparison.OrdinalIgnoreCase)));
-
-                if (contextType == null)
+                if (!TryResolveTarget(contextName, entityName, out var contextType, out var entityType, out var notFound))
                 {
-                    _logger.LogWarning("找不到指定的 DbContext 型別: {ContextName}", contextName);
-                    return NotFound($"系統中找不到指定的資料庫內容控制項: {contextName}");
-                }
-
-                var entityType = AppDomain.CurrentDomain.GetAssemblies()
-                    .SelectMany(s => s.GetTypes())
-                    .FirstOrDefault(t => typeof(ILedgerEntity).IsAssignableFrom(t) &&
-                                         t.IsClass &&
-                                         !t.IsAbstract &&
-                                         t.Name.Equals(entityName, StringComparison.OrdinalIgnoreCase));
-
-                if (entityType == null)
-                {
-                    _logger.LogWarning("找不到指定的 Ledger 實體型別: {EntityName}", entityName);
-                    return NotFound($"系統中找不到指定或未實作 ILedgerEntity 的實體: {entityName}");
+                    return notFound;
                 }
 
                 var openServiceType = typeof(ILedgerVerificationService<,>);
@@ -307,6 +252,74 @@ namespace SGSFramework.VerifyLedger.Controllers.V1
                 _logger.LogError(ex, "路由 {ContextName}/{EntityName} 總帳驗證報告下載請求處理失敗。", contextName, entityName);
                 return StatusCode(StatusCodes.Status500InternalServerError, new { Message = "通用泛型總帳控制器處理常式錯誤", Detail = ex.Message });
             }
+        }
+
+        /// <summary>
+        /// 掃描已載入組件中的 DbContext 型別 (排除基底 DbContext 本身)
+        /// </summary>
+        private static IEnumerable<Type> FindDbContextTypes() =>
+            AppDomain.CurrentDomain.GetAssemblies()
+                .Where(a => !a.IsDynamic)
+                .SelectMany(a =>
+                {
+                    try
+                    {
+                        return a.GetTypes();
+                    }
+                    catch (ReflectionTypeLoadException ex)
+                    {
+                        return ex.Types.OfType<Type>();
+                    }
+                })
+                .Where(t => t is { IsClass: true, IsAbstract: false, IsGenericTypeDefinition: false } && t != typeof(DbContext) && typeof(DbContext).IsAssignableFrom(t));
+
+        /// <summary>
+        /// 解析驗證目標：DbContext 取 DI 實際註冊的型別，帳本實體取自該 DbContext 的模型。
+        /// </summary>
+        /// <remarks>
+        /// 動態模組 (如 ORG) 載入於獨立的 AssemblyLoadContext，同名型別可能同時存在於 Host 直接參考的組件中；
+        /// 僅以名稱比對會取到未註冊的那一份，導致驗證服務無法解析 DbContext，因此需以 DI 與模型為準。
+        /// </remarks>
+        private bool TryResolveTarget(
+            string contextName,
+            string entityName,
+            out Type contextType,
+            out Type entityType,
+            out IActionResult notFound)
+        {
+            contextType = typeof(DbContext);
+            entityType = typeof(object);
+            notFound = NotFound();
+
+            var context = FindDbContextTypes()
+                .Where(t => t.Name.Equals(contextName, StringComparison.OrdinalIgnoreCase) ||
+                            t.Name.Equals($"{contextName}DbContext", StringComparison.OrdinalIgnoreCase))
+                .Select(t => _serviceProvider.GetService(t) as DbContext)
+                .FirstOrDefault(c => c is not null);
+
+            if (context is null)
+            {
+                _logger.LogWarning("找不到已註冊的 DbContext: {ContextName}", contextName);
+                notFound = NotFound($"系統中找不到指定的資料庫內容控制項: {contextName}");
+                return false;
+            }
+
+            var ledgerType = context.Model.GetEntityTypes()
+                .Select(e => e.ClrType)
+                .FirstOrDefault(t => typeof(ILedgerEntity).IsAssignableFrom(t) &&
+                                     t is { IsClass: true, IsAbstract: false } &&
+                                     t.Name.Equals(entityName, StringComparison.OrdinalIgnoreCase));
+
+            if (ledgerType is null)
+            {
+                _logger.LogWarning("DbContext {ContextName} 中找不到 Ledger 實體: {EntityName}", contextName, entityName);
+                notFound = NotFound($"資料庫內容 {contextName} 中找不到指定或未實作 ILedgerEntity 的實體: {entityName}");
+                return false;
+            }
+
+            contextType = context.GetType();
+            entityType = ledgerType;
+            return true;
         }
     }
 }

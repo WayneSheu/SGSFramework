@@ -70,16 +70,24 @@ namespace SGSFramework.Core.Abstractions.Permissions.Identities
         // --- IAuditable 實作 ---
         [AuditIgnore]
         [Editable(false)]
+        [DisplayName("建立時間")]
+        [Comment("建立時間 (UTC)")]
         public DateTimeOffset CreatedAtUtc { get; set; }
 
         [AuditIgnore]
         [Editable(false)]
+        [DisplayName("建立人員識別鍵")]
+        [Comment("建立人員識別鍵")]
         public string? CreatedBy { get; set; }
 
         [AuditIgnore]
+        [DisplayName("最後更新時間")]
+        [Comment("最後更新時間 (UTC)")]
         public DateTimeOffset? UpdatedAtUtc { get; set; }
 
         [AuditIgnore]
+        [DisplayName("最後更新人員識別鍵")]
+        [Comment("最後更新人員識別鍵")]
         public string? UpdatedBy { get; set; }
     }
 

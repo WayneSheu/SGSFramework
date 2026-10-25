@@ -27,103 +27,136 @@ namespace PhysLIMS.API.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
+                        .HasColumnType("int")
+                        .HasComment("識別主鍵");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<string>("ClaimType")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("宣告類型");
 
                     b.Property<string>("ClaimValue")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("宣告值");
 
                     b.Property<Guid>("RoleId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("角色識別 (AspNetRoles.Id)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("RoleId");
 
-                    b.ToTable("AspNetRoleClaims", "core");
+                    b.ToTable("AspNetRoleClaims", "core", t =>
+                        {
+                            t.HasComment("角色宣告 (Claims)：附加於角色的身分屬性，該角色成員登入時一併取得");
+                        });
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserClaim<System.Guid>", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
+                        .HasColumnType("int")
+                        .HasComment("識別主鍵");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<string>("ClaimType")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("宣告類型");
 
                     b.Property<string>("ClaimValue")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("宣告值");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("使用者識別 (AspNetUsers.Id)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("AspNetUserClaims", "core");
+                    b.ToTable("AspNetUserClaims", "core", t =>
+                        {
+                            t.HasComment("使用者宣告 (Claims)：附加於使用者的身分屬性，登入時寫入權杖");
+                        });
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserLogin<System.Guid>", b =>
                 {
                     b.Property<string>("LoginProvider")
-                        .HasColumnType("nvarchar(450)");
+                        .HasColumnType("nvarchar(450)")
+                        .HasComment("外部驗證提供者名稱");
 
                     b.Property<string>("ProviderKey")
-                        .HasColumnType("nvarchar(450)");
+                        .HasColumnType("nvarchar(450)")
+                        .HasComment("外部提供者中的使用者唯一識別");
 
                     b.Property<string>("ProviderDisplayName")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("外部提供者顯示名稱");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("使用者識別 (AspNetUsers.Id)");
 
                     b.HasKey("LoginProvider", "ProviderKey");
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("AspNetUserLogins", "core");
+                    b.ToTable("AspNetUserLogins", "core", t =>
+                        {
+                            t.HasComment("使用者外部登入：使用者與外部驗證提供者 (如 Windows / SSO) 帳號的對應");
+                        });
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserRole<System.Guid>", b =>
                 {
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("使用者識別 (AspNetUsers.Id)");
 
                     b.Property<Guid>("RoleId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("角色識別 (AspNetRoles.Id)");
 
                     b.HasKey("UserId", "RoleId");
 
                     b.HasIndex("RoleId");
 
-                    b.ToTable("AspNetUserRoles", "core");
+                    b.ToTable("AspNetUserRoles", "core", t =>
+                        {
+                            t.HasComment("使用者角色指派：使用者與角色的多對多關聯");
+                        });
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserToken<System.Guid>", b =>
                 {
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("使用者識別 (AspNetUsers.Id)");
 
                     b.Property<string>("LoginProvider")
-                        .HasColumnType("nvarchar(450)");
+                        .HasColumnType("nvarchar(450)")
+                        .HasComment("權杖所屬驗證提供者");
 
                     b.Property<string>("Name")
-                        .HasColumnType("nvarchar(450)");
+                        .HasColumnType("nvarchar(450)")
+                        .HasComment("權杖名稱");
 
                     b.Property<string>("Value")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("權杖值");
 
                     b.HasKey("UserId", "LoginProvider", "Name");
 
-                    b.ToTable("AspNetUserTokens", "core");
+                    b.ToTable("AspNetUserTokens", "core", t =>
+                        {
+                            t.HasComment("使用者權杖：外部驗證提供者發給使用者的權杖 (如驗證器金鑰、復原碼)");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.AuditLogs.AuditLogEntity", b =>
@@ -785,7 +818,8 @@ namespace PhysLIMS.API.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("角色識別主鍵");
 
                     b.Property<string>("Code")
                         .HasMaxLength(64)
@@ -794,7 +828,8 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("並行控制戳記 (樂觀鎖定)");
 
                     b.Property<string>("Description")
                         .HasMaxLength(512)
@@ -828,12 +863,14 @@ namespace PhysLIMS.API.Migrations
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("角色名稱");
 
                     b.Property<string>("NormalizedName")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("正規化角色名稱 (大寫，供唯一性檢查與查詢比對)");
 
                     b.Property<bool>("RequiresAuditAssignment")
                         .ValueGeneratedOnAdd()
@@ -879,14 +916,17 @@ namespace PhysLIMS.API.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("使用者識別主鍵");
 
                     b.Property<int>("AccessFailedCount")
-                        .HasColumnType("int");
+                        .HasColumnType("int")
+                        .HasComment("連續登入失敗次數 (登入成功後歸零)");
 
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("並行控制戳記 (樂觀鎖定)");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset")
@@ -903,10 +943,12 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<string>("Email")
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("電子郵件");
 
                     b.Property<bool>("EmailConfirmed")
-                        .HasColumnType("bit");
+                        .HasColumnType("bit")
+                        .HasComment("電子郵件是否已驗證");
 
                     b.Property<string>("EmployeeNo")
                         .HasColumnType("nvarchar(max)")
@@ -930,30 +972,38 @@ namespace PhysLIMS.API.Migrations
                         .HasComment("帳號最後登入時間");
 
                     b.Property<bool>("LockoutEnabled")
-                        .HasColumnType("bit");
+                        .HasColumnType("bit")
+                        .HasComment("是否允許因登入失敗而鎖定帳號");
 
                     b.Property<DateTimeOffset?>("LockoutEnd")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("帳號鎖定截止時間 (UTC)；null 表示未鎖定");
 
                     b.Property<string>("NormalizedEmail")
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("正規化電子郵件 (大寫，供查詢比對)");
 
                     b.Property<string>("NormalizedUserName")
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("正規化帳號 (大寫，供唯一性檢查與查詢比對)");
 
                     b.Property<string>("PasswordHash")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("密碼雜湊值 (不儲存明碼)");
 
                     b.Property<string>("PhoneNumber")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("電話號碼");
 
                     b.Property<bool>("PhoneNumberConfirmed")
-                        .HasColumnType("bit");
+                        .HasColumnType("bit")
+                        .HasComment("電話號碼是否已驗證");
 
                     b.Property<string>("SecurityStamp")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("安全戳記；密碼或安全性設定變更時更新，使既有登入憑證失效");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -961,11 +1011,13 @@ namespace PhysLIMS.API.Migrations
                         .HasComment("帳號目前狀態");
 
                     b.Property<bool>("TwoFactorEnabled")
-                        .HasColumnType("bit");
+                        .HasColumnType("bit")
+                        .HasComment("是否啟用雙因素驗證");
 
                     b.Property<string>("UserName")
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("登入帳號");
 
                     b.HasKey("Id");
 
@@ -1263,7 +1315,8 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<string>("UpdatedBy")
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("最後更新人員識別鍵");
 
                     b.HasKey("UserId", "LabId");
 
@@ -1343,7 +1396,8 @@ namespace PhysLIMS.API.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nchar(64)")
                         .HasColumnName("RefreshTokenHash")
-                        .IsFixedLength();
+                        .IsFixedLength()
+                        .HasComment("當前有效的 Refresh Token 雜湊值 (SHA256，避免明文外洩)");
 
                     b.Property<string>("ReusedTokenCache")
                         .HasMaxLength(64)
@@ -1373,7 +1427,10 @@ namespace PhysLIMS.API.Migrations
                     b.HasIndex("UserId", "DeviceId", "RefreshTokenHash", "IsDead", "IsFrozen")
                         .HasDatabaseName("IX_UserRefreshTokens_Lockdown_Rotation_Seek");
 
-                    b.ToTable("UserRefreshTokens", "core");
+                    b.ToTable("UserRefreshTokens", "core", t =>
+                        {
+                            t.HasComment("儲存使用者裝置安全 Session 與長效憑證的資料表實體 (相容性與資安一體化規格)");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.UserRoleExpiration", b =>
@@ -1758,51 +1815,62 @@ namespace PhysLIMS.API.Migrations
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Outbox.OutboxMessage", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
 
                     b.Property<string>("CausationId")
                         .HasMaxLength(200)
                         .IsUnicode(false)
-                        .HasColumnType("varchar(200)");
+                        .HasColumnType("varchar(200)")
+                        .HasComment("誘發 ID：代表觸發此事件的具體 Command 名稱或 ID");
 
                     b.Property<string>("Content")
                         .IsRequired()
                         .IsUnicode(true)
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("事件序列化後的 JSON 內容");
 
                     b.Property<string>("CorrelationId")
                         .HasMaxLength(100)
                         .IsUnicode(false)
-                        .HasColumnType("varchar(100)");
+                        .HasColumnType("varchar(100)")
+                        .HasComment("關聯 ID：代表整個業務流程的追蹤編號 (由前端或 API 傳入)");
 
                     b.Property<bool>("IsDead")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
-                        .HasDefaultValue(false);
+                        .HasDefaultValue(false)
+                        .HasComment("當 RetryCount 超過閾值後標記為 true，背景服務將不再主動抓取。");
 
                     b.Property<string>("LastError")
                         .IsUnicode(true)
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("最後一次處理失敗的錯誤訊息內容，便於維運排錯");
 
                     b.Property<DateTime>("OccurredOnUtc")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("datetime2")
+                        .HasComment("事件發生的原始時間 (UTC)");
 
                     b.Property<DateTime?>("ProcessedOnUtc")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("datetime2")
+                        .HasComment("訊息被成功處理的時間。若為 NULL 且 IsDead 為 false，表示待處理；若為 1900-01-01，表示正被某個 Worker 鎖定處理中。");
 
                     b.Property<int>("RetryCount")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int")
-                        .HasDefaultValue(0);
+                        .HasDefaultValue(0)
+                        .HasComment("目前已重試的次數");
 
                     b.Property<DateTime?>("ScheduledAtUtc")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("datetime2")
+                        .HasComment("預計下次重試的時間 (UTC)。用於實作「指數退避」，避免失敗後立即重試造成系統壓力。");
 
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasMaxLength(500)
                         .IsUnicode(false)
-                        .HasColumnType("varchar(500)");
+                        .HasColumnType("varchar(500)")
+                        .HasComment("事件的完整型別名稱 (包含 Namespace)，用於還原物件");
 
                     b.HasKey("Id");
 
@@ -1812,7 +1880,10 @@ namespace PhysLIMS.API.Migrations
                     b.HasIndex("ProcessedOnUtc", "IsDead", "ScheduledAtUtc")
                         .HasDatabaseName("IX_core_OutboxMessages_FetchPending");
 
-                    b.ToTable("OutboxMessages", "core");
+                    b.ToTable("OutboxMessages", "core", t =>
+                        {
+                            t.HasComment("Outbox 訊息實體，用於實作「發佈者確認」模式 (Publisher Confirmed)");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Entities.LabFunctionPolicy", b =>
@@ -2133,40 +2204,51 @@ namespace PhysLIMS.API.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("建立時間");
 
                     b.Property<string>("CreatedBy")
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("建立者");
 
                     b.Property<string>("Description")
                         .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
+                        .HasColumnType("nvarchar(1000)")
+                        .HasComment("規則說明");
 
                     b.Property<bool>("IsEnabled")
-                        .HasColumnType("bit");
+                        .HasColumnType("bit")
+                        .HasComment("是否啟用");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
+                        .HasColumnType("nvarchar(200)")
+                        .HasComment("規則名稱");
 
                     b.Property<string>("PermissionKeyA")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("權限鍵 A");
 
                     b.Property<string>("PermissionKeyB")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("權限鍵 B");
 
                     b.HasKey("Id");
 
-                    b.ToTable("SodRules", "core");
+                    b.ToTable("SodRules", "core", t =>
+                        {
+                            t.HasComment("職能分立規則 (SoD, Separation of Duties)：兩項互斥權限不得同時存在於同一角色。例如「建立付款單」與「核准付款單」。");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Identities.PermissionGrant", b =>
@@ -2215,11 +2297,13 @@ namespace PhysLIMS.API.Migrations
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetimeoffset(7)")
-                        .HasDefaultValueSql("SYSDATETIMEOFFSET()");
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET()")
+                        .HasComment("建立時間 (UTC)");
 
                     b.Property<string>("CreatedBy")
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("建立人員識別鍵");
 
                     b.Property<string>("PermissionKey")
                         .IsRequired()
@@ -2228,11 +2312,13 @@ namespace PhysLIMS.API.Migrations
                         .HasComment("權限識別鍵");
 
                     b.Property<DateTimeOffset?>("UpdatedAtUtc")
-                        .HasColumnType("datetimeoffset(7)");
+                        .HasColumnType("datetimeoffset(7)")
+                        .HasComment("最後更新時間 (UTC)");
 
                     b.Property<string>("UpdatedBy")
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("最後更新人員識別鍵");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier")
