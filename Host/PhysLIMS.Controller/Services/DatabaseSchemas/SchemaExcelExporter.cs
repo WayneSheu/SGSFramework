@@ -22,7 +22,8 @@ public static class SchemaExcelExporter
             ["資料表清單"] = BuildTables(schema),
             ["欄位明細"] = BuildColumns(schema),
             ["索引"] = BuildIndexes(schema),
-            ["外鍵關聯"] = BuildForeignKeys(schema)
+            ["外鍵關聯"] = BuildForeignKeys(schema),
+            ["更新履歷"] = BuildMigrations(schema)
         };
 
         var configuration = new OpenXmlConfiguration
@@ -97,6 +98,18 @@ public static class SchemaExcelExporter
             ("索引欄位", i.Columns),
             ("Include 欄位", i.IncludedColumns),
             ("篩選條件", i.Filter)))).ToList();
+
+    private static List<Dictionary<string, object?>> BuildMigrations(DatabaseSchemaDto schema) =>
+        schema.Migrations.Select((m, i) => Row(
+            ("序號", i + 1),
+            ("建立時間", m.CreatedAt?.ToString(DateFormat)),
+            ("Migration 識別碼", m.MigrationId),
+            ("名稱", m.Name),
+            ("DbContext", m.Context),
+            ("Schema", m.Schema),
+            ("狀態", !m.HasMigrationFile ? "缺檔" : m.IsApplied ? "已套用" : "未套用"),
+            ("EF Core 版本", m.ProductVersion),
+            ("變更內容", string.Join("\n", m.Changes)))).ToList();
 
     private static List<Dictionary<string, object?>> BuildForeignKeys(DatabaseSchemaDto schema) =>
         schema.Tables.SelectMany(t => t.ForeignKeys.Select(fk => Row(

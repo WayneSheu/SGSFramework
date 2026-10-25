@@ -2,26 +2,53 @@
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Text;
 
 namespace SGSFramework.Core.Abstractions.Entities.Controller
 {
     /// <summary>
     /// 使用者資源授權實體，表示特定使用者對特定資源（如功能表項目）的存取權限。
-    /// 「稽核人員」視為一個基於 Role 的起點，再透過 UserResourceGrants 或 Global Filter 進行例外擴充，確實是處理這類特殊權限最高效的方法。
-    /// 
+    /// 「稽核人員」視為一個基於 Role 的起點，再透過 UserResourceGrants 或 Global Filter 進行例外擴充，確實是處理這類特殊權限最高效的方法。 
     /// </summary>
+    [DisplayName("使用者資源授權實體，表示特定使用者對特定資源（如功能表項目）的存取權限")]
+    [Comment("使用者資源授權實體，表示特定使用者對特定資源（如功能表項目）的存取權限")]
     public class UserResourceGrant
     {
+        [DisplayName("識別主鍵")]
+        [Comment("識別主鍵")]
         public Guid Id { get; set; }
+
+        [DisplayName("使用者識別鍵")]
+        [Comment("使用者識別鍵")]
         public Guid UserId { get; set; }
+
+        [DisplayName("功能表項目識別鍵")]
+        [Comment("功能表項目識別鍵")]
         public Guid MenuItemId { get; set; }
+
+        [DisplayName("實驗室識別鍵")]
+        [Comment("實驗室識別鍵")]
         public Guid LabId { get; set; } // 多實驗室維度
+
+        [DisplayName("權限類型")]
+        [Comment("權限類型")]               
         public string PermissionType { get; set; } = string.Empty; // e.g., "Read", "Write"
+
+        [DisplayName("權限效果")]
+        [Comment("權限效果")]
         public string EffectType { get; set; } = "Allow"; // "Allow" 或 "Deny"
 
+        [DisplayName("被代理人識別鍵")]
+        [Comment("被代理人識別鍵")]    
         public Guid? DelegatorUserId { get; set; } // 被代理人 ID (誰委託我代理？)
+
+        [DisplayName("有效起始時間")]
+        [Comment("有效起始時間")]
         public DateTimeOffset? ValidFrom { get; set; } // 為空代表永久有效
+
+        [DisplayName("有效結束時間")]
+        [Comment("有效結束時間")]
         public DateTimeOffset? ValidTo { get; set; }   // 為空代表永久有效
 
         public virtual MenuItem MenuItem { get; set; } = null!;

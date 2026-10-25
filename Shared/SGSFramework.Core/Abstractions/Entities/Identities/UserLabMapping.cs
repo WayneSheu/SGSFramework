@@ -7,27 +7,62 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SGSFramework.Core.Abstractions.Entities.AuditLogs;
 using System;
+using System.ComponentModel;
 
 /// <summary>
 /// UserLabMapping 用於管理用戶與實驗室之間的關聯，包括用戶的主要實驗室和職位標題等信息。
 /// </summary>
+[DisplayName("用戶與實驗室映射")]
+[Comment("用戶與實驗室映射（管理用戶與實驗室之間的關聯，包括用戶的主要實驗室和職位標題等信息）")]
 public class UserLabMapping : IAuditable
 {
+
     private static readonly TimeZoneInfo TaiwanTimeZone = TimeZoneInfo.FindSystemTimeZoneById(
         OperatingSystem.IsWindows() ? "Taipei Standard Time" : "Asia/Taipei");
 
+    [DisplayName("使用者識別鍵")]
+    [Comment("使用者識別鍵")]     
     public Guid UserId { get; private set; }
+    
+    [DisplayName("實驗室識別鍵")]
+    [Comment("實驗室識別鍵")]
     public int LabId { get; private set; }
+   
+    [DisplayName("區域實驗室識別鍵")]
+    [Comment("區域實驗室識別鍵")]
     public Guid TenantLabId { get; private set; }
+    
+    [DisplayName("是否為主要實驗室")]
+    [Comment("是否為主要實驗室")]
     public bool IsPrimary { get; private set; }
+    
+    [DisplayName("職位標題")]
+    [Comment("職位標題")]
     public string? JobTitle { get; private set; }
+    
+    [DisplayName("生效日期")]
+    [Comment("生效日期")]   
     public DateTimeOffset EffectiveDate { get; private set; }
+   
+    [DisplayName("失效日期")]
+    [Comment("失效日期")]   
     public DateTimeOffset? ExpiryDate { get; private set; }
+    
+    [DisplayName("是否啟用")]
+    [Comment("是否啟用")]
     public bool IsActive { get; private set; }
 
     // --- IAuditable 實作 ---
+    [DisplayName("建立時間")]
+    [Comment("建立時間")]
     public DateTimeOffset CreatedAtUtc { get; set; }
+
+    [DisplayName("建立人員識別鍵")]
+    [Comment("建立人員識別鍵")]    
     public string? CreatedBy { get; set; }
+
+    [DisplayName("最後更新時間")]
+    [Comment("最後更新時間")]
     public DateTimeOffset? UpdatedAtUtc { get; set; }
     public string? UpdatedBy { get; set; }
 

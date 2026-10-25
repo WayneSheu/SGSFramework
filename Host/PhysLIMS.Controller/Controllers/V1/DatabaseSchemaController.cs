@@ -1,4 +1,4 @@
-using System.Net.Mime;
+﻿using System.Net.Mime;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -104,7 +104,7 @@ public sealed class DatabaseSchemaController : ApiControllerBase
         ExecuteAsync("匯出結構 PDF", async () =>
         {
             var schema = await _schemaService.GetSchemaAsync(filter, cancellationToken);
-            var bytes = await Task.Run(() => SchemaPdfExporter.Export(schema, filter.IncludeErd, filter.KeysOnly), cancellationToken);
+            var bytes = await Task.Run(() => SchemaPdfExporter.Export(schema, filter.IncludeErd, filter.KeysOnly, filter.Orientation, filter.IncludeHistory), cancellationToken);
             return FileResult(bytes, MediaTypeNames.Application.Pdf, schema.DatabaseName, "pdf");
         });
 

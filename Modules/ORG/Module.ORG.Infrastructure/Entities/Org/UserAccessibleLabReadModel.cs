@@ -4,6 +4,9 @@ using System.Text;
 
 namespace SGS.Modules.ORG.Infrastructure.Entities.Org
 {
+    /// <summary>
+    /// 使用者可存取實驗室的讀取模型。
+    /// </summary>
     public sealed record UserAccessibleLabReadModel
     {
         public required Guid UserId { get; init; }

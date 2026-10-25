@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SGSFramework.Core.Abstractions.Entities.Base;
 using SGSFramework.Core.Abstractions.Entities.Ledgers;
+using System.ComponentModel;
 
 namespace SGSFramework.Core.Abstractions.Entities.AuditLogs
 {
@@ -9,37 +10,76 @@ namespace SGSFramework.Core.Abstractions.Entities.AuditLogs
     /// 審計日誌實體 (支援 SQL Server Ledger 防篡改鏈路與自癒機制)
     /// 使用 JSON 欄位來儲存變化，以便於後續的 NoSQL 存儲或靈活查詢。
     /// </summary>
+    [Comment("資料稽核日誌實體")]
     public class AuditLogEntity : IEntity<long>, ILedgerEntity
     {
+        [DisplayName("主鍵")]
+        [Comment("稽核日誌識別主鍵")]
         public long Id { get; set; }
 
         /// <summary>
         /// 全鏈路追蹤 ID (對應 W3C TraceId 格式 32 位元 HEX)
         /// </summary>
+        [DisplayName("全鏈路追蹤 ID")]
+        [Comment("全鏈路追蹤 ID (對應 W3C TraceId 格式 32 位元 HEX)")]
         public string TraceId { get; set; } = string.Empty;
 
+        [DisplayName("使用者識別")]
+        [Comment("使用者識別")]
         public string? UserId { get; set; }
+
+        [DisplayName("遠端 IP")]
+        [Comment("遠端 IP 位址")]
         public string? RemoteIp { get; set; }
+
+        [DisplayName("建立時間")]
+        [Comment("建立時間")]
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+        [DisplayName("時間戳記")]
+        [Comment("時間戳記")]
         public DateTimeOffset Timestamp { get; set; } = DateTimeOffset.UtcNow;
-
+        [DisplayName("資料表綱要")]
+        [Comment("資料表綱要")]
         public string? Schema { get; set; }
+        [DisplayName("資料表名稱")]
+        [Comment("資料表名稱")]
         public string TableName { get; set; } = string.Empty;
+        [DisplayName("操作類型")]
+        [Comment("操作類型")]
         public string Action { get; set; } = string.Empty;
-
+        [DisplayName("主鍵值")]
+        [Comment("主鍵值")]
         public string? KeyValues { get; set; }
+        [DisplayName("舊值")]
+        [Comment("舊值")]
         public string? OldValues { get; set; }
+        [DisplayName("新值")]
+        [Comment("新值")]
         public string? NewValues { get; set; }
+        [DisplayName("變更欄位")]
+        [Comment("變更欄位")]
         public string? ChangedColumns { get; set; }
 
         // 防篡改鏈路欄位
+        [DisplayName("前一筆雜湊值")]
+        [Comment("前一筆雜湊值")]
         public string PreviousHash { get; set; } = string.Empty;
+        [DisplayName("儲存雜湊值")]
+        [Comment("儲存雜湊值")]
         public string StoredHash { get; set; } = string.Empty;
 
         // 自癒相關欄位
+        [DisplayName("是否已修復")]
+        [Comment("是否已修復")]
         public bool IsRepaired { get; set; }
+        [DisplayName("修復時間")]
+        [Comment("修復時間")]
         public DateTimeOffset? RepairedAt { get; set; }
+        [DisplayName("差異原因")]
+        [Comment("差異原因")] 
         public string? GapReason { get; set; }
+        [DisplayName("原始儲存雜湊值")]
+        [Comment("原始儲存雜湊值")]
         public string? OriginalStoredHash { get; set; }
     }
 

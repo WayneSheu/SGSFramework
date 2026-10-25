@@ -130,85 +130,104 @@ namespace PhysLIMS.API.Migrations
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
+                        .HasColumnType("bigint")
+                        .HasComment("稽核日誌識別主鍵");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetimeoffset(7)")
-                        .HasDefaultValueSql("SYSDATETIMEOFFSET()");
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET()")
+                        .HasComment("建立時間");
 
                     b.Property<string>("Action")
                         .IsRequired()
                         .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasColumnType("nvarchar(50)")
+                        .HasComment("操作類型");
 
                     b.Property<string>("ChangedColumns")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("變更欄位");
 
                     b.Property<string>("GapReason")
                         .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("差異原因");
 
                     b.Property<bool>("IsRepaired")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
-                        .HasDefaultValue(false);
+                        .HasDefaultValue(false)
+                        .HasComment("是否已修復");
 
                     b.Property<string>("KeyValues")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("主鍵值");
 
                     b.Property<string>("NewValues")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("新值");
 
                     b.Property<string>("OldValues")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("舊值");
 
                     b.Property<string>("OriginalStoredHash")
                         .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
+                        .HasColumnType("nvarchar(128)")
+                        .HasComment("原始儲存雜湊值");
 
                     b.Property<string>("PreviousHash")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
+                        .HasColumnType("nvarchar(128)")
+                        .HasComment("前一筆雜湊值");
 
                     b.Property<string>("RemoteIp")
                         .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasColumnType("nvarchar(64)")
+                        .HasComment("遠端 IP 位址");
 
                     b.Property<DateTimeOffset?>("RepairedAt")
-                        .HasColumnType("datetimeoffset(7)");
+                        .HasColumnType("datetimeoffset(7)")
+                        .HasComment("修復時間");
 
                     b.Property<string>("Schema")
                         .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasColumnType("nvarchar(64)")
+                        .HasComment("資料表綱要");
 
                     b.Property<string>("StoredHash")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
+                        .HasColumnType("nvarchar(128)")
+                        .HasComment("儲存雜湊值");
 
                     b.Property<string>("TableName")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
+                        .HasColumnType("nvarchar(128)")
+                        .HasComment("資料表名稱");
 
                     b.Property<DateTimeOffset>("Timestamp")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetimeoffset(7)")
-                        .HasDefaultValueSql("SYSDATETIMEOFFSET()");
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET()")
+                        .HasComment("時間戳記");
 
                     b.Property<string>("TraceId")
                         .IsRequired()
                         .HasMaxLength(64)
                         .IsUnicode(false)
-                        .HasColumnType("varchar(64)");
+                        .HasColumnType("varchar(64)")
+                        .HasComment("全鏈路追蹤 ID (對應 W3C TraceId 格式 32 位元 HEX)");
 
                     b.Property<string>("UserId")
                         .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
+                        .HasColumnType("nvarchar(128)")
+                        .HasComment("使用者識別");
 
                     b.HasKey("Id", "CreatedAt");
 
@@ -223,14 +242,18 @@ namespace PhysLIMS.API.Migrations
 
                     SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TraceId"), new[] { "Action", "CreatedAt", "TableName" });
 
-                    b.ToTable("AuditLogs", "core");
+                    b.ToTable("AuditLogs", "core", t =>
+                        {
+                            t.HasComment("資料稽核日誌實體");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Controller.ControllerMetadata", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
 
                     b.Property<string>("ActionName")
                         .IsRequired()
@@ -393,121 +416,152 @@ namespace PhysLIMS.API.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
 
                     b.Property<string>("ActionName")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("動作名稱");
 
                     b.Property<string>("ActorName")
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("操作者名稱");
 
                     b.Property<Guid?>("ActorUserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("操作者識別");
 
                     b.Property<string>("ClientIp")
                         .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasColumnType("nvarchar(64)")
+                        .HasComment("來源 IP");
 
                     b.Property<Guid>("ControllerMetadataId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("控制器中繼資料識別");
 
                     b.Property<string>("ControllerName")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("異動當下的功能識別（中繼資料重新掃描或移除後仍可辨識）");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("建立時間");
 
                     b.Property<string>("DisplayName")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("功能顯示名稱");
 
                     b.Property<DateTimeOffset?>("ExpectedRestoreAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("預計恢復時間（僅供公告，不會自動恢復）");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
+                        .HasColumnType("bit")
+                        .HasComment("異動後狀態：true = 啟用、false = 停用");
 
                     b.Property<string>("Notice")
                         .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("對使用者公告內容（停用時顯示於系統公告與 API 拒絕訊息）");
 
                     b.Property<string>("PermissionKey")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("權限金鑰");
 
                     b.Property<string>("Reason")
                         .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("內部變更原因（僅管理者與稽核可見）");
 
                     b.HasKey("Id");
 
                     b.HasIndex("ControllerMetadataId", "CreatedAt");
 
-                    b.ToTable("FunctionStatusLogs", "core");
+                    b.ToTable("FunctionStatusLogs", "core", t =>
+                        {
+                            t.HasComment("系統功能啟用 / 停用異動歷程（稽核用，僅新增不修改）");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Controller.MenuItem", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
 
                     b.Property<string>("Component")
                         .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
+                        .HasColumnType("nvarchar(200)")
+                        .HasComment("前端對應 Component 組件路徑 (適用於 Vue/Blazor 動態載入)");
 
                     b.Property<Guid?>("ControllerId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("控制器識別鍵");
 
                     b.Property<string>("DisplayName")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("顯示名稱");
 
                     b.Property<int>("DisplayOrder")
-                        .HasColumnType("int");
+                        .HasColumnType("int")
+                        .HasComment("顯示排序");
 
                     b.Property<string>("Icon")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("圖示");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
+                        .HasColumnType("bit")
+                        .HasComment("是否啟用");
 
                     b.Property<bool>("IsVisible")
-                        .HasColumnType("bit");
+                        .HasColumnType("bit")
+                        .HasComment("是否在選單中顯示 (預留隱藏路由支援)");
 
                     b.Property<string>("Key")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("節點識別 Key (例如: ORG.LABORATORY.LIST)");
 
                     b.Property<string>("ModuleName")
                         .IsRequired()
                         .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasColumnType("nvarchar(50)")
+                        .HasComment("模組識別碼 (區分主專案與 SES 外掛模組，如: \"System\", \"ORG\")");
 
                     b.Property<Guid?>("ParentId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("父節點識別鍵");
 
                     b.Property<string>("PermissionKey")
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("關聯的權限鍵值");
 
                     b.Property<string>("Route")
                         .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
+                        .HasColumnType("nvarchar(200)")
+                        .HasComment("前端路由路徑 (僅 MenuType.Page 必須填寫)");
 
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
+                        .HasColumnType("nvarchar(20)")
+                        .HasComment("節點類型 (Section, Group, Page)");
 
                     b.HasKey("Id");
 
@@ -520,42 +574,54 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasIndex("ModuleName", "IsActive", "DisplayOrder");
 
-                    b.ToTable("MenuItems", "core");
+                    b.ToTable("MenuItems", "core", t =>
+                        {
+                            t.HasComment("動態選單實體 (Domain Entity)");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Controller.UserResourceGrant", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
 
                     b.Property<Guid?>("DelegatorUserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("被代理人識別鍵");
 
                     b.Property<string>("EffectType")
                         .IsRequired()
                         .HasMaxLength(10)
-                        .HasColumnType("nvarchar(10)");
+                        .HasColumnType("nvarchar(10)")
+                        .HasComment("權限效果");
 
                     b.Property<Guid>("LabId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("實驗室識別鍵");
 
                     b.Property<Guid>("MenuItemId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("功能表項目識別鍵");
 
                     b.Property<string>("PermissionType")
                         .IsRequired()
                         .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
+                        .HasColumnType("nvarchar(20)")
+                        .HasComment("權限類型");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("使用者識別鍵");
 
                     b.Property<DateTimeOffset?>("ValidFrom")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("有效起始時間");
 
                     b.Property<DateTimeOffset?>("ValidTo")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("有效結束時間");
 
                     b.HasKey("Id");
 
@@ -564,110 +630,144 @@ namespace PhysLIMS.API.Migrations
                     b.HasIndex("UserId", "MenuItemId", "LabId")
                         .HasDatabaseName("IX_UserResource_Lookup");
 
-                    b.ToTable("UserResourceGrants", "core");
+                    b.ToTable("UserResourceGrants", "core", t =>
+                        {
+                            t.HasComment("使用者資源授權實體，表示特定使用者對特定資源（如功能表項目）的存取權限");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.AccessReviewCampaign", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
 
                     b.Property<DateTimeOffset?>("ClosedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("覆核結束時間");
 
                     b.Property<string>("ClosedBy")
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("覆核結束人員");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("建立時間");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("覆核範圍的實驗室 ID");
 
                     b.Property<string>("Description")
                         .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
+                        .HasColumnType("nvarchar(1000)")
+                        .HasComment("覆核活動描述");
 
                     b.Property<DateTimeOffset>("DueDate")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("覆核期限");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
+                        .HasColumnType("nvarchar(200)")
+                        .HasComment("覆核活動名稱");
 
                     b.Property<string>("RoleScope")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("覆核範圍的角色 ID（JSON 陣列）；空陣列表示全部角色");
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasColumnType("nvarchar(450)");
+                        .HasColumnType("nvarchar(450)")
+                        .HasComment("活動狀態");
 
                     b.HasKey("Id");
 
                     b.HasIndex("Status", "CreatedAt");
 
-                    b.ToTable("AccessReviewCampaigns", "core");
+                    b.ToTable("AccessReviewCampaigns", "core", t =>
+                        {
+                            t.HasComment("定期權限覆核活動 (Access Certification Campaign)。建立時快照當下所有（或指定角色的）成員指派，由覆核者逐一確認「保留」或「回收」。");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.AccessReviewItem", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
 
                     b.Property<Guid>("CampaignId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("覆核活動識別");
 
                     b.Property<string>("Comment")
                         .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
+                        .HasColumnType("nvarchar(1000)")
+                        .HasComment("覆核決定說明");
 
                     b.Property<DateTimeOffset?>("DecidedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("覆核決定時間");
 
                     b.Property<Guid?>("DecidedBy")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("覆核決定時間");
 
                     b.Property<string>("DecidedByName")
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("覆核決定人員名稱");
 
                     b.Property<string>("Decision")
                         .IsRequired()
-                        .HasColumnType("nvarchar(450)");
+                        .HasColumnType("nvarchar(450)")
+                        .HasComment("覆核決定");
+
+                    b.Property<string>("Email")
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("使用者電子郵件");
 
                     b.Property<string>("FullName")
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("使用者全名");
 
                     b.Property<Guid?>("PrimaryLabId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("快照：使用者主要實驗室（覆核者依此範圍覆核所屬人員）");
 
                     b.Property<string>("PrimaryLabName")
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("快照：使用者主要實驗室名稱（覆核者依此範圍覆核所屬人員）");
 
                     b.Property<Guid>("RoleId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("角色識別");
 
                     b.Property<string>("RoleName")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("角色名稱");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("覆核活動名稱");
 
                     b.Property<string>("UserName")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("使用者帳號");
 
                     b.HasKey("Id");
 
@@ -675,7 +775,10 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasIndex("CampaignId", "PrimaryLabId");
 
-                    b.ToTable("AccessReviewItems", "core");
+                    b.ToTable("AccessReviewItems", "core", t =>
+                        {
+                            t.HasComment("覆核項目：一位使用者在一個角色上的指派");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.ApplicationRole", b =>
@@ -686,7 +789,8 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<string>("Code")
                         .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasColumnType("nvarchar(64)")
+                        .HasComment("角色代碼");
 
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
@@ -694,26 +798,32 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<string>("Description")
                         .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
+                        .HasColumnType("nvarchar(512)")
+                        .HasComment("角色描述");
 
                     b.Property<DateTimeOffset?>("EffectiveFrom")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("生效起日（含）；null 表示立即生效。生效期間外角色不授予任何權限");
 
                     b.Property<DateTimeOffset?>("EffectiveTo")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("生效迄日（含）；null 表示無期限");
 
                     b.Property<int>("HierarchyLevel")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int")
-                        .HasDefaultValue(10);
+                        .HasDefaultValue(10)
+                        .HasComment("角色管理階層數值（數字越大位階越高。例: SA=100, MO=50, MA=10）");
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
+                        .HasColumnType("bit")
+                        .HasComment("是否已刪除");
 
                     b.Property<bool>("IsSystemRole")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
-                        .HasDefaultValue(false);
+                        .HasDefaultValue(false)
+                        .HasComment("是否為系統內建角色。預設為 false；系統初始化範本會明確設為 true。");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -728,20 +838,24 @@ namespace PhysLIMS.API.Migrations
                     b.Property<bool>("RequiresAuditAssignment")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
-                        .HasDefaultValue(false);
+                        .HasDefaultValue(false)
+                        .HasComment("是否為稽核角色。預設為 false；僅在使用者具有效「稽核指派」的區域實驗室中生效。");
 
                     b.Property<string>("ScopeType")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasColumnType("nvarchar(max)")
-                        .HasDefaultValue("LabScoped");
+                        .HasDefaultValue("LabScoped")
+                        .HasComment("角色範圍類型 (SystemDefault, Global, LabScoped)");
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("角色狀態(0 = 停用, 1 = 啟用中,2=已鎖定 ,3=待審核)");
 
                     b.Property<Guid?>("TenantLabId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("區域實驗室專屬角色的所屬租戶實驗室 ID（全域或系統角色則為 Null）");
 
                     b.HasKey("Id");
 
@@ -755,7 +869,10 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasIndex("TenantLabId", "HierarchyLevel");
 
-                    b.ToTable("AspNetRoles", "core");
+                    b.ToTable("AspNetRoles", "core", t =>
+                        {
+                            t.HasComment("企業級自訂應用程式角色實體 (支援 ARBAC 與多實驗室隔離)");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.ApplicationUser", b =>
@@ -772,14 +889,17 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("帳號建立時間");
 
                     b.Property<DateTimeOffset?>("DeletedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("帳號刪除時間");
 
                     b.Property<string>("DeletedBy")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("帳號刪除者");
 
                     b.Property<string>("Email")
                         .HasMaxLength(256)
@@ -789,20 +909,25 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("bit");
 
                     b.Property<string>("EmployeeNo")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("員工編號");
 
                     b.Property<string>("FullName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("使用者真實姓名");
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
+                        .HasColumnType("bit")
+                        .HasComment("帳號建立者");
 
                     b.Property<bool>("IsSystemAdmin")
-                        .HasColumnType("bit");
+                        .HasColumnType("bit")
+                        .HasComment("是否為系統管理員");
 
                     b.Property<DateTimeOffset?>("LastLoginAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("帳號最後登入時間");
 
                     b.Property<bool>("LockoutEnabled")
                         .HasColumnType("bit");
@@ -832,7 +957,8 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("帳號目前狀態");
 
                     b.Property<bool>("TwoFactorEnabled")
                         .HasColumnType("bit");
@@ -851,52 +977,67 @@ namespace PhysLIMS.API.Migrations
                         .HasDatabaseName("UserNameIndex")
                         .HasFilter("[NormalizedUserName] IS NOT NULL");
 
-                    b.ToTable("AspNetUsers", "core");
+                    b.ToTable("AspNetUsers", "core", t =>
+                        {
+                            t.HasComment("擴充自訂的 Identity 使用者實體");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.LabAuditAssignment", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
 
                     b.Property<Guid?>("AssignedBy")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("指派人員識別鍵");
 
                     b.Property<string>("AssignedByName")
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("指派人員名稱");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("指派時間");
 
                     b.Property<DateTimeOffset>("EffectiveFrom")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("生效起始（含）");
 
                     b.Property<DateTimeOffset>("EffectiveTo")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("生效迄止（含）");
 
                     b.Property<string>("Reason")
                         .IsRequired()
                         .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("稽核原因 / 稽核案號");
 
                     b.Property<string>("RevokeReason")
                         .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("撤銷原因");
 
                     b.Property<DateTimeOffset?>("RevokedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("撤銷時間");
 
                     b.Property<string>("RevokedByName")
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("撤銷人員識別鍵");
 
                     b.Property<Guid>("TenantLabId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("受稽核的區域實驗室（ORG Organization.TenantLabId）");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("使用者識別鍵");
 
                     b.HasKey("Id");
 
@@ -904,172 +1045,221 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasIndex("UserId", "TenantLabId");
 
-                    b.ToTable("LabAuditAssignments", "core");
+                    b.ToTable("LabAuditAssignments", "core", t =>
+                        {
+                            t.HasComment("實驗室稽核指派：指定使用者於起訖期間內對某區域實驗室執行稽核職責。有效期間內，使用者所持有的稽核角色（ApplicationRole.RequiresAuditAssignment）權限於該實驗室生效，且該實驗室會出現在使用者可切換的實驗室清單中；期間外或撤銷後自動失效。紀錄不刪除，保留完整稽核軌跡。");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.LabManager", b =>
                 {
                     b.Property<Guid>("TenantLabId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("區域實驗室識別鍵");
 
                     b.Property<Guid>("ManagerUserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("主管使用者識別鍵");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("最後更新時間");
 
                     b.Property<string>("UpdatedByName")
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("最後更新人員名稱");
 
                     b.HasKey("TenantLabId");
 
                     b.HasIndex("ManagerUserId");
 
-                    b.ToTable("LabManagers", "core");
+                    b.ToTable("LabManagers", "core", t =>
+                        {
+                            t.HasComment("區域實驗室主管（以 TenantLabId 對應 ORG 區域實驗室，與 UserLabMapping 相同的鍵值維度）");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.RemediationTicket", b =>
                 {
                     b.Property<string>("TicketId")
                         .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
+                        .HasColumnType("nvarchar(128)")
+                        .HasComment("憑證唯一識別碼 (通常為安全隨機生成的 GUID 或加密記號)");
 
                     b.Property<string>("CreatedByIp")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasColumnType("nvarchar(64)")
+                        .HasComment("核發此憑證時的客戶端來源 IP (供後續日誌鑑識比對)");
 
                     b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("datetime2")
+                        .HasComment("憑證失效截止時間：關鍵管控，時效性驗證，逾期即作廢");
 
                     b.Property<bool>("IsUsed")
-                        .HasColumnType("bit");
+                        .HasColumnType("bit")
+                        .HasComment("該憑證是否已被使用：關鍵管控，防止 Replay Attack（重放攻擊）");
 
                     b.Property<DateTime>("IssuedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("datetime2")
+                        .HasComment("憑證核發時間");
 
                     b.Property<string>("RemediationReason")
                         .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("核發此憑證時的資安風險原因說明");
 
                     b.Property<string>("UserId")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
+                        .HasColumnType("nvarchar(128)")
+                        .HasComment("關聯的用戶識別碼");
 
                     b.HasKey("TicketId");
 
                     b.HasIndex("TicketId", "UserId");
 
-                    b.ToTable("RemediationTickets", "core");
+                    b.ToTable("RemediationTickets", "core", t =>
+                        {
+                            t.HasComment("身分補償修復憑證實體：專門用於記錄因資安熔斷（Lockdown）後，允許用戶執行高風險密碼修復或身分重驗的臨時安全 Ticket。");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.RoleAuditLog", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
 
                     b.Property<string>("Action")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasColumnType("nvarchar(64)")
+                        .HasComment("動作代碼，見 RoleAuditActions");
 
                     b.Property<string>("ActorName")
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("操作者名稱");
 
                     b.Property<Guid?>("ActorUserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("操作者用戶識別鍵");
 
                     b.Property<int>("AffectedUserCount")
-                        .HasColumnType("int");
+                        .HasColumnType("int")
+                        .HasComment("受影響的使用者人數");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("建立時間");
 
                     b.Property<string>("Detail")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("補充明細（JSON，例如權限差異、成員清單）");
 
                     b.Property<Guid>("RoleId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("角色識別鍵");
 
                     b.Property<string>("RoleName")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("異動當下的角色名稱（角色刪除或更名後仍可辨識）");
 
                     b.Property<string>("Summary")
                         .IsRequired()
                         .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
+                        .HasColumnType("nvarchar(1000)")
+                        .HasComment("人可讀的異動摘要");
 
                     b.HasKey("Id");
 
                     b.HasIndex("RoleId", "CreatedAt");
 
-                    b.ToTable("RoleAuditLogs", "core");
+                    b.ToTable("RoleAuditLogs", "core", t =>
+                        {
+                            t.HasComment("角色異動歷程（稽核用，僅新增不修改）。記錄角色狀態、設定、權限、成員、AD 群組等所有異動，含操作者、時間與影響人數。");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.RoleLabScope", b =>
                 {
                     b.Property<Guid>("RoleId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("角色識別鍵");
 
                     b.Property<Guid>("TenantLabId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("區域實驗室的 TenantLabId（ORG Organization.TenantLabId）");
 
                     b.HasKey("RoleId", "TenantLabId");
 
                     b.HasIndex("TenantLabId");
 
-                    b.ToTable("RoleLabScopes", "core");
+                    b.ToTable("RoleLabScopes", "core", t =>
+                        {
+                            t.HasComment("實驗室專屬角色適用的區域實驗室（一個角色可指派多個實驗室）");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.UserLabMapping", b =>
                 {
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("使用者識別鍵");
 
                     b.Property<int>("LabId")
-                        .HasColumnType("int");
+                        .HasColumnType("int")
+                        .HasComment("實驗室識別鍵");
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetimeoffset(7)")
-                        .HasDefaultValueSql("SYSDATETIMEOFFSET()");
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET()")
+                        .HasComment("建立時間");
 
                     b.Property<string>("CreatedBy")
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("建立人員識別鍵");
 
                     b.Property<DateTimeOffset>("EffectiveDate")
-                        .HasColumnType("datetimeoffset(7)");
+                        .HasColumnType("datetimeoffset(7)")
+                        .HasComment("生效日期");
 
                     b.Property<DateTimeOffset?>("ExpiryDate")
-                        .HasColumnType("datetimeoffset(7)");
+                        .HasColumnType("datetimeoffset(7)")
+                        .HasComment("失效日期");
 
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
-                        .HasDefaultValue(true);
+                        .HasDefaultValue(true)
+                        .HasComment("是否啟用");
 
                     b.Property<bool>("IsPrimary")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
-                        .HasDefaultValue(false);
+                        .HasDefaultValue(false)
+                        .HasComment("是否為主要實驗室");
 
                     b.Property<string>("JobTitle")
                         .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasColumnType("nvarchar(50)")
+                        .HasComment("職位標題");
 
                     b.Property<Guid>("TenantLabId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("區域實驗室識別鍵");
 
                     b.Property<DateTimeOffset?>("UpdatedAtUtc")
-                        .HasColumnType("datetimeoffset(7)");
+                        .HasColumnType("datetimeoffset(7)")
+                        .HasComment("最後更新時間");
 
                     b.Property<string>("UpdatedBy")
                         .HasMaxLength(100)
@@ -1091,50 +1281,62 @@ namespace PhysLIMS.API.Migrations
                     b.HasIndex("UserId", "IsActive", "EffectiveDate", "ExpiryDate")
                         .HasDatabaseName("IX_UserLabMappings_EffectiveRange");
 
-                    b.ToTable("UserLabMappings", "core");
+                    b.ToTable("UserLabMappings", "core", t =>
+                        {
+                            t.HasComment("用戶與實驗室映射（管理用戶與實驗室之間的關聯，包括用戶的主要實驗室和職位標題等信息）");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.UserRefreshToken", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
+                        .HasColumnType("bigint")
+                        .HasComment("識別鍵");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
                     b.Property<string>("ClientIp")
                         .IsRequired()
                         .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasColumnType("nvarchar(50)")
+                        .HasComment("登入時的來源 IP 紀錄");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
-                        .HasDefaultValueSql("SYSUTCDATETIME()");
+                        .HasDefaultValueSql("SYSUTCDATETIME()")
+                        .HasComment("建立時間");
 
                     b.Property<string>("DeviceId")
                         .IsRequired()
                         .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
+                        .HasColumnType("nvarchar(255)")
+                        .HasComment("裝置唯一指紋 (由前端 Vue / Blazor 經由 JS 產生的不重複雜湊值)");
 
                     b.Property<string>("DeviceName")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
+                        .HasColumnType("nvarchar(200)")
+                        .HasComment("裝置名稱或瀏覽器特徵描述 (例如: Chrome on Windows)");
 
                     b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("datetime2")
+                        .HasComment("憑證絕對過期時間");
 
                     b.Property<bool>("IsDead")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
-                        .HasDefaultValue(false);
+                        .HasDefaultValue(false)
+                        .HasComment("核心資安防禦熔斷標記：標記該憑證是否已被重放攻擊戳死、或已被主動註銷失效");
 
                     b.Property<bool>("IsFrozen")
-                        .HasColumnType("bit");
+                        .HasColumnType("bit")
+                        .HasComment("標記該用戶所有/特定 Session 是否被安全鎖定");
 
                     b.Property<DateTime>("LastActiveAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("datetime2")
+                        .HasComment("該裝置最後一次發起請求或換票的活動時間 (用於 LIFO 被動擠出策略排序)");
 
                     b.Property<string>("RefreshTokenHash")
                         .IsRequired()
@@ -1145,18 +1347,22 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<string>("ReusedTokenCache")
                         .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasColumnType("nvarchar(64)")
+                        .HasComment("快取上一次生成的全新 TokenHash，供寬限期內的併發請求直接複用");
 
                     b.Property<string>("RiskReason")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("記錄風險觸發原因或主動登出/熔斷稽核事由");
 
                     b.Property<DateTime?>("RotatedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("datetime2")
+                        .HasComment("上一次成功輪換的時間（用於寬限期計算）");
 
                     b.Property<string>("UserId")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("使用者唯一識別碼");
 
                     b.HasKey("Id");
 
@@ -1174,27 +1380,34 @@ namespace PhysLIMS.API.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("建立時間");
 
                     b.Property<string>("CreatedBy")
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("建立者");
 
                     b.Property<DateTimeOffset>("ExpiresAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("到期時間（UTC），到期後由排程自動解除角色指派");
 
                     b.Property<string>("Reason")
                         .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("設定原因，例如「調任銷售部，業務交接」");
 
                     b.Property<Guid>("RoleId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("角色識別鍵");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("使用者識別鍵");
 
                     b.HasKey("Id");
 
@@ -1203,176 +1416,224 @@ namespace PhysLIMS.API.Migrations
                     b.HasIndex("UserId", "RoleId")
                         .IsUnique();
 
-                    b.ToTable("UserRoleExpirations", "core");
+                    b.ToTable("UserRoleExpirations", "core", t =>
+                        {
+                            t.HasComment("過渡期角色（Transition Role）：角色指派的有效期限。調職交接時保留舊角色一段時間，到期由排程自動回收，避免權限累積 (Privilege Creep)。每位使用者在同一角色上最多一筆未處理的期限。");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Modules.ModuleMetadata", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
 
                     b.Property<string>("AssemblyPath")
                         .IsRequired()
                         .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("組件路徑");
 
                     b.Property<string>("Checksum")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasColumnType("nvarchar(64)")
+                        .HasComment("校驗和");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
+                        .HasColumnType("bit")
+                        .HasComment("是否啟用");
 
                     b.Property<DateTime>("LastLoadedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("datetime2")
+                        .HasComment("最後載入時間");
 
                     b.Property<string>("ModuleName")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("模組名稱");
 
                     b.Property<string>("ModuleTitle")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("模組標題");
 
                     b.Property<string>("Version")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)")
-                        .HasDefaultValue("1.0.0");
+                        .HasDefaultValue("1.0.0")
+                        .HasComment("版本");
 
                     b.HasKey("Id");
 
                     b.HasIndex("ModuleName")
                         .IsUnique();
 
-                    b.ToTable("ModuleMetadatas", "core");
+                    b.ToTable("ModuleMetadatas", "core", t =>
+                        {
+                            t.HasComment("模組元資料實體，包含模組的基本資訊與狀態");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.SystemSettings.SystemSetting", b =>
                 {
                     b.Property<string>("Key")
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("識別主鍵");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("更新時間");
 
                     b.Property<string>("UpdatedByName")
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("更新者名稱");
 
                     b.Property<Guid?>("UpdatedByUserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("更新者用戶識別鍵");
 
                     b.Property<string>("Value")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("設定內容（JSON）");
 
                     b.HasKey("Key");
 
-                    b.ToTable("SystemSettings", "core");
+                    b.ToTable("SystemSettings", "core", t =>
+                        {
+                            t.HasComment("系統配置（管理者可於執行期調整的設定，例如外觀識別、密碼規則）。以「分類鍵 + JSON 值」儲存，新增設定分類時不需異動資料表結構。");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.SystemSettings.SystemSettingChangeLog", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
 
                     b.Property<string>("ActorName")
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("操作者名稱");
 
                     b.Property<Guid?>("ActorUserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("操作者用戶識別鍵");
 
                     b.Property<string>("ClientIp")
                         .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasColumnType("nvarchar(64)")
+                        .HasComment("客戶端 IP");
 
                     b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("建立時間");
 
                     b.Property<string>("SettingKey")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("設定分類鍵");
 
                     b.Property<string>("Summary")
                         .IsRequired()
                         .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
+                        .HasColumnType("nvarchar(2000)")
+                        .HasComment("異動摘要");
 
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedAt");
 
-                    b.ToTable("SystemSettingChangeLogs", "core");
+                    b.ToTable("SystemSettingChangeLogs", "core", t =>
+                        {
+                            t.HasComment("系統配置異動歷程（稽核用，僅新增不修改）");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Logings.SecurityLog", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
+                        .HasColumnType("int")
+                        .HasComment("流水號主鍵");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<string>("AlertId")
-                        .HasColumnType("char(32)");
+                        .HasColumnType("char(32)")
+                        .HasComment("告警識別碼");
 
                     b.Property<string>("ClientIp")
                         .HasMaxLength(64)
-                        .HasColumnType("NVARCHAR(64)");
+                        .HasColumnType("NVARCHAR(64)")
+                        .HasComment("客戶端來源 IP 位址");
 
                     b.Property<string>("CorrelationId")
                         .HasMaxLength(50)
                         .IsUnicode(false)
-                        .HasColumnType("varchar(50)");
+                        .HasColumnType("varchar(50)")
+                        .HasComment("關聯識別碼");
 
                     b.Property<string>("EventCategory")
                         .HasMaxLength(128)
-                        .HasColumnType("NVARCHAR(128)");
+                        .HasColumnType("NVARCHAR(128)")
+                        .HasComment("稽核事件分類 (例如: Auth.TokenRefresh)");
 
                     b.Property<string>("Exception")
-                        .HasColumnType("NVARCHAR(MAX)");
+                        .HasColumnType("NVARCHAR(MAX)")
+                        .HasComment("異常堆疊追蹤資訊");
 
                     b.Property<string>("Fingerprint")
-                        .HasColumnType("char(64)");
+                        .HasColumnType("char(64)")
+                        .HasComment("特徵碼");
 
                     b.Property<string>("Level")
                         .HasMaxLength(128)
-                        .HasColumnType("NVARCHAR(128)");
+                        .HasColumnType("NVARCHAR(128)")
+                        .HasComment("日誌層級 (例如: Information, Warning, Error)");
 
                     b.Property<string>("LogType")
                         .HasMaxLength(64)
-                        .HasColumnType("NVARCHAR(64)");
+                        .HasColumnType("NVARCHAR(64)")
+                        .HasComment("日誌分流類型 (例如: Security)");
 
                     b.Property<string>("Message")
-                        .HasColumnType("NVARCHAR(MAX)");
+                        .HasColumnType("NVARCHAR(MAX)")
+                        .HasComment("日誌訊息");
 
                     b.Property<string>("Properties")
-                        .HasColumnType("NVARCHAR(MAX)");
+                        .HasColumnType("NVARCHAR(MAX)")
+                        .HasComment("隨附結構化快照內容 (JSON 格式)");
 
                     b.Property<DateTimeOffset>("Timestamp")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("DATETIMEOFFSET(7)")
-                        .HasDefaultValueSql("SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time'");
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time'")
+                        .HasComment("高精度時間戳記 (帶時區)");
 
                     b.Property<string>("UserId")
                         .HasMaxLength(128)
-                        .HasColumnType("NVARCHAR(128)");
+                        .HasColumnType("NVARCHAR(128)")
+                        .HasComment("觸發事件的用戶識別碼");
 
                     b.HasKey("Id");
 
                     b.HasIndex("CorrelationId");
 
-                    b.ToTable("SecurityLog", "core");
+                    b.ToTable("SecurityLog", "core", t =>
+                        {
+                            t.HasComment("安全性審計總帳實體模型 (對應 MSSQL 2025 Ledger 防篡改唯讀資料表)");
+                        });
 
                     b
                         .HasAnnotation("SqlServer:IsAppendOnly", true)
@@ -1384,76 +1645,94 @@ namespace PhysLIMS.API.Migrations
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
+                        .HasColumnType("bigint")
+                        .HasComment("識別鍵");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
                     b.Property<string>("AlertId")
-                        .HasColumnType("char(32)");
+                        .HasColumnType("char(32)")
+                        .HasComment("告警識別碼");
 
                     b.Property<string>("CorrelationId")
                         .HasMaxLength(50)
                         .IsUnicode(false)
-                        .HasColumnType("varchar(50)");
+                        .HasColumnType("varchar(50)")
+                        .HasComment("關聯識別碼");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("DATETIMEOFFSET(7)")
-                        .HasDefaultValueSql("SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time'");
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time'")
+                        .HasComment("建立時間");
 
                     b.Property<string>("CurrentHash")
                         .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasColumnType("nvarchar(64)")
+                        .HasComment("雜湊值");
 
                     b.Property<string>("Exception")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("異常");
 
                     b.Property<string>("Fingerprint")
-                        .HasColumnType("char(64)");
+                        .HasColumnType("char(64)")
+                        .HasComment("特徵碼");
 
                     b.Property<string>("IP")
                         .HasMaxLength(45)
                         .IsUnicode(false)
-                        .HasColumnType("varchar(45)");
+                        .HasColumnType("varchar(45)")
+                        .HasComment("IP位址");
 
                     b.Property<string>("Level")
                         .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
+                        .HasColumnType("nvarchar(128)")
+                        .HasComment("層級");
 
                     b.Property<string>("Message")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("訊息");
 
                     b.Property<string>("ModuleName")
                         .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasColumnType("nvarchar(50)")
+                        .HasComment("模組名稱");
 
                     b.Property<string>("Operation")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("操作");
 
                     b.Property<string>("Payload")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("有效載荷");
 
                     b.Property<string>("PrevHash")
                         .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasColumnType("nvarchar(64)")
+                        .HasComment("前一筆雜湊值");
 
                     b.Property<string>("TenantId")
                         .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasColumnType("nvarchar(50)")
+                        .HasComment("區域實驗室關聯識別碼");
 
                     b.Property<DateTimeOffset>("TimeStamp")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("DATETIMEOFFSET(7)")
-                        .HasDefaultValueSql("SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time'");
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time'")
+                        .HasComment("時間戳記");
 
                     b.Property<string>("Url")
                         .HasMaxLength(2083)
                         .IsUnicode(true)
-                        .HasColumnType("nvarchar(2083)");
+                        .HasColumnType("nvarchar(2083)")
+                        .HasComment("URL");
 
                     b.Property<string>("UserId")
                         .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasColumnType("nvarchar(50)")
+                        .HasComment("用戶識別碼");
 
                     b.HasKey("Id");
 
@@ -1463,7 +1742,12 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasIndex("TimeStamp");
 
-                    b.ToTable("SystemLogs", "core");
+                    b.HasIndex("UserId");
+
+                    b.ToTable("SystemLogs", "core", t =>
+                        {
+                            t.HasComment("系統日誌實體：用於記錄系統運行狀態、事件、錯誤與稽核資訊");
+                        });
 
                     b
                         .HasAnnotation("SqlServer:IsAppendOnly", true)
@@ -1535,38 +1819,51 @@ namespace PhysLIMS.API.Migrations
                 {
                     b.Property<Guid>("TenantLabId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("區域實驗室識別碼（ORG Organization.TenantLabId）");
 
                     b.Property<bool>("IsRestricted")
-                        .HasColumnType("bit");
+                        .HasColumnType("bit")
+                        .HasComment("是否限制功能");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("最後更新時間");
 
                     b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("最後更新人員識別鍵");
 
                     b.Property<string>("UpdatedByName")
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("最後更新人員名稱");
 
                     b.HasKey("TenantLabId");
 
-                    b.ToTable("LabFunctionPolicies", "core");
+                    b.ToTable("LabFunctionPolicies", "core", t =>
+                        {
+                            t.HasComment("區域實驗室的功能開放政策。IsRestricted = false（或無資料）表示所有功能開放；IsRestricted = true 時，僅 LabFunctionScope 列出的權限於該實驗室生效（對所有使用者與角色的上限，系統管理員除外）。");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Entities.LabFunctionScope", b =>
                 {
                     b.Property<Guid>("TenantLabId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("區域實驗室識別碼（ORG Organization.TenantLabId）");
 
                     b.Property<string>("PermissionKey")
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("權限鍵");
 
                     b.HasKey("TenantLabId", "PermissionKey");
 
-                    b.ToTable("LabFunctionScopes", "core");
+                    b.ToTable("LabFunctionScopes", "core", t =>
+                        {
+                            t.HasComment("區域實驗室開放的權限（完整權限鍵，例：ORG.LABORATORY.READ）");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Entities.PermissionMetadata", b =>
@@ -1666,66 +1963,83 @@ namespace PhysLIMS.API.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
 
                     b.Property<string>("AddedPermissionKeys")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("相對於送出當下的新增權限（JSON 陣列）");
 
                     b.Property<int>("AffectedUserCount")
-                        .HasColumnType("int");
+                        .HasColumnType("int")
+                        .HasComment("送出當下的角色成員數（影響範圍）");
 
                     b.Property<string>("PreviousRoleStatus")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("送出申請當下的角色狀態");
 
                     b.Property<string>("RemovedPermissionKeys")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("相對於送出當下的移除權限（JSON 陣列）");
 
                     b.Property<string>("RequestReason")
                         .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
+                        .HasColumnType("nvarchar(1000)")
+                        .HasComment("提出者說明（變更原因）");
 
                     b.Property<DateTimeOffset>("RequestedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("申請時間");
 
                     b.Property<Guid>("RequestedBy")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("申請者識別鍵");
 
                     b.Property<string>("RequestedByName")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("申請者名稱");
 
                     b.Property<string>("ReviewComment")
                         .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
+                        .HasColumnType("nvarchar(1000)")
+                        .HasComment("審核意見");
 
                     b.Property<DateTimeOffset?>("ReviewedAt")
-                        .HasColumnType("datetimeoffset");
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("審核時間");
 
                     b.Property<Guid?>("ReviewedBy")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("審核者識別鍵");
 
                     b.Property<string>("ReviewedByName")
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("審核者名稱");
 
                     b.Property<Guid>("RoleId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("角色識別鍵");
 
                     b.Property<string>("RoleName")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("角色名稱");
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasColumnType("nvarchar(450)");
+                        .HasColumnType("nvarchar(450)")
+                        .HasComment("申請狀態");
 
                     b.Property<string>("TargetPermissionKeys")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("核准後要套用的完整權限鍵清單（JSON 陣列）");
 
                     b.HasKey("Id");
 
@@ -1733,7 +2047,10 @@ namespace PhysLIMS.API.Migrations
 
                     b.HasIndex("Status", "RequestedAt");
 
-                    b.ToTable("RoleChangeRequests", "core");
+                    b.ToTable("RoleChangeRequests", "core", t =>
+                        {
+                            t.HasComment("角色權限變更申請，用於管理角色權限的變更流程。");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Entities.RoleGlobalPermission", b =>
@@ -1741,54 +2058,64 @@ namespace PhysLIMS.API.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier")
-                        .HasColumnName("id");
+                        .HasColumnName("id")
+                        .HasComment("唯一識別碼 (Primary Key)");
 
                     b.Property<long>("Bitmask")
                         .HasColumnType("bigint")
-                        .HasColumnName("bitmask");
+                        .HasColumnName("bitmask")
+                        .HasComment("64 位元權限遮罩值 (Bitmask 0-63)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2")
-                        .HasColumnName("created_at");
+                        .HasColumnName("created_at")
+                        .HasComment("建立時間");
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("datetimeoffset")
-                        .HasColumnName("created_at_utc");
+                        .HasColumnName("created_at_utc")
+                        .HasComment("建立時間 (UTC)");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(256)
                         .IsUnicode(false)
                         .HasColumnType("varchar(256)")
-                        .HasColumnName("created_by");
+                        .HasColumnName("created_by")
+                        .HasComment("建立者");
 
                     b.Property<string>("PermissionKey")
                         .IsRequired()
                         .HasMaxLength(150)
                         .IsUnicode(false)
                         .HasColumnType("varchar(150)")
-                        .HasColumnName("permission_key");
+                        .HasColumnName("permission_key")
+                        .HasComment("全域權限或模組識別 Key");
 
                     b.Property<string>("RoleId")
                         .IsRequired()
                         .HasMaxLength(450)
                         .IsUnicode(false)
                         .HasColumnType("varchar(450)")
-                        .HasColumnName("role_id");
+                        .HasColumnName("role_id")
+                        .HasComment("角色識別碼 (對應 ASP.NET Core Identity RoleId)");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2")
-                        .HasColumnName("updated_at");
+                        .HasColumnName("updated_at")
+                        .HasComment("最後修改時間");
 
                     b.Property<DateTimeOffset?>("UpdatedAtUtc")
                         .HasColumnType("datetimeoffset")
-                        .HasColumnName("updated_at_utc");
+                        .HasColumnName("updated_at_utc")
+                        .HasComment("最後修改時間 (UTC)");
 
                     b.Property<string>("UpdatedBy")
                         .HasMaxLength(256)
                         .IsUnicode(false)
                         .HasColumnType("varchar(256)")
-                        .HasColumnName("updated_by");
+                        .HasColumnName("updated_by")
+                        .HasComment("最後修改者");
 
                     b.HasKey("Id");
 
@@ -1796,7 +2123,10 @@ namespace PhysLIMS.API.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_role_global_permissions_role_key");
 
-                    b.ToTable("Role_Global_Permissions", "core");
+                    b.ToTable("Role_Global_Permissions", "core", t =>
+                        {
+                            t.HasComment("角色全域/模組級 64 位元遮罩權限實體");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Entities.SodRule", b =>
@@ -1843,17 +2173,21 @@ namespace PhysLIMS.API.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
 
                     b.Property<Guid>("LabId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("跨實驗室隔離維度 ID");
 
                     b.Property<byte[]>("PermissionVector")
                         .IsRequired()
-                        .HasColumnType("varbinary(64)");
+                        .HasColumnType("varbinary(64)")
+                        .HasComment("動態 BitMask 權限位元組陣列 (預設 64 bytes = 512 個權限點)");
 
                     b.Property<Guid>("RoleId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("角色識別鍵");
 
                     b.HasKey("Id");
 
@@ -1861,17 +2195,22 @@ namespace PhysLIMS.API.Migrations
                         .IsUnique()
                         .HasDatabaseName("IX_PermissionGrant_Role_Lab");
 
-                    b.ToTable("PermissionGrants", "core");
+                    b.ToTable("PermissionGrants", "core", t =>
+                        {
+                            t.HasComment("角色權限授權實體，表示特定角色對特定功能或資源的存取權限。");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Identities.UserGlobalPermission", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
 
                     b.Property<long>("Bitmask")
-                        .HasColumnType("bigint");
+                        .HasColumnType("bigint")
+                        .HasComment("64 位元權限遮罩值 (Bitmask 0-63)");
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .ValueGeneratedOnAdd()
@@ -1885,7 +2224,8 @@ namespace PhysLIMS.API.Migrations
                     b.Property<string>("PermissionKey")
                         .IsRequired()
                         .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)");
+                        .HasColumnType("nvarchar(150)")
+                        .HasComment("權限識別鍵");
 
                     b.Property<DateTimeOffset?>("UpdatedAtUtc")
                         .HasColumnType("datetimeoffset(7)");
@@ -1895,7 +2235,8 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("nvarchar(100)");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("使用者識別鍵");
 
                     b.HasKey("Id");
 
@@ -1903,47 +2244,60 @@ namespace PhysLIMS.API.Migrations
                         .IsUnique()
                         .HasDatabaseName("UX_UserGlobalPermissions_UserId_PermissionKey");
 
-                    b.ToTable("UserGlobalPermissions", "core");
+                    b.ToTable("UserGlobalPermissions", "core", t =>
+                        {
+                            t.HasComment("使用者全域/組織級 64 位元遮罩權限實體 (統一 UserId 為 Guid 型別)");
+                        });
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Identities.UserLabPermission", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
 
                     b.Property<long>("Bitmask")
-                        .HasColumnType("bigint");
+                        .HasColumnType("bigint")
+                        .HasComment("64 位元權限遮罩值 (Bitmask 0-63)");
 
                     b.Property<string>("ControllerOrModuleKey")
                         .IsRequired()
                         .HasMaxLength(150)
-                        .HasColumnType("nvarchar(150)");
+                        .HasColumnType("nvarchar(150)")
+                        .HasComment("控制器或模組識別鍵");
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetimeoffset(7)")
-                        .HasDefaultValueSql("SYSDATETIMEOFFSET()");
+                        .HasDefaultValueSql("SYSDATETIMEOFFSET()")
+                        .HasComment("建立時間 (UTC)");
 
                     b.Property<string>("CreatedBy")
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("建立者");
 
                     b.Property<int>("LabId")
-                        .HasColumnType("int");
+                        .HasColumnType("int")
+                        .HasComment("實驗室識別鍵");
 
                     b.Property<Guid>("TenantLabId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("區域實驗室識別鍵");
 
                     b.Property<DateTimeOffset?>("UpdatedAtUtc")
-                        .HasColumnType("datetimeoffset(7)");
+                        .HasColumnType("datetimeoffset(7)")
+                        .HasComment("最後修改時間 (UTC)");
 
                     b.Property<string>("UpdatedBy")
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("最後修改者");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("使用者識別鍵");
 
                     b.HasKey("Id");
 
@@ -1954,7 +2308,10 @@ namespace PhysLIMS.API.Migrations
                         .IsUnique()
                         .HasDatabaseName("UX_UserLabPermissions_User_Lab_Module");
 
-                    b.ToTable("UserLabPermissions", "core");
+                    b.ToTable("UserLabPermissions", "core", t =>
+                        {
+                            t.HasComment("使用者實驗室專屬 64 位元遮罩權限實體 (對齊 UserLabMapping 型別與稽核標準)");
+                        });
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>

@@ -36,6 +36,60 @@ namespace SGSFramework.VerifyLedger.Controllers.V1
         }
 
         /// <summary>
+        /// 列出可驗證的帳本資料表 (已註冊 DbContext 中實作 ILedgerEntity 的實體)
+        /// </summary>
+        [HttpGet("entities")]
+        [Function("GetLedgerEntities", "帳本資料表清單", Icon = "fa-solid fa-list-check", Order = 0, Description = "列出系統中可進行總帳驗證的 DbContext 與帳本實體")]
+        [RequiresPermission("SYSTEM.LEDGERVERIFICATION.READ")]
+        [ProducesResponseType(typeof(IReadOnlyList<LedgerEntityInfo>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public IActionResult GetLedgerEntities()
+        {
+            try
+            {
+                var contextTypes = AppDomain.CurrentDomain.GetAssemblies()
+                    .Where(a => !a.IsDynamic)
+                    .SelectMany(a =>
+                    {
+                        try
+                        {
+                            return a.GetTypes();
+                        }
+                        catch (ReflectionTypeLoadException ex)
+                        {
+                            return ex.Types.OfType<Type>();
+                        }
+                    })
+                    .Where(t => t is { IsClass: true, IsAbstract: false, IsGenericTypeDefinition: false } && t != typeof(DbContext) && typeof(DbContext).IsAssignableFrom(t));
+
+                var result = new List<LedgerEntityInfo>();
+                foreach (var contextType in contextTypes)
+                {
+                    // 僅列出 DI 已註冊者，驗證服務才能解析對應的 DbContext
+                    if (_serviceProvider.GetService(contextType) is not DbContext context)
+                    {
+                        continue;
+                    }
+
+                    result.AddRange(context.Model.GetEntityTypes()
+                        .Where(e => typeof(ILedgerEntity).IsAssignableFrom(e.ClrType) && e.ClrType is { IsClass: true, IsAbstract: false })
+                        .Select(e => new LedgerEntityInfo(contextType.Name, e.ClrType.Name, e.GetSchema(), e.GetTableName())));
+                }
+
+                return Ok(result
+                    .DistinctBy(r => (r.ContextName, r.EntityName))
+                    .OrderBy(r => r.Schema)
+                    .ThenBy(r => r.TableName)
+                    .ToList());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "列出帳本資料表清單時發生異常。");
+                return StatusCode(StatusCodes.Status500InternalServerError, new { Message = "列出帳本資料表清單時發生異常。" });
+            }
+        }
+
+        /// <summary>
         /// 動態驗證指定資料庫與實體的總帳完整性
         /// </summary>
         [HttpPost("{contextName}/verify/{entityName}")]

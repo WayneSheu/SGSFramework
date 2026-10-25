@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using SGSFramework.Core.Abstractions.Entities.Base;
+using System.ComponentModel;
 
 namespace SGSFramework.Core.Abstractions.Permissions.Identities
 {
@@ -13,20 +14,30 @@ namespace SGSFramework.Core.Abstractions.Permissions.Identities
     /// 多維度權限維度矩陣-實驗室隔離維度
     /// 角色於特定實驗室維度下的 BitMask 授權實體
     /// </summary>
+    [DisplayName("角色權限授權實體")]
+    [Comment("角色權限授權實體，表示特定角色對特定功能或資源的存取權限。")]
     public class PermissionGrant 
     {
+        [DisplayName("識別主鍵")]
+        [Comment("識別主鍵")]   
         public Guid Id { get; set; }
 
+        [DisplayName("角色識別鍵")]
+        [Comment("角色識別鍵")]  
         public Guid RoleId { get; set; }
 
         /// <summary>
         /// 跨實驗室隔離維度 ID
         /// </summary>
+        [DisplayName("實驗室識別鍵")]
+        [Comment("跨實驗室隔離維度 ID")]    
         public Guid LabId { get; set; }
 
         /// <summary>
         /// 動態 BitMask 權限位元組陣列 (預設 64 bytes = 512 個權限點)
         /// </summary>
+        [DisplayName("動態 BitMask 權限位元組陣列")]
+        [Comment("動態 BitMask 權限位元組陣列 (預設 64 bytes = 512 個權限點)")]
         public byte[] PermissionVector { get; set; } = new byte[64];
 
         /// <summary>

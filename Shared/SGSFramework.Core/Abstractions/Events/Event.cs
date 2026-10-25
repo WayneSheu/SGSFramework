@@ -6,6 +6,9 @@ using MediatR;
 
 namespace SGSFramework.Core.Abstractions.Events
 {
+    /// <summary>
+    /// Represents an event that can be published and subscribed to. This class is abstract and should be inherited by specific event classes.
+    /// </summary>
     public abstract class Event : EventMessage, INotification
     {
         [NotMapped]

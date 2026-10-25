@@ -58,6 +58,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IdentityPolicyRuntime>();
         services.AddHostedService<IdentityPolicyStartupLoader>();
         services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<IEntityDescriptionProvider, EfModelDescriptionProvider>();
+        services.AddScoped<IMigrationHistoryProvider, EfMigrationHistoryProvider>();
         services.AddScoped<IDatabaseSchemaService, SqlServerDatabaseSchemaService>();
         services.AddSPAModulePlugin();
 

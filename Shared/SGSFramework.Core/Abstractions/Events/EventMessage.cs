@@ -4,6 +4,9 @@ using System;
 
 namespace SGSFramework.Core.Abstractions.Events
 {
+    /// <summary>
+    /// 
+    /// </summary>
     public abstract class EventMessage
     {
         public string MessageType { get; protected set; }

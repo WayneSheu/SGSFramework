@@ -1,4 +1,4 @@
-namespace SGSFramework.ApiInfrastructure.DTOs.DatabaseSchemas;
+﻿namespace SGSFramework.ApiInfrastructure.DTOs.DatabaseSchemas;
 
 /// <summary>
 /// 資料庫結構查詢 / 匯出篩選條件 (皆為 Query String)
@@ -29,4 +29,26 @@ public sealed class SchemaFilterRequest
     /// PDF 是否附上 ERD 圖
     /// </summary>
     public bool IncludeErd { get; init; } = true;
+
+    /// <summary>
+    /// PDF 是否附上資料庫更新履歷 (Migration)
+    /// </summary>
+    public bool IncludeHistory { get; init; } = true;
+
+    /// <summary>
+    /// PDF 版面方向 (整份文件一致)：Portrait = A4 直式、Landscape = A4 橫式
+    /// </summary>
+    public PdfOrientation Orientation { get; init; } = PdfOrientation.Portrait;
+}
+
+/// <summary>
+/// PDF 版面方向
+/// </summary>
+public enum PdfOrientation
+{
+    /// <summary>A4 直式</summary>
+    Portrait,
+
+    /// <summary>A4 橫式</summary>
+    Landscape
 }

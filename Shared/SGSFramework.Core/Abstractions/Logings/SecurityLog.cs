@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Base;
 using SGSFramework.Core.Abstractions.Entities.Ledgers;
+using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 
 namespace SGSFramework.Core.Abstractions.Logings
@@ -11,65 +12,94 @@ namespace SGSFramework.Core.Abstractions.Logings
     /// <summary>
     /// 安全性審計總帳實體模型 (對應 MSSQL 2025 Ledger 防篡改唯讀資料表)
     /// </summary>
+    [DisplayName("安全性審計總帳")]
+    [Comment("安全性審計總帳實體模型 (對應 MSSQL 2025 Ledger 防篡改唯讀資料表)")]
     public class SecurityLog:ILedgerEntity
     {
         /// <summary>
         /// 流水號主鍵
         /// </summary>
+        [DisplayName("流水號主鍵")]
+        [Comment("流水號主鍵")]
         public int Id { get; set; }
 
         [AutoIndex]
         [Display(Name = "關聯識別碼")]
+        [Comment("關聯識別碼")]
         public string? CorrelationId { get; set; }
 
         /// <summary>
         /// 日誌訊息主體
         /// </summary>
+        [DisplayName("日誌訊息")]
+        [Comment("日誌訊息")]
         public string? Message { get; set; }
 
         /// <summary>
         /// 日誌層級 (例如: Information, Warning, Error)
         /// </summary>
+        [DisplayName("日誌層級")]
+        [Comment("日誌層級 (例如: Information, Warning, Error)")] 
         public string? Level { get; set; }
 
         /// <summary>
         /// 高精度時間戳記 (帶時區)
+        [DisplayName("時間戳記")]
+        [Comment("高精度時間戳記 (帶時區)")]  
         /// </summary>
         public DateTimeOffset Timestamp { get; set; }
 
         /// <summary>
         /// 異常堆疊追蹤資訊
         /// </summary>
+        [DisplayName("異常堆疊追蹤資訊")]
+        [Comment("異常堆疊追蹤資訊")]   
         public string? Exception { get; set; }
 
         /// <summary>
         /// 隨附結構化快照內容 (JSON 格式)
         /// </summary>
+        [DisplayName("隨附結構化快照內容")]
+        [Comment("隨附結構化快照內容 (JSON 格式)")]    
         public string? Properties { get; set; }
 
         /// <summary>
         /// 日誌分流類型 (例如: Security)
         /// </summary>
+        [DisplayName("日誌分流類型")]
+        [Comment("日誌分流類型 (例如: Security)")]
         public string? LogType { get; set; }
 
         /// <summary>
         /// 稽核事件分類 (例如: Auth.TokenRefresh)
         /// </summary>
+        [DisplayName("稽核事件分類")]
+        [Comment("稽核事件分類 (例如: Auth.TokenRefresh)")]
         public string? EventCategory { get; set; }
 
         /// <summary>
         /// 觸發事件的用戶識別碼
         /// </summary>
+        [DisplayName("用戶識別碼")]
+        [Comment("觸發事件的用戶識別碼")]
         public string? UserId { get; set; }
 
         /// <summary>
         /// 客戶端來源 IP 位址
         /// </summary>
+        [DisplayName("客戶端 IP")]
+        [Comment("客戶端來源 IP 位址")]
         public string? ClientIp { get; set; }
 
         //告警用欄位
+        [DisplayName("告警識別碼")]
+        [Comment("告警識別碼")]
         public string? AlertId { get; set; }
+        
+        [DisplayName("特徵碼")]
+        [Comment("特徵碼")]
         public string? Fingerprint { get; set; }
+        
         ///// <summary>
         ///// 對應 MSSQL 內建的 ledger_start_transaction_id
         ///// </summary>

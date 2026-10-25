@@ -3,52 +3,102 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.Ledgers;
+using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace SGSFramework.Core.Abstractions.Logings
 {
+    [DisplayName("系統日誌")]
+    [Comment("系統日誌實體：用於記錄系統運行狀態、事件、錯誤與稽核資訊")]
     public class SystemLog : IHashChainLog, ILedgerEntity
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+        [DisplayName("識別鍵")]
+        [Comment("識別鍵")]    
         public long Id { get; set; } // bigint
+        
         [AutoIndex]
-        public DateTimeOffset TimeStamp { get; set; } 
+        [DisplayName("時間戳記")]
+        [Comment("時間戳記")]
+        public DateTimeOffset TimeStamp { get; set; }
+        
+        [DisplayName("訊息")]
+        [Comment("訊息")]
         public string? Message { get; set; }
+
+        [DisplayName("層級")]
+        [Comment("層級")]
         public string? Level { get; set; }
+
+        [DisplayName("異常")]
+        [Comment("異常")]
         public string? Exception { get; set; }
 
         // 自定義業務欄位
         [AutoIndex]
+        [DisplayName("區域實驗室關聯識別碼")]  
+        [Comment("區域實驗室關聯識別碼")]  
         public string? TenantId { get; set; }
-        public string? UserId { get; set; }
-        public string? ModuleName { get; set; }
-        public string? Operation { get; set; }
+       
         [AutoIndex]
-        [Display(Name = "關聯識別碼")]
+        [DisplayName("用戶識別碼")]
+        [Comment("用戶識別碼")]
+        public string? UserId { get; set; }
+       
+        [DisplayName("模組名稱")]
+        [Comment("模組名稱")]
+        public string? ModuleName { get; set; }
+        
+        [DisplayName("操作")]
+        [Comment("操作")]
+        public string? Operation { get; set; }
+        
+        [AutoIndex]
+        [DisplayName("關聯識別碼")]
+        [Comment("關聯識別碼")]
         public string? CorrelationId { get; set; }
+        
+        [DisplayName("IP位址")]
+        [Comment("IP位址")]
         public string? IP { get; set; }
+        
+        [DisplayName("URL")]
+        [Comment("URL")]
         public string? Url { get; set; }
 
         //[Required]
+        [DisplayName("有效載荷")]
+        [Comment("有效載荷")]
         public string? Payload { get; set; } = string.Empty;
 
         // 前一筆記錄的雜湊值 (串連關鍵)
         //[Required]
         [MaxLength(64)]
+        [DisplayName("前一筆雜湊值")]
+        [Comment("前一筆雜湊值")]
         public string? PrevHash { get; set; } = string.Empty;
 
         // 本筆記錄的雜湊值 (計算結果)
         //[Required]
         [MaxLength(64)]
+        [DisplayName("雜湊值")]
+        [Comment("雜湊值")]
         public string? CurrentHash { get; set; } = string.Empty;
 
         [Required]
+        [DisplayName("建立時間")]
+        [Comment("建立時間")]   
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
         //告警
+        [DisplayName("告警識別碼")]
+        [Comment("告警識別碼")]  
         public string? AlertId { get; set; }
+
+        [DisplayName("特徵碼")]
+        [Comment("特徵碼")]
         public string? Fingerprint { get; set; }
 
 

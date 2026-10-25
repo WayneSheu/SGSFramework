@@ -1,4 +1,4 @@
-using SGSFramework.ApiInfrastructure.DTOs.DatabaseSchemas;
+﻿using SGSFramework.ApiInfrastructure.DTOs.DatabaseSchemas;
 
 namespace SGSFramework.ApiInfrastructure.Services.DatabaseSchemas;
 
@@ -20,7 +20,15 @@ public static class ErdLayoutEngine
     private const double GapY = 36;
     private const double Margin = 24;
 
-    public static ErdDiagramDto Build(IReadOnlyList<TableSchemaDto> tables, bool keysOnly)
+    /// <summary>
+    /// 畫面 (橫向) 預設長寬比
+    /// </summary>
+    public const double LandscapeAspect = 1.5;
+
+    /// <param name="tables">要繪製的資料表</param>
+    /// <param name="keysOnly">僅顯示 PK / FK 欄位</param>
+    /// <param name="targetAspect">目標整體長寬比 (寬 / 高)；PDF 直式頁面約 0.75</param>
+    public static ErdDiagramDto Build(IReadOnlyList<TableSchemaDto> tables, bool keysOnly, double targetAspect = LandscapeAspect)
     {
         ArgumentNullException.ThrowIfNull(tables);
 
@@ -50,22 +58,22 @@ public static class ErdLayoutEngine
         var layers = AssignLayers(connected, relations);
         OrderLayers(layers, neighbors);
 
-        // 目標整體長寬比約 1.5 (貼近 A3 橫向)：以多組折欄高度 / 網格寬度試排，取最接近者
+        // 以多組折欄高度 / 網格寬度試排，取最接近目標長寬比者 (畫面橫向、PDF 直式)
         var totalArea = nodes.Values.Sum(n => (n.Width + GapX) * (n.Height + GapY));
         var connectedArea = connected.Sum(k => (nodes[k].Width + GapX) * (nodes[k].Height + GapY));
         var tallest = nodes.Values.Max(n => n.Height) + Margin;
 
         Dictionary<string, (double X, double Y)>? placed = null;
         var bestScore = double.MaxValue;
-        foreach (var factor in new[] { 0.7, 0.85, 1.0, 1.2, 1.45, 1.75, 2.1, 2.6 })
+        foreach (var factor in new[] { 0.5, 0.6, 0.7, 0.85, 1.0, 1.2, 1.45, 1.75, 2.1, 2.6 })
         {
-            var maxColumnHeight = Math.Max(tallest, Math.Sqrt(connectedArea / 1.5) * factor);
-            var gridWidth = Math.Sqrt(totalArea * 1.5) * factor;
+            var maxColumnHeight = Math.Max(tallest, Math.Sqrt(connectedArea / targetAspect) * factor);
+            var gridWidth = Math.Sqrt(totalArea * targetAspect) * factor;
             var candidate = Place(nodes, layers, isolated, maxColumnHeight, gridWidth);
 
             var w = candidate.Max(kv => kv.Value.X + nodes[kv.Key].Width);
             var h = candidate.Max(kv => kv.Value.Y + nodes[kv.Key].Height);
-            var score = Math.Abs(Math.Log(w / h / 1.5));
+            var score = Math.Abs(Math.Log(w / h / targetAspect));
             if (score < bestScore)
             {
                 bestScore = score;

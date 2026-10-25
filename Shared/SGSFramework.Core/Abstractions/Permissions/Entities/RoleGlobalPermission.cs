@@ -5,6 +5,7 @@ using SGSFramework.Core.Abstractions.Entities.AuditLogs;
 using SGSFramework.Core.Abstractions.Permissions.Entities;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text;
 
@@ -13,50 +14,72 @@ namespace SGSFramework.Core.Abstractions.Permissions.Entities
     /// <summary>
     /// 角色全域/模組級 64 位元遮罩權限實體
     /// </summary>
+    [DisplayName("角色全域權限實體")]
+    [Comment("角色全域/模組級 64 位元遮罩權限實體")]
     public class RoleGlobalPermission : IAuditable
     {
         /// <summary>
         /// 唯一識別碼 (Primary Key)
         /// </summary>
+        [DisplayName("唯一識別碼 (Primary Key)")]
+        [Comment("唯一識別碼 (Primary Key)")]    
         public Guid Id { get; set; } = Guid.NewGuid();
 
         /// <summary>
         /// 角色識別碼 (對應 ASP.NET Core Identity RoleId)
+        [DisplayName("角色識別碼 (對應 ASP.NET Core Identity RoleId)")]
+        [Comment("角色識別碼 (對應 ASP.NET Core Identity RoleId)")]
         /// </summary>
         public string RoleId { get; set; } = string.Empty;
 
         /// <summary>
         /// 全域權限或模組識別 Key (例如: SYSTEM.ROLE.MANAGE)
         /// </summary>
+        [DisplayName("全域權限或模組識別 Key")]
+        [Comment("全域權限或模組識別 Key")]
         public string PermissionKey { get; set; } = string.Empty;
 
         /// <summary>
         /// 64 位元權限遮罩值 (Bitmask 0-63)
         /// </summary>
+        [DisplayName("64 位元權限遮罩值")]
+        [Comment("64 位元權限遮罩值 (Bitmask 0-63)")]
         public long Bitmask { get; set; }
 
         /// <summary>
         /// 建立時間
         /// </summary>
+        [DisplayName("建立時間")]
+        [Comment("建立時間")]
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         /// <summary>
         /// 最後修改時間
         /// </summary>
+        [DisplayName("最後修改時間")]
+        [Comment("最後修改時間")]
         public DateTime? UpdatedAt { get; set; }
 
         [AuditIgnore]
         [Editable(false)]
+        [DisplayName("建立者")]
+        [Comment("建立者")]
         public string CreatedBy { get; set; } = string.Empty;
 
         [AuditIgnore]
         [Editable(false)]
+        [DisplayName("建立時間 (UTC)")] 
+        [Comment("建立時間 (UTC)")]
         public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
 
         [AuditIgnore]
+        [DisplayName("最後修改者")]
+        [Comment("最後修改者")]
         public string? UpdatedBy { get; set; }
 
         [AuditIgnore]
+        [DisplayName("最後修改時間 (UTC)")]
+        [Comment("最後修改時間 (UTC)")]   
         public DateTimeOffset? UpdatedAtUtc { get; set; }
     }
 }

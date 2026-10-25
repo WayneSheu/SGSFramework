@@ -13,6 +13,7 @@ namespace SGSFramework.Core.Abstractions.Permissions.Entities
     /// 多維度權限維度矩陣-功能權限維度
     /// 整合 IHierarchicalEntity 支援階層樹狀結構，並對應 ControllerMetadatas 的標題與描述。
     /// </summary>
+    [DisplayName("權限中繼資料實體")]
     [Comment("權限中繼資料實體")]
     public class PermissionMetadata : IHierarchicalEntity
     {

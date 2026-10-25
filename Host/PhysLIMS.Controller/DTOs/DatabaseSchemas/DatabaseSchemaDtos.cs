@@ -8,7 +8,31 @@ public sealed record DatabaseSchemaDto(
     string ServerVersion,
     DateTimeOffset GeneratedAt,
     IReadOnlyList<string> Schemas,
-    IReadOnlyList<TableSchemaDto> Tables);
+    IReadOnlyList<TableSchemaDto> Tables,
+    IReadOnlyList<MigrationHistoryDto> Migrations);
+
+/// <summary>
+/// 資料庫更新履歷 (取自 EF Core Migration 檔與 __EFMigrationsHistory)
+/// </summary>
+/// <param name="MigrationId">Migration 識別 (yyyyMMddHHmmss_Name)</param>
+/// <param name="Name">Migration 名稱</param>
+/// <param name="CreatedAt">Migration 建立時間 (由識別碼時間戳記換算為本地時間)</param>
+/// <param name="Context">所屬 DbContext</param>
+/// <param name="Schema">DbContext 預設 Schema</param>
+/// <param name="IsApplied">是否已套用至資料庫</param>
+/// <param name="ProductVersion">套用時的 EF Core 版本</param>
+/// <param name="HasMigrationFile">程式中是否仍有對應 Migration 檔</param>
+/// <param name="Changes">變更內容摘要 (依操作類型彙整)</param>
+public sealed record MigrationHistoryDto(
+    string MigrationId,
+    string Name,
+    DateTimeOffset? CreatedAt,
+    string Context,
+    string? Schema,
+    bool IsApplied,
+    string? ProductVersion,
+    bool HasMigrationFile,
+    IReadOnlyList<string> Changes);
 
 /// <summary>
 /// 資料表定義 (含建立 / 異動日期、欄位、索引與外鍵)

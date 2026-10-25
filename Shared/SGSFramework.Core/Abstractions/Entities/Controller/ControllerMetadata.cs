@@ -13,6 +13,8 @@ using System.ComponentModel.DataAnnotations;
 [Comment("API 控制器與 Action 中繼資料實體")]
 public class ControllerMetadata : IControllerMetadata
 {
+    [DisplayName("識別主鍵")]
+    [Comment("識別主鍵")]
     public Guid Id { get; set; } = Guid.NewGuid();
 
     /// <summary>

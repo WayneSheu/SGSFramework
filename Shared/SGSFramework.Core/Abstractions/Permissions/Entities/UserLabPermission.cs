@@ -11,23 +11,54 @@ namespace SGSFramework.Core.Abstractions.Permissions.Identities
     using Microsoft.EntityFrameworkCore.Metadata.Builders;
     using SGSFramework.Core.Abstractions.Entities.AuditLogs;
     using System;
+    using System.ComponentModel;
 
     /// <summary>
-    /// 優化後的使用者實驗室專屬 64 位元遮罩權限實體 (對齊 UserLabMapping 型別與稽核標準)
+    /// 使用者實驗室專屬 64 位元遮罩權限實體 (對齊 UserLabMapping 型別與稽核標準)
     /// </summary>
+    [DisplayName("使用者實驗室專屬權限")]
+    [Comment("使用者實驗室專屬 64 位元遮罩權限實體 (對齊 UserLabMapping 型別與稽核標準)")]
     public class UserLabPermission : IAuditable
     {
+        [DisplayName("識別主鍵")]
+        [Comment("識別主鍵")]
         public Guid Id { get; private set; } = Guid.NewGuid();
+       
+        [DisplayName("使用者識別鍵")]
+        [Comment("使用者識別鍵")]
         public Guid UserId { get; private set; }
+        
+        [DisplayName("實驗室識別鍵")]
+        [Comment("實驗室識別鍵")]
         public int LabId { get; private set; }
+        
+        [DisplayName("區域實驗室識別鍵")]
+        [Comment("區域實驗室識別鍵")]
         public Guid TenantLabId { get; private set; }
+        
+        [DisplayName("控制器或模組識別鍵")]
+        [Comment("控制器或模組識別鍵")]
         public string ControllerOrModuleKey { get; private set; } = string.Empty;
+        
+        [DisplayName("64 位元權限遮罩值")]
+        [Comment("64 位元權限遮罩值 (Bitmask 0-63)")]
         public long Bitmask { get; private set; }
 
         // --- IAuditable 實作 ---
+        [DisplayName("建立時間 (UTC)")]
+        [Comment("建立時間 (UTC)")]
         public DateTimeOffset CreatedAtUtc { get; set; }
+       
+        [DisplayName("建立者")]
+        [Comment("建立者")]    
         public string? CreatedBy { get; set; }
+
+        [DisplayName("最後修改時間 (UTC)")]
+        [Comment("最後修改時間 (UTC)")]   
         public DateTimeOffset? UpdatedAtUtc { get; set; }
+
+        [DisplayName("最後修改者")]
+        [Comment("最後修改者")]  
         public string? UpdatedBy { get; set; }
 
         private UserLabPermission() { }

@@ -12,16 +12,30 @@ namespace SGSFramework.Core.Abstractions.Permissions.Identities
     using SGSFramework.Core.Abstractions.Attributes;
     using SGSFramework.Core.Abstractions.Entities.AuditLogs;
     using System;
+    using System.ComponentModel;
     using System.ComponentModel.DataAnnotations;
 
     /// <summary>
     /// 使用者全域/組織級 64 位元遮罩權限實體 (統一 UserId 為 Guid 型別)
     /// </summary>
+    [DisplayName("使用者全域權限")]
+    [Comment("使用者全域/組織級 64 位元遮罩權限實體 (統一 UserId 為 Guid 型別)")]
     public class UserGlobalPermission : IAuditable
     {
+        [DisplayName("識別主鍵")]
+        [Comment("識別主鍵")]
         public Guid Id { get; private set; } = Guid.NewGuid();
+
+        [DisplayName("使用者識別鍵")]
+        [Comment("使用者識別鍵")] 
         public Guid UserId { get; private set; }
+        
+        [DisplayName("權限識別鍵")]
+        [Comment("權限識別鍵")]
         public string PermissionKey { get; private set; } = string.Empty;
+        
+        [DisplayName("64 位元權限遮罩值")]
+        [Comment("64 位元權限遮罩值 (Bitmask 0-63)")]
         public long Bitmask { get; private set; }
 
         private UserGlobalPermission() { }

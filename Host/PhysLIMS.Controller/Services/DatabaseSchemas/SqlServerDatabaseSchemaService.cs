@@ -1,4 +1,4 @@
-using System.Data.Common;
+﻿using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SGSFramework.ApiInfrastructure.DTOs.DatabaseSchemas;
@@ -70,16 +70,27 @@ public sealed class SqlServerDatabaseSchemaService : IDatabaseSchemaService
         """;
 
     private readonly DbContext _dbContext;
+    private readonly IEntityDescriptionProvider _descriptionProvider;
+    private readonly IMigrationHistoryProvider _migrationHistoryProvider;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<SqlServerDatabaseSchemaService> _logger;
 
-    public SqlServerDatabaseSchemaService(DbContext dbContext, TimeProvider timeProvider, ILogger<SqlServerDatabaseSchemaService> logger)
+    public SqlServerDatabaseSchemaService(
+        DbContext dbContext,
+        IEntityDescriptionProvider descriptionProvider,
+        IMigrationHistoryProvider migrationHistoryProvider,
+        TimeProvider timeProvider,
+        ILogger<SqlServerDatabaseSchemaService> logger)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentNullException.ThrowIfNull(descriptionProvider);
+        ArgumentNullException.ThrowIfNull(migrationHistoryProvider);
         ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(logger);
 
         _dbContext = dbContext;
+        _descriptionProvider = descriptionProvider;
+        _migrationHistoryProvider = migrationHistoryProvider;
         _timeProvider = timeProvider;
         _logger = logger;
     }
@@ -88,13 +99,18 @@ public sealed class SqlServerDatabaseSchemaService : IDatabaseSchemaService
     {
         ArgumentNullException.ThrowIfNull(filter);
 
+        string databaseName;
+        string serverVersion;
+        List<string> allSchemas;
+        List<TableSchemaDto> result;
+
         await _dbContext.Database.OpenConnectionAsync(cancellationToken);
         try
         {
             var connection = _dbContext.Database.GetDbConnection();
 
-            var databaseName = connection.Database;
-            var serverVersion = connection.ServerVersion;
+            databaseName = connection.Database;
+            serverVersion = connection.ServerVersion;
             var supportsLedger = await ScalarAsync<int>(connection,
                 "SELECT CASE WHEN COL_LENGTH('sys.tables', 'ledger_type') IS NULL THEN 0 ELSE 1 END", cancellationToken) == 1;
 
@@ -103,17 +119,23 @@ public sealed class SqlServerDatabaseSchemaService : IDatabaseSchemaService
             var indexes = await ReadIndexesAsync(connection, cancellationToken);
             var foreignKeys = await ReadForeignKeysAsync(connection, cancellationToken);
 
-            var allSchemas = tables.Select(t => t.Schema).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
-            var result = Assemble(tables, columns, indexes, foreignKeys, filter);
+            allSchemas = tables.Select(t => t.Schema).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
+            result = Assemble(tables, columns, indexes, foreignKeys, _descriptionProvider.GetDescriptions(), filter);
 
             _logger.LogInformation("讀取資料庫結構完成。Database: {Database}, Tables: {Count}", databaseName, result.Count);
-
-            return new DatabaseSchemaDto(databaseName, serverVersion, _timeProvider.GetLocalNow(), allSchemas, result);
         }
         finally
         {
             await _dbContext.Database.CloseConnectionAsync();
         }
+
+        // 更新履歷：各 DbContext 自行連線讀取 __EFMigrationsHistory；指定 Schema 時僅保留對應 DbContext
+        var schemaFilter = ToSet(filter.Schemas);
+        var migrations = (await _migrationHistoryProvider.GetHistoryAsync(cancellationToken))
+            .Where(m => schemaFilter is null || m.Schema is null || schemaFilter.Contains(m.Schema))
+            .ToList();
+
+        return new DatabaseSchemaDto(databaseName, serverVersion, _timeProvider.GetLocalNow(), allSchemas, result, migrations);
     }
 
     private static List<TableSchemaDto> Assemble(
@@ -121,6 +143,7 @@ public sealed class SqlServerDatabaseSchemaService : IDatabaseSchemaService
         Dictionary<int, List<ColumnRow>> columns,
         Dictionary<int, List<IndexSchemaDto>> indexes,
         Dictionary<int, List<ForeignKeySchemaDto>> foreignKeys,
+        IReadOnlyDictionary<string, EntityDescriptions> modelDescriptions,
         SchemaFilterRequest filter)
     {
         var schemaFilter = ToSet(filter.Schemas);
@@ -149,6 +172,9 @@ public sealed class SqlServerDatabaseSchemaService : IDatabaseSchemaService
             {
                 continue;
             }
+
+            // 說明優先序：資料庫 MS_Description > EF Core [Comment] / HasComment > [DisplayName]
+            var modelDescription = modelDescriptions.GetValueOrDefault($"{table.Schema}.{table.Name}");
 
             var tableIndexes = indexes.GetValueOrDefault(table.ObjectId) ?? [];
             var tableFks = foreignKeys.GetValueOrDefault(table.ObjectId) ?? [];
@@ -190,14 +216,14 @@ public sealed class SqlServerDatabaseSchemaService : IDatabaseSchemaService
                     c.DefaultValue,
                     c.Collation,
                     fkReferences.GetValueOrDefault(c.Name),
-                    c.Description))
+                    Coalesce(c.Description, modelDescription?.ColumnDescriptions.GetValueOrDefault(c.Name))))
                 .ToList();
 
             result.Add(new TableSchemaDto(
                 table.ObjectId,
                 table.Schema,
                 table.Name,
-                table.Description,
+                Coalesce(table.Description, modelDescription?.TableDescription),
                 table.CreatedAt,
                 table.ModifiedAt,
                 table.RowCount,
@@ -228,6 +254,9 @@ public sealed class SqlServerDatabaseSchemaService : IDatabaseSchemaService
             _ => typeName
         };
     }
+
+    private static string? Coalesce(string? primary, string? fallback) =>
+        string.IsNullOrWhiteSpace(primary) ? fallback : primary;
 
     private static List<string> SplitColumns(string columns) =>
         columns.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
