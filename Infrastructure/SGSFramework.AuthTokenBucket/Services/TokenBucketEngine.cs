@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory; // 🚀 引入單機記憶體快取管理
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -32,6 +33,7 @@ public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
     private readonly ISecurityLogger _securityLogger;
     private readonly IAuditProvider _auditProvider;
     private readonly IMemoryCache _memoryCache; // 🚀 注入記憶體快取提供者
+    private readonly TimeProvider _timeProvider;
 
     public TokenBucketEngine(
         ITokenStorageProvider storageProvider,
@@ -42,7 +44,8 @@ public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
         ILogger<TokenBucketEngine<TUser>> logger,
         ISecurityLogger securityLogger,
         IAuditProvider auditProvider,
-        IMemoryCache memoryCache) // 🚀 建構子注入 IMemoryCache
+        IMemoryCache memoryCache, // 🚀 建構子注入 IMemoryCache
+        TimeProvider timeProvider)
     {
         _storageProvider = storageProvider ?? throw new ArgumentNullException(nameof(storageProvider));
         _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
@@ -54,6 +57,43 @@ public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
         _securityLogger = securityLogger ?? throw new ArgumentNullException(nameof(securityLogger));
         _auditProvider = auditProvider ?? throw new ArgumentNullException(nameof(auditProvider));
         _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
+        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+    }
+
+    /// <summary>
+    /// 記錄使用者最後登入時間（帳密 / 2FA / SSO 登入成功時呼叫；Token 輪轉刷新不視為登入）。
+    /// 以單一 UPDATE 直接寫入 LastLoginAt，不經 UserManager.UpdateAsync，
+    /// 避免使用者驗證規則或 ConcurrencyStamp 輪替造成寫入失敗；寫入失敗僅記錄警告，不影響登入流程。
+    /// </summary>
+    public async Task RecordLoginAsync(TUser user)
+    {
+        ArgumentNullException.ThrowIfNull(user);
+
+        try
+        {
+            var loginAt = _timeProvider.GetUtcNow();
+            var userId = user.Id;
+
+            var affected = await _userManager.Users
+                .Where(u => u.Id == userId)
+                .ExecuteUpdateAsync(s => s.SetProperty(u => u.LastLoginAt, loginAt));
+
+            // 同步記憶體中的實體，避免同一請求後續儲存時以舊值覆寫
+            user.LastLoginAt = loginAt;
+
+            if (affected == 0)
+            {
+                _logger.LogWarning("更新最後登入時間未影響任何資料列，UserId: {UserId}", userId);
+            }
+            else
+            {
+                _logger.LogInformation("已記錄使用者最後登入時間，UserId: {UserId}, LastLoginAt: {LastLoginAt}", userId, loginAt);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "更新最後登入時間時發生例外，UserId: {UserId}", user.Id);
+        }
     }
 
     public async Task<UserRefreshToken?> GetActiveSessionAsync(string userId, string deviceId)
@@ -105,6 +145,9 @@ public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
 
             await _storageProvider.SaveInitialSessionAsync(newSessionEntity);
             await _storageProvider.EnforceMaxDeviceLimitAsync(userIdString, _options.MaxDeviceCount);
+
+            // 4. 建立新工作階段即代表登入成功，記錄最後登入時間
+            await RecordLoginAsync(user);
 
             return new TokenResult
             {

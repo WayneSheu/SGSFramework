@@ -149,13 +149,21 @@ public interface IUserManagementService<TUser, TRole, TKey>
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 更新使用者狀態
+    /// 更新使用者狀態（停用 / 鎖定時強制登出所有裝置；啟用時一併解除登入失敗鎖定）
     /// </summary>
-    /// <param name="userId"></param>
-    /// <param name="status"></param>
+    /// <param name="userId">目標使用者</param>
+    /// <param name="status">UserStatus 列舉數值</param>
+    /// <param name="actorId">執行變更的管理員識別碼（稽核用）</param>
+    /// <param name="reason">變更原因（稽核用，選填）</param>
+    /// <param name="clientIp">來源 IP（稽核用）</param>
     /// <param name="cancellationToken"></param>
-    /// <returns></returns>
-    Task<Result<bool>> UpdateUserStatusAsync(TKey userId, int status, CancellationToken cancellationToken = default);
+    Task<Result<bool>> UpdateUserStatusAsync(
+        TKey userId,
+        int status,
+        string? actorId = null,
+        string? reason = null,
+        string? clientIp = null,
+        CancellationToken cancellationToken = default);
 
 }
 

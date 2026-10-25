@@ -21,6 +21,15 @@ namespace SGSFramework.Identity.DTOs
         public string? PrimaryLabCode { get; set; }
         public string? PrimaryLabName { get; set; }
 
+        /// <summary>帳號狀態（UserStatus 列舉名稱：Pending / Active / Disabled / Locked）</summary>
+        public string Status { get; set; } = string.Empty;
+
+        /// <summary>是否因登入失敗過多而處於 Identity 鎖定期間</summary>
+        public bool IsLockedOut { get; set; }
+
+        /// <summary>最後登入時間</summary>
+        public DateTimeOffset? LastLoginAt { get; set; }
+
         public List<string> Roles { get; set; } = [];
     }
 }

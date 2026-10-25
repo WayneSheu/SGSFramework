@@ -111,6 +111,21 @@ public sealed class AuthController(
                 return BuildUnauthorizedResult("帳號或密碼錯誤。");
             }
 
+            // 密碼正確後才檢查帳號狀態（避免帳號列舉）：停用 / 待啟用 / 鎖定中的帳號不得登入
+            if (await GetLoginBlockReasonAsync(user) is { } blockReason)
+            {
+                _securityLogger.LogSecurity(
+                    eventCode: "SEC-403-LOGIN-BLOCKED",
+                    eventCategory: "Auth.Login",
+                    userId: user.Id.ToString(),
+                    clientIp: clientIp,
+                    messageTemplate: "帳號狀態不允許登入。帳號: {UserName}, 原因: {Reason}",
+                    user.UserName ?? string.Empty,
+                    blockReason
+                );
+                return BuildUnauthorizedResult(blockReason);
+            }
+
             await _userManager.ResetAccessFailedCountAsync(user);
 
             // 初始化使用者的實驗室上下文與動態選單
@@ -323,6 +338,12 @@ public sealed class AuthController(
                 }
             }
 
+            // 網域帳號同樣受系統帳號狀態管控（停用 / 鎖定中不得登入）
+            if (await GetLoginBlockReasonAsync(user) is { } blockReason)
+            {
+                return BuildUnauthorizedResult(blockReason);
+            }
+
             string deviceId = Request.Headers["X-Device-Id"].FirstOrDefault() ?? "LOCAL-DEV-PC";
             string deviceName = Request.Headers["User-Agent"].FirstOrDefault() ?? "Chrome on Windows (Scalar Client)";
             string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
@@ -331,6 +352,12 @@ public sealed class AuthController(
             TokenResult? tokenResult = existingSession is not null
                 ? await _tokenEngine.RefreshSessionAsync(user, deviceId, existingSession.TokenHash)
                 : await _tokenEngine.IssueInitialSessionAsync(user, deviceId, deviceName, clientIp);
+
+            // 沿用既有工作階段的 SSO 登入同樣記錄最後登入時間（新工作階段已於 IssueInitialSessionAsync 記錄）
+            if (existingSession is not null && !string.IsNullOrEmpty(tokenResult?.AccessToken))
+            {
+                await _tokenEngine.RecordLoginAsync(user);
+            }
 
             if (tokenResult is null || string.IsNullOrEmpty(tokenResult.AccessToken))
             {
@@ -879,6 +906,29 @@ public sealed class AuthController(
     /// <summary>
     /// 建立未授權的回應結果
     /// </summary>
+    /// <summary>
+    /// 依帳號狀態判斷是否禁止登入；允許登入時回傳 null
+    /// </summary>
+    private async Task<string?> GetLoginBlockReasonAsync(ApplicationUser user)
+    {
+        if (user.IsDeleted)
+        {
+            return "帳號不存在或已停用。";
+        }
+
+        if (await _userManager.IsLockedOutAsync(user) || user.Status == UserStatus.Locked)
+        {
+            return "帳號已被鎖定，請稍後再試或聯絡系統管理員。";
+        }
+
+        return user.Status switch
+        {
+            UserStatus.Disabled => "帳號已停用，請聯絡系統管理員。",
+            UserStatus.Pending => "帳號尚待啟用，請聯絡系統管理員。",
+            _ => null
+        };
+    }
+
     private UnauthorizedObjectResult BuildUnauthorizedResult(string detailMessage)
     {
         return Unauthorized(new ProblemDetails

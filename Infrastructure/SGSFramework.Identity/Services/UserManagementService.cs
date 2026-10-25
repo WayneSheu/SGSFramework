@@ -90,10 +90,13 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var roles = await _userManager.GetRolesAsync(user).ConfigureAwait(false);
+                var isLockedOut = await _userManager.IsLockedOutAsync(user).ConfigureAwait(false);
 
                 string userIdStr = user.Id.ToString() ?? string.Empty;
                 var accessibleOrgs = await _orgIntegrationService.GetUserAccessibleOrganizationsAsync(userIdStr, cancellationToken).ConfigureAwait(false);
-                var primaryOrg = accessibleOrgs.FirstOrDefault(o => o.IsPrimary) ?? accessibleOrgs.FirstOrDefault();
+
+                // 列表僅顯示使用者「主要歸屬」的區域實驗室；未設定主要歸屬者顯示為未指派，不以其他可存取實驗室遞補
+                var primaryOrg = accessibleOrgs.FirstOrDefault(o => o.IsPrimary);
 
                 userDtos.Add(new UserDto
                 {
@@ -107,6 +110,9 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                     PrimaryLabId = primaryOrg?.TenantLabId,
                     PrimaryLabCode = primaryOrg?.Code,
                     PrimaryLabName = primaryOrg?.Name,
+                    Status = user.Status.ToString(),
+                    IsLockedOut = isLockedOut,
+                    LastLoginAt = user.LastLoginAt,
                     Roles = roles.ToList()
                 });
             }
@@ -886,6 +892,9 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
     public async Task<Result<bool>> UpdateUserStatusAsync(
         TKey userId,
         int status,
+        string? actorId = null,
+        string? reason = null,
+        string? clientIp = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -904,16 +913,27 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
             }
 
             var newStatus = (UserStatus)status;
+            var oldStatus = user.Status;
+            bool blocksAccess = newStatus is UserStatus.Disabled or UserStatus.Locked;
+
+            // 系統管理員帳號不可停用 / 鎖定，避免全系統失去管理入口
+            if (user.IsSystemAdmin && newStatus != UserStatus.Active)
+            {
+                return Result.Failure<bool>(Error.Validation("User.Status.SystemAdminRestricted", "系統管理員帳號受到保護，僅能維持啟用狀態。"));
+            }
+
             user.Status = newStatus;
 
-            if (newStatus == UserStatus.Disabled || newStatus == UserStatus.Locked)
+            if (blocksAccess)
             {
                 await _userManager.SetLockoutEnabledAsync(user, true).ConfigureAwait(false);
                 await _userManager.SetLockoutEndDateAsync(user, DateTimeOffset.MaxValue).ConfigureAwait(false);
             }
             else if (newStatus == UserStatus.Active)
             {
+                // 啟用 = 一併解除登入失敗鎖定並歸零失敗次數
                 await _userManager.SetLockoutEndDateAsync(user, null).ConfigureAwait(false);
+                await _userManager.ResetAccessFailedCountAsync(user).ConfigureAwait(false);
             }
 
             var result = await _userManager.UpdateAsync(user).ConfigureAwait(false);
@@ -923,6 +943,30 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                 _logger.LogWarning("更新使用者狀態失敗 {UserId}: {Errors}", userId, errors);
                 return Result.Failure<bool>(Error.Validation("User.Status.Failed", $"變更使用者狀態失敗: {errors}"));
             }
+
+            string userIdStr = user.Id.ToString() ?? string.Empty;
+
+            // 停用 / 鎖定：立即作廢所有裝置的憑證並通知前端，強制登出
+            if (blocksAccess)
+            {
+                await _permissionChangeNotifier.NotifyUsersAsync([userIdStr], "user-status-changed", cancellationToken).ConfigureAwait(false);
+                await _tokenEngine.EmergencyFreezeAsync(userIdStr, $"帳號狀態變更為「{newStatus.GetDisplayName()}」，全面作廢憑證。").ConfigureAwait(false);
+                await _tokenEngine.CompleteRemediationAsync(userIdStr).ConfigureAwait(false);
+            }
+
+            _securityLogger.LogSecurity(
+                eventCode: "SEC-200-USER-STATUS-CHANGED",
+                eventCategory: "UserManagement.UpdateStatus",
+                userId: actorId ?? string.Empty,
+                clientIp: clientIp ?? string.Empty,
+                messageTemplate: "管理員 [{AdminId}] 變更使用者狀態。目標: {TargetUserName} ({TargetUserId}), {OldStatus} → {NewStatus}, 原因: {Reason}",
+                actorId ?? string.Empty,
+                user.UserName ?? string.Empty,
+                userIdStr,
+                oldStatus.GetDisplayName(),
+                newStatus.GetDisplayName(),
+                string.IsNullOrWhiteSpace(reason) ? "（未填寫）" : reason.Trim()
+            );
 
             _logger.LogInformation("成功更新使用者狀態: {UserId}, Status: {StatusText} ({StatusCode})",
                 userId, newStatus.GetDisplayName(), (int)newStatus);

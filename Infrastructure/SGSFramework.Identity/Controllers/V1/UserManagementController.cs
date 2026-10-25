@@ -408,6 +408,7 @@ public sealed class UserManagementController(
         [FromRoute] Guid id,
         [FromQuery] bool? isActive,
         [FromQuery] int? status,
+        [FromQuery] string? reason,
         CancellationToken cancellationToken = default)
     {
         if (id == Guid.Empty)
@@ -421,6 +422,18 @@ public sealed class UserManagementController(
             });
         }
 
+        // 禁止管理員變更自身帳號狀態，避免誤將自己停用 / 鎖定
+        if (string.Equals(CurrentUserId, id.ToString(), StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "不允許的操作",
+                Detail = "無法變更自己的帳號狀態。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+
         try
         {
             Result<bool> result;
@@ -428,7 +441,7 @@ public sealed class UserManagementController(
             // 支援傳入新版具體列舉狀態值，若無則相容舊版 bool 參數
             if (status.HasValue)
             {
-                result = await _userService.UpdateUserStatusAsync(id, status.Value, cancellationToken).ConfigureAwait(false);
+                result = await _userService.UpdateUserStatusAsync(id, status.Value, CurrentUserId, reason, CurrentClientIp, cancellationToken).ConfigureAwait(false);
             }
             else if (isActive.HasValue)
             {
