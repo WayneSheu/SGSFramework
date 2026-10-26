@@ -15,8 +15,13 @@ namespace SGSFramework.AuditLog.Configurations
         public List<string> AuditableEntityNames { get; set; } = new();
         // 排除特定敏感欄位
         public List<string> IgnoredTables { get; set; }
-        // 排除特定敏感欄位
+        // 敏感欄位：仍記錄「該欄位被變更」，但新 / 舊值以 [已遮蔽] 取代，不落地實際內容
         public List<string> ExcludedProperties { get; set; } = new();
+        // 高頻 / 雜訊欄位（每次登入或每次存檔都會變動）：完全不記錄，避免資料日誌被洗版
+        public List<string> NoisyProperties { get; set; } = new()
+        {
+            "ConcurrencyStamp", "SecurityStamp", "AccessFailedCount", "LastLoginAt"
+        };
         // 排除特定命名的中間表 (例如以 "Temp" 或 "Internal" 開頭的)
         public List<string> ExcludedTablePrefixes { get; set; } = new() { "Internal", "Temp" };
         // 是否審計多對多關聯

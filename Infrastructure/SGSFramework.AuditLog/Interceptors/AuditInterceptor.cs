@@ -15,6 +15,7 @@ using SGSFramework.Core.Abstractions.Entities.AuditLogs;
 using SGSFramework.Core.HttpAuditProviders;
 using SGSFramework.Core.Mask;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -25,6 +26,10 @@ public class AuditInterceptor : SaveChangesInterceptor
 {
     private const string DefaultSystemUser = "SYSTEM";
     private const string DefaultTraceId = "SYSTEM_BACKGROUND";
+    private const string MaskedValue = "[已遮蔽]";
+
+    // (實體型別, 屬性名稱) → 是否帶有 [AuditIgnore]（含實作的介面成員）；反射結果快取
+    private static readonly ConcurrentDictionary<(Type, string), bool> AuditIgnoreCache = new();
 
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<AuditInterceptor> _logger;
@@ -135,7 +140,8 @@ public class AuditInterceptor : SaveChangesInterceptor
                 var auditEntry = new AuditEntry(entry)
                 {
                     UserId = currentUserId,
-                    TraceId = currentTraceId
+                    TraceId = currentTraceId,
+                    RemoteIp = provider?.RemoteIp
                 };
 
                 foreach (var property in entry.Properties)
@@ -147,23 +153,31 @@ public class AuditInterceptor : SaveChangesInterceptor
                         continue;
                     }
 
+                    // [AuditIgnore] 標記（含介面成員）與高頻 / 雜訊欄位完全不記錄
+                    if (IsIgnoredProperty(entry.Entity.GetType(), propertyName, options)) continue;
+
                     var currentValue = property.CurrentValue?.ToString();
                     var originalValue = property.OriginalValue?.ToString();
+
+                    // 敏感欄位（如 PasswordHash）只記錄「有被變更」這件事，不落地實際值
+                    var isMasked = options.ExcludedProperties.Contains(propertyName, StringComparer.OrdinalIgnoreCase);
+                    var storedCurrent = isMasked && currentValue is not null ? MaskedValue : currentValue;
+                    var storedOriginal = isMasked && originalValue is not null ? MaskedValue : originalValue;
 
                     switch (entry.State)
                     {
                         case EntityState.Added:
-                            auditEntry.NewValues[propertyName] = currentValue;
+                            auditEntry.NewValues[propertyName] = storedCurrent;
                             break;
                         case EntityState.Deleted:
-                            auditEntry.OldValues[propertyName] = originalValue;
+                            auditEntry.OldValues[propertyName] = storedOriginal;
                             break;
                         case EntityState.Modified:
                             if (property.IsModified && !Equals(originalValue, currentValue))
                             {
                                 auditEntry.ChangedColumns.Add(propertyName);
-                                auditEntry.OldValues[propertyName] = originalValue;
-                                auditEntry.NewValues[propertyName] = currentValue;
+                                auditEntry.OldValues[propertyName] = storedOriginal;
+                                auditEntry.NewValues[propertyName] = storedCurrent;
                             }
                             break;
                     }
@@ -183,6 +197,20 @@ public class AuditInterceptor : SaveChangesInterceptor
         return auditEntries;
     }
 
+    private static bool IsIgnoredProperty(Type entityType, string propertyName, AuditOptions options)
+    {
+        if (options.NoisyProperties.Contains(propertyName, StringComparer.OrdinalIgnoreCase)) return true;
+
+        return AuditIgnoreCache.GetOrAdd((entityType, propertyName), static key =>
+        {
+            var (type, name) = key;
+            if (type.GetProperty(name)?.IsDefined(typeof(AuditIgnoreAttribute), inherit: true) == true) return true;
+
+            // IAuditable 等介面上的 [AuditIgnore] 標在介面成員，實作類別的屬性本身沒有該標記
+            return type.GetInterfaces().Any(i => i.GetProperty(name)?.IsDefined(typeof(AuditIgnoreAttribute), inherit: true) == true);
+        });
+    }
+
     private static void UpdateAuditableEntities(DbContext context, string userId)
     {
         var entries = context.ChangeTracker.Entries<IAuditable>();
@@ -190,7 +218,8 @@ public class AuditInterceptor : SaveChangesInterceptor
         {
             if (entry.State == EntityState.Added)
             {
-                entry.Entity.CreatedBy ??= userId;
+                // CreatedBy 為非 null 字串且多數實體預設為 string.Empty，不能只用 ??= 判斷
+                if (string.IsNullOrWhiteSpace(entry.Entity.CreatedBy)) entry.Entity.CreatedBy = userId;
                 entry.Entity.CreatedAtUtc = DateTime.UtcNow;
             }
             else if (entry.State == EntityState.Modified)

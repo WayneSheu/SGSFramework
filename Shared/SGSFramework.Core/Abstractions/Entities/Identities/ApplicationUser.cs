@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using SGSFramework.Core.Abstractions.Entities.AuditLogs;
 using SGSFramework.Core.Abstractions.Entities.Base;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel;
 
 namespace SGSFramework.Core.Abstractions.Entities.Identities
@@ -10,7 +12,7 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
     /// </summary>
     [DisplayName("擴充自訂的 Identity 使用者實體")]
     [Comment("擴充自訂的 Identity 使用者實體")]
-    public class ApplicationUser : IdentityUser<Guid>,IBaseUser
+    public class ApplicationUser : IdentityUser<Guid>, IBaseUser, IAuditable
     {
         [DisplayName("是否為系統管理員")]
         [Comment("是否為系統管理員")]
@@ -61,6 +63,28 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
         [DisplayName("帳號刪除時間")]
         [Comment("帳號刪除時間")] 
         public DateTimeOffset? DeletedAt { get; set; }
+
+        // --- IAuditable 實作 ---
+        // 由 AuditInterceptor 於 SaveChanges 時自動填入；[AuditIgnore] 已標於介面成員，不會寫入資料日誌
+        [Editable(false)]
+        [MaxLength(256)]
+        [DisplayName("建立者")]
+        [Comment("建立者")]
+        public string CreatedBy { get; set; } = string.Empty;
+
+        [Editable(false)]
+        [DisplayName("建立時間 (UTC)")]
+        [Comment("建立時間 (UTC)")]
+        public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+
+        [MaxLength(256)]
+        [DisplayName("最後修改者")]
+        [Comment("最後修改者")]
+        public string? UpdatedBy { get; set; }
+
+        [DisplayName("最後修改時間 (UTC)")]
+        [Comment("最後修改時間 (UTC)")]
+        public DateTimeOffset? UpdatedAtUtc { get; set; }
 
 
         /// <summary>

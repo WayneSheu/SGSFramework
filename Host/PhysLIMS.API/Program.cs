@@ -24,6 +24,7 @@ using SGSFramework.ModulePlugin.Systems.Controller.Providers;
 using SGSFramework.Persistent.Repositories.Generally;
 using SGSFramework.SPAModulePlugin.Application.Queries;
 using SGSFramework.SystemLog.Extensions;
+using SGSFramework.SystemLog.Middlewares;
 
 try
 {
@@ -174,6 +175,7 @@ try
     }
 
     // 3. 安全授權與跨域中間件 (順序嚴格對齊：CORS -> 認證 -> 授權)
+    app.UseCorrelationIdContext(); // 同一請求的日誌共用 CorrelationId（日誌查詢的「追蹤碼」）
     app.UseCors(CorsSettingsOptions.PolicyName);
     app.UseMiddleware<CorsLoggingMiddleware>();
 
@@ -211,6 +213,7 @@ try
 
         // 顯式啟用路由中間件
         app.UseRouting();
+        app.UseRouteContextAnalysis(); // 將模組 / 操作名稱注入日誌上下文（需在 UseRouting 之後）
         app.UseAuthentication();
         app.UseAuthorization();
 
@@ -244,6 +247,7 @@ try
         Log.Information("【架構模式】啟用「獨立部署 (前後端分離)」：後端僅提供 WebAPI 與 OpenAPI 服務。");
 
         app.UseRouting();
+        app.UseRouteContextAnalysis(); // 將模組 / 操作名稱注入日誌上下文（需在 UseRouting 之後）
         app.UseAuthentication();
         app.UseAuthorization();
 

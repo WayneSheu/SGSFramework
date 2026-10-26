@@ -5,7 +5,9 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
     using Microsoft.AspNetCore.Identity;
     using Microsoft.EntityFrameworkCore;
     using Microsoft.EntityFrameworkCore.Metadata.Builders;
+    using SGSFramework.Core.Abstractions.Entities.AuditLogs;
     using SGSFramework.Core.Abstractions.Entities.Base;
+    using System.ComponentModel.DataAnnotations;
     using System;
     using System.ComponentModel;
 
@@ -14,7 +16,7 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
     /// </summary>
     [DisplayName("企業級自訂應用程式角色實體 (支援 ARBAC 與多實驗室隔離)")]
     [Comment("企業級自訂應用程式角色實體 (支援 ARBAC 與多實驗室隔離)")]
-    public class ApplicationRole : IdentityRole<Guid>, IRoleEntity
+    public class ApplicationRole : IdentityRole<Guid>, IRoleEntity, IAuditable
     {
         [DisplayName("角色代碼")]
         [Comment("角色代碼")]
@@ -77,6 +79,28 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
         [DisplayName("是否已刪除")]
         [Comment("是否已刪除")]  
         public bool IsDeleted { get; set; } = false;
+
+        // --- IAuditable 實作 ---
+        // 由 AuditInterceptor 於 SaveChanges 時自動填入；[AuditIgnore] 已標於介面成員，不會寫入資料日誌
+        [Editable(false)]
+        [MaxLength(256)]
+        [DisplayName("建立者")]
+        [Comment("建立者")]
+        public string CreatedBy { get; set; } = string.Empty;
+
+        [Editable(false)]
+        [DisplayName("建立時間 (UTC)")]
+        [Comment("建立時間 (UTC)")]
+        public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+
+        [MaxLength(256)]
+        [DisplayName("最後修改者")]
+        [Comment("最後修改者")]
+        public string? UpdatedBy { get; set; }
+
+        [DisplayName("最後修改時間 (UTC)")]
+        [Comment("最後修改時間 (UTC)")]
+        public DateTimeOffset? UpdatedAtUtc { get; set; }
     }
 
     /// <summary>

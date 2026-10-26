@@ -13,13 +13,17 @@ namespace SGSFramework.SystemLog.Middlewares
 
         public CorrelationIdMiddleware(RequestDelegate next) => _next = next;
 
+        private static bool IsValid(string value) =>
+            value.Length is > 0 and <= 50 && value.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
+
         public async Task Invoke(HttpContext context)
         {
             // 1. 嘗試從 Header 取得，沒有就產新的
-            if (!context.Request.Headers.TryGetValue(CorrelationIdHeaderKey, out var correlationId))
-            {
-                correlationId = Guid.NewGuid().ToString();
-            }
+            // 用戶端提供的值需通過長度與字元檢查（資料庫欄位上限 50，且避免日誌注入），否則改產新的
+            string correlationId = context.Request.Headers.TryGetValue(CorrelationIdHeaderKey, out var headerValue) &&
+                                   IsValid(headerValue.ToString())
+                ? headerValue.ToString()
+                : Guid.NewGuid().ToString();
 
             // 2. 存入 HttpContext.Items 或 TraceIdentifier，確保後續可用
             context.TraceIdentifier = correlationId;

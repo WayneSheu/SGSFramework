@@ -41,14 +41,38 @@ namespace SGSFramework.SystemLog.Services
                     if (!string.IsNullOrWhiteSpace(request.Filter.Level))
                         query = query.Where(x => x.Level == request.Filter.Level);
 
+                    // TenantId / UserId 皆有索引：精確比對（去除前後空白）
                     if (!string.IsNullOrWhiteSpace(request.Filter.TenantId))
-                        query = query.Where(x => x.TenantId == request.Filter.TenantId);
+                    {
+                        var tenantId = request.Filter.TenantId.Trim();
+                        query = query.Where(x => x.TenantId == tenantId);
+                    }
 
                     if (!string.IsNullOrWhiteSpace(request.Filter.UserId))
-                        query = query.Where(x => x.UserId == request.Filter.UserId);
+                    {
+                        var userId = request.Filter.UserId.Trim();
+                        query = query.Where(x => x.UserId == userId);
+                    }
 
+                    // 模組 / 操作名稱：包含比對，使用者不需記得完整名稱
                     if (!string.IsNullOrWhiteSpace(request.Filter.ModuleName))
-                        query = query.Where(x => x.ModuleName == request.Filter.ModuleName);
+                    {
+                        var moduleName = request.Filter.ModuleName.Trim();
+                        query = query.Where(x => x.ModuleName != null && x.ModuleName.Contains(moduleName));
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(request.Filter.Operation))
+                    {
+                        var operation = request.Filter.Operation.Trim();
+                        query = query.Where(x => x.Operation != null && x.Operation.Contains(operation));
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(request.Filter.CorrelationId))
+                    {
+                        // 前綴比對：可貼上完整或部分 CorrelationId，且仍可利用索引
+                        var correlationId = request.Filter.CorrelationId.Trim();
+                        query = query.Where(x => x.CorrelationId != null && x.CorrelationId.StartsWith(correlationId));
+                    }
 
                     if (!string.IsNullOrWhiteSpace(request.Filter.AlertId))
                     {

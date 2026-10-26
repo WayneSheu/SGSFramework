@@ -1,123 +1,99 @@
 ﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging;
+using Microsoft.AspNetCore.Mvc.Controllers;
 using Serilog.Context;
 using SGSFramework.Core.Abstractions.Attributes;
+using System.Reflection;
 
 namespace SGSFramework.SystemLog.Middlewares
 {
-
     /// <summary>
-    /// 在 ASP.NET Core Pipeline 中，分析當前請求的路由 Endpoint，並將 Module 和 Function Name 注入 Context。
+    /// 在 UseRouting() 之後解析當前請求的 Endpoint，將「模組名稱 (ModuleName)」與「操作名稱 (Operation)」
+    /// 推入 Serilog LogContext，使該請求期間（含驗證、授權、Controller、服務層）的所有日誌都帶有這兩個欄位，
+    /// 由 SqlServerLogProcessor 寫入 core.SystemLogs。
     /// </summary>
+    /// <remarks>
+    /// ModuleName 解析順序：Action 方法 → Controller 類別 → Controller 所在 Assembly 的 [Module]（與選單產生規則一致）。
+    /// Operation 解析順序：Action 方法上的 [Function].FunctionName → 「Controller.Action」。
+    /// </remarks>
     public class RouteContextMiddleware
     {
-        private readonly RequestDelegate _next;
-        private readonly ILogger<RouteContextMiddleware> _logger;
+        private const string UnknownModule = "Unknown";
+        private const string StaticAssetsModule = "StaticAssets";
 
-        public RouteContextMiddleware(RequestDelegate next, ILogger<RouteContextMiddleware> logger)
+        private readonly RequestDelegate _next;
+
+        public RouteContextMiddleware(RequestDelegate next)
         {
-            _next = next;
-            _logger = logger;
+            _next = next ?? throw new ArgumentNullException(nameof(next));
         }
 
-        // 注意：此 Middleware 必須在 UseRouting() 和 Endpoint Mapping 前執行 (或與之結合)
         public async Task InvokeAsync(HttpContext context)
         {
-            // 1. 獲取當前的 Endpoint Metadata
+            var (moduleName, operation) = Resolve(context);
+
+            context.Items["ModuleName"] = moduleName;
+            context.Items["Operation"] = operation;
+
+            // 以 using 包住下游管線，請求結束後即還原，避免屬性外洩到其他請求
+            using (LogContext.PushProperty("ModuleName", moduleName))
+            using (LogContext.PushProperty("Operation", operation))
+            {
+                await _next(context);
+            }
+        }
+
+        private static (string ModuleName, string Operation) Resolve(HttpContext context)
+        {
             var endpoint = context.GetEndpoint();
-            string moduleName = "Unknown Module"; // Default value
-            string functionName = "Unknown Function";
-
-            if (endpoint != null)
+            if (endpoint is null)
             {
-                // 2. 解析 Module Name (使用反射檢查自定義屬性)
-                // 我們假設 Module 應從 Endpoint 的 Type (Controller/Class) 或 Method 上尋找
-                var moduleAttr = endpoint.Metadata.GetMetadata<ModuleAttribute>();
-
-                if (moduleAttr != null)
-                {
-                    moduleName = moduleAttr.ModuleName;
-                }
-                else if (endpoint.Metadata.GetMetadata<ModuleAttribute>() == null)
-                // 備用方案：如果沒有自定義屬性，則嘗試從路由路徑的開頭推斷（較不精準）
-                {
-                    var path = context.Request.Path.ToString();
-                    if (path.StartsWith("/api/user")) // 硬編碼或使用更複雜的正規表達式
-                    {
-                        moduleName = "API_User";
-                    }
-                }
-
-                // 3. 解析 Function Name
-                // 最準確的方式是取得方法名稱，如果沒有明確的做法，就使用路徑片段作為佔位符。
-                if (endpoint.Metadata.GetMetadata<ModuleAttribute>() != null)
-                {
-                    functionName = endpoint.DisplayName ?? "Handler";
-                }
-                else
-                {
-                    // fallback: 使用路由模板的最後一部分作為函數名近似值
-                    // 2. 使用 'is' 進行型別轉換 (C# 模式比對)
-                    if (endpoint is Microsoft.AspNetCore.Routing.RouteEndpoint routeEndpoint)
-                    {
-                        // 現在可以安全存取 RoutePattern
-                        var routeTemplate = routeEndpoint.RoutePattern.RawText;
-
-                        if (!string.IsNullOrEmpty(routeTemplate))
-                        {
-                            functionName = Path.GetFileName(routeTemplate);
-                        }
-
-                        // 範例：輸出路由模板到 Console
-                        //Console.WriteLine($"路由模式: {routeEndpoint.RoutePattern}");
-                    }
-
-
-                }
-
-                // 4. 將解析出的 Metadata 儲存到 HttpContext Items，供後續 Middleware 或 Enricher 使用
-                context.Items["ModuleName"] = moduleName;
-                LogContext.PushProperty("ModuleName", moduleName);
-                context.Items["Operation"] = functionName;
-                LogContext.PushProperty("Operation", functionName);
-            }
-            else
-            {
-                // 如果沒有 Endpoint (例如靜態資源 /images)
-                context.Items["ModuleName"] = "StaticAssets";
-                LogContext.PushProperty("ModuleName", "StaticAssets");
-                context.Items["Operation"] = "AssetRequest";
-                LogContext.PushProperty("Operation", "AssetRequest");
+                return (StaticAssetsModule, "AssetRequest");
             }
 
-            await _next(context);
+            var descriptor = endpoint.Metadata.GetMetadata<ControllerActionDescriptor>();
+            if (descriptor is null)
+            {
+                // 非 MVC Endpoint（SignalR Hub、Minimal API、靜態檔案後備路由等）
+                var moduleFromMetadata = endpoint.Metadata.GetMetadata<ModuleAttribute>()?.ModuleName ?? UnknownModule;
+                return (moduleFromMetadata, endpoint.DisplayName ?? context.Request.Path.Value ?? "Unknown");
+            }
+
+            var controllerType = descriptor.ControllerTypeInfo;
+
+            var moduleAttr = descriptor.MethodInfo.GetCustomAttribute<ModuleAttribute>()
+                             ?? controllerType.GetCustomAttribute<ModuleAttribute>()
+                             ?? controllerType.Assembly.GetCustomAttribute<ModuleAttribute>();
+
+            var functionAttr = descriptor.MethodInfo.GetCustomAttribute<FunctionAttribute>();
+            var controllerName = descriptor.ControllerName;
+            var operation = !string.IsNullOrWhiteSpace(functionAttr?.FunctionName)
+                ? functionAttr!.FunctionName
+                : $"{controllerName}.{descriptor.ActionName}";
+
+            return (moduleAttr?.ModuleName ?? UnknownModule, operation);
         }
     }
 
     public static class RouteContextMiddlewareExtensions
     {
         /// <summary>
-        /// 將路由上下文分析 Middleware 加入到 ASP.NET Core Pipeline。
-        /// 必須放在 UseRouting() 之後，因為它依賴已解析的 Endpoint Metadata。
+        /// 將路由上下文分析 Middleware 加入 Pipeline。
+        /// 必須放在 UseRouting() 之後（需要已解析的 Endpoint），並建議放在 UseAuthentication() 之前，
+        /// 讓驗證 / 授權階段的日誌同樣帶有模組與操作欄位。
         /// </summary>
         public static IApplicationBuilder UseRouteContextAnalysis(this IApplicationBuilder builder)
         {
             return builder.UseMiddleware<RouteContextMiddleware>();
         }
+
+        /// <summary>
+        /// 將 CorrelationId Middleware 加入 Pipeline（讀取 / 產生 X-Correlation-ID，並寫入日誌上下文）。
+        /// 建議放在管線最前面。
+        /// </summary>
+        public static IApplicationBuilder UseCorrelationIdContext(this IApplicationBuilder builder)
+        {
+            return builder.UseMiddleware<CorrelationIdMiddleware>();
+        }
     }
-
-    // -----------------------------------------------------
-    // STEP A: 路由解析 (MUST BE FIRST)
-    //app.UseRouting(); 
-
-    // ✨ 【關鍵插入點】在 UseRouting() 後，利用已知的 Endpoint Metadata
-    //app.UseRouteContextAnalysis(); // <-- 新增的 Context 解析 Middleware
-
-    // ✨ 【調整與合併】如果您的 Context Logging 和 Route Analysis 是分開的，它們的位置會依賴彼此。
-    // 為了簡潔，我們建議將所有 Context 捕獲邏輯（IP, UserID, Module, Function）都放在一個綜合的 Middleware 中執行。
-
-    //app.USGSFrameworktatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
-
-    // ... (後續的其他 Middleware)
 }

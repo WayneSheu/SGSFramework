@@ -75,6 +75,8 @@ namespace SGSFramework.SystemLog.Extensions
 
 
             builder.Services.AddScoped<ISystemLogQueryService, SystemLogQueryService>();
+            builder.Services.AddScoped<IAuditLogSourceResolver, AuditLogSourceResolver>();
+            builder.Services.AddScoped<IAuditLogQueryService, AuditLogQueryService>();
 
             // =========================================================================
             // 5. 持久化核心處理器註冊 (Processors)
@@ -108,7 +110,10 @@ namespace SGSFramework.SystemLog.Extensions
                     loggerConfig
                         .MinimumLevel.ControlledBy(levelSwitch) // 動態層級控管
                         .ReadFrom.Configuration(context.Configuration) // 讀取 appsettings.json 配置
-                        .ReadFrom.Services(servicesProvider); // 讓 Serilog 可存取 DI 服務
+                        .ReadFrom.Services(servicesProvider) // 讓 Serilog 可存取 DI 服務
+                        // 讓 LogContext 推入的屬性（ModuleName / Operation / CorrelationId …）進入每筆日誌事件，
+                        // 否則 SqlServerLogProcessor 讀不到這些屬性，core.SystemLogs 對應欄位會是空值
+                        .Enrich.FromLogContext();
 
                     loggerConfig.ConfigurationSerilogMasking();
 

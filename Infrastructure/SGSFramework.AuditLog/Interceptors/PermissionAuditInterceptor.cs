@@ -87,7 +87,8 @@ public class PermissionAuditInterceptor : SaveChangesInterceptor
                 var auditEntry = new AuditEntry(entry)
                 {
                     UserId = userId,
-                    TraceId = traceId
+                    TraceId = traceId,
+                    RemoteIp = auditProvider.RemoteIp
                 };
 
                 var userIdProp = entry.Properties.FirstOrDefault(p => p.Metadata.Name.Equals("UserId", StringComparison.OrdinalIgnoreCase));

@@ -831,6 +831,16 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("nvarchar(max)")
                         .HasComment("並行控制戳記 (樂觀鎖定)");
 
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("建立時間 (UTC)");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("建立者");
+
                     b.Property<string>("Description")
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)")
@@ -894,6 +904,15 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasComment("區域實驗室專屬角色的所屬租戶實驗室 ID（全域或系統角色則為 Null）");
 
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("最後修改時間 (UTC)");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("最後修改者");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Code")
@@ -931,6 +950,16 @@ namespace PhysLIMS.API.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset")
                         .HasComment("帳號建立時間");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("建立時間 (UTC)");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("建立者");
 
                     b.Property<DateTimeOffset?>("DeletedAt")
                         .HasColumnType("datetimeoffset")
@@ -1013,6 +1042,15 @@ namespace PhysLIMS.API.Migrations
                     b.Property<bool>("TwoFactorEnabled")
                         .HasColumnType("bit")
                         .HasComment("是否啟用雙因素驗證");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("最後修改時間 (UTC)");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("最後修改者");
 
                     b.Property<string>("UserName")
                         .HasMaxLength(256)
