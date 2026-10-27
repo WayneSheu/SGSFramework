@@ -1,4 +1,4 @@
-﻿// ==========================================
+// ==========================================
 // 檔案路徑: src/SGSFramework/Infrastructure/SGSFramework.AuthTokenBucket/Extensions/AuthTokenBucketServiceCollectionExtensions.cs
 // 架構層級: Infrastructure Layer / Extensions
 // ==========================================
@@ -24,6 +24,7 @@ using SGSFramework.AuthTokenBucket.Services.Factories;
 using SGSFramework.AuthTokenBucket.Services.Strategies;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.Identities;
+using SGSFramework.Core.Abstractions.Identities;
 using SGSFramework.Core.Abstractions.Menus;
 using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Abstractions.Permissions.Contract;
@@ -121,6 +122,30 @@ public static class AuthTokenBucketServiceCollectionExtensions
                 OnTokenValidated = async context =>
                 {
                     var principal = context.Principal;
+
+                    // 系統帳號（M2M）權杖：檢查帳號狀態與撤銷時間點，停用 / 凍結後立即失效
+                    if (principal.IsSystemAccount())
+                    {
+                        var accountId = principal!.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                        // 優先使用毫秒精度的 iat_ms，避免與撤銷時間點同一秒時誤判為有效
+                        var issuedAt = long.TryParse(principal!.FindFirst(SystemAccountClaims.IssuedAtMilliseconds)?.Value, out var issuedAtMs)
+                            ? DateTimeOffset.FromUnixTimeMilliseconds(issuedAtMs)
+                            : new DateTimeOffset(DateTime.SpecifyKind(context.SecurityToken.ValidFrom, DateTimeKind.Utc));
+                        var accountValidator = context.HttpContext.RequestServices.GetService<ISystemAccountTokenValidator>();
+
+                        var failure = accountValidator is null
+                            ? "系統未啟用系統帳號驗證服務。"
+                            : string.IsNullOrWhiteSpace(accountId)
+                                ? "系統帳號權杖缺少帳號識別碼。"
+                                : await accountValidator.ValidateAsync(accountId, issuedAt, context.HttpContext.RequestAborted);
+
+                        if (failure is not null)
+                        {
+                            context.Fail(failure);
+                        }
+                        return;
+                    }
+
                     var deviceId = principal?.FindFirst("device_id")?.Value;
                     if (string.IsNullOrWhiteSpace(deviceId))
                     {
@@ -169,6 +194,13 @@ public static class AuthTokenBucketServiceCollectionExtensions
             authOptions.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
             authOptions.DefaultForbidScheme = JwtBearerDefaults.AuthenticationScheme;
         });
+
+        // 系統帳號（M2M）授權策略：可用 [Authorize(Policy = SystemAccountClaims.SystemOnlyPolicy)] 限定僅系統帳號呼叫，
+        // 細部 Scope 檢查請使用 [RequiresSystemScope]（由 PermissionAuthorizationFilter 執行）
+        services.AddAuthorizationBuilder()
+            .AddPolicy(SystemAccountClaims.SystemOnlyPolicy, policy => policy
+                .RequireAuthenticatedUser()
+                .RequireClaim(SystemAccountClaims.AccountType, SystemAccountClaims.SystemAccountType));
 
         // 5. 註冊核心服務（解決 ITokenManager 抽象介面無法被 TokenBucketEngine 解析之問題）
         services.AddScoped<ITokenManager, TokenManager>();

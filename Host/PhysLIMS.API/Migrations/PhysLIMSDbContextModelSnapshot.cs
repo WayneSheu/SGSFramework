@@ -1683,6 +1683,188 @@ namespace PhysLIMS.API.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.SystemAccounts.SystemAccount", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasComment("識別主鍵（含 sys_ 前綴，例如 sys_hangfire_worker）");
+
+                    b.Property<int>("AccessTokenLifetimeMinutes")
+                        .HasColumnType("int")
+                        .HasComment("簽發之 Access Token 有效分鐘數");
+
+                    b.Property<string>("AllowedIpRanges")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("允許換發權杖的來源 IP / CIDR（逗號分隔，空白表示不限制）");
+
+                    b.Property<string>("ClientId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("用戶端識別碼 client_id（例如 hangfire-job-runner）");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("建立時間");
+
+                    b.Property<string>("CreatedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("建立者名稱");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("用途說明（使用的服務、負責人等）");
+
+                    b.Property<DateTimeOffset?>("LastUsedAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("最近一次成功換發權杖時間");
+
+                    b.Property<string>("LastUsedIp")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasComment("最近一次成功換發權杖的來源 IP");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("顯示名稱");
+
+                    b.Property<DateTimeOffset?>("SecretExpiresAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("client_secret 到期時間（空白表示不到期），到期後須輪替金鑰才能換發權杖");
+
+                    b.Property<string>("SecretHash")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasComment("client_secret 雜湊值（PBKDF2，不儲存明文）");
+
+                    b.Property<string>("SecretHint")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasComment("client_secret 末四碼，供維運人員比對部署中的金鑰版本");
+
+                    b.Property<DateTimeOffset>("SecretRotatedAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("client_secret 最近一次產生 / 輪替時間");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int")
+                        .HasComment("狀態：0 停用、1 啟用、2 凍結");
+
+                    b.Property<DateTimeOffset>("TokensNotBefore")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("早於此時間簽發的權杖一律視為無效（撤銷既有權杖時更新）");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("更新時間");
+
+                    b.Property<string>("UpdatedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("更新者名稱");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId")
+                        .IsUnique();
+
+                    b.ToTable("SystemAccounts", "core", t =>
+                        {
+                            t.HasComment("系統帳號（服務間通訊 M2M 身分），以 Client Credentials 換取短效 JWT，並以 Scope 授權");
+                        });
+                });
+
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.SystemAccounts.SystemAccountAuditLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasComment("動作（Created、Updated、ScopesChanged、StatusChanged、SecretRotated、Deleted、TokenIssued、TokenDenied）");
+
+                    b.Property<string>("ActorName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("操作者名稱（權杖換發時為 client_id）");
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("操作者用戶識別鍵（權杖換發時為空）");
+
+                    b.Property<string>("ClientIp")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasComment("客戶端 IP");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasComment("請求追蹤碼（X-Correlation-ID）");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("建立時間");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasComment("可讀的異動摘要");
+
+                    b.Property<string>("SystemAccountId")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasComment("系統帳號識別鍵");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("SystemAccountId", "CreatedAt");
+
+                    b.ToTable("SystemAccountAuditLogs", "core", t =>
+                        {
+                            t.HasComment("系統帳號稽核歷程（僅新增不修改，刪除帳號後仍保留）");
+                        });
+                });
+
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.SystemAccounts.SystemAccountScope", b =>
+                {
+                    b.Property<string>("SystemAccountId")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasComment("系統帳號識別鍵");
+
+                    b.Property<string>("Scope")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("操作範圍（例如 inventory.write）");
+
+                    b.Property<DateTimeOffset>("GrantedAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("授予時間");
+
+                    b.HasKey("SystemAccountId", "Scope");
+
+                    b.ToTable("SystemAccountScopes", "core", t =>
+                        {
+                            t.HasComment("系統帳號被授予的操作範圍（Scope）");
+                        });
+                });
+
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.SystemSettings.SystemSetting", b =>
                 {
                     b.Property<string>("Key")
@@ -2630,6 +2812,15 @@ namespace PhysLIMS.API.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.SystemAccounts.SystemAccountScope", b =>
+                {
+                    b.HasOne("SGSFramework.Core.Abstractions.Entities.SystemAccounts.SystemAccount", null)
+                        .WithMany("Scopes")
+                        .HasForeignKey("SystemAccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Entities.PermissionMetadata", b =>
                 {
                     b.HasOne("SGSFramework.Core.Abstractions.Permissions.Entities.PermissionMetadata", "Parent")
@@ -2643,6 +2834,11 @@ namespace PhysLIMS.API.Migrations
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Controller.MenuItem", b =>
                 {
                     b.Navigation("Children");
+                });
+
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.SystemAccounts.SystemAccount", b =>
+                {
+                    b.Navigation("Scopes");
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Permissions.Entities.PermissionMetadata", b =>

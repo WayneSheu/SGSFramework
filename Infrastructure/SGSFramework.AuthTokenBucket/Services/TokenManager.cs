@@ -1,4 +1,4 @@
-﻿// ==========================================
+// ==========================================
 // 檔案路徑: src/SGSFramework/Infrastructure/SGSFramework.AuthTokenBucket/Services/TokenManager.cs
 // 架構層級: Infrastructure Layer / Services
 // ==========================================
@@ -16,6 +16,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.Configurations;
+using SGSFramework.Core.Abstractions.Identities;
 
 public sealed class TokenManager : ITokenManager
 {
@@ -66,6 +67,7 @@ public sealed class TokenManager : ITokenManager
             {
                 new(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new(ClaimTypes.Name, user.UserName ?? string.Empty),
+                new(SystemAccountClaims.AccountType, SystemAccountClaims.UserAccountType),
                 new("device_id", deviceId),
                 new("permissions", bitmaskString ?? string.Empty),
                 new("perm_bits", bitmaskString ?? string.Empty), // 確保 Filter 讀取權限位元遮罩
@@ -116,6 +118,65 @@ public sealed class TokenManager : ITokenManager
         catch (Exception ex)
         {
             _logger.LogError(ex, "簽發 JWT Access Token 時發生非預期例外，UserId: {UserId}", user.Id);
+            throw;
+        }
+    }
+
+    public SystemAccessTokenResult GenerateSystemAccessToken(SystemAccessTokenRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.AccountId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.ClientId);
+
+        try
+        {
+            var issuedAt = DateTimeOffset.UtcNow;
+
+            // ClaimTypes.Name 使用帳號識別碼（sys_xxx），使稽核欄位 CreatedBy / UpdatedBy 自動記錄為系統帳號
+            var claims = new List<Claim>
+            {
+                new(ClaimTypes.NameIdentifier, request.AccountId),
+                new(ClaimTypes.Name, request.AccountId),
+                new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N")),
+                new(SystemAccountClaims.AccountType, SystemAccountClaims.SystemAccountType),
+                new(SystemAccountClaims.ClientId, request.ClientId),
+                new(SystemAccountClaims.DisplayName, request.DisplayName ?? string.Empty),
+                new(SystemAccountClaims.IssuedAtMilliseconds, issuedAt.ToUnixTimeMilliseconds().ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                new("is_admin", "false"),
+                new("IsSuperAdmin", "false")
+            };
+
+            foreach (var scope in request.Scopes)
+            {
+                claims.Add(new Claim(SystemAccountClaims.Scope, scope));
+            }
+
+            var signingCredentials = new SigningCredentials(_signingKey, SecurityAlgorithms.HmacSha256);
+            var header = new JwtHeader(signingCredentials)
+            {
+                ["kid"] = DefaultKeyId
+            };
+
+            // JWT 時間欄位為秒精度；撤銷比對改用 iat_ms 宣告
+            var now = DateTimeOffset.FromUnixTimeSeconds(issuedAt.ToUnixTimeSeconds());
+            var lifetime = request.Lifetime <= TimeSpan.Zero ? TimeSpan.FromMinutes(15) : request.Lifetime;
+            var expires = now.Add(lifetime);
+
+            var payload = new JwtPayload(
+                issuer: _options.Issuer,
+                audience: _options.Audience,
+                claims: claims,
+                notBefore: now.UtcDateTime,
+                expires: expires.UtcDateTime,
+                issuedAt: now.UtcDateTime
+            );
+
+            var token = new JwtSecurityTokenHandler().WriteToken(new JwtSecurityToken(header, payload));
+            return new SystemAccessTokenResult(token, issuedAt, expires);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "簽發系統帳號 Access Token 時發生非預期例外，AccountId: {AccountId}", request.AccountId);
             throw;
         }
     }

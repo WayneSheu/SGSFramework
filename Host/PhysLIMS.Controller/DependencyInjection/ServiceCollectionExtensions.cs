@@ -58,6 +58,11 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IdentityPolicyRuntime>();
         services.AddHostedService<IdentityPolicyStartupLoader>();
         services.TryAddSingleton(TimeProvider.System);
+
+        // 系統帳號（M2M）：管理 / 權杖換發服務、JwtBearer 即時撤銷檢查、[RequiresSystemScope] 目錄
+        services.AddScoped<ISystemAccountService, SystemAccountService>();
+        services.AddScoped<ISystemAccountTokenValidator, SystemAccountTokenValidator>();
+        services.AddSingleton<SystemScopeCatalog>();
         services.AddScoped<IEntityDescriptionProvider, EfModelDescriptionProvider>();
         services.AddScoped<IMigrationHistoryProvider, EfMigrationHistoryProvider>();
         services.AddScoped<IDatabaseSchemaService, SqlServerDatabaseSchemaService>();
