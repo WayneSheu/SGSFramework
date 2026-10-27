@@ -26,19 +26,21 @@ namespace SGSFramework.AuditLog.DTOs
             TableName = entry.Metadata.GetTableName();
             Timestamp = DateTime.UtcNow;
 
-            // Action 偵測邏輯
-            if (entry.State == EntityState.Modified && entry.Entity is ISoftDeletable)
+            // Action 偵測邏輯：凡具備 bool IsDeleted 的實體（ISoftDeletable、ApplicationUser、ApplicationRole 等）
+            // 其 IsDeleted 由 false→true 視為「軟刪除」、true→false 視為「還原」，而非一般的 Modified
+            if (entry.State == EntityState.Modified &&
+                entry.Metadata.FindProperty("IsDeleted") is { ClrType: var clrType } && clrType == typeof(bool))
             {
-                var prop = entry.Property(nameof(ISoftDeletable.IsDeleted));
+                var prop = entry.Property("IsDeleted");
 
                 if (prop.IsModified)
                 {
-                    bool oldValue = (bool)prop.OriginalValue;
-                    bool newValue = (bool)prop.CurrentValue;
+                    bool oldValue = (bool)prop.OriginalValue!;
+                    bool newValue = (bool)prop.CurrentValue!;
 
                     if (oldValue == false && newValue == true)
                     {
-                        Action = "SoftDeleted"; // 由 SoftDeleteInterceptor 觸發
+                        Action = "SoftDeleted"; // 由 SoftDeleteInterceptor 或手動標記 IsDeleted 觸發
                         return;
                     }
                     if (oldValue == true && newValue == false)

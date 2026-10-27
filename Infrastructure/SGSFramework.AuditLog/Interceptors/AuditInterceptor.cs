@@ -3,6 +3,7 @@ namespace SGSFramework.AuditLog.Interceptors;
 
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -10,12 +11,14 @@ using Microsoft.Extensions.Options;
 using SGSFramework.AuditLog.Abstractions;
 using SGSFramework.AuditLog.Configurations;
 using SGSFramework.AuditLog.DTOs;
+using SGSFramework.AuditLog.Helpers;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.AuditLogs;
 using SGSFramework.Core.HttpAuditProviders;
 using SGSFramework.Core.Mask;
 using System;
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -30,6 +33,11 @@ public class AuditInterceptor : SaveChangesInterceptor
 
     // (實體型別, 屬性名稱) → 是否帶有 [AuditIgnore]（含實作的介面成員）；反射結果快取
     private static readonly ConcurrentDictionary<(Type, string), bool> AuditIgnoreCache = new();
+
+    // 同一個 DbContext 的一次 SaveChanges 只稽核一次：
+    // DbContext 可能因多處註冊（如 AddModuleDatabaseWithAudit 與 AddPersistentServices）掛上多個 AuditInterceptor 實例，
+    // 若不防重複，每筆異動會產生多筆相同的資料日誌。
+    private static readonly ConditionalWeakTable<DbContext, object> InFlight = new();
 
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<AuditInterceptor> _logger;
@@ -57,7 +65,7 @@ public class AuditInterceptor : SaveChangesInterceptor
     {
         ArgumentNullException.ThrowIfNull(eventData);
 
-        if (eventData.Context is not null && _options.CurrentValue.IsEnabled)
+        if (eventData.Context is not null && _options.CurrentValue.IsEnabled && InFlight.TryAdd(eventData.Context, InFlightMarker))
         {
             try
             {
@@ -74,6 +82,26 @@ public class AuditInterceptor : SaveChangesInterceptor
         }
 
         return await base.SavingChangesAsync(eventData, result, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static readonly object InFlightMarker = new();
+
+    public override ValueTask<int> SavedChangesAsync(SaveChangesCompletedEventData eventData, int result, CancellationToken cancellationToken = default)
+    {
+        if (eventData.Context is not null) InFlight.Remove(eventData.Context);
+        return base.SavedChangesAsync(eventData, result, cancellationToken);
+    }
+
+    public override Task SaveChangesFailedAsync(DbContextErrorEventData eventData, CancellationToken cancellationToken = default)
+    {
+        if (eventData.Context is not null) InFlight.Remove(eventData.Context);
+        return base.SaveChangesFailedAsync(eventData, cancellationToken);
+    }
+
+    public override async Task SaveChangesCanceledAsync(DbContextEventData eventData, CancellationToken cancellationToken = default)
+    {
+        if (eventData.Context is not null) InFlight.Remove(eventData.Context);
+        await base.SaveChangesCanceledAsync(eventData, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task OnBeforeSaveChangesAsync(DbContext context, IAuditProvider auditProvider, CancellationToken ct)
@@ -128,10 +156,9 @@ public class AuditInterceptor : SaveChangesInterceptor
             if (options.IgnoredTables.Contains(entry.Metadata.Name) || options.IgnoredTables.Contains(tableName))
                 continue;
 
-            // 包含一般 IAuditable 實體與所有權限配置實體 (UserGlobalPermission, UserLabPermission 等)
-            bool isTargetEntity = entry.Entity is IAuditable ||
-                                 entityTypeName.Contains("Permission", StringComparison.OrdinalIgnoreCase) ||
-                                 tableName.Contains("Permissions", StringComparison.OrdinalIgnoreCase);
+            // 僅稽核實作 IAuditable 的實體（含 UserGlobalPermission、UserLabPermission、RoleGlobalPermission 等權限實體）。
+            // 不再以名稱含 "Permission" 判斷，避免權限目錄 (PermissionMetadata) 等非業務資料被誤記。
+            bool isTargetEntity = entry.Entity is IAuditable;
 
             if (!isTargetEntity) continue;
 
@@ -186,6 +213,8 @@ public class AuditInterceptor : SaveChangesInterceptor
                 if (entry.State == EntityState.Modified && auditEntry.ChangedColumns.Count == 0)
                     continue;
 
+                AppendPermissionSummary(entry, auditEntry);
+
                 auditEntries.Add(auditEntry);
             }
             catch (Exception ex)
@@ -195,6 +224,34 @@ public class AuditInterceptor : SaveChangesInterceptor
         }
 
         return auditEntries;
+    }
+
+    /// <summary>
+    /// 權限實體（具 Bitmask 欄位）：於同一筆紀錄加入人類可讀的權限變更摘要 (PermissionSummary)，
+    /// 取代過去由 PermissionAuditInterceptor 另寫一筆的做法。
+    /// </summary>
+    private static void AppendPermissionSummary(EntityEntry entry, AuditEntry auditEntry)
+    {
+        var bitmask = entry.Properties.FirstOrDefault(p => p.Metadata.Name.Equals("Bitmask", StringComparison.OrdinalIgnoreCase));
+        if (bitmask is null) return;
+
+        // 修改時只有 Bitmask 真的變動才附摘要，避免僅更新其他欄位時出現空摘要
+        if (entry.State == EntityState.Modified && !auditEntry.ChangedColumns.Contains(bitmask.Metadata.Name)) return;
+
+        try
+        {
+            long oldMask = entry.State == EntityState.Added ? 0 : Convert.ToInt64(bitmask.OriginalValue);
+            long newMask = entry.State == EntityState.Deleted ? 0 : Convert.ToInt64(bitmask.CurrentValue);
+            var summary = PermissionAuditHelper.FormatPermissionChanges(oldMask, newMask);
+            if (string.IsNullOrWhiteSpace(summary)) return;
+
+            auditEntry.NewValues["PermissionSummary"] = summary;
+            if (entry.State == EntityState.Modified) auditEntry.ChangedColumns.Add("PermissionSummary");
+        }
+        catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
+        {
+            // Bitmask 型別無法轉為 long：略過摘要，不影響其餘欄位的稽核
+        }
     }
 
     private static bool IsIgnoredProperty(Type entityType, string propertyName, AuditOptions options)

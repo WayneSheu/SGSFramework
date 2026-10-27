@@ -1,37 +1,39 @@
-﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http;
 using Serilog.Context;
+using SGSFramework.Core.Tracing;
 
 namespace SGSFramework.SystemLog.Middlewares
 {
     /// <summary>
-    /// Middleware for generating and propagating a Correlation ID across requests.
+    /// 為每個請求決定統一追蹤碼並傳遞到所有日誌：
+    /// 系統日誌 (LogContext.CorrelationId)、資安日誌 (CorrelationContext)、資料日誌 (HttpContext.TraceIdentifier)、
+    /// 錯誤回應 (ProblemDetails.traceId) 與回應標頭 X-Correlation-ID 皆為同一個值。
     /// </summary>
     public class CorrelationIdMiddleware
     {
         private readonly RequestDelegate _next;
-        private const string CorrelationIdHeaderKey = "X-Correlation-ID";
 
         public CorrelationIdMiddleware(RequestDelegate next) => _next = next;
 
-        private static bool IsValid(string value) =>
-            value.Length is > 0 and <= 50 && value.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
-
         public async Task Invoke(HttpContext context)
         {
-            // 1. 嘗試從 Header 取得，沒有就產新的
-            // 用戶端提供的值需通過長度與字元檢查（資料庫欄位上限 50，且避免日誌注入），否則改產新的
-            string correlationId = context.Request.Headers.TryGetValue(CorrelationIdHeaderKey, out var headerValue) &&
-                                   IsValid(headerValue.ToString())
-                ? headerValue.ToString()
-                : Guid.NewGuid().ToString();
+            // 1. 用戶端帶入的值需能轉為標準格式（GUID 或 32 碼十六進位），否則視為無效並改產新的（避免超長值與日誌注入）
+            var correlationId =
+                CorrelationContext.Normalize(context.Request.Headers[CorrelationContext.HeaderName].FirstOrDefault())
+                ?? CorrelationContext.NewId();
 
-            // 2. 存入 HttpContext.Items 或 TraceIdentifier，確保後續可用
+            // 2. TraceIdentifier 供 HttpAuditProvider（資料日誌）與 GlobalExceptionHandler 使用
             context.TraceIdentifier = correlationId;
+            context.Items["CorrelationId"] = correlationId;
 
-            // 3. 將 CorrelationId 寫回 Response Header (方便前端除錯)
-            // 使用索引器替代 .Add()
-            context.Response.Headers[CorrelationIdHeaderKey] = correlationId;
-            // 4. 使用 Serilog 的 LogContext 推入屬性，這會讓該請求內的所有 Log 自動帶上此 ID
+            // 3. 回應標頭，方便前端與使用者回報問題時提供追蹤碼
+            context.Response.Headers[CorrelationContext.HeaderName] = correlationId;
+
+            // 4. 以 Activity Baggage 帶著追蹤碼，對外呼叫的 HttpClient handler（ClientCorrelationHandler）據此附加
+            //    X-Correlation-ID；Baggage 也會隨 W3C 傳播標頭送往支援的下游服務
+            System.Diagnostics.Activity.Current?.AddBaggage("correlation_id", correlationId);
+
+            using (CorrelationContext.Begin(correlationId))
             using (LogContext.PushProperty("CorrelationId", correlationId))
             {
                 await _next(context);

@@ -23,7 +23,7 @@ using System;
 public static class AuditLogExtensions
 {
     /// <summary>
-    /// 註冊 AuditLog 基礎核心服務 (包含設定檔、HttpContext 身分提供者與兩大 SaveChanges 攔截器)
+    /// 註冊 AuditLog 基礎核心服務 (包含設定檔、HttpContext 身分提供者與 SaveChanges 攔截器)
     /// </summary>
     public static IServiceCollection AddAuditLog(this IServiceCollection services, IConfiguration configuration)
     {
@@ -36,7 +36,6 @@ public static class AuditLogExtensions
 
         // 必須為 Transient 確保每次 SaveChanges 解析全新實體
         services.AddTransient<AuditInterceptor>();
-        services.AddTransient<PermissionAuditInterceptor>();
 
         return services;
     }
@@ -61,8 +60,7 @@ public static class AuditLogExtensions
         {
             // 確保 Interceptors 已註冊
             services.AddTransient<AuditInterceptor>();
-            services.AddTransient<PermissionAuditInterceptor>();
-
+    
             var connectionString = ResolveConnectionString(configuration, connectionStringKey);
 
             if (string.IsNullOrWhiteSpace(connectionString))
@@ -132,7 +130,7 @@ public static class AuditLogExtensions
     }
 
     /// <summary>
-    /// 為 DbContext 綁定 AuditInterceptor 與 PermissionAuditInterceptor 攔截器
+    /// 為 DbContext 綁定 AuditInterceptor 攔截器（權限類實體的稽核與變更摘要亦由其處理）
     /// </summary>
     private static void ConfigureAuditInterceptor(IServiceProvider sp, DbContextOptionsBuilder options)
     {
@@ -142,9 +140,7 @@ public static class AuditLogExtensions
         try
         {
             var auditInterceptor = sp.GetRequiredService<AuditInterceptor>();
-            var permissionInterceptor = sp.GetRequiredService<PermissionAuditInterceptor>();
-
-            options.AddInterceptors(auditInterceptor, permissionInterceptor);
+            options.AddInterceptors(auditInterceptor);
         }
         catch (Exception ex)
         {

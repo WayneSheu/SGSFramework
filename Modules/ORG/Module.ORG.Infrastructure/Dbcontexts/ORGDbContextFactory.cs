@@ -59,22 +59,14 @@ namespace SGS.Modules.ORG.Infrastructure.Dbcontexts
             // 註冊特定 Context (ORGDbContext) 專屬的獨立泛型 Channel 佇列與 Interceptors
             services.AddSingleton<IAuditChannel<ORGDbContext>, AuditChannel<ORGDbContext>>();
             services.AddTransient<AuditInterceptor>();
-            services.AddTransient<PermissionAuditInterceptor>();
 
             var serviceProvider = services.BuildServiceProvider();
 
             // 3. 解析 AuditInterceptor 並掛載至 DbContextOptionsBuilder
             var interceptor = serviceProvider.GetRequiredService<AuditInterceptor>();
-            var permissionInterceptor = serviceProvider.GetService<PermissionAuditInterceptor>();
 
-            if (interceptor != null && permissionInterceptor != null)
-            {
-                optionsBuilder.AddInterceptors(interceptor, permissionInterceptor);
-            }
-            else if (interceptor != null)
-            {
-                optionsBuilder.AddInterceptors(interceptor);
-            }
+            // 權限類實體的稽核（含權限變更摘要）由 AuditInterceptor 統一處理
+            optionsBuilder.AddInterceptors(interceptor);
 
             // 4. 傳入建構子參數並回傳實體
             return new ORGDbContext(optionsBuilder.Options);

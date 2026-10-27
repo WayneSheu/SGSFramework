@@ -58,7 +58,6 @@ namespace PhysLIMS.API
                 // 註冊 PhysLIMSDbContext 專屬的獨立泛型 Channel 佇列與 Interceptors
                 services.AddSingleton<IAuditChannel<PhysLIMSDbContext>, AuditChannel<PhysLIMSDbContext>>();
                 services.AddTransient<AuditInterceptor>();
-                services.AddTransient<PermissionAuditInterceptor>();
 
                 // 讓 DI 容器能夠將 PhysLIMSDbContext 當作基底 DbContext 注入
                  services.AddScoped<DbContext>(sp => sp.GetRequiredService<PhysLIMSDbContext>());
@@ -67,7 +66,6 @@ namespace PhysLIMS.API
 
                 // 4. 解析 Interceptors 實例
                 var auditInterceptor = serviceProvider.GetRequiredService<AuditInterceptor>();
-                var permissionInterceptor = serviceProvider.GetService<PermissionAuditInterceptor>();
 
                 // 5. 建立與配置 OptionsBuilder
                 var optionsBuilder = new DbContextOptionsBuilder<PhysLIMSDbContext>();
@@ -85,14 +83,8 @@ namespace PhysLIMS.API
                 // 6. 掛載 ServiceProvider 與 Interceptors 至 DbContextOptionsBuilder
                 optionsBuilder.UseApplicationServiceProvider(serviceProvider);
 
-                if (auditInterceptor != null && permissionInterceptor != null)
-                {
-                    optionsBuilder.AddInterceptors(auditInterceptor, permissionInterceptor);
-                }
-                else if (auditInterceptor != null)
-                {
-                    optionsBuilder.AddInterceptors(auditInterceptor);
-                }
+                // 權限類實體的稽核（含權限變更摘要）由 AuditInterceptor 統一處理
+                optionsBuilder.AddInterceptors(auditInterceptor);
 
                 // 7. 替換客製化 EF Core Metadata 與 Migration SQL 生成服務
                 optionsBuilder

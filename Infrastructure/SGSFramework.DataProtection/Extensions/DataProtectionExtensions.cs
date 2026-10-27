@@ -102,6 +102,8 @@ namespace SGSFramework.DataProtection.Extensions
             // 4. 註冊 Handler 與 HttpClient
             //註冊簽章攔截器 (Transient)
             services.AddTransient<HmsSignatureHandler>();
+            // 對外呼叫附加追蹤碼，HMS 端日誌可與本系統同一次請求串接
+            services.AddTransient<SGSFramework.DataProtection.Handlers.CoreCorrelationHandler>();
             //註冊 HttpClient 與攔截器 (HttpMessageHandler)
             services.AddHttpClient<IHmsClient, HmsClient>(client =>
             {
@@ -109,6 +111,8 @@ namespace SGSFramework.DataProtection.Extensions
                 client.BaseAddress = new Uri(options?.BaseUrl ?? "https://localhost");
                 client.Timeout = TimeSpan.FromSeconds(10);
             })
+            // 對外呼叫附加追蹤碼（先於簽章，標頭不影響簽章內容）
+            .AddHttpMessageHandler<SGSFramework.DataProtection.Handlers.CoreCorrelationHandler>()
             // 自動掛載簽章邏輯
             .AddHttpMessageHandler<HmsSignatureHandler>();
 

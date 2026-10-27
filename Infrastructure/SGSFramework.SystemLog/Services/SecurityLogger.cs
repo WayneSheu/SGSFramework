@@ -50,9 +50,8 @@ namespace SGSFramework.SystemLog.Services
                 string decoratedTemplate = $"[{eventCode}] {messageTemplate}";
 
                 // 2. 擷取或生成當前請求的 CorrelationId (精準對齊資料庫欄位)
-                string correlationId = System.Diagnostics.Activity.Current?.RootId
-                                       ?? System.Diagnostics.Activity.Current?.Id
-                                       ?? Guid.NewGuid().ToString("D");
+                // 與系統日誌、資料日誌共用同一個追蹤碼（請求外的背景作業則產生新的）
+                string correlationId = SGSFramework.Core.Tracing.CorrelationContext.CurrentOrNew();
 
                 // 3. 預判日誌層級，若符合過濾規則 (Warning 以上) 則提前生成 AlertId 確保雙軌對齊
                 bool isAlertable = eventCode.StartsWith("SEC-911") ||// 明確加入高危事件碼
