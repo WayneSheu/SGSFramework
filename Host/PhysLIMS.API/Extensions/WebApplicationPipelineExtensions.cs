@@ -93,7 +93,7 @@ public static class WebApplicationPipelineExtensions
         var permissionSeeder = services.GetRequiredService<IPermissionSeedService>();
         await permissionSeeder.SeedAndSyncPermissionsAsync().ConfigureAwait(false);
 
-        var menuSeeder = services.GetRequiredService<IMenuSeedService>();
-        await menuSeeder.SeedAndSyncMenusAsync().ConfigureAwait(false);
+        // 選單種子改由 MenuSeedHostedService 於 StartedAsync 執行：
+        // 此時 ControllerMetadata 尚未由系統 / 模組 HostedService 寫入，全新資料庫會產生空白選單。
     }
 }

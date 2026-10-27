@@ -233,6 +233,8 @@ public static class AuthTokenBucketServiceCollectionExtensions
 
         // 註冊獨立的動態選單種子服務
         services.AddScoped<IMenuSeedService, MenuSeedService<TDbContext>>();
+        // 於所有 HostedService 寫入 ControllerMetadata 之後 (StartedAsync) 才同步選單
+        services.AddHostedService<SGSFramework.AuthTokenBucket.HostedServices.MenuSeedHostedService>();
         // 註冊所有選單解析策略實作
         services.AddScoped<IMenuResolutionStrategy, DatabaseMenuResolutionStrategy>();
         // 註冊選單策略工廠
