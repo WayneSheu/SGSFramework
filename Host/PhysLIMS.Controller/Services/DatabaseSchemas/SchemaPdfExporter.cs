@@ -394,6 +394,7 @@ public static class SchemaPdfExporter
             Info("Schema", string.Join(", ", schema.Tables.Select(t => t.Schema).Distinct()));
             Info("資料表 / 欄位數", $"{schema.Tables.Count} 個資料表、{schema.Tables.Sum(t => t.Columns.Count)} 個欄位、{schema.Tables.Sum(t => t.ForeignKeys.Count)} 條外鍵關聯");
             Info("產出時間", schema.GeneratedAt.ToString("yyyy-MM-dd HH:mm:ss zzz"));
+            Info("資安標註", $"{ColumnProtectionLabels.Summary(schema.Tables.SelectMany(t => t.Columns).Select(c => c.Protection))}\n{ColumnProtectionLabels.Legend}");
         });
 
         Section(col, "1.2　資料表清單");
@@ -478,12 +479,13 @@ public static class SchemaPdfExporter
                 c.ConstantColumn(22);
                 c.ConstantColumn(30);
                 c.RelativeColumn(2);
+                c.RelativeColumn(1.5f);
                 c.RelativeColumn(4);
             });
 
             table.Header(h =>
             {
-                foreach (var title in new[] { "#", "欄位名稱", "資料型別", "Null", "PK", "FK", "UQ", "預設值 / Identity", "說明 / 參考" })
+                foreach (var title in new[] { "#", "欄位名稱", "資料型別", "Null", "PK", "FK", "UQ", "預設值 / Identity", "資安標註", "說明 / 參考" })
                 {
                     HeaderCell(h.Cell(), title);
                 }
@@ -499,6 +501,7 @@ public static class SchemaPdfExporter
                 BodyCell(table.Cell(), c.IsForeignKey ? "●" : string.Empty, center: true);
                 BodyCell(table.Cell(), c.IsUnique ? "●" : string.Empty, center: true);
                 BodyCell(table.Cell(), JoinNonEmpty(c.IdentityInfo, c.DefaultValue, c.ComputedDefinition is null ? null : $"AS {c.ComputedDefinition}"));
+                BodyCell(table.Cell(), JoinNonEmpty([.. ColumnProtectionLabels.All(c.Protection)]));
                 BodyCell(table.Cell(), JoinNonEmpty(c.Description, c.ForeignKeyReference is null ? null : $"→ {c.ForeignKeyReference}"));
             }
         });

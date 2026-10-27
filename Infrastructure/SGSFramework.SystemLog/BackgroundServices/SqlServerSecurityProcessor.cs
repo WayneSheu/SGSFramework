@@ -47,7 +47,9 @@ namespace SGSFramework.SystemLog.BackgroundServices
                     using var command = new SqlCommand(sql, connection, transaction);
 
                     // 基礎日誌本體
-                    command.Parameters.AddWithValue("@TimeStamp", log.Timestamp.DateTime);
+                    // 必須以 DateTimeOffset 寫入：若用 .DateTime 會丟掉時區偏移，本地時間被當成 UTC 存入，
+                    // 讀出後前端 ToLocalTime() 會多加一次時差（台灣 +8 小時）
+                    command.Parameters.Add("@TimeStamp", System.Data.SqlDbType.DateTimeOffset).Value = log.Timestamp;
                     command.Parameters.AddWithValue("@Message", log.RenderMessage());
                     command.Parameters.AddWithValue("@Level", log.Level.ToString());
                     command.Parameters.AddWithValue("@Exception", log.Exception?.ToString() ?? (object)DBNull.Value);

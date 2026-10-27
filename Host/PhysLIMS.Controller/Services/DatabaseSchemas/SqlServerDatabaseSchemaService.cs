@@ -217,7 +217,10 @@ public sealed class SqlServerDatabaseSchemaService : IDatabaseSchemaService
                     c.DefaultValue,
                     c.Collation,
                     fkReferences.GetValueOrDefault(c.Name),
-                    Coalesce(c.Description, modelDescription?.ColumnDescriptions.GetValueOrDefault(c.Name) ?? SystemTableDescriptions.FindColumn(c.Name))))
+                    Coalesce(c.Description, modelDescription?.ColumnDescriptions.GetValueOrDefault(c.Name) ?? SystemTableDescriptions.FindColumn(c.Name)))
+                {
+                    Protection = modelDescription?.ColumnProtections?.GetValueOrDefault(c.Name)
+                })
                 .ToList();
 
             result.Add(new TableSchemaDto(

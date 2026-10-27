@@ -32,7 +32,8 @@ public sealed class LogEventDataReader : IDataReader
 
         return i switch
         {
-            0 => current.Timestamp.DateTime,                       // TimeStamp
+            // 必須保留時區偏移（DateTimeOffset）：用 .DateTime 會丟掉偏移，本地時間被當成 UTC 寫入，讀出後多出一個時差
+            0 => current.Timestamp,                                // TimeStamp
             1 => current.Level.ToString(),                         // Level
             2 => current.RenderMessage(),                          // Message
             3 => current.Properties.Count > 0
@@ -133,12 +134,13 @@ public sealed class LogEventDataReader : IDataReader
     public long GetChars(int i, long fieldoffset, char[]? buffer, int bufferoffset, int length) => throw new NotSupportedException();
     public IDataReader GetData(int i) => throw new NotSupportedException();
     public string GetDataTypeName(int i) => GetFieldType(i).Name;
-    public DateTime GetDateTime(int i) => Convert.ToDateTime(GetValue(i));
+    public DateTime GetDateTime(int i) => GetValue(i) is DateTimeOffset offset ? offset.UtcDateTime : Convert.ToDateTime(GetValue(i));
     public decimal GetDecimal(int i) => Convert.ToDecimal(GetValue(i));
     public double GetDouble(int i) => Convert.ToDouble(GetValue(i));
     public Type GetFieldType(int i) => i switch
     {
-        0 or 16 => typeof(DateTime),
+        0 => typeof(DateTimeOffset),
+        16 => typeof(DateTime),
         _ => typeof(string)
     };
     public float GetFloat(int i) => Convert.ToSingle(GetValue(i));

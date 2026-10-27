@@ -48,7 +48,9 @@ public static class SchemaExcelExporter
         Row(("項目", "Schema"), ("內容", string.Join(", ", schema.Tables.Select(t => t.Schema).Distinct()))),
         Row(("項目", "資料表數"), ("內容", schema.Tables.Count)),
         Row(("項目", "欄位數"), ("內容", schema.Tables.Sum(t => t.Columns.Count))),
-        Row(("項目", "外鍵關聯數"), ("內容", schema.Tables.Sum(t => t.ForeignKeys.Count)))
+        Row(("項目", "外鍵關聯數"), ("內容", schema.Tables.Sum(t => t.ForeignKeys.Count))),
+        Row(("項目", "資安標註統計"), ("內容", ColumnProtectionLabels.Summary(schema.Tables.SelectMany(t => t.Columns).Select(c => c.Protection)))),
+        Row(("項目", "資安標註說明"), ("內容", ColumnProtectionLabels.Legend))
     ];
 
     private static List<Dictionary<string, object?>> BuildTables(DatabaseSchemaDto schema) =>
@@ -85,6 +87,10 @@ public static class SchemaExcelExporter
             ("計算欄位", c.ComputedDefinition),
             ("預設值", c.DefaultValue),
             ("定序", c.Collation),
+            // 資安標註拆成三欄，便於個資盤點時以 Excel 篩選 (例如篩出所有落地加密欄位)
+            ("落地加密", Flag(c.Protection?.IsEncrypted == true)),
+            ("日誌遮罩", c.Protection?.MaskFormat),
+            ("資料日誌", ColumnProtectionLabels.Audit(c.Protection)),
             ("說明", c.Description)))).ToList();
 
     private static List<Dictionary<string, object?>> BuildIndexes(DatabaseSchemaDto schema) =>

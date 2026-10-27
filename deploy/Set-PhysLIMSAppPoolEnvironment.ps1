@@ -95,6 +95,12 @@ function Test-SqlConnectionString {
         throw "$Label 不是有效的 SQL Server 連線字串。"
     }
 
+    # 自 appsettings.json 複製時常把 JSON 跳脫的 '\\' 一併貼上；環境變數不做跳脫，
+    # 'Server\\Instance' 會被解析為不存在的執行個體，啟動時 SqlClient 擲出「執行個體失敗 (Instance failure)」
+    if ($builder.DataSource -match '\\\\') {
+        throw "$Label 的 Server 含有兩個反斜線 (例如 'Server\\Instance')。環境變數不需 JSON 跳脫，請改為單一反斜線 'Server\Instance'。"
+    }
+
     if (-not $builder.Encrypt) {
         throw "$Label 必須包含 Encrypt=True (傳輸加密)。"
     }

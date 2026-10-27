@@ -80,7 +80,21 @@ public sealed record ColumnSchemaDto(
     string? DefaultValue,
     string? Collation,
     string? ForeignKeyReference,
-    string? Description);
+    string? Description)
+{
+    /// <summary>
+    /// 資安保護標註 (取自 EF 模型屬性的 [Encrypted] / [Masked] / [AuditIgnore] 與稽核組態)；無任何保護時為 null
+    /// </summary>
+    public ColumnProtectionDto? Protection { get; init; }
+}
+
+/// <summary>
+/// 欄位資安保護標註 (ISO 27001 個資盤點用)
+/// </summary>
+/// <param name="IsEncrypted">落地加密：[Encrypted] 或 Fluent API IsEncrypted()，資料庫內為密文</param>
+/// <param name="MaskFormat">日誌遮罩格式 ([Masked] / [SensitiveData]) 的顯示名稱</param>
+/// <param name="AuditHandling">資料日誌處理：Ignored = 完全不記錄；Masked = 僅記錄「已變更」不記錄值</param>
+public sealed record ColumnProtectionDto(bool IsEncrypted, string? MaskFormat, string? AuditHandling);
 
 /// <summary>
 /// 索引定義
