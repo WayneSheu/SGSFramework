@@ -38,7 +38,10 @@ namespace SGSFramework.SystemLog.Notifications
 
             var config = _settings.CurrentValue.Smtp;
 
-            if (string.IsNullOrEmpty(config.Host) || string.IsNullOrEmpty(config.ToAddresSGSFramework))
+            // 規則指定的收件人優先；未指定則沿用全域收件人
+            var recipients = string.IsNullOrWhiteSpace(message.Recipients) ? config.ToAddresSGSFramework : message.Recipients;
+
+            if (string.IsNullOrEmpty(config.Host) || string.IsNullOrEmpty(recipients))
             {
                 _logger.LogWarning("SMTP 發送失敗：未配置有效的 Host 或 ToAddresSGSFramework。");
                 return;
@@ -146,7 +149,7 @@ namespace SGSFramework.SystemLog.Notifications
             </div>
             """;
 
-            foreach (var address in config.ToAddresSGSFramework.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            foreach (var address in recipients.Split(',', StringSplitOptions.RemoveEmptyEntries))
             {
                 mailMessage.To.Add(address.Trim());
             }

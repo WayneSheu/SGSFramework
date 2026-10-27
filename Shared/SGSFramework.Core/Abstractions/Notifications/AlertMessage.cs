@@ -19,5 +19,11 @@ namespace SGSFramework.Core.Abstractions.Notifications
         public string? ExceptionDetails { get; init; }
         public string Fingerprint { get; init; } = string.Empty; // 用於錯誤去重防洪的特徵碼
 
+        /// <summary>觸發此告警的規則名稱（動態告警規則）</summary>
+        public string? RuleName { get; init; }
+
+        /// <summary>此告警的專屬收件人（逗號分隔 Email）；空值沿用全域收件人</summary>
+        public string? Recipients { get; init; }
+
     }
 }

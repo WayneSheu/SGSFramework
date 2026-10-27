@@ -227,12 +227,14 @@ public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
 
     public async Task<bool> EmergencyFreezeAsync(string userId, string reason)
     {
-        return await CoreLockdownInternalAsync(userId, reason, null);
+        // 管理性 / 使用者主動操作（刪除帳號、變更密碼、狀態變更、手動緊急熔斷）：屬預期流程，不是攻擊
+        return await CoreLockdownInternalAsync(userId, reason, null, isAttack: false);
     }
 
     public async Task<bool> ExecuteGlobalLockdownAsync(string userId, string reason, string clientIp)
     {
-        return await CoreLockdownInternalAsync(userId, reason, clientIp);
+        // 偵測到攻擊（如 Refresh Token 重放）的自動熔斷：維持 Critical
+        return await CoreLockdownInternalAsync(userId, reason, clientIp, isAttack: true);
     }
 
     public async Task<bool> CompleteRemediationAsync(string userId)
@@ -263,7 +265,7 @@ public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
     /// <summary>
     /// 🚀 核心熔斷私有整合方法（解耦多個 Lockdown 進入點，同步抹除 IMemoryCache 消除時間差漏洞）
     /// </summary>
-    private async Task<bool> CoreLockdownInternalAsync(string userId, string reason, string? clientIp)
+    private async Task<bool> CoreLockdownInternalAsync(string userId, string reason, string? clientIp, bool isAttack)
     {
         if (string.IsNullOrWhiteSpace(userId))
         {
@@ -289,22 +291,31 @@ public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
             _memoryCache.Remove($"db-stamp:{userId}");
             await _permissionResolver.EvictUserCacheAsync(userId);
 
-            if (!string.IsNullOrEmpty(clientIp))
+            if (isAttack)
             {
-                using (_logger.BeginScope(new Dictionary<string, object>
+                // 攻擊自動熔斷：Critical，會進入告警通道
+                if (!string.IsNullOrEmpty(clientIp))
                 {
-                    ["LogType"] = "Security",
-                    ["UserId"] = userId,
-                    ["EventCategory"] = "Auth.GlobalLockdown",
-                    ["ClientIp"] = clientIp
-                }))
+                    using (_logger.BeginScope(new Dictionary<string, object>
+                    {
+                        ["LogType"] = "Security",
+                        ["UserId"] = userId,
+                        ["EventCategory"] = "Auth.GlobalLockdown",
+                        ["ClientIp"] = clientIp
+                    }))
+                    {
+                        _logger.LogCritical("[Security-Event:SEC-911-LOCKDOWN] 已成功執行資安雙軌聯防熔斷。用戶: {UserId}, 原因: {Reason}, 來源IP: {ClientIp}", userId, reason, clientIp);
+                    }
+                }
+                else
                 {
-                    _logger.LogCritical("[Security-Event:SEC-911-LOCKDOWN] 已成功執行資安雙軌聯防熔斷。用戶: {UserId}, 原因: {Reason}, 來源IP: {ClientIp}", userId, reason, clientIp);
+                    _logger.LogCritical("[Security-Event:SEC-911-LOCKDOWN] 已成功執行資安雙軌聯防熔斷。用戶: {UserId}, 原因: {Reason}", userId, reason);
                 }
             }
             else
             {
-                _logger.LogCritical("[Security-Event:SEC-911-LOCKDOWN] 已成功執行資安雙軌聯防熔斷。用戶: {UserId}, 原因: {Reason}", userId, reason);
+                // 例行性作廢憑證：Information，不觸發告警（避免每次刪除帳號 / 變更密碼都發出 Fatal 告警）
+                _logger.LogInformation("[Security-Event:SEC-201-SESSIONS-REVOKED] 已作廢使用者全部憑證與工作階段。用戶: {UserId}, 原因: {Reason}", userId, reason);
             }
 
             return isFrozen;

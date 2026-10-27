@@ -159,6 +159,114 @@ namespace PhysLIMS.API.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Alerts.AlertRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasComment("符合時的動作：Alert / Suppress");
+
+                    b.Property<int?>("CooldownSeconds")
+                        .HasColumnType("int")
+                        .HasComment("相同告警的冷卻秒數；空值沿用全域設定");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("建立時間 (UTC)");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("建立者");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("規則說明");
+
+                    b.Property<string>("ExceptionContains")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasComment("例外型別名稱包含此字串（不分大小寫），例如 SqlException");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit")
+                        .HasComment("是否啟用；停用的規則不參與比對");
+
+                    b.Property<string>("LogType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasComment("套用的日誌類型：Any / System / Security");
+
+                    b.Property<string>("MessageContains")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasComment("訊息包含的關鍵字（不分大小寫），可填事件碼如 SEC-911");
+
+                    b.Property<string>("MinLevel")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)")
+                        .HasComment("最低日誌層級（Verbose / Debug / Information / Warning / Error / Fatal），含此層級以上才符合");
+
+                    b.Property<string>("ModuleContains")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("日誌的模組名稱包含此字串（不分大小寫）");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("規則名稱（唯一）");
+
+                    b.Property<string>("OperationContains")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("日誌的操作名稱包含此字串（不分大小寫）");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("int")
+                        .HasComment("優先序；數字越小越先比對");
+
+                    b.Property<string>("Recipients")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasComment("此規則的收件人（逗號分隔 Email）；空值沿用全域收件人");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("最後修改時間 (UTC)");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("最後修改者");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.HasIndex("IsEnabled", "Priority");
+
+                    b.ToTable("AlertRules", "core", t =>
+                        {
+                            t.HasComment("告警規則：管理者可於執行期調整的日誌告警條件。依優先序由小到大比對，第一條符合者決定結果。");
+                        });
+                });
+
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.AuditLogs.AuditLogEntity", b =>
                 {
                     b.Property<long>("Id")

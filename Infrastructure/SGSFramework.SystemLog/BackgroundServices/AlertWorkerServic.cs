@@ -4,6 +4,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Serilog.Events;
 using SGSFramework.Core.Abstractions.Notifications;
+using SGSFramework.Core.Abstractions.Entities.Alerts;
+using SGSFramework.SystemLog.Alerts;
 using SGSFramework.SystemLog.Options;
 using SGSFramework.SystemLog.Services;
 using System.Collections.Concurrent;
@@ -49,10 +51,14 @@ namespace SGSFramework.SystemLog.BackgroundServices
                         {
                             if (!_settings.CurrentValue.IsEnabled) continue;
 
-                            // 💡 修正：對齊全域識別碼映射
-                            var alertMessage = MapToAlertMessage(logEvent);
+                            // 依動態告警規則（優先序由小到大，第一條符合者決定）判斷是否告警
+                            var rule = AlertRuleEngine.Match(AlertRuleEngine.ToFacts(logEvent), AlertRuleStore.Current);
+                            if (rule is null || rule.Action != AlertRuleActions.Alert) continue;
 
-                            if (IsFlooding(alertMessage.Fingerprint))
+                            // 💡 修正：對齊全域識別碼映射
+                            var alertMessage = MapToAlertMessage(logEvent, rule);
+
+                            if (IsFlooding(alertMessage.Fingerprint, rule.CooldownSeconds))
                             {
                                 _logger.LogDebug("觸發防洪機制，抑制重複告警分發。指紋: {Fingerprint}", alertMessage.Fingerprint);
                                 continue;
@@ -74,10 +80,11 @@ namespace SGSFramework.SystemLog.BackgroundServices
             }
         }
 
-        private bool IsFlooding(string fingerprint)
+        private bool IsFlooding(string fingerprint, int? ruleCooldownSeconds)
         {
             var now = DateTime.UtcNow;
-            var cooldown = TimeSpan.FromSeconds(_settings.CurrentValue.CooldownSeconds);
+            // 規則可覆寫冷卻秒數；未設定則沿用全域 AlertSettings.CooldownSeconds
+            var cooldown = TimeSpan.FromSeconds(ruleCooldownSeconds ?? _settings.CurrentValue.CooldownSeconds);
 
             if (_floodBarrierCache.TryGetValue(fingerprint, out var nextAllowedTime) && now < nextAllowedTime)
             {
@@ -103,7 +110,7 @@ namespace SGSFramework.SystemLog.BackgroundServices
             }
         }
 
-        private static AlertMessage MapToAlertMessage(LogEvent logEvent)
+        private static AlertMessage MapToAlertMessage(LogEvent logEvent, AlertRule rule)
         {
             // 安全屬性解包輔助工具 (防範帶有雙引號)
             string? GetScalarProp(string name)
@@ -137,7 +144,9 @@ namespace SGSFramework.SystemLog.BackgroundServices
                 RenderedMessage = renderedMsg,
                 Timestamp = logEvent.Timestamp,
                 ExceptionDetails = logEvent.Exception?.ToString(),
-                Fingerprint = fingerprintHash
+                Fingerprint = fingerprintHash,
+                RuleName = rule.Name,
+                Recipients = rule.Recipients
             };
         }
     }

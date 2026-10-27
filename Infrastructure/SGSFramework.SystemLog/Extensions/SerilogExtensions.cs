@@ -91,6 +91,9 @@ namespace SGSFramework.SystemLog.Extensions
             builder.Services.AddHostedService<SystemLogPersistentWorker>();
             builder.Services.AddHostedService<SecurityLogPersistentWorker>();
             builder.Services.AddHostedService<AlertWorkerService>();
+            builder.Services.AddSingleton<Alerts.IAlertRuleProvider, Alerts.AlertRuleProvider>();
+            builder.Services.AddHostedService<Alerts.AlertRuleRefreshService>();
+            builder.Services.AddScoped<IAlertRuleService, AlertRuleService>();
 
             // =========================================================================
             // 7. 配置主機關閉寬限時間
@@ -127,16 +130,10 @@ namespace SGSFramework.SystemLog.Extensions
                         .Filter.ByIncludingOnly("LogType is not null or SourceContext = 'SecurityEventSource'")
                         .WriteTo.Sink(new PersistentChannelSink(_securityChannel)));
 
-                    // 動態事件即時告警流過濾與分流綁定
+                    // 動態事件即時告警流預先過濾：依「目前啟用的告警規則」決定哪些事件進入告警佇列
+                    // （只有可能被「Alert」規則命中的事件會進入；實際是否告警由 AlertWorkerService 依規則逐條比對）
                     loggerConfig.WriteTo.Conditional(
-                        evt =>
-                        {
-                            var isSecurity = evt.Properties.TryGetValue("LogType", out var logType) &&
-                                             logType is ScalarValue sv &&
-                                             "Security".Equals(sv.Value?.ToString(), StringComparison.OrdinalIgnoreCase);
-
-                            return isSecurity ? evt.Level >= LogEventLevel.Warning : evt.Level >= LogEventLevel.Error;
-                        },
+                        evt => Alerts.AlertRuleEngine.IsCandidate(evt, Alerts.AlertRuleStore.Current),
                         wt => wt.AlertingSink(_alertChannel.Writer)
                     );
                 }
