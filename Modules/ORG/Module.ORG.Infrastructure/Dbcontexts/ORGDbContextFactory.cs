@@ -40,8 +40,10 @@ namespace SGS.Modules.ORG.Infrastructure.Dbcontexts
             var optionsBuilder = new DbContextOptionsBuilder<ORGDbContext>();
 
             // 優先嘗試從配置檔獲取連線字串，否則使用預設開發連線字串
-            var connectionString = configuration.GetSection("PersistentSettings:ConnectionStrings")["MigrationConnection"]
-                ?? configuration.GetSection("PersistentSettings:ConnectionStrings")["DefaultConnection"]
+            // 空字串視同未設定 (正式組態以空值佔位)，避免 `??` 只對 null 回退而取得空連線字串
+            var connectionStrings = configuration.GetSection("PersistentSettings:ConnectionStrings");
+            var connectionString = new[] { connectionStrings["MigrationConnection"], connectionStrings["DefaultConnection"] }
+                .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))
                 ?? "Server=localhost;Database=PhysLIMS_DB;Integrated Security=True;TrustServerCertificate=True;";
 
             optionsBuilder.UseSqlServer(connectionString, sql =>

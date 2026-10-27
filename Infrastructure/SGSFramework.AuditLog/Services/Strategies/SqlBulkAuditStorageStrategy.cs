@@ -135,7 +135,10 @@ namespace SGSFramework.AuditLog.Services.Strategies
             {
                 // 已存在外部交易時沿用之；否則以內部交易包住整批 (BatchSize = 筆數，確保全有或全無)
                 var external = (dbContext.Database.CurrentTransaction as IInfrastructure<DbTransaction>)?.Instance as SqlTransaction;
-                var options = SqlBulkCopyOptions.TableLock | (external is null ? SqlBulkCopyOptions.UseInternalTransaction : SqlBulkCopyOptions.Default);
+                // CheckConstraints + FireTriggers：未指定時 SQL Server 會略過條件約束 / 觸發程序，因而要求 ALTER TABLE 權限；
+                // 指定後執行期帳號僅需 INSERT (最小權限)，且稽核資料同樣受條件約束檢查
+                var options = SqlBulkCopyOptions.TableLock | SqlBulkCopyOptions.CheckConstraints | SqlBulkCopyOptions.FireTriggers
+                              | (external is null ? SqlBulkCopyOptions.UseInternalTransaction : SqlBulkCopyOptions.Default);
 
                 using var bulkCopy = new SqlBulkCopy(connection, options, external)
                 {

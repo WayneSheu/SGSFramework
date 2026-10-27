@@ -27,6 +27,8 @@
   <!-- 機密組態不隨發佈輸出 (ISO 27001)：正式環境機密由環境變數或於主機端手動放置 claudesettings.json -->
   <ItemGroup>
     <Content Update="claudesettings*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
+    <!-- 開發組態含開發機密，不得隨發佈檔進入正式主機 -->
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
   </ItemGroup>
 
   <ItemGroup>

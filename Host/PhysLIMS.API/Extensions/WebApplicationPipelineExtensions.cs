@@ -13,6 +13,7 @@ using PhysLIMS.API.Dbcontexts;
 using SGSFramework.ApiInfrastructure.Configurations;
 using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.Core.Abstractions.Database;
+using SGSFramework.Core.Migrations;
 using System.IO;
 
 public static class WebApplicationPipelineExtensions
@@ -86,8 +87,12 @@ public static class WebApplicationPipelineExtensions
             var initializer = services.GetRequiredService<IDatabaseInitializer>();
             await initializer.InitializeDatabaseAsync(app.Lifetime.ApplicationStopping).ConfigureAwait(false);
 
+            // 僅 Migration 期間改用部署帳號 (MigrationConnection)，結束即切回 app_sgs_user，後續種子資料以最小權限執行
             var mainDbContext = services.GetRequiredService<PhysLIMSDbContext>();
-            await mainDbContext.Database.MigrateAsync(app.Lifetime.ApplicationStopping).ConfigureAwait(false);
+            using (mainDbContext.Database.UseMigrationConnection(app.Configuration))
+            {
+                await mainDbContext.Database.MigrateAsync(app.Lifetime.ApplicationStopping).ConfigureAwait(false);
+            }
         }
 
         var permissionSeeder = services.GetRequiredService<IPermissionSeedService>();

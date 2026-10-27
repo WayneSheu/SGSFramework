@@ -107,12 +107,14 @@ public static class AuditLogExtensions
     }
 
     /// <summary>
-    /// 解析連線字串優先順序：MigrationConnection -> DefaultConnection -> Configuration Direct Key
+    /// 解析執行期連線字串：DefaultConnection -> Configuration Direct Key。
+    /// 刻意不使用 MigrationConnection (具 DDL 權限的部署帳號)：最小權限原則下，
+    /// 部署帳號僅於套用 Migration 期間經由 <c>Database.UseMigrationConnection()</c> 暫時切換使用。
     /// </summary>
     private static string? ResolveConnectionString(IConfiguration configuration, string connectionStringKey)
     {
         var section = configuration.GetSection(connectionStringKey);
-        var connectionString = section["MigrationConnection"] ?? section["DefaultConnection"];
+        var connectionString = section["DefaultConnection"];
 
         if (!string.IsNullOrWhiteSpace(connectionString))
         {

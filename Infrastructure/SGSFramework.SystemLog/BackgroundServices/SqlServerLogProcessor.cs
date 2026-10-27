@@ -38,7 +38,8 @@ namespace SGSFramework.SystemLog.BackgroundServices
             using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync(ct);
 
-            using var bulkCopy = new SqlBulkCopy(connection)
+            // CheckConstraints + FireTriggers：避免 SQL Server 因略過條件約束而要求 ALTER TABLE，執行期帳號僅需 INSERT
+            using var bulkCopy = new SqlBulkCopy(connection, SqlBulkCopyOptions.CheckConstraints | SqlBulkCopyOptions.FireTriggers, null)
             {
                 DestinationTableName = "core.SystemLogs",
                 BatchSize = table.Rows.Count,

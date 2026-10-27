@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using SGS.Modules.ORG.Infrastructure.Dbcontexts;
 using SGSFramework.Core.Migrations;
@@ -14,11 +15,13 @@ namespace SGS.Modules.ORG.Infrastructure.Services;
 public sealed class OrgMigrationService : IMigrationService
 {
     private readonly ORGDbContext _context;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<OrgMigrationService> _logger;
 
-    public OrgMigrationService(ORGDbContext context, ILogger<OrgMigrationService> logger)
+    public OrgMigrationService(ORGDbContext context, IConfiguration configuration, ILogger<OrgMigrationService> logger)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -47,6 +50,9 @@ public sealed class OrgMigrationService : IMigrationService
     {
         try
         {
+            // 建立歷史紀錄表屬 DDL：以部署帳號執行 (最小權限，執行期帳號無 CREATE TABLE)
+            using var _ = _context.Database.UseMigrationConnection(_configuration);
+
             // 確保歷史紀錄表存在
             await EnsureHistoryTableExistsAsync(cancellationToken).ConfigureAwait(false);
 
@@ -81,6 +87,9 @@ public sealed class OrgMigrationService : IMigrationService
         try
         {
             _logger.LogInformation(">>> [ORG 模組] 開始初始化模組資料庫結構與 Schema...");
+
+            // 建立 Schema / 資料表屬 DDL：僅此範圍改用部署帳號 (MigrationConnection)，結束即切回執行期帳號
+            using var _ = _context.Database.UseMigrationConnection(_configuration);
 
             // 1. 保障 Schema 'org' 存在
             await _context.Database.ExecuteSqlRawAsync(

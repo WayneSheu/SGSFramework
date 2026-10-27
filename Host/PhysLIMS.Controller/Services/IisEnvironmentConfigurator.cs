@@ -77,7 +77,8 @@ namespace SGSFramework.ApiInfrastructure.Services
                     if (existingVar != null)
                     {
                         existingVar["value"] = envValue;
-                        _logger.LogInformation("更新 IIS Application Pool [{PoolName}] 環境變數: {EnvName} = {EnvValue}", poolName, envName, envValue);
+                        // 僅記錄變數名稱，不記錄值 (避免機密以明文寫入日誌)
+                        _logger.LogInformation("更新 IIS Application Pool [{PoolName}] 環境變數: {EnvName}", poolName, envName);
                     }
                     else
                     {
@@ -85,7 +86,7 @@ namespace SGSFramework.ApiInfrastructure.Services
                         addElement1["name"] = envName;
                         addElement1["value"] = envValue;
                         environmentVariablesCollection.Add(addElement1);
-                        _logger.LogInformation("新增 IIS Application Pool [{PoolName}] 環境變數: {EnvName} = {EnvValue}", poolName, envName, envValue);
+                        _logger.LogInformation("新增 IIS Application Pool [{PoolName}] 環境變數: {EnvName}", poolName, envName);
                     }
                 }
 

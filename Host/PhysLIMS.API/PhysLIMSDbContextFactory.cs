@@ -45,9 +45,15 @@ namespace PhysLIMS.API
                     .Build();
 
                 // 2. 獲取 Migration 專用連線字串，提供開發預設容錯值
-                var connectionString = configuration.GetSection("PersistentSettings:ConnectionStrings")["MigrationConnection"]
-                    ?? configuration.GetSection("PersistentSettings:ConnectionStrings")["DefaultConnection"]
-                    ?? configuration.GetConnectionString("DefaultConnection")
+                // 空字串視同未設定 (正式組態以空值佔位)，避免 `??` 只對 null 回退而取得空連線字串
+                var connectionStrings = configuration.GetSection("PersistentSettings:ConnectionStrings");
+                var connectionString = new[]
+                    {
+                        connectionStrings["MigrationConnection"],
+                        connectionStrings["DefaultConnection"],
+                        configuration.GetConnectionString("DefaultConnection")
+                    }
+                    .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))
                     ?? "Server=localhost;Database=PhysLIMS_DB;Integrated Security=True;TrustServerCertificate=True;";
 
                 // 3. 配置設計時期專用的 ServiceCollection，補足泛型 AuditChannel 與 Interceptors 依賴
