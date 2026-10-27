@@ -19,6 +19,8 @@ using SGSFramework.Core.Configurations;
 using SGSFramework.Core.Exceptions;
 using SGSFramework.Core.Extensions;
 using SGSFramework.Core.Persistence;
+using SGSFramework.Core.Security.DataProtection;
+using SGSFramework.Core.Security.FieldEncryption;
 using SGSFramework.ModulePlugin.Extensions;
 using SGSFramework.ModulePlugin.Systems.Controller.Providers;
 using SGSFramework.Persistent.Repositories.Generally;
@@ -37,6 +39,13 @@ try
     {
         builder.Environment.WebRootPath = currentBinWebRoot;
     }
+
+    // 【機密組態】ISO 27001 / 資安法：密碼、金鑰、連線字串不得寫入原始碼與版控中的 appsettings*.json
+    // 載入順序 (後者覆寫前者)：appsettings.json → appsettings.{Env}.json → claudesettings.json (受保護、不入版控) → 環境變數
+    // 環境變數範例：PersistentSettings__ConnectionStrings__DefaultConnection、JwtSettings__SecretKey、HmsSettings__SharedSecret
+    builder.Configuration
+        .AddJsonFile("claudesettings.json", optional: true, reloadOnChange: true)
+        .AddEnvironmentVariables();
 
     IConfiguration config = builder.Configuration;
     builder.AddSGSFrameworkCore();
@@ -57,16 +66,12 @@ try
     builder.AddSystemLog();
     Log.Information("Starting WebAPI Application.");
 
-    // 【安全性強化】將 Data Protection 金鑰持久化至專案實體資料夾，避免 IIS App Pool 回收導致登入失效
-    var keysFolder = Path.Combine(builder.Environment.ContentRootPath, "keys");
-    if (!Directory.Exists(keysFolder))
-    {
-        Directory.CreateDirectory(keysFolder);
-    }
-
-    builder.Services.AddDataProtection()
-        .PersistKeysToFileSystem(new DirectoryInfo(keysFolder))
-        .SetApplicationName("PhysLIMS.Enterprise");
+    // 【安全性強化】Data Protection 金鑰環 (同時保護登入 Cookie 與 [Encrypted] 個資欄位，遺失 = 個資無法解密)
+    // 依執行環境自動選擇保護策略：地端 Windows → DPAPI；已設定憑證 (多台 / 災備 / 雲端 / 容器) → Certificate；
+    // 無法確保金鑰加密且持久保存時，正式環境拒絕啟動。可用 DataProtection__Mode 明確指定。
+    var dataProtectionSetup = builder.Services.AddHostedDataProtection(config, builder.Environment);
+    Log.Information("Data Protection 金鑰保護：{Mode} ({Reason})，金鑰路徑：{KeysPath}",
+        dataProtectionSetup.Mode, dataProtectionSetup.Reason, dataProtectionSetup.KeysPath);
 
     // 2. 註冊多版本 API 控制與 OpenAPI/Scalar 文件 (v1, v2)
     builder.Services.AddEnterpriseApiVersioningAndDocs();
@@ -128,20 +133,31 @@ try
 
     var app = builder.Build();
 
+    // 綁定 [Encrypted] 欄位加解密金鑰環 (須早於任何 Seeder / Migration 的資料庫存取)
+    app.UseFieldEncryption();
+
     // 8. IIS 環境變數配置執行
     var loggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
     var bootstrapLogger = loggerFactory.CreateLogger("IisBootstrapExecution");
 
-    try
+    // 僅地端 Windows 主機執行 IIS 自動設定；雲端 Linux / 容器沒有 IIS (WindowsIdentity 會拋出 PlatformNotSupportedException)
+    if (OperatingSystem.IsWindows() && !DataProtectionHostingExtensions.IsRunningInContainer())
     {
-        IisBootstrapTask.Execute(
-            app.Services.GetRequiredService<IOptions<IisHostingOptions>>().Value,
-            bootstrapLogger);
+        try
+        {
+            IisBootstrapTask.Execute(
+                app.Services.GetRequiredService<IOptions<IisHostingOptions>>().Value,
+                bootstrapLogger);
+        }
+        catch (Exception ex)
+        {
+            bootstrapLogger.LogCritical(ex, ">>> IIS 應用程式集區環境變數配置失敗。");
+            throw;
+        }
     }
-    catch (Exception ex)
+    else
     {
-        bootstrapLogger.LogCritical(ex, ">>> IIS 應用程式集區環境變數配置失敗。");
-        throw;
+        bootstrapLogger.LogInformation("非 Windows 地端主機 (雲端 / 容器)，略過 IIS 應用程式集區自動設定。");
     }
 
     // ====================================================

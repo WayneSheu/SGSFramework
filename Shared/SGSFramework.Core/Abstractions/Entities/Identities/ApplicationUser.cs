@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.AuditLogs;
+using SGSFramework.Core.Mask;
 using SGSFramework.Core.Abstractions.Entities.Base;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel;
@@ -26,7 +28,8 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
         /// 使用者真實姓名
         /// </summary>
         [DisplayName("使用者真實姓名")]
-        [Comment("使用者真實姓名")]    
+        [Comment("使用者真實姓名")]
+        [Masked(MaskFormat.Name)] // 需支援搜尋/排序，故僅遮蔽日誌、不落地加密
         public string FullName { get; set; } = string.Empty;
 
 

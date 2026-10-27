@@ -24,7 +24,7 @@ namespace SGSFramework.Core.Mask
                 // 1. 直接實例化脫敏核心元件，維持其在日誌管線中的單例與高效能特性
                 var maskService = new MaskingService();
                 var maskingOperator = new UniversalMaskingOperator(maskService);
-                var destructuringPolicy = new SensitiveDataDestructuringPolicy(maskingOperator);
+                var destructuringPolicy = new SensitiveDataDestructuringPolicy(maskingOperator, maskService);
 
                 // 2. 配置 SensitiveDataEnricherOptions
                 var options = new SensitiveDataEnricherOptions
@@ -39,7 +39,20 @@ namespace SGSFramework.Core.Mask
                         new() { Name = "Password" },
                         new() { Name = "Token" },
                         new() { Name = "BankAccount" },
-                        new() { Name = "CreditCard" }
+                        new() { Name = "CreditCard" },
+                        // 機密 / 憑證類 (ISO 27001 A.8.12：日誌不得含金鑰、權杖、連線字串)
+                        new() { Name = "Secret" },
+                        new() { Name = "SecretKey" },
+                        new() { Name = "ClientSecret" },
+                        new() { Name = "SharedSecret" },
+                        new() { Name = "ApiKey" },
+                        new() { Name = "AccessToken" },
+                        new() { Name = "RefreshToken" },
+                        new() { Name = "ConnectionString" },
+                        new() { Name = "Authorization" },
+                        // 個資類
+                        new() { Name = "PhoneNumber" },
+                        new() { Name = "IdNumber" }
                     },
                     ExcludeProperties = new List<string> { "Id", "EventId", "Timestamp" }
                 };

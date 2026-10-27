@@ -32,6 +32,9 @@ namespace SGS.Modules.ORG.Infrastructure.Dbcontexts
             var configuration = new ConfigurationBuilder()
                 .SetBasePath(assemblyDirectory)
                 .AddJsonFile("appsettings.json", optional: true)
+                .AddJsonFile("appsettings.Development.json", optional: true)
+                .AddJsonFile("claudesettings.json", optional: true) // 受保護機密組態 (不入版控)
+                .AddEnvironmentVariables()
                 .Build();
 
             var optionsBuilder = new DbContextOptionsBuilder<ORGDbContext>();

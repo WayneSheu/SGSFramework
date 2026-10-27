@@ -13,6 +13,7 @@ using SGSFramework.Core.Abstractions.Permissions.Entities;
 using SGSFramework.Core.Abstractions.Permissions.Identities;
 using SGSFramework.Core.Identiies.Tenants;
 using SGSFramework.Core.Migrations;
+using SGSFramework.Core.Security.FieldEncryption;
 using SGSFramework.Infrastructure.Persistence.Configurations;
 using SGSFramework.Persistent.Abstractions.Dbcontexts;
 
@@ -100,5 +101,11 @@ public class PhysLIMSDbContext : BaseIdentityDbContext<ApplicationUser, Applicat
 
         // 5. Identity 內建資料表與繼承欄位說明 (框架類別無法加 [Comment])
         IdentityCommentConfiguration.Apply(modelBuilder);
+
+        // 6. 敏感個資落地加密 (ISO 27001 / 資安法)
+        //    PhoneNumber 繼承自 IdentityUser 無法加 [Encrypted]，以 Fluent API 指定；不參與查詢 / 索引，可安全加密。
+        //    既有明文資料可正常讀取，於下次更新時自動轉為密文。
+        modelBuilder.Entity<ApplicationUser>().Property(u => u.PhoneNumber).IsEncrypted();
+        modelBuilder.ApplyEncryptedProperties();
     }
 }

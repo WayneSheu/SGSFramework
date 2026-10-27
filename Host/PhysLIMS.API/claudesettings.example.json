@@ -1,0 +1,47 @@
+{
+  // 受保護機密組態範本 (ISO 27001 / 資安法)
+  // 使用方式：複製為同目錄的 claudesettings.json 後填入實際值；claudesettings.json 已列入 .gitignore，不得提交版控。
+  // 優先順序：appsettings.json < appsettings.{Env}.json < claudesettings.json < 環境變數
+  // 正式環境建議改用環境變數 (階層以雙底線表示，例如 JwtSettings__SecretKey)。
+  "PersistentSettings": {
+    "ConnectionStrings": {
+      "DefaultConnection": "",
+      "MigrationConnection": ""
+    },
+    "MessageBroker": {
+      "RabbitMQ": {
+        "Username": "",
+        "Password": ""
+      }
+    }
+  },
+  "SeedAdmin": {
+    "Password": ""
+  },
+  "JwtSettings": {
+    "SecretKey": ""
+  },
+  "HmsSettings": {
+    "SharedSecret": ""
+  },
+  "AlertSettings": {
+    "Smtp": {
+      "Password": ""
+    }
+  },
+  "DataProtection": {
+    // Auto (預設) | Dpapi (地端單一 Windows 主機) | Certificate (地端多台 / 災備 / 雲端 / 容器) | None (僅開發)
+    "Mode": "Auto",
+    // 金鑰環路徑 (同時用於 [Encrypted] 欄位加密，務必備份)；容器須指向持久化磁碟
+    "KeysPath": "",
+    "Certificate": {
+      // 擇一：Windows 憑證存放區指紋，或 PFX 檔路徑 + 密碼
+      "Thumbprint": "",
+      "StoreLocation": "LocalMachine",
+      "PfxPath": "",
+      "PfxPassword": "",
+      // 憑證輪替時保留舊憑證指紋，以解密舊金鑰
+      "PreviousThumbprints": []
+    }
+  }
+}

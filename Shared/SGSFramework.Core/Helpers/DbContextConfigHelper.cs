@@ -18,6 +18,7 @@ namespace SGSFramework.Core.Helpers
             var config = new ConfigurationBuilder()
                 .SetBasePath(apiPath)
                 .AddJsonFile("appsettings.json", optional: false)
+                .AddJsonFile("claudesettings.json", optional: true) // 受保護機密組態 (不入版控)
                 .AddEnvironmentVariables()
                 .Build();
 

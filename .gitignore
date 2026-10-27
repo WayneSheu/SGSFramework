@@ -361,3 +361,7 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# --- 機密組態 / 金鑰 (ISO 27001 / 資安法：不得提交版控) ---
+claudesettings.json
+!claudesettings.example.json
+**/keys/key-*.xml

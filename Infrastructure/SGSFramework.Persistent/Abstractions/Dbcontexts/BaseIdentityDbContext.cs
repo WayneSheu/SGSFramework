@@ -14,6 +14,7 @@ using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Entities.Tenants;
 using SGSFramework.Core.Abstractions.Outbox;
 using SGSFramework.Core.Identiies.Tenants;
+using SGSFramework.Core.Security.FieldEncryption;
 using SGSFramework.Persistent.Configurations;
 using SGSFramework.Persistent.Extensions;
 using SGSFramework.Persistent.Helpers;
@@ -128,6 +129,9 @@ public abstract class BaseIdentityDbContext<TUser, TRole, TKey, TContext>
         });
 
         DbConfigurationHelper.ApplyCommonConfigs(modelBuilder, _schema, typeof(TContext), _tenantId);
+
+        // 敏感個資落地加密：[Encrypted] 屬性自動掛上 Data Protection ValueConverter
+        modelBuilder.ApplyEncryptedProperties();
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)

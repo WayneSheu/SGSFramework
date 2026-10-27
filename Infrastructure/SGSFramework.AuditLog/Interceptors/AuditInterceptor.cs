@@ -16,6 +16,7 @@ using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.AuditLogs;
 using SGSFramework.Core.HttpAuditProviders;
 using SGSFramework.Core.Mask;
+using SGSFramework.Core.Security.FieldEncryption;
 using System;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
@@ -186,8 +187,10 @@ public class AuditInterceptor : SaveChangesInterceptor
                     var currentValue = property.CurrentValue?.ToString();
                     var originalValue = property.OriginalValue?.ToString();
 
-                    // 敏感欄位（如 PasswordHash）只記錄「有被變更」這件事，不落地實際值
-                    var isMasked = options.ExcludedProperties.Contains(propertyName, StringComparer.OrdinalIgnoreCase);
+                    // 敏感欄位（如 PasswordHash）與 [Encrypted] 落地加密欄位只記錄「有被變更」這件事，不落地實際值
+                    // (CurrentValue 為解密後明文，若照寫會讓加密欄位在稽核表以明文外洩)
+                    var isMasked = options.ExcludedProperties.Contains(propertyName, StringComparer.OrdinalIgnoreCase)
+                                   || property.Metadata.IsEncryptedProperty();
                     var storedCurrent = isMasked && currentValue is not null ? MaskedValue : currentValue;
                     var storedOriginal = isMasked && originalValue is not null ? MaskedValue : originalValue;
 

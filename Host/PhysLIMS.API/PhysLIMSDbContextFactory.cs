@@ -40,6 +40,7 @@ namespace PhysLIMS.API
                     .SetBasePath(assemblyDirectory)
                     .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
                     .AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: false)
+                    .AddJsonFile("claudesettings.json", optional: true, reloadOnChange: false) // 受保護機密組態 (不入版控)
                     .AddEnvironmentVariables()
                     .Build();
 

@@ -57,6 +57,7 @@ namespace SGSFramework.Core.Abstractions.DbContexts
                 .SetBasePath(basePath)
                 .AddJsonFile("appsettings.json", optional: false)
                 .AddJsonFile("appsettings.Development.json", optional: true)
+                .AddJsonFile("claudesettings.json", optional: true) // 受保護機密組態 (不入版控)
                 .AddEnvironmentVariables()
                 .Build();
         }

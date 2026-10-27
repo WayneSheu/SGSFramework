@@ -24,6 +24,11 @@
     <None Remove="Controllers\**" />
   </ItemGroup>
 
+  <!-- 機密組態不隨發佈輸出 (ISO 27001)：正式環境機密由環境變數或於主機端手動放置 claudesettings.json -->
+  <ItemGroup>
+    <Content Update="claudesettings*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Http" Version="10.2.3" />
     <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" Version="10.2.1" />

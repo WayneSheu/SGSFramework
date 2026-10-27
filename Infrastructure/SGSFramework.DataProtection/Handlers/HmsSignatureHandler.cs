@@ -25,6 +25,10 @@ namespace SGSFramework.DataProtection.Handlers
 
         private string GenerateSignature(string payload)
         {
+            if (string.IsNullOrWhiteSpace(_options.SharedSecret))
+                throw new InvalidOperationException(
+                    "未設定 HmsSettings:SharedSecret，請透過環境變數 HmsSettings__SharedSecret 或 claudesettings.json 注入。");
+
             var keyBytes = Encoding.UTF8.GetBytes(_options.SharedSecret);
             var messageBytes = Encoding.UTF8.GetBytes(payload);
             using var hmac = new HMACSHA256(keyBytes);

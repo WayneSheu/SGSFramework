@@ -27,6 +27,12 @@ namespace SGSFramework.Core.Mask
         private static readonly Regex EmailRegex = new(@"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", RegexOptions.Compiled);
         // 台灣地址格式: 可選的 "台灣" 或 "臺灣" + 2 個字的縣市 + 2 個字的市區鄉鎮 (簡化版)
         private static readonly Regex AddressRegex = new(@"(?:台灣|臺灣)?(..[縣市])(..[市區鄉鎮]).*", RegexOptions.Compiled);
+        // 連線字串 / 組態中的機密鍵值 (Password=xxx; Pwd=xxx; ApiKey=xxx ...)
+        private static readonly Regex SecretKeyValueRegex = new(@"(?<key>\b(?:Password|Pwd|SharedSecret|ClientSecret|SecretKey|ApiKey|AccessKey)\s*[=:]\s*)(?<value>""[^""]*""|'[^']*'|[^;,\s""']+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        // JWT (header.payload.signature，header 必以 eyJ 開頭)
+        private static readonly Regex JwtRegex = new(@"\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\b", RegexOptions.Compiled);
+        // Authorization: Bearer xxx
+        private static readonly Regex BearerRegex = new(@"(?<=\bBearer\s+)[A-Za-z0-9._~+/=-]{8,}", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         /// <summary>
         /// 全域脫敏入口：根據字串內容自動識別並遮蔽
@@ -38,13 +44,14 @@ namespace SGSFramework.Core.Mask
             if (string.IsNullOrWhiteSpace(input)) return input;
             string result = input;
 
-            // 1. 手機號碼 (優先處理，支援 0937-236-048, 0937 236 048, 0937236048)
-            // 使用 Group 抓取，確保不論有無分隔符都能精準定位中間三碼
-            result = Regex.Replace(result, @"(?<!\d)(09\d{2})[- ]?(\d{3})[- ]?(\d{3})(?!\d)", m =>
-            {
-                // 統一遮蔽格式為 09xx***xxx
-                return MaskPhone(input);
-            });
+            // 0. 機密資訊 (連線字串密碼、金鑰、JWT、Bearer Token) 最優先，避免被後續規則切碎後殘留
+            result = SecretKeyValueRegex.Replace(result, m => $"{m.Groups["key"].Value}***MASKED***");
+            result = JwtRegex.Replace(result, "***JWT***");
+            result = BearerRegex.Replace(result, "***MASKED***");
+
+            // 1. 手機號碼 (支援 0937-236-048, 0937 236 048, 0937236048)
+            // 僅遮蔽比對到的片段 (不可傳入整段 input，否則長字串中的手機號碼會原樣外洩)
+            result = Regex.Replace(result, @"(?<!\d)(09\d{2})[- ]?(\d{3})[- ]?(\d{3})(?!\d)", m => MaskPhone(m.Value));
 
             // 2. 信用卡 (Luhn 驗證)
             result = CreditCardRegex.Replace(result, m =>
@@ -140,6 +147,28 @@ namespace SGSFramework.Core.Mask
             "Name","Password", "Token", "Secret", "ApiKey", "密碼", "授權碼"
         };
 
+        /// <summary>
+        /// 依指定格式遮蔽單一值 (供 MaskObject 與 Serilog 解構政策共用)
+        /// </summary>
+        public string MaskByFormat(string value, MaskFormat format)
+        {
+            if (string.IsNullOrEmpty(value)) return value;
+
+            return format switch
+            {
+                MaskFormat.IdCard => MaskIdCard(value),
+                MaskFormat.Name => MaskName(value),
+                MaskFormat.Phone => MaskPhone(value),
+                MaskFormat.Email => MaskEmail(value),
+                MaskFormat.Address => MaskAddress(value),
+                MaskFormat.CreditCard => MaskCreditCard(value),
+                MaskFormat.BankAccount => MaskBankAccount(value),
+                MaskFormat.TaxId => MaskTaxId(value),
+                MaskFormat.InvoiceCarrier => MaskInvoiceCarrier(value),
+                _ => "***MASKED***"
+            };
+        }
+
         // 針對物件的反射遮罩 (支援 Attribute 與 名稱比對)
         public void MaskObject<T>(T obj) where T : class
         {
@@ -150,32 +179,18 @@ namespace SGSFramework.Core.Mask
             {
                 if (prop.PropertyType != typeof(string) || !prop.CanWrite) continue;
 
+                // [Masked] 繼承自 SensitiveDataAttribute，一併涵蓋；[Encrypted] 欄位視為機密，採預設遮罩
                 var attr = prop.GetCustomAttribute<SensitiveDataAttribute>();
+                bool encrypted = prop.IsDefined(typeof(EncryptedAttribute));
                 bool nameMatch = MaskedPropertyNames.Contains(prop.Name);
 
-                if (attr != null || nameMatch)
+                if (attr != null || encrypted || nameMatch)
                 {
-                    var originalValue = (string)prop.GetValue(obj);
+                    var originalValue = (string?)prop.GetValue(obj);
                     if (string.IsNullOrEmpty(originalValue)) continue;
 
-                    // 根據標註型別執行特定演算法
-                    string maskedVal = attr.Format switch
-                    {
-                        MaskFormat.IdCard => MaskIdCard(originalValue),
-                        MaskFormat.Name => MaskName(originalValue),
-                        MaskFormat.Phone => MaskPhone(originalValue),
-                        MaskFormat.Email => MaskEmail(originalValue),
-                        MaskFormat.Address => MaskAddress(originalValue),
-                        MaskFormat.CreditCard => MaskCreditCard(originalValue),
-                        MaskFormat.BankAccount => MaskBankAccount(originalValue),
-                        MaskFormat.TaxId => MaskTaxId(originalValue),
-                        MaskFormat.InvoiceCarrier => MaskInvoiceCarrier(originalValue),
-                        _ => "***MASKED***"
-                    };
-
-                    // 若無特定格式，則根據名稱啟用通用遮罩 (保留首尾各 1 字)
-                    prop.SetValue(obj, maskedVal);
-
+                    // 僅依名稱比對 (無 Attribute) 時採預設遮罩
+                    prop.SetValue(obj, MaskByFormat(originalValue, attr?.Format ?? MaskFormat.Default));
                 }
             }
         }
@@ -184,7 +199,8 @@ namespace SGSFramework.Core.Mask
         //身分證遮罩 (保留前 3 後 3)
         public string MaskIdCard(string id)
         {
-            if (string.IsNullOrEmpty(id) || id.Length < 10) return id;
+            if (string.IsNullOrEmpty(id)) return id;
+            if (id.Length < 10) return "***MASKED***";
             return $"{id[..3]}***{id[^3..]}";
         }
         //姓名遮罩 (保留首位與末位，其他以 ○ 替代)
@@ -202,14 +218,15 @@ namespace SGSFramework.Core.Mask
         {
             // 支援 XXXX-XXX-XXX 或 XXXXXXXXXX
             string clean = Regex.Replace(phone, @"\D", "");
-            if (clean.Length != 10) return phone;
-            return $"{clean[..4]}***{clean[^3..]}";
+            if (clean.Length == 10) return $"{clean[..4]}***{clean[^3..]}";
+            // 市話 / 非標準長度：保留頭尾 2 碼，過短則整段遮蔽 (標註為手機的欄位不可原樣輸出)
+            return clean.Length >= 6 ? $"{clean[..2]}****{clean[^2..]}" : "***MASKED***";
         }
         //信箱遮罩 (保留首位與 Domain)
         public string MaskEmail(string email)
         {
             var parts = email.Split('@');
-            if (parts.Length != 2) return email;
+            if (parts.Length != 2) return "***MASKED***";
             return parts[0].Length <= 1 ? $"*@{parts[1]}" : $"{parts[0][0]}***@{parts[1]}";
         }
         //地址遮罩 (保留行政區)
@@ -228,6 +245,7 @@ namespace SGSFramework.Core.Mask
         //信用卡遮罩(保留後 4)
         public string MaskCreditCard(string card)
         {
+            if (string.IsNullOrEmpty(card) || card.Length < 4) return "***MASKED***";
             return $"****-****-****-{card[^4..]}";
         }
 
@@ -235,13 +253,16 @@ namespace SGSFramework.Core.Mask
         public string MaskBankAccount(string account)
         {
             // 支援 10-14 位數字，允許空格或連字號分隔
+            if (string.IsNullOrEmpty(account) || account.Length < 8) return "***MASKED***";
             return $"{account[..3]}*******{account[^4..]}";
         }
 
         //統一編號遮罩保留末三碼 (例如：53080009 -> *****009)
         public string MaskTaxId(string taxId)
         {
-            return IsValidTaiwanTaxId(taxId) ? $"*****{taxId[^3..]}" : taxId;
+            // 已明確標註為統編的欄位，即使格式不符也不可原樣輸出
+            if (string.IsNullOrEmpty(taxId) || taxId.Length != 8 || !taxId.All(char.IsAsciiDigit)) return "***MASKED***";
+            return IsValidTaiwanTaxId(taxId) ? $"*****{taxId[^3..]}" : "***MASKED***";
 
         }
 

@@ -84,10 +84,11 @@ namespace SGSFramework.DataProtection.Extensions
         public static IServiceCollection AddHmsClient(this IServiceCollection services, IConfiguration userConfiguration)
         {
             // 1. 定義套件預設配置
+            // SharedSecret 刻意不提供預設值：機密須由環境變數 HmsSettings__SharedSecret 或 claudesettings.json 注入，
+            // 未設定時由 HmsSignatureHandler 於送出前拒絕 (Fail-Closed)，避免以公開已知的預設金鑰簽章。
             var defaultSettings = new Dictionary<string, string?>
             {
-                {"HmsSettings:BaseUrl", "https://hms-default.internal"},
-                {"HmsSettings:SharedSecret", "Default-Fallback-Secret-DO-NOT-USE-IN-PROD"}
+                {"HmsSettings:BaseUrl", "https://hms-default.internal"}
             };
 
             // 2. 建立分層配置：預設值 -> 主專案設定 (主專案設定會自動覆蓋預設值)
