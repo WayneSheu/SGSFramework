@@ -26,5 +26,10 @@ namespace SGSFramework.Core.Configurations
         /// 資料庫初始化腳本 (建庫、建立登入帳號等) 使用的高權限連線 (選填，未設定則略過初始化腳本)
         /// </summary>
         public string? BootstrappingConnection { get; set; }
+
+        /// <summary>
+        /// 資料庫備份使用的連線 (選填，建議為僅具 db_backupoperator 角色的專用帳號；未設定時回退至 MigrationConnection → DefaultConnection)
+        /// </summary>
+        public string? BackupConnection { get; set; }
     }
 }

@@ -14,6 +14,10 @@ namespace SGSFramework.Identity.Services;
 public sealed record AccessReviewCampaignSummary(
     AccessReviewCampaign Campaign, int Total, int Kept, int Revoked, int Pending);
 
+/// <summary>排程建立覆核活動的結果；Created = false 表示同名活動已存在或範圍內無成員（冪等，不視為失敗）</summary>
+public sealed record ScheduledAccessReviewResult(
+    bool Succeeded, string Message, Guid? CampaignId, bool Created, int ClosedOverdue);
+
 /// <summary>
 /// 定期權限覆核 (Access Certification)。
 /// - 建立活動時快照角色成員；覆核者逐筆決定「保留」或「回收」，回收立即解除角色指派。
@@ -33,6 +37,14 @@ public interface IAccessReviewService
         IReadOnlyCollection<Guid> itemIds, AccessReviewDecision decision, string? comment, CancellationToken cancellationToken = default);
 
     Task<(bool Succeeded, string Message)> CloseCampaignAsync(Guid campaignId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 排程（系統帳號）建立定期覆核活動：以活動名稱做冪等判斷（同一期間重試不重複建立），
+    /// 可選擇先結束已逾期的覆核活動。
+    /// </summary>
+    Task<ScheduledAccessReviewResult> CreateScheduledCampaignAsync(
+        string name, string? description, int dueInDays, IReadOnlyCollection<Guid>? roleIds, bool closeOverdue,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class AccessReviewService(
@@ -228,6 +240,56 @@ public sealed class AccessReviewService(
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         return (true, pending == 0 ? "覆核活動已完成並結束。" : $"覆核活動已結束，仍有 {pending} 筆未覆核（已保留於報表供追蹤）。");
+    }
+
+    public async Task<ScheduledAccessReviewResult> CreateScheduledCampaignAsync(
+        string name, string? description, int dueInDays, IReadOnlyCollection<Guid>? roleIds, bool closeOverdue,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return new(false, "請輸入活動名稱。", null, false, 0);
+        if (dueInDays is < 1 or > 365) return new(false, "覆核天數須介於 1 到 365 天。", null, false, 0);
+
+        int closedOverdue = 0;
+        if (closeOverdue)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var overdueIds = await dbContext.Set<AccessReviewCampaign>().AsNoTracking()
+                .Where(c => c.Status == AccessReviewCampaignStatus.Open && c.DueDate < now)
+                .Select(c => c.Id)
+                .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+            foreach (var id in overdueIds)
+            {
+                var (closed, message) = await CloseCampaignAsync(id, cancellationToken).ConfigureAwait(false);
+                if (closed)
+                {
+                    closedOverdue++;
+                    logger.LogInformation("[AccessReview] 排程結束逾期覆核活動 {CampaignId}：{Message}", id, message);
+                }
+            }
+        }
+
+        // 冪等：同一期間的活動名稱相同，排程重試或多節點重複觸發時不重複建立
+        var trimmedName = name.Trim();
+        var existingId = await dbContext.Set<AccessReviewCampaign>().AsNoTracking()
+            .Where(c => c.Name == trimmedName)
+            .Select(c => (Guid?)c.Id)
+            .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        if (existingId.HasValue)
+        {
+            return new(true, $"覆核活動「{trimmedName}」已存在，略過建立。", existingId, false, closedOverdue);
+        }
+
+        var (ok, createMessage, campaignId) = await CreateCampaignAsync(
+            trimmedName, description, DateTimeOffset.UtcNow.AddDays(dueInDays), roleIds, cancellationToken).ConfigureAwait(false);
+
+        // 範圍內沒有任何成員屬正常情況（無需覆核），不視為排程失敗
+        if (!ok && campaignId is null && createMessage.Contains("沒有任何成員", StringComparison.Ordinal))
+        {
+            return new(true, createMessage, null, false, closedOverdue);
+        }
+
+        return new(ok, createMessage, campaignId, ok, closedOverdue);
     }
 
     /// <summary>

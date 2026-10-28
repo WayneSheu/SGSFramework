@@ -23,6 +23,7 @@ public sealed class AccessReviewController(IAccessReviewService accessReviewServ
 
     public sealed record CreateCampaignRequest(string Name, string? Description, DateTimeOffset DueDate, List<Guid>? RoleIds);
     public sealed record DecideRequest(List<Guid> ItemIds, AccessReviewDecision Decision, string? Comment);
+    public sealed record ScheduledCampaignRequest(string Name, string? Description, int DueInDays, List<Guid>? RoleIds, bool CloseOverdue);
 
     /// <summary>查詢覆核活動與進度</summary>
     [HttpGet("campaigns")]
@@ -41,6 +42,26 @@ public sealed class AccessReviewController(IAccessReviewService accessReviewServ
         ArgumentNullException.ThrowIfNull(request);
         var (ok, message, id) = await _service.CreateCampaignAsync(request.Name, request.Description, request.DueDate, request.RoleIds, cancellationToken).ConfigureAwait(false);
         return ok ? Ok(new { Succeeded = true, Message = message, CampaignId = id }) : Problem400("建立覆核活動失敗", message);
+    }
+
+    /// <summary>
+    /// 排程建立定期覆核活動（僅限系統帳號，M2M）：同名活動已存在時略過（冪等），可選擇先結束逾期活動。
+    /// </summary>
+    [HttpPost("campaigns/scheduled")]
+    [Function("CreateScheduledAccessReviewCampaign", "排程建立權限覆核活動", Icon = "fa-solid fa-clock-rotate-left", Order = 6, Description = "供排程服務以系統帳號定期建立權限覆核活動")]
+    [RequiresSystemScope("accessreview.campaign.schedule", Description = "排程建立定期權限覆核活動")]
+    public async Task<IActionResult> CreateScheduledCampaign([FromBody] ScheduledCampaignRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var result = await _service.CreateScheduledCampaignAsync(
+            request.Name, request.Description, request.DueInDays, request.RoleIds, request.CloseOverdue, cancellationToken).ConfigureAwait(false);
+        return result.Succeeded ? Ok(result) : UnprocessableEntity(new ProblemDetails
+        {
+            Status = StatusCodes.Status422UnprocessableEntity,
+            Title = "排程建立覆核活動失敗",
+            Detail = result.Message,
+            Instance = HttpContext.Request.Path
+        });
     }
 
     /// <summary>結束覆核活動</summary>

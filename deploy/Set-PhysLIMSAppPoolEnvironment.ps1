@@ -25,6 +25,10 @@
     .\Set-PhysLIMSAppPoolEnvironment.ps1 -Force -OnlySecrets JwtSecretKey
 
 .EXAMPLE
+    # 啟用排程 (Hangfire)：備份專用連線 + 排程系統帳號金鑰 (帳號先於「系統帳號管理」建立)
+    .\Set-PhysLIMSAppPoolEnvironment.ps1 -EnableScheduler -SchedulerApiBaseAddress 'https://sgs-framework-api.shanda.site/' -SchedulerClientId 'physlims-scheduler' -OptionalSecrets BackupConnection, SchedulerClientSecret
+
+.EXAMPLE
     # 預覽將進行的變更，不寫入
     .\Set-PhysLIMSAppPoolEnvironment.ps1 -WhatIf
 #>
@@ -43,12 +47,19 @@ param(
 
     [string]$CertificateThumbprint,
 
+    # 排程 (Hangfire)：啟用旗標、內部 API 位址 (排程作業呼叫的目標)、系統帳號 client_id (非機密)
+    [switch]$EnableScheduler,
+
+    [string]$SchedulerApiBaseAddress,
+
+    [string]$SchedulerClientId,
+
     # 選用機密 (依功能啟用情況)
-    [ValidateSet('MigrationConnection', 'SeedAdminPassword', 'SmtpPassword', 'HmsSharedSecret', 'RabbitMqUsername', 'RabbitMqPassword', 'PfxPassword')]
+    [ValidateSet('MigrationConnection', 'BackupConnection', 'SchedulerClientSecret', 'SeedAdminPassword', 'SmtpPassword', 'HmsSharedSecret', 'RabbitMqUsername', 'RabbitMqPassword', 'PfxPassword')]
     [string[]]$OptionalSecrets = @(),
 
     # 只處理指定的機密 (輪替時使用)；未指定則處理全部必要機密 + OptionalSecrets
-    [ValidateSet('DefaultConnection', 'JwtSecretKey', 'MigrationConnection', 'SeedAdminPassword', 'SmtpPassword', 'HmsSharedSecret', 'RabbitMqUsername', 'RabbitMqPassword', 'PfxPassword')]
+    [ValidateSet('DefaultConnection', 'JwtSecretKey', 'MigrationConnection', 'BackupConnection', 'SchedulerClientSecret', 'SeedAdminPassword', 'SmtpPassword', 'HmsSharedSecret', 'RabbitMqUsername', 'RabbitMqPassword', 'PfxPassword')]
     [string[]]$OnlySecrets = @(),
 
     # Microsoft.PowerShell.SecretManagement 保管庫名稱；機密名稱為 'PhysLIMS-<環境變數名稱>'
@@ -74,6 +85,8 @@ $SecretSpecs = [ordered]@{
     DefaultConnection   = @{ Name = 'PersistentSettings__ConnectionStrings__DefaultConnection';   Required = $true;  Kind = 'SqlConnection' }
     JwtSecretKey        = @{ Name = 'JwtSettings__SecretKey';                                     Required = $true;  Kind = 'JwtKey' }
     MigrationConnection = @{ Name = 'PersistentSettings__ConnectionStrings__MigrationConnection'; Required = $false; Kind = 'SqlConnection' }
+    BackupConnection    = @{ Name = 'PersistentSettings__ConnectionStrings__BackupConnection';    Required = $false; Kind = 'SqlConnection' }
+    SchedulerClientSecret = @{ Name = 'Scheduler__SystemAccount__ClientSecret';                   Required = $false; Kind = 'Text' }
     SeedAdminPassword   = @{ Name = 'SeedAdmin__Password';                                        Required = $false; Kind = 'Text' }
     SmtpPassword        = @{ Name = 'AlertSettings__Smtp__Password';                              Required = $false; Kind = 'Text' }
     HmsSharedSecret     = @{ Name = 'HmsSettings__SharedSecret';                                  Required = $false; Kind = 'Text' }
@@ -188,6 +201,15 @@ try {
     if ($KeysPath) { $pending['DataProtection__KeysPath'] = $KeysPath }
     if ($DataProtectionMode) { $pending['DataProtection__Mode'] = $DataProtectionMode }
     if ($CertificateThumbprint) { $pending['DataProtection__Certificate__Thumbprint'] = ($CertificateThumbprint -replace '\s', '') }
+    if ($EnableScheduler) { $pending['Scheduler__Enabled'] = 'true' }
+    if ($SchedulerApiBaseAddress) {
+        $apiUri = $null
+        if (-not [Uri]::TryCreate($SchedulerApiBaseAddress, [UriKind]::Absolute, [ref]$apiUri) -or $apiUri.Scheme -notin 'http', 'https') {
+            throw 'SchedulerApiBaseAddress 必須為 http(s) 絕對網址，例如 https://sgs-framework-api.shanda.site/'
+        }
+        $pending['Scheduler__ApiBaseAddress'] = $apiUri.AbsoluteUri
+    }
+    if ($SchedulerClientId) { $pending['Scheduler__SystemAccount__ClientId'] = $SchedulerClientId.Trim() }
 
     # --- 機密 ---
     $targets = if ($OnlySecrets.Count -gt 0) { $OnlySecrets }
@@ -214,6 +236,19 @@ try {
     if ($sqlUsers.ContainsKey('DefaultConnection') -and $sqlUsers.ContainsKey('MigrationConnection') `
         -and $sqlUsers['DefaultConnection'] -and $sqlUsers['DefaultConnection'] -eq $sqlUsers['MigrationConnection']) {
         throw 'DefaultConnection 與 MigrationConnection 使用同一個 SQL 帳號，違反最小權限原則 (執行期應使用僅具 DML 權限的帳號)。'
+    }
+    if ($sqlUsers.ContainsKey('BackupConnection') -and $sqlUsers['BackupConnection'] -and
+        ($sqlUsers['BackupConnection'] -eq $sqlUsers['DefaultConnection'] -or $sqlUsers['BackupConnection'] -eq $sqlUsers['MigrationConnection'])) {
+        throw 'BackupConnection 必須使用專用帳號 (僅 db_backupoperator)，不可與 DefaultConnection / MigrationConnection 共用。'
+    }
+
+    # 啟用排程時，系統帳號三項設定缺一即無法啟動 (Scheduler 組態於啟動時驗證)
+    if ($EnableScheduler) {
+        foreach ($name in 'Scheduler__ApiBaseAddress', 'Scheduler__SystemAccount__ClientId', 'Scheduler__SystemAccount__ClientSecret') {
+            if (-not $pending.Contains($name) -and -not (Find-EnvElement $name)) {
+                throw "已指定 -EnableScheduler，但 $name 尚未設定 (請一併提供 -SchedulerApiBaseAddress / -SchedulerClientId / -OptionalSecrets SchedulerClientSecret)。"
+            }
+        }
     }
 
     # --- 寫入 ---

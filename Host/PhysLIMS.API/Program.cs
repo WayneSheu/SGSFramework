@@ -24,6 +24,7 @@ using SGSFramework.Core.Security.FieldEncryption;
 using SGSFramework.ModulePlugin.Extensions;
 using SGSFramework.ModulePlugin.Systems.Controller.Providers;
 using SGSFramework.Persistent.Repositories.Generally;
+using SGSFramework.Scheduler.Extensions;
 using SGSFramework.SPAModulePlugin.Application.Queries;
 using SGSFramework.SystemLog.Extensions;
 using SGSFramework.SystemLog.Middlewares;
@@ -86,6 +87,10 @@ try
     builder.Services.AddEnterpriseCorsPolicy(config);
     builder.Services.AddProblemDetails();
     builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
+    // 排程框架 (Hangfire)：以系統帳號 (M2M) 執行資料庫備份、定期權限覆核；
+    // 須早於 AddTokenBucketSecurity，使其掃描權限時已載入排程組件的控制器
+    builder.Services.AddSGSScheduler(config);
     builder.Services.AddTokenBucketSecurity(config);
 
     // ====================================================
@@ -250,6 +255,7 @@ try
         app.MapCustomScalarApiReference();
         app.MapControllers();
         app.MapTokenBucketHubs(); // 工作階段即時通知 (SignalR)
+        app.MapSGSSchedulerDashboard(); // Hangfire Dashboard (Scheduler:Dashboard:Enabled 時)
 
         var changeProvider = app.Services.GetRequiredService<IDynamicActionDescriptorChangeProvider>();
         changeProvider.NotifyChanges();
@@ -271,6 +277,7 @@ try
         app.MapCustomScalarApiReference();
         app.MapControllers();
         app.MapTokenBucketHubs(); // 工作階段即時通知 (SignalR)
+        app.MapSGSSchedulerDashboard(); // Hangfire Dashboard (Scheduler:Dashboard:Enabled 時)
 
         //當使用者造訪根目錄 (/) 時，自動重新導向至 Scalar API 文件頁面
         app.MapGet("/", async context =>

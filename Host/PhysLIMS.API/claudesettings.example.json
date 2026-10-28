@@ -6,7 +6,9 @@
   "PersistentSettings": {
     "ConnectionStrings": {
       "DefaultConnection": "",
-      "MigrationConnection": ""
+      "MigrationConnection": "",
+      // 資料庫備份專用帳號 (僅 db_backupoperator)；未設定時回退 MigrationConnection
+      "BackupConnection": ""
     },
     "MessageBroker": {
       "RabbitMQ": {
@@ -17,6 +19,13 @@
   },
   "SeedAdmin": {
     "Password": ""
+  },
+  "Scheduler": {
+    "SystemAccount": {
+      // 排程服務系統帳號金鑰 (系統帳號管理建立時僅顯示一次)
+      "ClientId": "",
+      "ClientSecret": ""
+    }
   },
   "JwtSettings": {
     "SecretKey": ""

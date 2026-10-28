@@ -1683,6 +1683,142 @@ namespace PhysLIMS.API.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Scheduler.ScheduledJobRun", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
+
+                    b.Property<int>("Attempt")
+                        .HasColumnType("int")
+                        .HasComment("第幾次嘗試（1 = 首次執行）");
+
+                    b.Property<long?>("DurationMs")
+                        .HasColumnType("bigint")
+                        .HasComment("耗時（毫秒）");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("結束時間");
+
+                    b.Property<string>("HangfireJobId")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasComment("Hangfire 背景作業 ID（同一作業的重試共用）");
+
+                    b.Property<string>("JobId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("週期作業 ID（例如 database-backup-full）");
+
+                    b.Property<string>("JobName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasComment("執行當下的作業顯示名稱");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasComment("失敗原因或重試說明");
+
+                    b.Property<string>("ServerName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasComment("執行作業的伺服器（多節點時追查用）");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("開始時間");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasComment("執行狀態：Running / Succeeded / Failed / Retrying");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasComment("觸發方式：Schedule（排程）或 Manual（手動立即執行）");
+
+                    b.Property<string>("TriggeredBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("手動執行的人員帳號；排程觸發為 null");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StartedAt");
+
+                    b.HasIndex("HangfireJobId", "Attempt")
+                        .IsUnique();
+
+                    b.HasIndex("JobId", "StartedAt");
+
+                    b.ToTable("ScheduledJobRuns", "core", t =>
+                        {
+                            t.HasComment("排程作業執行紀錄：每次嘗試一筆（重試為新的一筆）");
+                        });
+                });
+
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Scheduler.ScheduledJobSetting", b =>
+                {
+                    b.Property<string>("JobId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("週期作業 ID（例如 database-backup-full）");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("建立時間");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("建立人員");
+
+                    b.Property<string>("Cron")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("排程管理頁設定的 Cron（5 碼）；null 表示沿用組態 / 程式預設");
+
+                    b.Property<bool>("IsPaused")
+                        .HasColumnType("bit")
+                        .HasComment("是否暫停自動排程（暫停時仍可手動立即執行）");
+
+                    b.Property<string>("PauseReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("暫停原因");
+
+                    b.Property<string>("TimeZone")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("排程管理頁設定的時區（IANA 或 Windows ID）；null 表示沿用組態預設");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("最後暫停 / 啟動的時間");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("最後暫停 / 啟動的人員");
+
+                    b.HasKey("JobId");
+
+                    b.ToTable("ScheduledJobSettings", "core", t =>
+                        {
+                            t.HasComment("排程作業的執行期設定：由排程管理頁暫停 / 啟動，系統重啟後仍維持");
+                        });
+                });
+
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.SystemAccounts.SystemAccount", b =>
                 {
                     b.Property<string>("Id")

@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+  </PropertyGroup>
+	<PropertyGroup>
+		<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+		<PackageId>SGSFramework.Scheduler</PackageId>
+		<Version>1.0.0.0</Version>
+		<Authors>Wayne</Authors>
+		<Company>SHANDA</Company>
+		<Description>企業級排程框架 (Hangfire)：以系統帳號 (M2M) 執行資料庫備份、定期權限覆核等排程作業</Description>
+		<PublishRepositoryUrl>true</PublishRepositoryUrl>
+		<EmbedUntrackedSources>true</EmbedUntrackedSources>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+	</PropertyGroup>
+	<ItemGroup>
+		<None Include="README.md" Pack="true" PackagePath="\" />
+	</ItemGroup>
+	<Target Name="PushToBaGet" AfterTargets="Pack" Condition="'$(Configuration)' == 'Release' And '$(LocalNuGetApiKey)' != ''">
+		<Exec Command="dotnet nuget push &quot;$(ProjectDir)bin\$(Configuration)\*.nupkg&quot; --source http://localhost:5000/v3/index.json --api-key $(LocalNuGetApiKey) --allow-insecure-connections --skip-duplicate" />
+	</Target>
+	<ItemGroup>
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+	</ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Cronos" Version="0.11.1" />
+    <PackageReference Include="Hangfire.AspNetCore" Version="1.8.25" />
+    <PackageReference Include="Hangfire.Core" Version="1.8.25" />
+    <PackageReference Include="Hangfire.SqlServer" Version="1.8.25" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Shared\SGSFramework.Core\SGSFramework.Core.csproj" />
+    <ProjectReference Include="..\Enterprise.HttpSdk\Enterprise.HttpSdk.csproj" />
+  </ItemGroup>
+
+</Project>
