@@ -3,19 +3,11 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Serilog.Context;
 using SGSFramework.Core.Abstractions.Attributes;
+using SGSFramework.Core.HttpAuditProviders;
 using System.Reflection;
 
 namespace SGSFramework.SystemLog.Middlewares
 {
-    /// <summary>
-    /// 在 UseRouting() 之後解析當前請求的 Endpoint，將「模組名稱 (ModuleName)」與「操作名稱 (Operation)」
-    /// 推入 Serilog LogContext，使該請求期間（含驗證、授權、Controller、服務層）的所有日誌都帶有這兩個欄位，
-    /// 由 SqlServerLogProcessor 寫入 core.SystemLogs。
-    /// </summary>
-    /// <remarks>
-    /// ModuleName 解析順序：Action 方法 → Controller 類別 → Controller 所在 Assembly 的 [Module]（與選單產生規則一致）。
-    /// Operation 解析順序：Action 方法上的 [Function].FunctionName → 「Controller.Action」。
-    /// </remarks>
     public class RouteContextMiddleware
     {
         private const string UnknownModule = "Unknown";
@@ -28,60 +20,89 @@ namespace SGSFramework.SystemLog.Middlewares
             _next = next ?? throw new ArgumentNullException(nameof(next));
         }
 
-        public async Task InvokeAsync(HttpContext context)
+        public async Task InvokeAsync(HttpContext context, IAuditProvider auditProvider)
         {
-            var (moduleName, operation) = Resolve(context);
+            var (moduleName, operation, operationDesc, controllerName) = Resolve(context);
+
+            // 1. 取得使用者資訊 (支援 Fallback 預設值)
+            var userId = auditProvider?.UserId;
+            var userName = auditProvider?.UserName ?? (string.IsNullOrEmpty(userId) ? "System" : userId);
+
+            // 2. 🚀 從 Request Header 或 Query 取出表頭區域實驗室 (Lab Id / TenantId)
+            string? tenantId = context.Request.Headers["X-Tenant-Id"].FirstOrDefault()
+                               ?? context.Request.Headers["X-Lab-Id"].FirstOrDefault()
+                               ?? context.Items["TenantId"]?.ToString();
+
+            // 3. 取得 IP 與 URL
+            var ip = context.Connection.RemoteIpAddress?.ToString();
+            var url = context.Request.Path;
 
             context.Items["ModuleName"] = moduleName;
             context.Items["Operation"] = operation;
+            context.Items["OperationDesc"] = operationDesc;
+            context.Items["ControllerName"] = controllerName;
+            context.Items["UserId"] = userId;
+            context.Items["UserName"] = userName;
+            context.Items["TenantId"] = tenantId;
+            context.Items["IP"] = ip;
+            context.Items["Url"] = url;
 
-            // 以 using 包住下游管線，請求結束後即還原，避免屬性外洩到其他請求
+            // 4. 推入 Serilog LogContext 確保非同步日誌能完整攜帶
             using (LogContext.PushProperty("ModuleName", moduleName))
             using (LogContext.PushProperty("Operation", operation))
+            using (LogContext.PushProperty("OperationDesc", operationDesc))
+            using (LogContext.PushProperty("ControllerName", controllerName))
+            using (LogContext.PushProperty("UserId", userId ?? (object)DBNull.Value))
+            using (LogContext.PushProperty("UserName", userName))
+            using (LogContext.PushProperty("TenantId", tenantId ?? (object)DBNull.Value))
+            using (LogContext.PushProperty("IP", ip ?? string.Empty))
+            using (LogContext.PushProperty("Url", url.ToString()))
             {
                 await _next(context);
             }
         }
 
-        private static (string ModuleName, string Operation) Resolve(HttpContext context)
+        private static (string ModuleName, string Operation, string OperationDesc, string ControllerName) Resolve(HttpContext context)
         {
             var endpoint = context.GetEndpoint();
             if (endpoint is null)
             {
-                return (StaticAssetsModule, "AssetRequest");
+                return (StaticAssetsModule, "AssetRequest", "靜態資源請求", "Unknown");
             }
 
             var descriptor = endpoint.Metadata.GetMetadata<ControllerActionDescriptor>();
             if (descriptor is null)
             {
-                // 非 MVC Endpoint（SignalR Hub、Minimal API、靜態檔案後備路由等）
                 var moduleFromMetadata = endpoint.Metadata.GetMetadata<ModuleAttribute>()?.ModuleName ?? UnknownModule;
-                return (moduleFromMetadata, endpoint.DisplayName ?? context.Request.Path.Value ?? "Unknown");
+                return (moduleFromMetadata, endpoint.DisplayName ?? "Unknown", "非MVC端點請求", "Unknown");
             }
 
             var controllerType = descriptor.ControllerTypeInfo;
+            var controllerName = descriptor.ControllerName;
 
             var moduleAttr = descriptor.MethodInfo.GetCustomAttribute<ModuleAttribute>()
                              ?? controllerType.GetCustomAttribute<ModuleAttribute>()
                              ?? controllerType.Assembly.GetCustomAttribute<ModuleAttribute>();
 
+            var controllerTitleAttr = controllerType.GetCustomAttribute<ControllerTitleAttribute>();
+            string controllerTitleName = controllerTitleAttr?.Title ?? controllerName;
+
             var functionAttr = descriptor.MethodInfo.GetCustomAttribute<FunctionAttribute>();
-            var controllerName = descriptor.ControllerName;
+            string functionTitleName = functionAttr?.Title ?? functionAttr?.FunctionName ?? descriptor.ActionName;
+
+            // 💡 組合操作說明：包含 ControllerName 與中文標題
+            string operationDesc = $"{controllerTitleName} ({controllerName}) > {functionTitleName}";
+
             var operation = !string.IsNullOrWhiteSpace(functionAttr?.FunctionName)
                 ? functionAttr!.FunctionName
                 : $"{controllerName}.{descriptor.ActionName}";
 
-            return (moduleAttr?.ModuleName ?? UnknownModule, operation);
+            return (moduleAttr?.ModuleName ?? UnknownModule, operation, operationDesc, controllerName);
         }
     }
 
     public static class RouteContextMiddlewareExtensions
     {
-        /// <summary>
-        /// 將路由上下文分析 Middleware 加入 Pipeline。
-        /// 必須放在 UseRouting() 之後（需要已解析的 Endpoint），並建議放在 UseAuthentication() 之前，
-        /// 讓驗證 / 授權階段的日誌同樣帶有模組與操作欄位。
-        /// </summary>
         public static IApplicationBuilder UseRouteContextAnalysis(this IApplicationBuilder builder)
         {
             return builder.UseMiddleware<RouteContextMiddleware>();
@@ -89,7 +110,6 @@ namespace SGSFramework.SystemLog.Middlewares
 
         /// <summary>
         /// 將 CorrelationId Middleware 加入 Pipeline（讀取 / 產生 X-Correlation-ID，並寫入日誌上下文）。
-        /// 建議放在管線最前面。
         /// </summary>
         public static IApplicationBuilder UseCorrelationIdContext(this IApplicationBuilder builder)
         {

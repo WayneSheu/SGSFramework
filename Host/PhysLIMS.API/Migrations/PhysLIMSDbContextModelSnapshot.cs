@@ -2221,8 +2221,14 @@ namespace PhysLIMS.API.Migrations
                         .HasComment("模組名稱");
 
                     b.Property<string>("Operation")
-                        .HasColumnType("nvarchar(max)")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
                         .HasComment("操作");
+
+                    b.Property<string>("OperationDesc")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasComment("操作說明 (ControllerTitle > FunctionTitle)");
 
                     b.Property<string>("Payload")
                         .HasColumnType("nvarchar(max)")
@@ -2237,6 +2243,11 @@ namespace PhysLIMS.API.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
                         .HasComment("區域實驗室關聯識別碼");
+
+                    b.Property<string>("TenantName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("實驗室名稱 (TenantName)");
 
                     b.Property<DateTimeOffset>("TimeStamp")
                         .ValueGeneratedOnAdd()
@@ -2254,6 +2265,11 @@ namespace PhysLIMS.API.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
                         .HasComment("用戶識別碼");
+
+                    b.Property<string>("UserName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("人員名稱");
 
                     b.HasKey("Id");
 

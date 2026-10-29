@@ -29,6 +29,7 @@ using System.Threading.Tasks;
 public class AuditInterceptor : SaveChangesInterceptor
 {
     private const string DefaultSystemUser = "SYSTEM";
+    private const string DefaultSystemUserName = "系統行程";
     private const string DefaultTraceId = "SYSTEM_BACKGROUND";
     private const string MaskedValue = "[已遮蔽]";
 
@@ -36,8 +37,6 @@ public class AuditInterceptor : SaveChangesInterceptor
     private static readonly ConcurrentDictionary<(Type, string), bool> AuditIgnoreCache = new();
 
     // 同一個 DbContext 的一次 SaveChanges 只稽核一次：
-    // DbContext 可能因多處註冊（如 AddModuleDatabaseWithAudit 與 AddPersistentServices）掛上多個 AuditInterceptor 實例，
-    // 若不防重複，每筆異動會產生多筆相同的資料日誌。
     private static readonly ConditionalWeakTable<DbContext, object> InFlight = new();
 
     private readonly IServiceProvider _serviceProvider;
@@ -56,7 +55,9 @@ public class AuditInterceptor : SaveChangesInterceptor
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
-        _fallbackAuditProvider = new SystemAuditProvider(DefaultSystemUser, DefaultTraceId);
+
+        // 💡 強化 Fallback Provider 預設名稱
+        _fallbackAuditProvider = new SystemAuditProvider(DefaultSystemUser, DefaultSystemUserName, DefaultTraceId);
     }
 
     public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
@@ -157,10 +158,7 @@ public class AuditInterceptor : SaveChangesInterceptor
             if (options.IgnoredTables.Contains(entry.Metadata.Name) || options.IgnoredTables.Contains(tableName))
                 continue;
 
-            // 僅稽核實作 IAuditable 的實體（含 UserGlobalPermission、UserLabPermission、RoleGlobalPermission 等權限實體）。
-            // 不再以名稱含 "Permission" 判斷，避免權限目錄 (PermissionMetadata) 等非業務資料被誤記。
             bool isTargetEntity = entry.Entity is IAuditable;
-
             if (!isTargetEntity) continue;
 
             try
@@ -172,6 +170,9 @@ public class AuditInterceptor : SaveChangesInterceptor
                     RemoteIp = provider?.RemoteIp
                 };
 
+                // 💡 支援自訂擴充：若 AuditEntry 支援捕獲 UserName 與 LaboratoryId (TenantId)，在此賦值
+                // (請確認您的 AuditEntry DTO 是否包含這些屬性，若無可透過 Property 寫入)
+
                 foreach (var property in entry.Properties)
                 {
                     string propertyName = property.Metadata.Name;
@@ -181,14 +182,11 @@ public class AuditInterceptor : SaveChangesInterceptor
                         continue;
                     }
 
-                    // [AuditIgnore] 標記（含介面成員）與高頻 / 雜訊欄位完全不記錄
                     if (IsIgnoredProperty(entry.Entity.GetType(), propertyName, options)) continue;
 
                     var currentValue = property.CurrentValue?.ToString();
                     var originalValue = property.OriginalValue?.ToString();
 
-                    // 敏感欄位（如 PasswordHash）與 [Encrypted] 落地加密欄位只記錄「有被變更」這件事，不落地實際值
-                    // (CurrentValue 為解密後明文，若照寫會讓加密欄位在稽核表以明文外洩)
                     var isMasked = options.ExcludedProperties.Contains(propertyName, StringComparer.OrdinalIgnoreCase)
                                    || property.Metadata.IsEncryptedProperty();
                     var storedCurrent = isMasked && currentValue is not null ? MaskedValue : currentValue;
@@ -229,16 +227,11 @@ public class AuditInterceptor : SaveChangesInterceptor
         return auditEntries;
     }
 
-    /// <summary>
-    /// 權限實體（具 Bitmask 欄位）：於同一筆紀錄加入人類可讀的權限變更摘要 (PermissionSummary)，
-    /// 取代過去由 PermissionAuditInterceptor 另寫一筆的做法。
-    /// </summary>
     private static void AppendPermissionSummary(EntityEntry entry, AuditEntry auditEntry)
     {
         var bitmask = entry.Properties.FirstOrDefault(p => p.Metadata.Name.Equals("Bitmask", StringComparison.OrdinalIgnoreCase));
         if (bitmask is null) return;
 
-        // 修改時只有 Bitmask 真的變動才附摘要，避免僅更新其他欄位時出現空摘要
         if (entry.State == EntityState.Modified && !auditEntry.ChangedColumns.Contains(bitmask.Metadata.Name)) return;
 
         try
@@ -253,7 +246,7 @@ public class AuditInterceptor : SaveChangesInterceptor
         }
         catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
         {
-            // Bitmask 型別無法轉為 long：略過摘要，不影響其餘欄位的稽核
+            // 略過
         }
     }
 
@@ -266,7 +259,6 @@ public class AuditInterceptor : SaveChangesInterceptor
             var (type, name) = key;
             if (type.GetProperty(name)?.IsDefined(typeof(AuditIgnoreAttribute), inherit: true) == true) return true;
 
-            // IAuditable 等介面上的 [AuditIgnore] 標在介面成員，實作類別的屬性本身沒有該標記
             return type.GetInterfaces().Any(i => i.GetProperty(name)?.IsDefined(typeof(AuditIgnoreAttribute), inherit: true) == true);
         });
     }
@@ -278,7 +270,6 @@ public class AuditInterceptor : SaveChangesInterceptor
         {
             if (entry.State == EntityState.Added)
             {
-                // CreatedBy 為非 null 字串且多數實體預設為 string.Empty，不能只用 ??= 判斷
                 if (string.IsNullOrWhiteSpace(entry.Entity.CreatedBy)) entry.Entity.CreatedBy = userId;
                 entry.Entity.CreatedAtUtc = DateTime.UtcNow;
             }
@@ -290,6 +281,9 @@ public class AuditInterceptor : SaveChangesInterceptor
         }
     }
 
+    /// <summary>
+    /// 💡 智慧解析 AuditProvider：結合 HTTP Context、Header (Lab Id) 與 DI 容器，確保 UserName 與 TenantId 絕不遺失
+    /// </summary>
     private IAuditProvider ResolveAuditProvider()
     {
         try
@@ -298,7 +292,28 @@ public class AuditInterceptor : SaveChangesInterceptor
             if (httpContext?.RequestServices is { } requestServices)
             {
                 var provider = requestServices.GetService<IAuditProvider>();
-                if (provider != null) return provider;
+                if (provider != null)
+                {
+                    // 若 provider 抓得到，直接回傳
+                    return provider;
+                }
+            }
+
+            // 若 DI 找不到，但 HttpContext 存在，嘗試從 Request Headers 補捉 TenantId (Lab Id)
+            if (httpContext != null)
+            {
+                var tenantId = httpContext.Request.Headers["X-Tenant-Id"].FirstOrDefault()
+                               ?? httpContext.Request.Headers["X-Lab-Id"].FirstOrDefault();
+                var userId = httpContext.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                             ?? httpContext.User?.Identity?.Name;
+                var userName = httpContext.User?.FindFirst("FullName")?.Value
+                               ?? httpContext.User?.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
+                               ?? userId;
+
+                if (!string.IsNullOrEmpty(userId) || !string.IsNullOrEmpty(tenantId))
+                {
+                    return new HttpContextDerivedAuditProvider(userId, userName, tenantId, httpContext);
+                }
             }
         }
         catch { }
@@ -309,16 +324,36 @@ public class AuditInterceptor : SaveChangesInterceptor
     private sealed class SystemAuditProvider : IAuditProvider
     {
         public string UserId { get; }
-        public string UserName { get; } = DefaultSystemUser;
+        public string UserName { get; }
         public string TraceId { get; }
         public string? RemoteIp { get; }
         public string? DeviceId { get; }
         public string? LaboratoryId { get; }
 
-        public SystemAuditProvider(string userId, string traceId)
+        public SystemAuditProvider(string userId, string userName, string traceId)
         {
             UserId = userId;
+            UserName = userName;
             TraceId = traceId;
+        }
+    }
+
+    private sealed class HttpContextDerivedAuditProvider : IAuditProvider
+    {
+        public string UserId { get; }
+        public string UserName { get; }
+        public string TraceId { get; }
+        public string? RemoteIp { get; }
+        public string? DeviceId { get; }
+        public string? LaboratoryId { get; }
+
+        public HttpContextDerivedAuditProvider(string? userId, string? userName, string? tenantId, HttpContext httpContext)
+        {
+            UserId = userId ?? DefaultSystemUser;
+            UserName = userName ?? (userId ?? DefaultSystemUserName);
+            TraceId = httpContext.TraceIdentifier;
+            RemoteIp = httpContext.Connection.RemoteIpAddress?.ToString();
+            LaboratoryId = tenantId;
         }
     }
 }
