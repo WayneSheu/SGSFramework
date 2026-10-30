@@ -13,7 +13,6 @@ using Microsoft.Extensions.Options;
 using Serilog.Events;
 using SGSFramework.Core.Configurations;
 
-
 namespace SGSFramework.SystemLog.BackgroundServices
 {
     public interface ISqlServerLogProcessor
@@ -76,20 +75,24 @@ namespace SGSFramework.SystemLog.BackgroundServices
         /// 透過 Scope 批次查詢使用者真實姓名與實驗室名稱，避免 N+1 效能問題
         /// </summary>
         private async Task<(Dictionary<string, string> Users, Dictionary<string, string> Tenants)> ResolveNamesBatchAsync(
-    List<LogEvent> items, CancellationToken ct)
+            List<LogEvent> items, CancellationToken ct)
         {
             var userMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var tenantMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             try
             {
-                var userIds = items
+                // 1. 安全解析並過濾出合法的 Guid UserId
+                var userGuids = items
                     .Select(i => i.Properties.TryGetValue("UserId", out var u) ? u.ToString()?.Trim('"') : null)
                     .Where(id => !string.IsNullOrEmpty(id) && id != "System" && id != "SYSTEM" && id != "SYSTEM_BACKGROUND")
-                    .Cast<string>()
+                    .Select(id => Guid.TryParse(id, out var g) ? g : (Guid?)null)
+                    .Where(g => g.HasValue)
+                    .Select(g => g!.Value)
                     .Distinct()
                     .ToList();
 
+                // 2. 解析 TenantId
                 var tenantIds = items
                     .Select(i => i.Properties.TryGetValue("TenantId", out var t) ? t.ToString()?.Trim('"') : null)
                     .Where(id => !string.IsNullOrEmpty(id))
@@ -97,23 +100,26 @@ namespace SGSFramework.SystemLog.BackgroundServices
                     .Distinct()
                     .ToList();
 
-                if (userIds.Count == 0 && tenantIds.Count == 0)
+                if (userGuids.Count == 0 && tenantIds.Count == 0)
                 {
                     return (userMap, tenantMap);
                 }
 
                 using var scope = _scopeFactory.CreateScope();
-
-                // 💡 透過通用 DbContext 或介面解析，不再強綁定單一實體 Context
                 var dbContext = scope.ServiceProvider.GetService<DbContext>();
                 if (dbContext == null) return (userMap, tenantMap);
 
-                // 1. 批次查詢使用者名稱
-                if (userIds.Count > 0)
+                // 3. 批次查詢使用者名稱 (💡 調整 COALESCE 順序，優先抓取 UserName 或 FullName)
+                if (userGuids.Count > 0)
                 {
+                    var parameters = userGuids.Select((id, index) => new SqlParameter($"@p{index}", id)).ToArray();
+                    var parameterNames = string.Join(", ", parameters.Select(p => p.ParameterName));
+
+                    // 優先順序：UserName -> FullName -> Id 字串
+                    var sql = $"SELECT CAST(Id AS NVARCHAR(36)) AS Id, COALESCE(UserName, FullName, CAST(Id AS NVARCHAR(36))) AS Name FROM core.AspNetUsers WHERE Id IN ({parameterNames})";
+
                     var users = await dbContext.Database
-                        .SqlQueryRaw<UserLookupDto>(
-                            $"SELECT Id, COALESCE(FullName, UserName, Id) AS Name FROM core.Users WHERE Id IN ({string.Join(",", userIds.Select(id => $"'{id}'"))})")
+                        .SqlQueryRaw<UserLookupDto>(sql, parameters.Cast<object>().ToArray())
                         .ToListAsync(ct)
                         .ConfigureAwait(false);
 
@@ -126,12 +132,16 @@ namespace SGSFramework.SystemLog.BackgroundServices
                     }
                 }
 
-                // 2. 批次查詢實驗室名稱
+                // 4. 批次查詢實驗室名稱 (對應 org.Organization)
                 if (tenantIds.Count > 0)
                 {
+                    var tenantParameters = tenantIds.Select((id, index) => new SqlParameter($"@t{index}", id)).ToArray();
+                    var tenantParameterNames = string.Join(", ", tenantParameters.Select(p => p.ParameterName));
+
+                    var tenantSql = $"SELECT CAST(Id AS NVARCHAR(36)) AS Id, COALESCE(Name, Id) AS Name FROM org.Organization WHERE Id IN ({tenantParameterNames})";
+
                     var tenants = await dbContext.Database
-                        .SqlQueryRaw<TenantLookupDto>(
-                            $"SELECT Id, COALESCE(Name, Id) AS Name FROM org.Organization WHERE Id IN ({string.Join(",", tenantIds.Select(id => $"'{id}'"))})")
+                        .SqlQueryRaw<TenantLookupDto>(tenantSql, tenantParameters.Cast<object>().ToArray())
                         .ToListAsync(ct)
                         .ConfigureAwait(false);
 
@@ -152,8 +162,6 @@ namespace SGSFramework.SystemLog.BackgroundServices
             return (userMap, tenantMap);
         }
 
-
-
         private static DataTable BuildDataTable(
             IEnumerable<LogEvent> items,
             Dictionary<string, string> userMap,
@@ -166,7 +174,7 @@ namespace SGSFramework.SystemLog.BackgroundServices
             dt.Columns.Add("Level", typeof(string));
             dt.Columns.Add("Exception", typeof(string));
             dt.Columns.Add("TenantId", typeof(string));
-            dt.Columns.Add("TenantName", typeof(string)); // 💡 新增 TenantName 欄位
+            dt.Columns.Add("TenantName", typeof(string));
             dt.Columns.Add("UserId", typeof(string));
             dt.Columns.Add("UserName", typeof(string));
             dt.Columns.Add("ModuleName", typeof(string));
@@ -184,7 +192,7 @@ namespace SGSFramework.SystemLog.BackgroundServices
             foreach (var item in items)
             {
                 var row = dt.NewRow();
-                row["Timestamp"] = item.Timestamp;
+                row["TimeStamp"] = item.Timestamp;
                 row["CreatedAt"] = DateTimeOffset.Now;
                 row["Message"] = item.RenderMessage();
                 row["Level"] = item.Level.ToString();
@@ -211,7 +219,6 @@ namespace SGSFramework.SystemLog.BackgroundServices
 
                 if (!string.IsNullOrEmpty(uIdVal) && userMap.TryGetValue(uIdVal, out var realName))
                 {
-                    // 優先使用從資料庫查到的真實中文姓名
                     row["UserName"] = realName;
                 }
                 else if (!string.IsNullOrEmpty(unVal) && unVal != "System" && unVal != "SYSTEM")
@@ -220,7 +227,7 @@ namespace SGSFramework.SystemLog.BackgroundServices
                 }
                 else if (!string.IsNullOrEmpty(uIdVal) && uIdVal != "System" && uIdVal != "SYSTEM")
                 {
-                    row["UserName"] = uIdVal; // 若查無對應名稱則退回顯示 UserId
+                    row["UserName"] = uIdVal;
                 }
                 else
                 {
@@ -250,13 +257,13 @@ namespace SGSFramework.SystemLog.BackgroundServices
         private static void ConfigureColumnMappings(SqlBulkCopy bulkCopy)
         {
             bulkCopy.ColumnMappings.Clear();
-            bulkCopy.ColumnMappings.Add("Timestamp", "TimeStamp");
+            bulkCopy.ColumnMappings.Add("TimeStamp", "TimeStamp");
             bulkCopy.ColumnMappings.Add("CreatedAt", "CreatedAt");
             bulkCopy.ColumnMappings.Add("Message", "Message");
             bulkCopy.ColumnMappings.Add("Level", "Level");
             bulkCopy.ColumnMappings.Add("Exception", "Exception");
             bulkCopy.ColumnMappings.Add("TenantId", "TenantId");
-            bulkCopy.ColumnMappings.Add("TenantName", "TenantName");     // 💡 對應新欄位
+            bulkCopy.ColumnMappings.Add("TenantName", "TenantName");
             bulkCopy.ColumnMappings.Add("UserId", "UserId");
             bulkCopy.ColumnMappings.Add("UserName", "UserName");
             bulkCopy.ColumnMappings.Add("ModuleName", "ModuleName");
@@ -270,7 +277,6 @@ namespace SGSFramework.SystemLog.BackgroundServices
             bulkCopy.ColumnMappings.Add("Fingerprint", "Fingerprint");
         }
 
-        // 輔助 DTO 結構
         private sealed class UserLookupDto
         {
             public string Id { get; set; } = string.Empty;
