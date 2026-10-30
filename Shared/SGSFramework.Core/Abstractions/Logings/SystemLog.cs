@@ -57,6 +57,10 @@ namespace SGSFramework.Core.Abstractions.Logings
         [Comment("模組名稱")]
         public string? ModuleName { get; set; }
 
+        [DisplayName("控制器名稱")]
+        [Comment("MVC Controller 名稱")]
+        public string? ControllerName { get; set; }
+
         [DisplayName("操作")]
         [Comment("操作")]
         public string? Operation { get; set; }
@@ -130,8 +134,9 @@ namespace SGSFramework.Core.Abstractions.Logings
             builder.Property(e => e.UserId).HasMaxLength(50);
             builder.Property(e => e.UserName).HasMaxLength(100); // 💡 新增設定
             builder.Property(e => e.ModuleName).HasMaxLength(50);
+            builder.Property(e => e.ControllerName).HasMaxLength(100);
             builder.Property(e => e.Operation).HasMaxLength(100);
-            builder.Property(e => e.OperationDesc).HasMaxLength(255); // 💡 新增設定
+            builder.Property(e => e.OperationDesc).HasMaxLength(255); // 💡 新增設定`
             builder.Property(e => e.IP).HasMaxLength(45).IsUnicode(false);
             builder.Property(e => e.Url).HasMaxLength(2083).IsRequired(false).IsUnicode(true);
 

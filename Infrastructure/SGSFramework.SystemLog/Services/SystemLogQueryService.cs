@@ -27,6 +27,7 @@ namespace SGSFramework.SystemLog.Services
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
+        // Path: Infrastructure/SGSFramework.SystemLog/Services/SystemLogQueryService.cs (GetSystemLogsAsync 篩選與映射優化片段)
         public async Task<PagedResult<SystemLogDto>> GetSystemLogsAsync(SystemLogQueryRequest request, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(request);
@@ -41,11 +42,17 @@ namespace SGSFramework.SystemLog.Services
                     if (!string.IsNullOrWhiteSpace(request.Filter.Level))
                         query = query.Where(x => x.Level == request.Filter.Level);
 
-                    // TenantId / UserId 皆有索引：精確比對（去除前後空白）
                     if (!string.IsNullOrWhiteSpace(request.Filter.TenantId))
                     {
                         var tenantId = request.Filter.TenantId.Trim();
                         query = query.Where(x => x.TenantId == tenantId);
+                    }
+
+                    // 💡 新增：TenantName 模糊篩選
+                    if (!string.IsNullOrWhiteSpace(request.Filter.TenantName))
+                    {
+                        var tenantName = request.Filter.TenantName.Trim();
+                        query = query.Where(x => x.TenantName != null && x.TenantName.Contains(tenantName));
                     }
 
                     if (!string.IsNullOrWhiteSpace(request.Filter.UserId))
@@ -54,7 +61,13 @@ namespace SGSFramework.SystemLog.Services
                         query = query.Where(x => x.UserId == userId);
                     }
 
-                    // 模組 / 操作名稱：包含比對，使用者不需記得完整名稱
+                    // 💡 新增：UserName 模糊篩選
+                    if (!string.IsNullOrWhiteSpace(request.Filter.UserName))
+                    {
+                        var userName = request.Filter.UserName.Trim();
+                        query = query.Where(x => x.UserName != null && x.UserName.Contains(userName));
+                    }
+
                     if (!string.IsNullOrWhiteSpace(request.Filter.ModuleName))
                     {
                         var moduleName = request.Filter.ModuleName.Trim();
@@ -67,16 +80,28 @@ namespace SGSFramework.SystemLog.Services
                         query = query.Where(x => x.Operation != null && x.Operation.Contains(operation));
                     }
 
+                    // 💡 新增：OperationDesc 模糊篩選
+                    if (!string.IsNullOrWhiteSpace(request.Filter.OperationDesc))
+                    {
+                        var operationDesc = request.Filter.OperationDesc.Trim();
+                        query = query.Where(x => x.OperationDesc != null && x.OperationDesc.Contains(operationDesc));
+                    }
+
+                    // 💡 新增：ControllerName 模糊篩選
+                    if (!string.IsNullOrWhiteSpace(request.Filter.ControllerName))
+                    {
+                        var controllerName = request.Filter.ControllerName.Trim();
+                        query = query.Where(x => x.ControllerName != null && x.ControllerName.Contains(controllerName));
+                    }
+
                     if (!string.IsNullOrWhiteSpace(request.Filter.CorrelationId))
                     {
-                        // 前綴比對：可貼上完整或部分 CorrelationId，且仍可利用索引
                         var correlationId = request.Filter.CorrelationId.Trim();
                         query = query.Where(x => x.CorrelationId != null && x.CorrelationId.StartsWith(correlationId));
                     }
 
                     if (!string.IsNullOrWhiteSpace(request.Filter.AlertId))
                     {
-                        // 前綴比對：可貼上完整或部分 AlertId，且仍可利用索引
                         var alertId = request.Filter.AlertId.Trim();
                         query = query.Where(x => x.AlertId != null && x.AlertId.StartsWith(alertId));
                     }
@@ -93,13 +118,18 @@ namespace SGSFramework.SystemLog.Services
                 {
                     var term = request.SearchTerm.Trim();
                     query = query.Where(x => (x.Message != null && x.Message.Contains(term)) ||
-                                             (x.Exception != null && x.Exception.Contains(term)));
+                                             (x.Exception != null && x.Exception.Contains(term)) ||
+                                             (x.UserName != null && x.UserName.Contains(term)) ||
+                                             (x.TenantName != null && x.TenantName.Contains(term)));
                 }
 
-                // 3. 註冊排序策略上下文
+                // 3. 註冊排序策略上下文（擴充支援新欄位排序）
                 var sortContext = new SortStrategyContext<Core.Abstractions.Logings.SystemLog>()
                     .Register("Timestamp", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.TimeStamp))
                     .Register("Level", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.Level))
+                    .Register("UserName", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.UserName!))
+                    .Register("TenantName", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.TenantName!))
+                    .Register("ControllerName", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.ControllerName!)) // 💡 新增排序支援
                     .Register("Id", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.Id));
 
                 var sorts = request.Sorts?.Count > 0
@@ -117,14 +147,14 @@ namespace SGSFramework.SystemLog.Services
                     LastIdValue = request.LastIdValue
                 };
 
-                // 4. 執行高效能分頁（確保 ToPagedResultAsync 內部包含 Count 查詢以避免回傳 totalCount 為 -1）
+                // 4. 執行高效能分頁
                 var pagedEntities = await query.ToPagedResultAsync(
                     parameters: queryParameters,
                     sortContext: sortContext,
                     idSelector: x => x.Id,
                     cancellationToken: cancellationToken);
 
-                // 5. 轉換為對應的 SystemLogDto 結構
+                // 5. 轉換為對應的 SystemLogDto 結構（包含完整新欄位映射）
                 var dtos = pagedEntities.Items.Select(e => new SystemLogDto(
                     Id: e.Id,
                     TimeStamp: e.TimeStamp,
@@ -132,9 +162,13 @@ namespace SGSFramework.SystemLog.Services
                     Message: e.Message,
                     Exception: e.Exception,
                     TenantId: e.TenantId,
+                    TenantName: e.TenantName,
                     UserId: e.UserId,
+                    UserName: e.UserName,
                     ModuleName: e.ModuleName,
                     Operation: e.Operation,
+                    OperationDesc: e.OperationDesc,
+                    ControllerName: e.ControllerName,
                     CorrelationId: e.CorrelationId,
                     IP: e.IP,
                     Url: e.Url,
@@ -151,6 +185,7 @@ namespace SGSFramework.SystemLog.Services
                 throw new InvalidOperationException("查詢系統日誌清單失敗。", ex);
             }
         }
+
 
         public async Task<PagedResult<SecurityLogDto>> GetSecurityLogsAsync(SecurityLogQueryRequest request, CancellationToken cancellationToken = default)
         {
@@ -257,6 +292,7 @@ namespace SGSFramework.SystemLog.Services
             }
         }
 
+        // Path: Infrastructure/SGSFramework.SystemLog/Services/SystemLogQueryService.cs (GetSystemLogByIdAsync 單筆查詢對應優化)
         public async Task<SystemLogDto?> GetSystemLogByIdAsync(long id, CancellationToken cancellationToken = default)
         {
             try
@@ -271,9 +307,13 @@ namespace SGSFramework.SystemLog.Services
                     Message: entity.Message,
                     Exception: entity.Exception,
                     TenantId: entity.TenantId,
+                    TenantName: entity.TenantName,
                     UserId: entity.UserId,
+                    UserName: entity.UserName,
                     ModuleName: entity.ModuleName,
                     Operation: entity.Operation,
+                    OperationDesc: entity.OperationDesc,
+                    ControllerName: entity.ControllerName,
                     CorrelationId: entity.CorrelationId,
                     IP: entity.IP,
                     Url: entity.Url,

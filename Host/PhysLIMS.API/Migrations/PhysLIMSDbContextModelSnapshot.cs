@@ -2175,6 +2175,11 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("char(32)")
                         .HasComment("告警識別碼");
 
+                    b.Property<string>("ControllerName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("MVC Controller 名稱");
+
                     b.Property<string>("CorrelationId")
                         .HasMaxLength(50)
                         .IsUnicode(false)

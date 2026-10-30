@@ -1,26 +1,22 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿// Path: Infrastructure/SGSFramework.SystemLog/DTOs/SystemLogFilter.cs
+namespace SGSFramework.SystemLog.DTOs;
 
-namespace SGSFramework.SystemLog.DTOs
+/// <summary>
+/// 系統日誌篩選條件
+/// </summary>
+public class SystemLogFilter
 {
-    /// <summary>
-    /// 系統日誌篩選條件
-    /// </summary>
-    public record SystemLogFilter
-    {
-        public string? Level { get; init; }
-        public string? TenantId { get; init; }
-        public string? UserId { get; init; }
-        public string? ModuleName { get; init; }
-        public string? AlertId { get; init; }
-
-        /// <summary>關聯識別碼（前綴比對，可貼上完整或部分值）</summary>
-        public string? CorrelationId { get; init; }
-
-        /// <summary>操作名稱（包含比對）</summary>
-        public string? Operation { get; init; }
-        public DateTimeOffset? StartTimestamp { get; init; }
-        public DateTimeOffset? EndTimestamp { get; init; }
-    }
+    public string? Level { get; set; }
+    public string? TenantId { get; set; }
+    public string? TenantName { get; set; } // 💡 新增：實驗室名稱篩選
+    public string? UserId { get; set; }
+    public string? UserName { get; set; } // 💡 新增：使用者真實姓名篩選
+    public string? ModuleName { get; set; }
+    public string? Operation { get; set; }
+    public string? OperationDesc { get; set; } // 💡 新增：操作說明篩選
+    public string? ControllerName { get; set; } // 💡 新增：Controller 名稱篩選
+    public string? CorrelationId { get; set; }
+    public string? AlertId { get; set; }
+    public DateTimeOffset? StartTimestamp { get; set; }
+    public DateTimeOffset? EndTimestamp { get; set; }
 }
