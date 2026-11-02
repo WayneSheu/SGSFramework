@@ -945,11 +945,11 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                 await _userManager.SetLockoutEndDateAsync(user, null).ConfigureAwait(false);
                 await _userManager.ResetAccessFailedCountAsync(user).ConfigureAwait(false);
             }
-
-            var result = await _userManager.UpdateAsync(user).ConfigureAwait(false);
-            if (!result.Succeeded)
+            // 必須呼叫 UpdateAsync 將變更寫入資料庫！
+            var updateResult = await _userManager.UpdateAsync(user).ConfigureAwait(false);
+            if (!updateResult.Succeeded)
             {
-                string errors = string.Join("; ", result.Errors.Select(e => e.Description));
+                string errors = string.Join("; ", updateResult.Errors.Select(e => e.Description));
                 _logger.LogWarning("更新使用者狀態失敗 {UserId}: {Errors}", userId, errors);
                 return Result.Failure<bool>(Error.Validation("User.Status.Failed", $"變更使用者狀態失敗: {errors}"));
             }
