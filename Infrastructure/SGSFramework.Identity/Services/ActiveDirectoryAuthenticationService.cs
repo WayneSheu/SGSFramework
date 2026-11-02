@@ -67,6 +67,8 @@ public sealed class ActiveDirectoryAuthenticationService
                     Username: username,
                     Email: $"{username}@domain.local",
                     Password: null, // 網域帳號不於本機儲存密碼
+                    FullName: null, // 可選填，若有真實姓名可傳遞
+                    EmployeeNo: null, // 可選填，若有員工編號可傳遞
                     DefaultLabId: 0,
                     TenantLabId: Guid.Empty, // 待管理員指定
                     RoleName: "PendingUser"

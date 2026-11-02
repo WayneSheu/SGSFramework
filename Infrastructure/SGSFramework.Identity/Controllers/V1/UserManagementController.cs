@@ -98,7 +98,7 @@ public sealed class UserManagementController(
     }
 
     /// <summary>
-    /// 分頁查詢使用者列表
+    /// 分頁查詢使用者列表 (已優化狀態與詳細欄位對應)
     /// </summary>
     [HttpGet("paged")]
     [Function("GetPagedUsers", "分頁查詢使用者", Icon = "fa-solid fa-users", Order = 1, Description = "分頁取得系統使用者清單，支援關鍵字搜尋與條件過濾", IsMenu = true)]
@@ -135,55 +135,36 @@ public sealed class UserManagementController(
     /// <summary>
     /// 依據 ID 取得特定使用者詳細資料
     /// </summary>
+    /// <summary>
+    /// 依據 ID 取得特定使用者詳細資料
+    /// </summary>
     [HttpGet("{id:guid}")]
     [Function("GetUserById", "取得使用者詳情", Icon = "fa-solid fa-user", Order = 2, Description = "依據唯一識別碼讀取特定使用者的詳細屬性")]
     [RequiresPermission("SYSTEM.USERMANAGEMENT.READ")]
     [EndpointSummary("取得使用者詳情")]
-    [EndpointDescription("依據唯一識別碼讀取特定使用者的詳細屬性。")]
     [ProducesResponseType(typeof(Result<UserResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetUserById(
         [FromRoute] Guid id,
         CancellationToken cancellationToken = default)
     {
         if (id == Guid.Empty)
         {
-            return BadRequest(new ProblemDetails
-            {
-                Status = StatusCodes.Status400BadRequest,
-                Title = "無效的請求參數",
-                Detail = "必須提供有效的使用者識別碼。",
-                Instance = HttpContext.Request.Path
-            });
+            return BadRequest(new ProblemDetails { Status = StatusCodes.Status400BadRequest, Title = "無效的請求參數" });
         }
 
-        try
-        {
-            var result = await _userService.GetUserByIdAsync(id, cancellationToken).ConfigureAwait(false);
-            return HandleResult(result);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "取得使用者詳情時發生異常。UserId: {UserId}", id);
-            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
-            {
-                Status = StatusCodes.Status500InternalServerError,
-                Title = "伺服器內部錯誤",
-                Detail = "讀取使用者詳細資料時發生系統異常。",
-                Instance = HttpContext.Request.Path
-            });
-        }
+        var result = await _userService.GetUserByIdAsync(id, cancellationToken).ConfigureAwait(false);
+        return HandleResult(result);
     }
 
     /// <summary>
-    /// 建立新使用者帳號
+    /// 建立新使用者帳號 (支援 FullName 與 EmployeeNo 寫入)
     /// </summary>
     [HttpPost("register")]
-    [Function("Register", "建立使用者", Icon = "fa-solid fa-user-gear", Order = 3, Description = "透過指定的策略模式建立新使用者帳號(支援自訂帳號與 Email 雙重唯一性校驗)並指派實驗室與角色")]
+    [Function("Register", "建立使用者", Icon = "fa-solid fa-user-gear", Order = 3, Description = "透過指定的策略模式建立新使用者帳號(支援自訂帳號與 Email 雙重唯一性校驗)並指派真實姓名、員工編號與角色")]
     [RequiresPermission("SYSTEM.USERMANAGEMENT.CREATE", "建立使用者")]
     [EndpointSummary("建立使用者")]
-    [EndpointDescription("透過指定的策略模式建立新使用者帳號(支援自訂帳號與 Email 雙重唯一性校驗)並指派實驗室與角色。")]
+    [EndpointDescription("透過指定的策略模式建立新使用者帳號，並完整寫入真實姓名與員工編號。")]
     [ProducesResponseType(typeof(Result<Guid>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
@@ -209,13 +190,17 @@ public sealed class UserManagementController(
 
             var strategy = _strategyFactory.GetStrategy(strategyType);
 
-            int? defaultLabId = 0;
+            int defaultLabId = 0;
+
+            // 將請求中的 FullName 與 EmployeeNo 封裝至 ProvisioningContext 傳遞至底層策略與 Service 寫入 DB
             var context = new UserProvisioningContext(
                 request.UserName,
                 request.Email,
                 request.Password,
+                request.FullName,   // 真實姓名
+                request.EmployeeNo, // 員工編號[cite: 4, 8]
                 defaultLabId,
-                request.TenantLabId,
+                request.TenantLabId ?? Guid.Empty,
                 request.DefaultRole ?? string.Empty
             );
 
@@ -711,6 +696,82 @@ public sealed class UserManagementController(
                 Status = StatusCodes.Status500InternalServerError,
                 Title = "伺服器內部錯誤",
                 Detail = "指派使用者角色作業時發生系統異常。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
+    /// <summary>
+    /// 變更使用者帳號狀態 (支援企業級 UserStatus 列舉與稽核原因)
+    /// </summary>
+    [HttpPatch("{id:guid}/status")]
+    [Function("ChangeUserStatus", "變更使用者狀態", Icon = "fa-solid fa-user-lock", Order = 6, Description = "精確變更指定使用者的系統存取狀態（如啟用、停用、鎖定等）")]
+    [RequiresPermission("SYSTEM.USERMANAGEMENT.UPDATE", "編輯使用者")]
+    [EndpointSummary("變更使用者狀態")]
+    [EndpointDescription("精確變更指定使用者的系統存取狀態（如啟用、停用、鎖定等），並記錄異動原因。")]
+    [ProducesResponseType(typeof(Result<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> ChangeUserStatus(
+        [FromRoute] Guid id,
+        [FromBody] UpdateUserStatusRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (id == Guid.Empty)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "無效的請求參數",
+                Detail = "必須提供有效的使用者識別碼。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+
+        // 禁止管理員變更自身帳號狀態，避免誤將自己停用 / 鎖定
+        if (string.Equals(CurrentUserId, id.ToString(), StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "不允許的操作",
+                Detail = "無法變更自己的帳號狀態。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // 呼叫底線 Service 執行狀態更新（傳入列舉整數或列舉本身、操作者 ID、原因與 Client IP）
+            var result = await _userService.UpdateUserStatusAsync(
+                id,
+                (int)request.Status,
+                CurrentUserId,
+                request.Reason,
+                CurrentClientIp,
+                cancellationToken
+            ).ConfigureAwait(false);
+
+            return HandleResult(result);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("[UserManagementController] 變更使用者狀態作業已被用戶端取消。UserId: {UserId}", id);
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "變更使用者狀態時發生未預期異常。UserId: {UserId}, TargetStatus: {Status}", id, request.Status);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "變更使用者狀態作業時發生系統異常。",
                 Instance = HttpContext.Request.Path
             });
         }

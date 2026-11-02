@@ -171,7 +171,8 @@ END;";
             {
                 foreach (var command in commands)
                 {
-                    await _context.Database.ExecuteSqlRawAsync(command.CommandText, cancellationToken).ConfigureAwait(false);
+                    // ExecuteSqlRaw 會以 string.Format 處理 SQL，欄位說明等文字中的大括號須跳脫，否則拋出 FormatException
+                    await _context.Database.ExecuteSqlRawAsync(command.CommandText.Replace("{", "{{").Replace("}", "}}"), cancellationToken).ConfigureAwait(false);
                 }
 
                 // 寫入 Migration 歷史紀錄

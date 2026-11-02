@@ -104,6 +104,14 @@ public sealed class AtomicUserProvisioningStrategy<TUser, TRole, TKey> : IUserPr
                 LockoutEnabled = true
             };
 
+            // 【重點修正】將 Context 中的真實姓名與員工編號對應至底層應用使用者實體
+            if (user is ApplicationUser appUser)
+            {
+                appUser.FullName = context.FullName ?? string.Empty;
+                appUser.EmployeeNo = context.EmployeeNo ?? string.Empty;
+                appUser.Status = UserStatus.Active; // 註冊預設為待啟用
+            }
+
             var createResult = string.IsNullOrEmpty(context.Password)
                 ? await _userManager.CreateAsync(user).ConfigureAwait(false)
                 : await _userManager.CreateAsync(user, context.Password).ConfigureAwait(false);

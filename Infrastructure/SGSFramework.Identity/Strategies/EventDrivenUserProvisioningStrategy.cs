@@ -88,6 +88,13 @@ public sealed class EventDrivenUserProvisioningStrategy<TUser, TRole, TKey> : IU
                 LockoutEnabled = true
             };
 
+            // 【重點優化】將 Context 中的 FullName 與 EmployeeNo 對應至底層實體屬性
+            if (user is ApplicationUser appUser)
+            {
+                appUser.FullName = context.FullName ?? string.Empty;
+                appUser.EmployeeNo = context.EmployeeNo ?? string.Empty;
+            }
+
             var createResult = string.IsNullOrEmpty(context.Password)
                 ? await _userManager.CreateAsync(user).ConfigureAwait(false)
                 : await _userManager.CreateAsync(user, context.Password).ConfigureAwait(false);

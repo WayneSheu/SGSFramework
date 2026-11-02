@@ -11,6 +11,8 @@ namespace SGSFramework.Identity.DTOs.Strategies
         string Username,
         string Email,
         string? Password,
+        string? FullName,
+        string? EmployeeNo,
         int? DefaultLabId,
         Guid? TenantLabId,
         string RoleName

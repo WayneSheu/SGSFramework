@@ -63,6 +63,7 @@ public interface IUserManagementService<TUser, TRole, TKey>
         TKey userId,
         AssignUserRolesRequest request,
         CancellationToken cancellationToken = default);
+    
     /// <summary>
     /// 創建新使用者
     /// </summary>

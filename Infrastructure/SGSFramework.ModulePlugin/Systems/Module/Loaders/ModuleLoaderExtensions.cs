@@ -127,13 +127,9 @@ public static class ModuleLoaderExtensions
 
                             var sidecarAssembly = currentContext.LoadFromStream(sidecarAsmStream, sidecarPdbStream);
 
-                            if (ContainsControllers(sidecarAssembly))
+                            if (ContainsControllers(sidecarAssembly) && AddOrReplaceAssemblyPart(partManager, sidecarAssembly))
                             {
-                                if (!HasAssemblyPart(partManager, sidecarAssembly))
-                                {
-                                    partManager.ApplicationParts.Add(new AssemblyPart(sidecarAssembly));
-                                    Log.Information(">>> [MVC 註冊] 成功將附屬 Controllers 組件加入 ApplicationParts: {AssemblyName}", sidecarAssembly.FullName);
-                                }
+                                Log.Information(">>> [MVC 註冊] 成功將附屬 Controllers 組件加入 ApplicationParts: {AssemblyName}", sidecarAssembly.FullName);
                             }
                             Log.Information(">>> [模組上下文] 成功將依賴層組件載入至相同 ALC: {Path}", sidecarPath);
                         }
@@ -148,17 +144,10 @@ public static class ModuleLoaderExtensions
 
                     var assembly = currentContext.LoadFromStream(asmStream, pdbStream);
 
-                    if (ContainsControllers(assembly))
+                    // 同名組件只保留外掛 ALC 版本（取代而非並存），避免 AmbiguousMatchException 與跨 ALC 型別不一致
+                    if (ContainsControllers(assembly) && AddOrReplaceAssemblyPart(partManager, assembly))
                     {
-                        if (!HasAssemblyPart(partManager, assembly))
-                        {
-                            partManager.ApplicationParts.Add(new AssemblyPart(assembly));
-                            Log.Information(">>> [MVC 註冊] 成功將外掛 Controllers 組件加入 ApplicationParts: {AssemblyName}", assembly.FullName);
-                        }
-                        else
-                        {
-                            Log.Warning(">>> [MVC 註冊] 組件 {AssemblyName} 已存在於 ApplicationParts，忽略重複加入以避免 AmbiguousMatchException。", assembly.FullName);
-                        }
+                        Log.Information(">>> [MVC 註冊] 成功將外掛 Controllers 組件加入 ApplicationParts: {AssemblyName}", assembly.FullName);
                     }
 
                     var types = assembly.GetTypes();
@@ -389,6 +378,35 @@ public static class ModuleLoaderExtensions
     #endregion
 
     #region Private Helper Methods
+
+    /// <summary>
+    /// 將外掛組件加入 ApplicationParts；若已存在同名但來自其他載入內容（例如 Host 專案直接參考而由 Default Context 載入）的組件，
+    /// 以外掛 ALC 的組件取代。否則 MVC 會使用 Host 版 Controller，其 MediatR Request / DbContext 型別與外掛 ALC 中
+    /// 註冊至 DI 的型別不同，導致 "No service for type IRequestHandler&lt;...&gt;"。
+    /// </summary>
+    /// <returns>是否有新增或取代</returns>
+    private static bool AddOrReplaceAssemblyPart(ApplicationPartManager partManager, Assembly assembly)
+    {
+        string? asmName = assembly.GetName().Name;
+        if (string.IsNullOrEmpty(asmName)) return false;
+
+        var sameName = partManager.ApplicationParts
+            .OfType<AssemblyPart>()
+            .Where(p => string.Equals(p.Assembly.GetName().Name, asmName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (sameName.Any(p => ReferenceEquals(p.Assembly, assembly))) return false;
+
+        foreach (var duplicate in sameName)
+        {
+            partManager.ApplicationParts.Remove(duplicate);
+            Log.Warning(">>> [MVC 註冊] 移除來自其他載入內容的同名組件 {AssemblyName}（{Context}），改用外掛 ALC 版本以避免型別不一致。",
+                asmName, AssemblyLoadContext.GetLoadContext(duplicate.Assembly)?.Name ?? "Default");
+        }
+
+        partManager.ApplicationParts.Add(new AssemblyPart(assembly));
+        return true;
+    }
 
     private static bool HasAssemblyPart(ApplicationPartManager partManager, Assembly assembly)
     {

@@ -111,6 +111,7 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                     PrimaryLabCode = primaryOrg?.Code,
                     PrimaryLabName = primaryOrg?.Name,
                     Status = user.Status.ToString(),
+
                     IsLockedOut = isLockedOut,
                     LastLoginAt = user.LastLoginAt,
                     Roles = roles.ToList()
@@ -166,7 +167,6 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                 string userIdStr = u.Id.ToString() ?? string.Empty;
                 var accessibleOrgs = await _orgIntegrationService.GetUserAccessibleOrganizationsAsync(userIdStr, cancellationToken).ConfigureAwait(false);
                 var primaryOrg = accessibleOrgs.FirstOrDefault(o => o.IsPrimary) ?? accessibleOrgs.FirstOrDefault();
-
                 items.Add(new UserResponse
                 {
                     Id = u.Id is Guid gId ? gId : (Guid.TryParse(u.Id.ToString(), out var parsedId) ? parsedId : Guid.Empty),
@@ -176,7 +176,11 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                     EmployeeNo = u.EmployeeNo ?? string.Empty,
                     FullName = u.FullName ?? string.Empty,
                     PrimaryLabId = primaryOrg?.TenantLabId,
-                    PrimaryLabName = primaryOrg?.Name
+                    PrimaryLabName = primaryOrg?.Name,
+                    Status = u.Status,
+                    CreatedAt = u.CreatedAt.UtcDateTime,
+                    // 【修正】改用 HasValue 判斷或提供預設值，避免 Nullable 拆箱失敗
+                    UpdatedAt = u.UpdatedAtUtc.HasValue ? u.UpdatedAtUtc.Value.UtcDateTime : u.CreatedAt.UtcDateTime,
                 });
             }
 
@@ -374,6 +378,9 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                 UserName = request.UserName,
                 Email = request.Email,
                 EmailConfirmed = true,
+                // 【重要修正】在此處補上 FullName 與 EmployeeNo 的對應賦值！
+                FullName = request.FullName ?? string.Empty,
+                EmployeeNo = request.EmployeeNo ?? string.Empty,
                 Status = UserStatus.Active // 使用強型別 Enum 初始狀態
             };
 
@@ -426,6 +433,9 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                 Email = request.Email,
                 EmailConfirmed = false,
                 LockoutEnabled = true,
+                // 【重要修正】在此處補上 FullName 與 EmployeeNo 的對應賦值！
+                FullName = request.FullName ?? string.Empty,
+                EmployeeNo = request.EmployeeNo ?? string.Empty,
                 Status = UserStatus.Pending // 註冊預設為待啟用，透過 EnumExtensions 可取得顯示名稱 "待啟用"
             };
 

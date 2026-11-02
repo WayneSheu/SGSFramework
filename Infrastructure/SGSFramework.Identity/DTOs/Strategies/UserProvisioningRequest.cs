@@ -18,6 +18,18 @@ public sealed record UserProvisioningRequest
     [StringLength(100, MinimumLength = 6, ErrorMessage = "密碼長度必須至少為 6 個字元。")]
     string? Password,
 
+    /// <summary>
+    /// 使用者真實姓名
+    /// </summary>
+    [StringLength(50, ErrorMessage = "真實姓名長度不可超過 50 個字元。")]
+    string? FullName,
+
+    /// <summary>
+    /// 員工編號[cite: 4, 8]
+    /// </summary>
+    [StringLength(50, ErrorMessage = "員工編號長度不可超過 50 個字元。")]
+    string? EmployeeNo,
+
     string? DefaultRole,
 
     Guid? TenantLabId

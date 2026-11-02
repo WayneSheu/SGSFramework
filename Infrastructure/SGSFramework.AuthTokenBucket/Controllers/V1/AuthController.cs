@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SGS.Modules.ORG.Contracts.Queries;
@@ -65,6 +66,9 @@ public sealed class AuthController(
     /// <summary>   
     /// 標準帳密登入
     /// </summary>
+    // ==========================================
+    // 5. AuthController.cs 中 LoginAsync 方法的優化實作
+    // ==========================================
     [HttpPost("login")]
     [AllowAnonymous]
     [Function("Login", "帳密登入", Icon = "fa-solid fa-right-to-bracket", Order = 1, Description = "使用系統標準帳密登入")]
@@ -81,13 +85,13 @@ public sealed class AuthController(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (string.IsNullOrWhiteSpace(request.NameOrEmail) || string.IsNullOrWhiteSpace(request.Password))
+        if ((string.IsNullOrWhiteSpace(request.NameOrEmail) && string.IsNullOrWhiteSpace(request.EmployeeNo)) || string.IsNullOrWhiteSpace(request.Password))
         {
             return BadRequest(new ProblemDetails
             {
                 Status = StatusCodes.Status400BadRequest,
                 Title = "無效的請求數據",
-                Detail = "帳號與密碼欄位不可為空。",
+                Detail = "帳號/Email與員工編號不可同時為空，且密碼為必填項。",
                 Instance = HttpContext.Request.Path
             });
         }
@@ -102,13 +106,26 @@ public sealed class AuthController(
 
         try
         {
-            var user = await _userManager.FindByNameAsync(request.NameOrEmail)
-                       ?? await _userManager.FindByEmailAsync(request.NameOrEmail);
+            ApplicationUser? user = null;
+
+            // 支援透過 EmployeeNo 或 NameOrEmail 進行身分尋找
+            if (!string.IsNullOrWhiteSpace(request.EmployeeNo))
+            {
+                user = await _userManager.Users
+                    .FirstOrDefaultAsync(u => u.EmployeeNo == request.EmployeeNo, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else if (!string.IsNullOrWhiteSpace(request.NameOrEmail))
+            {
+                user = await _userManager.FindByNameAsync(request.NameOrEmail)
+                       ?? await _userManager.FindByEmailAsync(request.NameOrEmail)
+                       ?? await _userManager.Users.FirstOrDefaultAsync(u => u.EmployeeNo == request.NameOrEmail, cancellationToken);
+            }
 
             if (user is null || !await _userManager.CheckPasswordAsync(user, request.Password))
             {
                 if (user is not null) await _userManager.AccessFailedAsync(user);
-                return BuildUnauthorizedResult("帳號或密碼錯誤。");
+                return BuildUnauthorizedResult("帳號、員工編號或密碼錯誤。");
             }
 
             // 密碼正確後才檢查帳號狀態（避免帳號列舉）：停用 / 待啟用 / 鎖定中的帳號不得登入
@@ -119,8 +136,9 @@ public sealed class AuthController(
                     eventCategory: "Auth.Login",
                     userId: user.Id.ToString(),
                     clientIp: clientIp,
-                    messageTemplate: "帳號狀態不允許登入。帳號: {UserName}, 原因: {Reason}",
+                    messageTemplate: "帳號狀態不允許登入。帳號: {UserName}, 員工編號: {EmployeeNo}, 原因: {Reason}",
                     user.UserName ?? string.Empty,
+                    user.EmployeeNo ?? string.Empty,
                     blockReason
                 );
                 return BuildUnauthorizedResult(blockReason);
@@ -145,8 +163,9 @@ public sealed class AuthController(
                 eventCategory: "Auth.Login",
                 userId: user.Id.ToString(),
                 clientIp: clientIp,
-                messageTemplate: "使用者登入成功。帳號: {Email}, 鎖定實驗室: {LabId}",
+                messageTemplate: "使用者登入成功。帳號: {Email}, 員工編號: {EmployeeNo}, 鎖定實驗室: {LabId}",
                 user.Email ?? string.Empty,
+                user.EmployeeNo ?? string.Empty,
                 runtimeProfile.TenantLabId
             );
 
