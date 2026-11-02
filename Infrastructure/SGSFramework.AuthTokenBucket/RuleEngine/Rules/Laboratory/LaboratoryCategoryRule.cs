@@ -21,7 +21,8 @@ namespace SGSFramework.AuthTokenBucket.RuleEngine.Rules.Laboratory
         {
             ArgumentNullException.ThrowIfNull(context);
 
-            if (context.AllowedCategories is null || context.AllowedCategories.Length == 0)
+            if (context.Kind != LabAuthRuleKind.LaboratoryCategory ||
+                context.AllowedCategories is null || context.AllowedCategories.Length == 0)
             {
                 return (true, string.Empty);
             }

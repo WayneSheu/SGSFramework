@@ -14,6 +14,9 @@ namespace SGSFramework.SystemLog.DTOs
         public string? AlertId { get; init; }
         /// <summary>追蹤碼（前綴比對，可含或不含連字號）</summary>
         public string? CorrelationId { get; init; }
+
+        public string? IP { get; init; }
+
         public string? UserId { get; init; }
         public DateTimeOffset? StartTimestamp { get; init; }
         public DateTimeOffset? EndTimestamp { get; init; }

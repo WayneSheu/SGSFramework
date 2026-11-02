@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Services;
 using SGSFramework.Core.Abstractions.Adapters;
 using SGSFramework.Core.Abstractions.Entities.Identities;
+using SGSFramework.Core.Abstractions.Entities.ReportCategories;
 
 namespace SGSFramework.Identity.Services;
 
@@ -55,6 +56,7 @@ public sealed class AccessReviewService(
     IPermissionChangeNotifier permissionChangeNotifier,
     IRoleAuditService roleAuditService,
     IRoleExpirationService roleExpirationService,
+    IReportCategoryManagementService reportCategoryManagementService,
     IHttpContextAccessor httpContextAccessor,
     ILogger<AccessReviewService> logger) : IAccessReviewService
 {
@@ -127,14 +129,24 @@ public sealed class AccessReviewService(
             }
         }
 
+        // 全面覆核（未限定角色）時一併快照使用者直接的報告類別授權與簽署人資格；角色授權已隨角色指派覆核
+        if (roleIds is not { Count: > 0 })
+        {
+            items.AddRange(await SnapshotReportAccessItemsAsync(campaign.Id, labCache, cancellationToken).ConfigureAwait(false));
+        }
+
         if (items.Count == 0) return (false, "範圍內的角色目前沒有任何成員，無需覆核。", null);
 
         dbContext.Set<AccessReviewCampaign>().Add(campaign);
         dbContext.Set<AccessReviewItem>().AddRange(items);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        logger.LogInformation("[AccessReview] 建立覆核活動 {Name}，共 {Count} 筆指派待覆核。", campaign.Name, items.Count);
-        return (true, $"已建立覆核活動，共 {items.Count} 筆角色指派待覆核。", campaign.Id);
+        int reportItemCount = items.Count(i => i.ItemType != AccessReviewItemType.RoleMembership);
+        logger.LogInformation("[AccessReview] 建立覆核活動 {Name}，共 {Count} 筆指派待覆核（含報告授權 / 簽署資格 {ReportCount} 筆）。",
+            campaign.Name, items.Count, reportItemCount);
+        return (true, reportItemCount == 0
+            ? $"已建立覆核活動，共 {items.Count} 筆角色指派待覆核。"
+            : $"已建立覆核活動，共 {items.Count} 筆待覆核（角色指派 {items.Count - reportItemCount} 筆、報告授權與簽署資格 {reportItemCount} 筆）。", campaign.Id);
     }
 
     public async Task<IReadOnlyList<AccessReviewItem>> GetItemsAsync(Guid campaignId, bool onlyMyScope, CancellationToken cancellationToken = default)
@@ -189,6 +201,23 @@ public sealed class AccessReviewService(
         int processed = 0;
         foreach (var item in items)
         {
+            if (item.ItemType != AccessReviewItemType.RoleMembership)
+            {
+                if (decision == AccessReviewDecision.Revoke && item.Decision != AccessReviewDecision.Revoke &&
+                    !await RevokeReportAccessItemAsync(item, comment!, cancellationToken).ConfigureAwait(false))
+                {
+                    continue;
+                }
+
+                item.Decision = decision;
+                item.Comment = comment;
+                item.DecidedBy = actorId;
+                item.DecidedByName = actorName;
+                item.DecidedAt = DateTimeOffset.UtcNow;
+                processed++;
+                continue;
+            }
+
             if (decision == AccessReviewDecision.Revoke && item.Decision != AccessReviewDecision.Revoke)
             {
                 var user = await userManager.FindByIdAsync(item.UserId.ToString()).ConfigureAwait(false);
@@ -222,7 +251,7 @@ public sealed class AccessReviewService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return (true, decision == AccessReviewDecision.Keep ? $"已確認保留 {processed} 筆。" : $"已回收 {processed} 筆角色指派。", processed);
+        return (true, decision == AccessReviewDecision.Keep ? $"已確認保留 {processed} 筆。" : $"已回收 {processed} 筆權限。", processed);
     }
 
     public async Task<(bool Succeeded, string Message)> CloseCampaignAsync(Guid campaignId, CancellationToken cancellationToken = default)
@@ -309,6 +338,89 @@ public sealed class AccessReviewService(
 
         var labs = await orgIntegrationService.GetUserAccessibleOrganizationsAsync(actorId.Value.ToString(), cancellationToken).ConfigureAwait(false);
         return labs.Select(l => l.TenantLabId).ToHashSet();
+    }
+
+    /// <summary>
+    /// 快照有效中的使用者直接報告類別授權與簽署人資格（RoleId 為 Guid.Empty，RoleName 為顯示描述）
+    /// </summary>
+    private async Task<List<AccessReviewItem>> SnapshotReportAccessItemsAsync(
+        Guid campaignId, Dictionary<Guid, (Guid? Id, string? Name)> labCache, CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var grants = await dbContext.Set<ReportCategoryGrant>().AsNoTracking()
+            .Where(g => g.PrincipalType == GrantPrincipalType.User && g.RevokedAt == null && (g.EffectiveTo == null || g.EffectiveTo >= now))
+            .Select(g => new { g.Id, UserId = g.PrincipalId, g.CategoryCode, g.Actions, g.DataScope, g.MaxConfidentiality })
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        var qualifications = await dbContext.Set<SignerQualification>().AsNoTracking()
+            .Where(q => q.RevokedAt == null && q.ValidTo >= now)
+            .Select(q => new { q.Id, q.UserId, q.CategoryCode, q.CertificateNo, q.ValidTo })
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        var userIds = grants.Select(g => g.UserId).Concat(qualifications.Select(q => q.UserId)).Distinct().ToList();
+        var users = await dbContext.Set<ApplicationUser>().AsNoTracking()
+            .Where(u => userIds.Contains(u.Id) && !u.IsDeleted)
+            .Select(u => new { u.Id, u.UserName, u.FullName })
+            .ToDictionaryAsync(u => u.Id, cancellationToken).ConfigureAwait(false);
+
+        var items = new List<AccessReviewItem>();
+        async Task AddAsync(Guid userId, AccessReviewItemType type, Guid subjectId, string label)
+        {
+            if (!users.TryGetValue(userId, out var user)) return;
+            if (!labCache.TryGetValue(userId, out var lab))
+            {
+                lab = await ResolvePrimaryLabAsync(userId, cancellationToken).ConfigureAwait(false);
+                labCache[userId] = lab;
+            }
+
+            items.Add(new AccessReviewItem
+            {
+                CampaignId = campaignId,
+                UserId = userId,
+                UserName = user.UserName ?? string.Empty,
+                FullName = user.FullName,
+                RoleId = Guid.Empty,
+                RoleName = label.Length > 256 ? label[..256] : label,
+                PrimaryLabId = lab.Id,
+                PrimaryLabName = lab.Name,
+                ItemType = type,
+                SubjectId = subjectId
+            });
+        }
+
+        foreach (var g in grants)
+        {
+            await AddAsync(g.UserId, AccessReviewItemType.ReportCategoryGrant, g.Id,
+                $"報告授權：{g.CategoryCode}／{g.Actions}（{g.DataScope}，{g.MaxConfidentiality}）").ConfigureAwait(false);
+        }
+
+        foreach (var q in qualifications)
+        {
+            await AddAsync(q.UserId, AccessReviewItemType.SignerQualification, q.Id,
+                $"簽署資格：{q.CategoryCode}（證號 {q.CertificateNo}，至 {q.ValidTo:yyyy-MM-dd}）").ConfigureAwait(false);
+        }
+
+        return items;
+    }
+
+    /// <summary>回收報告授權或簽署資格（交由報告類別權限管理服務撤銷並通知）</summary>
+    private async Task<bool> RevokeReportAccessItemAsync(AccessReviewItem item, string comment, CancellationToken cancellationToken)
+    {
+        if (!item.SubjectId.HasValue) return false;
+
+        var reason = $"權限覆核回收：{comment}";
+        var (ok, message) = item.ItemType == AccessReviewItemType.SignerQualification
+            ? await reportCategoryManagementService.RevokeQualificationAsync(item.SubjectId.Value, reason, cancellationToken).ConfigureAwait(false)
+            : await reportCategoryManagementService.RevokeGrantAsync(item.SubjectId.Value, reason, cancellationToken).ConfigureAwait(false);
+
+        // 已於他處撤銷者視為已回收
+        if (!ok && !message.Contains("已撤銷", StringComparison.Ordinal))
+        {
+            logger.LogWarning("[AccessReview] 回收 {User} 的 {Item} 失敗：{Message}", item.UserName, item.RoleName, message);
+            return false;
+        }
+
+        return true;
     }
 
     private async Task<(Guid? Id, string? Name)> ResolvePrimaryLabAsync(Guid userId, CancellationToken cancellationToken)

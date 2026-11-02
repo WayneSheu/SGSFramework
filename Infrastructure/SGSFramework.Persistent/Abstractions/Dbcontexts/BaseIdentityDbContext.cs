@@ -130,6 +130,9 @@ public abstract class BaseIdentityDbContext<TUser, TRole, TKey, TContext>
 
         DbConfigurationHelper.ApplyCommonConfigs(modelBuilder, _schema, typeof(TContext), _tenantId);
 
+        // 樂觀鎖：IConcurrencyAware 實體之 RowVersion
+        modelBuilder.ApplyConcurrencyTokens();
+
         // 敏感個資落地加密：[Encrypted] 屬性自動掛上 Data Protection ValueConverter
         modelBuilder.ApplyEncryptedProperties();
     }

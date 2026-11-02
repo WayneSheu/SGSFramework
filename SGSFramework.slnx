@@ -32,7 +32,16 @@
     <Project Path="Modules/ORG/Module.ORG/SGS.Modules.ORG.csproj" />
     <Project Path="SGS.Modules.ORG.Contracts/SGS.Modules.ORG.Contracts.csproj" Id="cd6b1c20-9e54-4299-aafb-b905813a2788" />
   </Folder>
+  <Folder Name="/Modules/RPT/">
+    <Project Path="Modules/RPT/Module.RPT.Application/SGS.Modules.RPT.Application.csproj" />
+    <Project Path="Modules/RPT/Module.RPT.Infrastructure/SGS.Modules.RPT.Infrastructure.csproj" />
+    <Project Path="Modules/RPT/Module.RPT/SGS.Modules.RPT.csproj" />
+  </Folder>
   <Folder Name="/Shared/">
     <Project Path="Shared/SGSFramework.Core/SGSFramework.Core.csproj" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="Tests/SGS.Modules.RPT.Tests/SGS.Modules.RPT.Tests.csproj" />
+    <Project Path="Tests/SGSFramework.Core.Tests/SGSFramework.Core.Tests.csproj" />
   </Folder>
 </Solution>

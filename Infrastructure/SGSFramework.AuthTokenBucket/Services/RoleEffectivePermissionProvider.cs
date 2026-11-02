@@ -25,6 +25,9 @@ public interface IRoleEffectivePermissionProvider
 
     /// <summary>指定實驗室的角色權限（全域角色權限 + 該實驗室的角色授權），回傳「模組鍵:位元遮罩」或完整權限鍵</summary>
     Task<IReadOnlyList<string>> GetLabRolePermissionsAsync(ApplicationUser user, Guid labId, CancellationToken cancellationToken = default);
+
+    /// <summary>使用者於指定實驗室（null 為全域）下有效之角色 ID，套用與權限計算相同的角色狀態規則</summary>
+    Task<IReadOnlyList<Guid>> GetEffectiveRoleIdsAsync(ApplicationUser user, Guid? labId, CancellationToken cancellationToken = default);
 }
 
 public sealed class RoleEffectivePermissionProvider(
@@ -91,6 +94,12 @@ public sealed class RoleEffectivePermissionProvider(
         }
 
         return result;
+    }
+
+    async Task<IReadOnlyList<Guid>> IRoleEffectivePermissionProvider.GetEffectiveRoleIdsAsync(ApplicationUser user, Guid? labId, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(user);
+        return await GetEffectiveRoleIdsAsync(user, labId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

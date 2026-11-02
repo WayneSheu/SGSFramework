@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <SignAssembly>True</SignAssembly>
+    <AssemblyOriginatorKeyFile>C:\專案\SES\src\MyModuleKey.snk</AssemblyOriginatorKeyFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Infrastructure\SGSFramework.AuthTokenBucket\SGSFramework.AuthTokenBucket.csproj" />
+    <ProjectReference Include="..\..\..\SGSFramework.ReportEngine\SGSFramework.ReportEngine.csproj" />
+    <ProjectReference Include="..\Module.RPT.Infrastructure\SGS.Modules.RPT.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Exec Command="powershell -Command &quot;&amp; { Set-AuthenticodeSignature -FilePath '$(TargetPath)' -Certificate (Get-ChildItem -Path Cert:\CurrentUser\My\DB22B4CE33AE64287F9392F3025EBCB7880BE213) -TimestampServer 'http://timestamp.digicert.com' }&quot;" />
+  </Target>
+
+</Project>

@@ -132,8 +132,30 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
         public string? DecidedByName { get; set; }
 
         [DisplayName("覆核決定時間")]
-        [Comment("覆核決定時間")] 
+        [Comment("覆核決定時間")]
         public DateTimeOffset? DecidedAt { get; set; }
+
+        /// <summary>覆核項目類型；非角色指派項目之 RoleId 為 Guid.Empty，RoleName 為顯示用描述</summary>
+        [DisplayName("覆核項目類型")]
+        [Comment("覆核項目類型（RoleMembership=角色指派, ReportCategoryGrant=報告類別授權, SignerQualification=簽署人資格）")]
+        public AccessReviewItemType ItemType { get; set; } = AccessReviewItemType.RoleMembership;
+
+        /// <summary>非角色指派項目所對應之授權或資格識別鍵（回收時據以撤銷）</summary>
+        [DisplayName("覆核標的識別鍵")]
+        [Comment("非角色指派項目所對應之報告類別授權或簽署人資格識別鍵（回收時據以撤銷）")]
+        public Guid? SubjectId { get; set; }
+    }
+
+    public enum AccessReviewItemType
+    {
+        /// <summary>角色指派</summary>
+        RoleMembership = 0,
+
+        /// <summary>使用者直接之報告類別授權</summary>
+        ReportCategoryGrant = 1,
+
+        /// <summary>報告簽署人資格</summary>
+        SignerQualification = 2
     }
 
     public enum AccessReviewDecision
@@ -173,6 +195,8 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
             builder.Property(x => x.PrimaryLabName).HasMaxLength(256);
             builder.Property(x => x.Comment).HasMaxLength(1000);
             builder.Property(x => x.DecidedByName).HasMaxLength(256);
+            // 既有資料列皆為角色指派
+            builder.Property(x => x.ItemType).HasMaxLength(30).HasDefaultValue(AccessReviewItemType.RoleMembership).HasSentinel(AccessReviewItemType.RoleMembership);
             builder.HasIndex(x => new { x.CampaignId, x.Decision });
             builder.HasIndex(x => new { x.CampaignId, x.PrimaryLabId });
         }

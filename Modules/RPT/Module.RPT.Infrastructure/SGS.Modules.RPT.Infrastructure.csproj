@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <SignAssembly>True</SignAssembly>
+    <AssemblyOriginatorKeyFile>C:\專案\SES\src\MyModuleKey.snk</AssemblyOriginatorKeyFile>
+  </PropertyGroup>
+
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Exec Command="powershell -Command &quot;&amp; { Set-AuthenticodeSignature -FilePath '$(TargetPath)' -Certificate (Get-ChildItem -Path Cert:\CurrentUser\My\DB22B4CE33AE64287F9392F3025EBCB7880BE213) -TimestampServer 'http://timestamp.digicert.com' }&quot;" />
+  </Target>
+
+  <ItemGroup>
+    <!-- 僅供 dotnet ef 設計時期使用，不隨外掛輸出 -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Infrastructure\SGSFramework.ModulePlugin\SGSFramework.ModulePlugin.csproj" />
+    <ProjectReference Include="..\..\..\Infrastructure\SGSFramework.Persistent\SGSFramework.Persistent.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -16,6 +16,7 @@ using SGSFramework.Core.Migrations;
 using SGSFramework.Core.Security.FieldEncryption;
 using SGSFramework.Infrastructure.Persistence.Configurations;
 using SGSFramework.Persistent.Abstractions.Dbcontexts;
+using SGSFramework.Persistent.Extensions;
 
 namespace PhysLIMS.API.Dbcontexts;
 
@@ -107,5 +108,8 @@ public class PhysLIMSDbContext : BaseIdentityDbContext<ApplicationUser, Applicat
         //    既有明文資料可正常讀取，於下次更新時自動轉為密文。
         modelBuilder.Entity<ApplicationUser>().Property(u => u.PhoneNumber).IsEncrypted();
         modelBuilder.ApplyEncryptedProperties();
+
+        // 7. 樂觀鎖：Core 組態於 base.OnModelCreating 之後才掃描，須於此再套用 IConcurrencyAware 之 rowversion
+        modelBuilder.ApplyConcurrencyTokens();
     }
 }

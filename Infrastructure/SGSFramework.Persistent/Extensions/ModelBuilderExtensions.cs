@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using SGSFramework.Core.Abstractions.Entities.Base;
 using SGSFramework.Core.Abstractions.Entities.SoftDelet;
 using System;
 using System.Collections.Generic;
@@ -48,6 +49,26 @@ namespace SGSFramework.Persistent.Extensions
                         // 生產級優化：自動為 IsDeleted 建立索引
                         modelBuilder.Entity(entityType.ClrType).HasIndex(nameof(ISoftDeletable.IsDeleted));
                     }
+                }
+            }
+
+            return modelBuilder;
+        }
+
+        /// <summary>
+        /// 自動將實作 IConcurrencyAware 的實體之 RowVersion 設為 rowversion 並行權杖（樂觀鎖）。
+        /// </summary>
+        public static ModelBuilder ApplyConcurrencyTokens(this ModelBuilder modelBuilder)
+        {
+            ArgumentNullException.ThrowIfNull(modelBuilder);
+
+            foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+            {
+                if (typeof(IConcurrencyAware).IsAssignableFrom(entityType.ClrType))
+                {
+                    modelBuilder.Entity(entityType.ClrType)
+                        .Property(nameof(IConcurrencyAware.RowVersion))
+                        .IsRowVersion();
                 }
             }
 

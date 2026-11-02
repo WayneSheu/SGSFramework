@@ -29,6 +29,7 @@ using SGSFramework.Core.Abstractions.Menus;
 using SGSFramework.Core.Abstractions.Permissions;
 using SGSFramework.Core.Abstractions.Permissions.Contract;
 using SGSFramework.Core.Abstractions.Permissions.Repositories;
+using SGSFramework.Core.Abstractions.ReportAccess;
 using SGSFramework.Core.Abstractions.Strategies;
 using System;
 using System.Linq;
@@ -281,6 +282,9 @@ public static class AuthTokenBucketServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<ILabAuditService, LabAuditService>();
         services.AddScoped<IUserRuntimeScopeService, UserRuntimeScopeService>();
+        // 報告資料層授權（類別 × 實驗室 × 密級 × 狀態 × 簽署資格）
+        services.AddScoped<IReportAccessAuthorizationService, ReportAccessAuthorizationService>();
+        services.AddScoped<IReportCategoryManagementService, ReportCategoryManagementService>();
         // 註冊權限遮罩服務
         services.AddScoped<IPermissionBitmaskService, PermissionBitmaskService>();
         return services;

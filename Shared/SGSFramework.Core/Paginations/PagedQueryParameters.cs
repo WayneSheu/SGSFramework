@@ -12,6 +12,7 @@ namespace SGSFramework.Core.Paginations
         public PaginationType Type { get; init; } = PaginationType.Offset;
         public int PageIndex { get; init; } = 1;
         public int PageSize { get; init; } = 10;
+        // 支援關鍵字搜尋
         public string? SearchTerm { get; init; }
         public TFilter? Filter { get; init; }
         public IReadOnlyList<SortCriteria> Sorts { get; init; } = Array.Empty<SortCriteria>();

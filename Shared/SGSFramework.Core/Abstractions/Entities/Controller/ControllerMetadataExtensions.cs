@@ -101,11 +101,11 @@ namespace SGSFramework.Core.Abstractions.Entities.Controller
         private static List<string> ExtractCategoriesFromAttributeData(CustomAttributeData attrData)
         {
             var categories = new List<string>();
-            if (attrData.ConstructorArguments.Count > 0)
+            // TypeFilterAttribute 透過 params 傳入的陣列會包裝在 CustomAttributeTypedArgument 的 Collection 中；
+            // 類別陣列可能位於第一個參數之後（例：RequireReportCategory(ReportActions, params string[])）
+            foreach (var arg in attrData.ConstructorArguments)
             {
-                var firstArg = attrData.ConstructorArguments[0];
-                // TypeFilterAttribute 透過 params 傳入的陣列會包裝在 CustomAttributeTypedArgument 的 Collection 中
-                if (firstArg.Value is IReadOnlyCollection<CustomAttributeTypedArgument> argCollection)
+                if (arg.Value is IReadOnlyCollection<CustomAttributeTypedArgument> argCollection)
                 {
                     foreach (var item in argCollection)
                     {

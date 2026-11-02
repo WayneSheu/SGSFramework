@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.RuleEngine.Abstractions;
 using SGSFramework.AuthTokenBucket.RuleEngine.Rules.Laboratory;
+using SGSFramework.AuthTokenBucket.Services;
+using SGSFramework.Core.Abstractions.Entities.ReportCategories;
 using System;
 using System.Collections.Generic;
 using System.Security.Claims;
@@ -19,15 +21,21 @@ namespace SGSFramework.AuthTokenBucket.Filters
         private readonly ILogger<DynamicRuleAuthorizationFilter> _logger;
         private readonly LaboratoryRuleEngine _ruleEngine;
         private readonly string[] _allowedCategories;
+        private readonly LabAuthRuleKind _kind;
+        private readonly ReportActions _requiredAction;
 
         public DynamicRuleAuthorizationFilter(
             ILogger<DynamicRuleAuthorizationFilter> logger,
             LaboratoryRuleEngine ruleEngine,
-            string[] allowedCategories)
+            string[] allowedCategories,
+            LabAuthRuleKind kind,
+            ReportActions requiredAction)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _ruleEngine = ruleEngine ?? throw new ArgumentNullException(nameof(ruleEngine));
             _allowedCategories = allowedCategories ?? Array.Empty<string>();
+            _kind = kind;
+            _requiredAction = requiredAction;
         }
 
         public async Task OnAuthorizationAsync(AuthorizationFilterContext context)
@@ -48,12 +56,8 @@ namespace SGSFramework.AuthTokenBucket.Filters
                 return;
             }
 
-            Guid targetLabId = Guid.Empty;
-            if (context.HttpContext.Request.Headers.TryGetValue("X-Target-LabId", out var headerVal) &&
-                Guid.TryParse(headerVal.ToString(), out var parsedLabId))
-            {
-                targetLabId = parsedLabId;
-            }
+            // 與 PermissionAuthorizationService 採相同的實驗室上下文解析（標頭優先，其次 Token 宣告）
+            Guid targetLabId = AuthorizationClaimHelper.ResolveTenantLabId(user, context.HttpContext) ?? Guid.Empty;
 
             if (targetLabId == Guid.Empty)
             {
@@ -66,7 +70,9 @@ namespace SGSFramework.AuthTokenBucket.Filters
                 User = user,
                 UserId = userId,
                 TargetLabId = targetLabId,
-                AllowedCategories = _allowedCategories
+                AllowedCategories = _allowedCategories,
+                Kind = _kind,
+                RequiredAction = _requiredAction
             };
 
             var (isPassed, errorMessage) = await _ruleEngine.ExecuteAsync(authContext, context.HttpContext.RequestAborted);

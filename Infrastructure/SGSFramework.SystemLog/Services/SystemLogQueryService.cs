@@ -61,6 +61,13 @@ namespace SGSFramework.SystemLog.Services
                         query = query.Where(x => x.UserId == userId);
                     }
 
+                    if (!string.IsNullOrWhiteSpace(request.Filter.IP))
+                    {
+                        var userId = request.Filter.IP.Trim();
+                        query = query.Where(x => x.IP==request.Filter.IP);
+                    }
+
+
                     // 💡 新增：UserName 模糊篩選
                     if (!string.IsNullOrWhiteSpace(request.Filter.UserName))
                     {
@@ -73,6 +80,9 @@ namespace SGSFramework.SystemLog.Services
                         var moduleName = request.Filter.ModuleName.Trim();
                         query = query.Where(x => x.ModuleName != null && x.ModuleName.Contains(moduleName));
                     }
+
+
+
 
                     if (!string.IsNullOrWhiteSpace(request.Filter.Operation))
                     {

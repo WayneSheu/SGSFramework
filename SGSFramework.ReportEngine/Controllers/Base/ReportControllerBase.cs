@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.ReportEngine.Abstractions;
 using SGSFramework.ReportEngine.Security;
@@ -63,8 +64,14 @@ namespace SGSFramework.ReportEngine.Controllers.Base
                 return StatusCode(500, new { message = "產生報表 PDF 時發生錯誤", details = ex.Message });
             }
 
-            // 4. 回傳檔案下載
-            return File(pdfBytes, "application/pdf", $"{fileName}_{DateTime.Now:yyyyMMddHHmmss}.pdf");
+            // 4. 寫入下載稽核軌跡（自 RequestServices 解析，避免變更既有子類別建構子）
+            var services = HttpContext.RequestServices;
+            var accessLogger = services.GetService<IReportAccessLogger>() ?? NullReportAccessLogger.Instance;
+            await accessLogger.LogAsync(User, reportTypeCode, cacheKey, ReportAccessAction.Download, HttpContext.RequestAborted);
+
+            // 5. 回傳檔案下載
+            var timeProvider = services.GetService<TimeProvider>() ?? TimeProvider.System;
+            return File(pdfBytes, "application/pdf", $"{fileName}_{timeProvider.GetLocalNow():yyyyMMddHHmmss}.pdf");
         }
     }
 }

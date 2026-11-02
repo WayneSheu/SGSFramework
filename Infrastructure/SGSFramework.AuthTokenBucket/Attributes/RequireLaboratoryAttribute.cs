@@ -1,5 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using SGSFramework.AuthTokenBucket.Filters;
+using SGSFramework.AuthTokenBucket.RuleEngine.Abstractions;
+using SGSFramework.Core.Abstractions.Entities.ReportCategories;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -19,7 +21,7 @@ namespace SGSFramework.AuthTokenBucket.Attributes
     {
         public RequireLaboratoryAttribute(params string[] allowedCategories) : base(typeof(DynamicRuleAuthorizationFilter))
         {
-            Arguments = new object[] { allowedCategories ?? Array.Empty<string>() };
+            Arguments = new object[] { allowedCategories ?? Array.Empty<string>(), LabAuthRuleKind.LaboratoryCategory, ReportActions.View };
         }
     }
 }

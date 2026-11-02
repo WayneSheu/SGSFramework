@@ -153,6 +153,9 @@ public abstract class BaseDbContext<TContext> : DbContext, IOutboxRepository
         // 套用軟刪除過濾器
         modelBuilder.ApplySoftDeleteFilters();
 
+        // 樂觀鎖：IConcurrencyAware 實體之 RowVersion
+        modelBuilder.ApplyConcurrencyTokens();
+
         // 敏感個資落地加密：[Encrypted] 屬性自動掛上 Data Protection ValueConverter
         modelBuilder.ApplyEncryptedProperties();
     }

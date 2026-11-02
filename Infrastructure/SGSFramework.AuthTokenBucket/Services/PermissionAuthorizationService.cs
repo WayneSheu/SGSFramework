@@ -45,7 +45,7 @@ public sealed class PermissionAuthorizationService : IPermissionAuthorizationSer
         }
 
         // 1. 最高管理者特權直通
-        if (IsSuperAdmin(user))
+        if (AuthorizationClaimHelper.IsSuperAdmin(user))
         {
             _logger.LogDebug("[PermissionCheck] 使用者 {User} 具備最高管理者特權，直接放行權限點: {PermissionKey}",
                 user.Identity?.Name ?? "Unknown", permissionKey);
@@ -65,7 +65,7 @@ public sealed class PermissionAuthorizationService : IPermissionAuthorizationSer
             var endpoint = httpContext?.GetEndpoint();
 
             bool requiresLabIsolation = endpoint?.Metadata.GetMetadata<RequireLaboratoryAttribute>() != null;
-            Guid? activeLabId = ResolveActiveGuidLabId(user, httpContext);
+            Guid? activeLabId = AuthorizationClaimHelper.ResolveTenantLabId(user, httpContext);
 
             if (requiresLabIsolation && !activeLabId.HasValue)
             {
@@ -157,80 +157,4 @@ public sealed class PermissionAuthorizationService : IPermissionAuthorizationSer
         return false;
     }
 
-    /// <summary>
-    /// 完整相容 JWT 原生 "roles" / "role" 陣列與標準 ClaimTypes.Role，並支援全 Claim 掃描 sysadmin
-    /// </summary>
-    private static bool IsSuperAdmin(ClaimsPrincipal user)
-    {
-        // 1. 特權 Claim 檢查 (明確指定 true)
-        if (user.HasClaim(c =>
-            (c.Type.Equals("IsSuperAdmin", StringComparison.OrdinalIgnoreCase) ||
-             c.Type.Equals("is_super_admin", StringComparison.OrdinalIgnoreCase) ||
-             c.Type.Equals("is_admin", StringComparison.OrdinalIgnoreCase)) &&
-            string.Equals(c.Value, "true", StringComparison.OrdinalIgnoreCase)))
-        {
-            return true;
-        }
-
-        // 2. 角色比對 (相容 ClaimTypes.Role、"roles"、"role")
-        var adminRoleNames = new[] { "SuperAdmin", "SystemAdmin", "SysAdmin", "Administrator", "Admin" };
-        if (user.Claims.Any(c =>
-            (c.Type.Equals(ClaimTypes.Role, StringComparison.OrdinalIgnoreCase) ||
-             c.Type.Equals("roles", StringComparison.OrdinalIgnoreCase) ||
-             c.Type.Equals("role", StringComparison.OrdinalIgnoreCase)) &&
-            adminRoleNames.Contains(c.Value, StringComparer.OrdinalIgnoreCase)))
-        {
-            return true;
-        }
-
-        // 3. 系統帳號名稱與識別碼檢查 (涵蓋 Name、NameIdentifier、Email、sub 以及任意 Claim 值)
-        var userName = user.Identity?.Name
-                    ?? user.FindFirst(ClaimTypes.Name)?.Value
-                    ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                    ?? user.FindFirst("sub")?.Value
-                    ?? user.FindFirst(ClaimTypes.Email)?.Value
-                    ?? string.Empty;
-
-        if (userName.Contains("sysadmin", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(userName, "admin", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        // 4. 終極保險：只要任何一個 Claim 的 Value 等於 "sysadmin" 或 "admin"，即判定為最高管理員
-        if (user.Claims.Any(c => string.Equals(c.Value, "sysadmin", StringComparison.OrdinalIgnoreCase) ||
-                                 string.Equals(c.Value, "admin", StringComparison.OrdinalIgnoreCase)))
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    private static Guid? ResolveActiveGuidLabId(ClaimsPrincipal user, HttpContext? httpContext)
-    {
-        if (httpContext != null)
-        {
-            var labHeader = httpContext.Request.Headers["X-Lab-Id"].FirstOrDefault()
-                         ?? httpContext.Request.Headers["TenantLabId"].FirstOrDefault()
-                         ?? httpContext.Request.Headers["X-Target-Lab-Id"].FirstOrDefault()
-                         ?? httpContext.Request.Headers["LabId"].FirstOrDefault();
-
-            if (Guid.TryParse(labHeader, out Guid headerLabId))
-            {
-                return headerLabId;
-            }
-        }
-
-        var labClaim = user.FindFirst("TenantLabId")?.Value
-                    ?? user.FindFirst("lab_id")?.Value
-                    ?? user.FindFirst("TargetLabId")?.Value;
-
-        if (Guid.TryParse(labClaim, out Guid claimLabId))
-        {
-            return claimLabId;
-        }
-
-        return null;
-    }
 }

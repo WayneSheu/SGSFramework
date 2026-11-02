@@ -881,6 +881,14 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("nvarchar(256)")
                         .HasComment("使用者全名");
 
+                    b.Property<string>("ItemType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasDefaultValue("RoleMembership")
+                        .HasComment("覆核項目類型（RoleMembership=角色指派, ReportCategoryGrant=報告類別授權, SignerQualification=簽署人資格）");
+
                     b.Property<Guid?>("PrimaryLabId")
                         .HasColumnType("uniqueidentifier")
                         .HasComment("快照：使用者主要實驗室（覆核者依此範圍覆核所屬人員）");
@@ -899,6 +907,10 @@ namespace PhysLIMS.API.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)")
                         .HasComment("角色名稱");
+
+                    b.Property<Guid?>("SubjectId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("非角色指派項目所對應之報告類別授權或簽署人資格識別鍵（回收時據以撤銷）");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier")
@@ -1680,6 +1692,413 @@ namespace PhysLIMS.API.Migrations
                     b.ToTable("ModuleMetadatas", "core", t =>
                         {
                             t.HasComment("模組元資料實體，包含模組的基本資訊與狀態");
+                        });
+                });
+
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.ReportCategories.ReportCategory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasComment("類別代碼（大寫英數，唯一）");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("建立時間");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("建立人員");
+
+                    b.Property<string>("DefaultConfidentiality")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasComment("新建報告預設密級（Normal=常規, Confidential=機密, Restricted=特檢）");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("說明");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int")
+                        .HasComment("排序");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit")
+                        .HasComment("是否啟用");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("類別名稱");
+
+                    b.Property<string>("RegulationTags")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasComment("適用法規 / 認證標籤（逗號分隔，例：TFDA,ISO17025）");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasComment("並行版本（樂觀鎖）");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("最後更新時間");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("最後更新人員");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("ReportCategories", "core", t =>
+                        {
+                            t.HasComment("報告類別主檔（檢驗領域，例：食品 FOOD、電子 RoHS、材料 MAT、環境 ENV），為報告權限隔離的核心維度");
+                        });
+                });
+
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.ReportCategories.ReportCategoryGrant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
+
+                    b.Property<int>("Actions")
+                        .HasColumnType("int")
+                        .HasComment("授權動作位元旗標（View=1, Edit=2, Review=4, Sign=8, Void=16, Download=32, ViewAudit=64, ViewBlindIdentity=128）");
+
+                    b.Property<string>("CategoryCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasComment("類別代碼（ReportCategory.Code）");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("建立時間");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("建立人員");
+
+                    b.Property<string>("DataScope")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasComment("資料範圍（Assigned=僅指派, Lab=所屬實驗室, Global=全域）");
+
+                    b.Property<DateTimeOffset>("EffectiveFrom")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("生效起始（含）");
+
+                    b.Property<DateTimeOffset?>("EffectiveTo")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("生效迄止（含）；null 表示無期限");
+
+                    b.Property<string>("MaxConfidentiality")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasComment("可存取的最高密級（Normal=常規, Confidential=機密, Restricted=特檢）");
+
+                    b.Property<Guid>("PrincipalId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("授權對象識別鍵（使用者或角色 Id）");
+
+                    b.Property<string>("PrincipalType")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasComment("授權對象類型（User=使用者, Role=角色）");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("授權原因");
+
+                    b.Property<string>("RevokeReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("撤銷原因");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("撤銷時間");
+
+                    b.Property<string>("RevokedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("撤銷人員");
+
+                    b.Property<Guid?>("TenantLabId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("限定區域實驗室；null 表示不限實驗室");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("最後更新時間");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("最後更新人員");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoryCode", "TenantLabId");
+
+                    b.HasIndex("PrincipalType", "PrincipalId");
+
+                    b.ToTable("ReportCategoryGrants", "core", t =>
+                        {
+                            t.HasComment("報告類別授權：授予使用者或角色於「類別 × 區域實驗室」下可執行的動作、資料範圍與可存取的最高密級。紀錄不刪除，以撤銷保留稽核軌跡");
+                        });
+                });
+
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.ReportCategories.ReportCategoryLabAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
+
+                    b.Property<string>("CategoryCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasComment("類別代碼（ReportCategory.Code）");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("建立時間");
+
+                    b.Property<string>("CreatedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("建立人員");
+
+                    b.Property<Guid>("TenantLabId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("區域實驗室（ORG Organization.TenantLabId）");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantLabId");
+
+                    b.HasIndex("CategoryCode", "TenantLabId")
+                        .IsUnique();
+
+                    b.ToTable("ReportCategoryLabAssignments", "core", t =>
+                        {
+                            t.HasComment("報告類別承作實驗室：指定哪些區域實驗室（分公司）可承作此類別報告");
+                        });
+                });
+
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.ReportCategories.ReportGrantChangeRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
+
+                    b.Property<Guid?>("AppliedEntityId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("核准後建立之授權或資格識別鍵");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("建立時間");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("建立人員");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("申請內容（新增授權或資格之完整請求 JSON），核准時據以套用");
+
+                    b.Property<string>("RequestReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasComment("申請原因");
+
+                    b.Property<string>("RequestType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasComment("申請類型（CreateGrant=新增類別授權, CreateQualification=新增簽署人資格）");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("申請時間");
+
+                    b.Property<Guid>("RequestedBy")
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("申請人識別鍵");
+
+                    b.Property<string>("RequestedByName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("申請人名稱");
+
+                    b.Property<string>("ReviewComment")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasComment("審核意見");
+
+                    b.Property<DateTimeOffset?>("ReviewedAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("審核時間");
+
+                    b.Property<Guid?>("ReviewedBy")
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("審核人識別鍵");
+
+                    b.Property<string>("ReviewedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("審核人名稱");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasComment("申請狀態（Pending=待審核, Approved=核准, Rejected=駁回, Cancelled=撤回）");
+
+                    b.Property<Guid?>("SubjectUserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("受授權之使用者（授權對象為使用者或簽署人資格時），核准者不得為此人");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("申請摘要（顯示用）");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("最後更新時間");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("最後更新人員");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status", "RequestedAt");
+
+                    b.ToTable("ReportGrantChangeRequests", "core", t =>
+                        {
+                            t.HasComment("報告授權變更申請（Maker-Checker）：敏感的類別授權與所有簽署人資格須經第二人核准方生效");
+                        });
+                });
+
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.ReportCategories.SignerQualification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
+
+                    b.Property<string>("CategoryCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasComment("類別代碼（ReportCategory.Code）");
+
+                    b.Property<string>("CertificateNo")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasComment("認證機構核發之簽署人編號（例：TAF 報告簽署人編號）");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("建立時間");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("建立人員");
+
+                    b.Property<string>("Remark")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("備註");
+
+                    b.Property<string>("RevokeReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("撤銷原因");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("撤銷時間");
+
+                    b.Property<string>("RevokedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("撤銷人員");
+
+                    b.Property<Guid>("TenantLabId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("區域實驗室（ORG Organization.TenantLabId）");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("最後更新時間");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("最後更新人員");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("使用者識別鍵");
+
+                    b.Property<DateTimeOffset>("ValidFrom")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("資格生效起始（含）");
+
+                    b.Property<DateTimeOffset>("ValidTo")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("資格生效迄止（含）");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "CategoryCode", "TenantLabId");
+
+                    b.ToTable("SignerQualifications", "core", t =>
+                        {
+                            t.HasComment("報告簽署人資格：使用者於「類別 × 區域實驗室」之認可簽署資格與有效期間。紀錄不刪除，以撤銷保留稽核軌跡");
                         });
                 });
 
