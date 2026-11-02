@@ -49,6 +49,7 @@
     <ProjectReference Include="..\..\Infrastructure\SGSFramework.ModulePlugin\SGSFramework.ModulePlugin.csproj" />
     <ProjectReference Include="..\..\Infrastructure\SGSFramework.SPAModulePlugin\SGSFramework.SPAModulePlugin.csproj" />
     <ProjectReference Include="..\..\Modules\ORG\Module.ORG.Infrastructure\SGS.Modules.ORG.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\ORG\Module.ORG\SGS.Modules.ORG.csproj" />
     <ProjectReference Include="..\..\SGSFramework.ReportEngine\SGSFramework.ReportEngine.csproj" />
     <ProjectReference Include="..\..\Shared\SGSFramework.Core\SGSFramework.Core.csproj" />
     <ProjectReference Include="..\PhysLIMS.Controller\SGSFramework.ApiInfrastructure.csproj" />

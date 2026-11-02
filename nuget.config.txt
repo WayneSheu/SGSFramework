@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <!-- 清除或保留官方 NuGet來源，這裡加入您的 BaGet -->
+    <add key="SHANDA_BaGet" value="http://59.125.142.81:5000/v3/index.json" />
+  </packageSources>
+</configuration>
