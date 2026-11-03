@@ -22,6 +22,7 @@ using System.Text.Json;
 using System.Text.Unicode;
 using System.Threading;
 using System.Threading.Tasks;
+using SGSFramework.Core.Helpers; // 🟢 引入 DateTimeHelper 命名空間
 
 /// <summary>
 /// 企業級稽核日誌背景非同步處理服務
@@ -232,7 +233,6 @@ public class AuditWorker<TContext> : BackgroundService
             _logger.LogCritical(diskEx, "[{Module}] 嚴重錯誤：無法寫入 DB 且本地備份失敗！", _moduleName);
         }
     }
-
     private static AuditLogEntity MapToEntity(AuditEntry dto)
     {
         ArgumentNullException.ThrowIfNull(dto);
@@ -247,13 +247,19 @@ public class AuditWorker<TContext> : BackgroundService
 
         string genesisHash = "0000000000000000000000000000000000000000000000000000000000000000";
 
+        // 🟢 透過 DateTimeHelper 取得跨平台安全的台灣時區時間
+        var taiwanTime = DateTimeHelper.GetTaiwanTime();
+        var targetTimestamp = dto.Timestamp == default
+            ? taiwanTime
+            : DateTimeHelper.ConvertToTaiwanTime(dto.Timestamp);
+
         return new AuditLogEntity
         {
             Schema = safeSchema,
             TableName = safeTableName,
             Action = safeAction,
-            Timestamp = dto.Timestamp == default ? DateTimeOffset.UtcNow : dto.Timestamp,
-            CreatedAt = DateTimeOffset.UtcNow,
+            Timestamp = targetTimestamp,
+            CreatedAt = taiwanTime,
             UserId = dto.UserId?.Length > 128 ? dto.UserId[..128] : dto.UserId,
             TraceId = safeTraceId,
             RemoteIp = dto.RemoteIp?.Length > 64 ? dto.RemoteIp[..64] : dto.RemoteIp,
