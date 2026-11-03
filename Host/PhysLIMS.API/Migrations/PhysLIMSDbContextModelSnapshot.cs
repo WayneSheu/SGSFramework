@@ -278,8 +278,8 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("datetimeoffset(7)")
-                        .HasDefaultValueSql("SYSDATETIMEOFFSET()")
+                        .HasColumnType("DATETIMEOFFSET(7)")
+                        .HasDefaultValueSql("TODATETIMEOFFSET(SYSUTCDATETIME(), '+08:00')")
                         .HasComment("建立時間");
 
                     b.Property<string>("Action")
@@ -354,8 +354,8 @@ namespace PhysLIMS.API.Migrations
 
                     b.Property<DateTimeOffset>("Timestamp")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("datetimeoffset(7)")
-                        .HasDefaultValueSql("SYSDATETIMEOFFSET()")
+                        .HasColumnType("DATETIMEOFFSET(7)")
+                        .HasDefaultValueSql("TODATETIMEOFFSET(SYSUTCDATETIME(), '+08:00')")
                         .HasComment("時間戳記");
 
                     b.Property<string>("TraceId")
@@ -385,8 +385,13 @@ namespace PhysLIMS.API.Migrations
 
                     b.ToTable("AuditLogs", "core", t =>
                         {
-                            t.HasComment("資料稽核日誌實體");
+                            t.HasComment("資料稽核日誌實體 (對應 MSSQL 2025 Ledger 防篡改唯讀資料表)");
                         });
+
+                    b
+                        .HasAnnotation("SqlServer:IsAppendOnly", true)
+                        .HasAnnotation("SqlServer:IsLedger", true)
+                        .HasAnnotation("SqlServer:IsLedgerAppendOnly", true);
                 });
 
             modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Controller.ControllerMetadata", b =>
