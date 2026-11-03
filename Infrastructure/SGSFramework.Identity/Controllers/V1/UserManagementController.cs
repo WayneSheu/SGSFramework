@@ -100,24 +100,34 @@ public sealed class UserManagementController(
     /// <summary>
     /// 分頁查詢使用者列表 (已優化狀態與詳細欄位對應)
     /// </summary>
-    [HttpGet("paged")]
-    [Function("GetPagedUsers", "分頁查詢使用者", Icon = "fa-solid fa-users", Order = 1, Description = "分頁取得系統使用者清單，支援關鍵字搜尋與條件過濾", IsMenu = true)]
+    /// <summary>
+    /// 分頁條件查詢使用者列表 (採用 POST 請求與 Request Body 傳遞複雜查詢與排序參數)
+    /// </summary>
+    [HttpPost("search")]
+    [Function("GetPagedUsers", "分頁查詢使用者", Icon = "fa-solid fa-users", Order = 1, Description = "分頁取得系統使用者清單，支援關鍵字搜尋、條件過濾與進階排序", IsMenu = true)]
     [RequiresPermission("SYSTEM.USERMANAGEMENT.READ")]
     [EndpointSummary("分頁查詢使用者")]
-    [EndpointDescription("分頁取得系統使用者清單，支援關鍵字搜尋與條件過濾。")]
+    [EndpointDescription("分頁取得系統使用者清單，支援關鍵字搜尋、條件過濾與進階排序。")]
     [ProducesResponseType(typeof(Result<PagedResult<UserResponse>>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetPagedUsers(
-        [FromQuery] UserQueryParameters queryParameters,
+        [FromBody] UserQueryParameters queryParameters,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(queryParameters);
 
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var result = await _userService.GetPagedUsersAsync(queryParameters, cancellationToken).ConfigureAwait(false);
             return HandleResult(result);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("[UserManagementController] 查詢使用者分頁清單作業已被用戶端取消。");
+            return StatusCode(499); // 499 Client Closed Request
         }
         catch (Exception ex)
         {
