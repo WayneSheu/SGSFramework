@@ -15,6 +15,7 @@ namespace SGS.Modules.RPT.Controllers.V1;
 [ApiController]
 [AllowAnonymous]
 [ApiVersion("1")]
+[ControllerTitle("報告查驗", Icon = "fa-solid fa-file-contract", Order = 1, Description = "檢驗報告建立、數據登錄、審核、簽署發行、作廢重發與下載")]
 [Route("api/v{version:apiVersion}/report-verification")]
 [Produces(MediaTypeNames.Application.Json)]
 public sealed class ReportVerificationController(IReportService reportService) : ControllerBase
@@ -28,6 +29,7 @@ public sealed class ReportVerificationController(IReportService reportService) :
 
     /// <summary>以查驗碼查詢報告發行狀態</summary>
     [HttpGet("{token}")]
+    [Function("VerifyReport", "查驗報告", Icon = "fa-solid fa-file-contract", Order = 1, Description = "以報告上的查驗碼查詢發行狀態，或上傳 PDF 比對 SHA-256 確認未遭變造")]
     [ProducesResponseType(typeof(ReportVerificationDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Verify([FromRoute] string token, CancellationToken cancellationToken = default)
@@ -38,6 +40,7 @@ public sealed class ReportVerificationController(IReportService reportService) :
 
     /// <summary>上傳 PDF 比對雜湊（僅接受真實 PDF 檔頭）</summary>
     [HttpPost("{token}/file")]
+    [Function("VerifyReportFile", "查驗報告檔案", Icon = "fa-solid fa-file-pdf", Order = 2, Description = "以報告上的查驗碼查詢發行狀態，或上傳 PDF 比對 SHA-256 確認未遭變造")]
     [RequestSizeLimit(MaxUploadBytes)]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(ReportVerificationDto), StatusCodes.Status200OK)]

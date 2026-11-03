@@ -18,7 +18,7 @@ namespace SGS.Modules.RPT.Controllers.V1;
 [Authorize]
 [ApiVersion("1")]
 [Route("api/v{version:apiVersion}/reports")]
-[ControllerTitle("檢驗報告", Icon = "fa-solid fa-file-contract", Order = 1, Description = "檢驗報告建立、數據登錄、審核、簽署發行、作廢重發與下載")]
+[ControllerTitle("檢驗報告", Icon = "fa-solid fa-file-contract", Order = 1,Description = "檢驗報告建立、數據登錄、審核、簽署發行、作廢重發與下載")]
 [Produces(MediaTypeNames.Application.Json)]
 public sealed class ReportController(IReportService reportService) : ControllerBase
 {
@@ -33,8 +33,8 @@ public sealed class ReportController(IReportService reportService) : ControllerB
 
     /// <summary>查詢目前實驗室可見的報告</summary>
     [HttpGet]
-    [Function("GetReports", "檢視報告", Icon = "fa-solid fa-eye", Order = 1, Description = "查詢目前實驗室中您有權瀏覽的檢驗報告")]
-    [RequiresPermission("RPT.REPORT.READ", "檢視報告")]
+    [Function("GetReports", "報告列表", Icon = "fa-solid fa-eye", Order = 1,IsMenu = true,Description = "查詢目前實驗室中您有權瀏覽的檢驗報告")]
+    [RequiresPermission("RPT.REPORT.READ", "報告列表")]
     [ProducesResponseType(typeof(IReadOnlyList<ReportListItemDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> List([FromQuery] ReportListBox box, [FromQuery] ReportLifecycleStatus? status,
         [FromQuery] string? categoryCode, [FromQuery] string? keyword, CancellationToken cancellationToken = default) =>
@@ -42,7 +42,8 @@ public sealed class ReportController(IReportService reportService) : ControllerB
 
     /// <summary>報告明細（盲樣依授權遮蔽，並記錄檢視）</summary>
     [HttpGet("{id:guid}")]
-    [RequiresPermission("RPT.REPORT.READ", "檢視報告")]
+    [Function("GetReports", "報告明細", Icon = "fa-solid fa-eye", Order = 1, IsMenu = true, Description = "查詢報告明細（盲樣依授權遮蔽，並記錄檢視）")]
+    [RequiresPermission("RPT.REPORT.READ", "報告明細")]
     [ProducesResponseType(typeof(ReportDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get([FromRoute] Guid id, CancellationToken cancellationToken = default)
@@ -53,7 +54,8 @@ public sealed class ReportController(IReportService reportService) : ControllerB
 
     /// <summary>狀態轉換軌跡</summary>
     [HttpGet("{id:guid}/history")]
-    [RequiresPermission("RPT.REPORT.READ", "檢視報告")]
+    [Function("GetReportHistory", "檢視狀態轉換軌跡", Icon = "fa-solid fa-history", Order = 10, Description = "檢視報告的狀態轉換歷史")]
+    [RequiresPermission("RPT.REPORT.READ", "檢視狀態轉換軌跡")]
     [ProducesResponseType(typeof(IReadOnlyList<ReportStatusHistoryDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> History([FromRoute] Guid id, CancellationToken cancellationToken = default)
     {
@@ -98,6 +100,7 @@ public sealed class ReportController(IReportService reportService) : ControllerB
 
     /// <summary>儲存檢驗結果（草稿；儀器數據人工修改須填原因）</summary>
     [HttpPut("{id:guid}/results")]
+    [Function("SaveReportResults", "儲存檢驗結果", Icon = "fa-solid fa-flask-vial", Order = 3, Description = "草稿階段儲存檢驗結果（儀器數據人工修改須填原因）")]
     [RequiresPermission("RPT.REPORT.EDIT", "編輯報告")]
     public async Task<IActionResult> SaveResults([FromRoute] Guid id, [FromBody] SaveReportResultsRequest request, CancellationToken cancellationToken = default)
     {
@@ -117,6 +120,7 @@ public sealed class ReportController(IReportService reportService) : ControllerB
 
     /// <summary>目前實驗室中可建立報告的類別</summary>
     [HttpGet("creatable-categories")]
+    [Function("GetCreatableReportCategories", "可建立報告類別", Icon = "fa-solid fa-list", Order = 3, Description = "查詢目前實驗室中您有權建立的檢驗報告類別")]
     [RequiresPermission("RPT.REPORT.CREATE", "建立報告")]
     [ProducesResponseType(typeof(IReadOnlyList<ReportCategoryOptionDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> CreatableCategories(CancellationToken cancellationToken = default) =>
@@ -124,6 +128,7 @@ public sealed class ReportController(IReportService reportService) : ControllerB
 
     /// <summary>搜尋可指派的使用者</summary>
     [HttpGet("assignable-users")]
+    [Function("GetReports", "可指派使用者", Icon = "fa-solid fa-eye", Order = 1, IsMenu = true, Description = "查詢目前實驗室中您有權指派的使用者清單")]
     [RequiresPermission("RPT.REPORT.ASSIGN", "指派報告")]
     [ProducesResponseType(typeof(IReadOnlyList<ReportUserOptionDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> AssignableUsers([FromQuery] string? keyword, CancellationToken cancellationToken = default) =>
@@ -147,6 +152,7 @@ public sealed class ReportController(IReportService reportService) : ControllerB
 
     /// <summary>審核退回（須填原因）</summary>
     [HttpPost("{id:guid}/review/reject")]
+    [Function("RejectReportReview", "退回報告", Icon = "fa-solid fa-xmark", Order = 6, Description = "數據覆核：核可或退回")]
     [RequiresPermission("RPT.REPORT.REVIEW", "審核報告")]
     public Task<IActionResult> RejectReview([FromRoute] Guid id, [FromBody] TransitionBody body, CancellationToken cancellationToken = default) =>
         TransitionAsync(id, ReportTransition.RejectReview, body, cancellationToken);
@@ -160,6 +166,7 @@ public sealed class ReportController(IReportService reportService) : ControllerB
 
     /// <summary>簽署人退回（須填原因）</summary>
     [HttpPost("{id:guid}/sign/reject")]
+    [Function("RejectReportSign", "退回報告", Icon = "fa-solid fa-xmark", Order = 7, Description = "報告簽署人退回報告，需填寫原因")]
     [RequiresPermission("RPT.REPORT.SIGN", "簽署報告")]
     public Task<IActionResult> RejectSign([FromRoute] Guid id, [FromBody] TransitionBody body, CancellationToken cancellationToken = default) =>
         TransitionAsync(id, ReportTransition.RejectSign, body, cancellationToken);
@@ -178,6 +185,7 @@ public sealed class ReportController(IReportService reportService) : ControllerB
 
     /// <summary>查詢作廢申請（預設僅待審核）</summary>
     [HttpGet("void-requests")]
+    [Function("GetReportVoidRequests", "查詢作廢申請", Icon = "fa-solid fa-ban", Order = 9, Description = "查詢報告作廢（與重發）申請")]
     [RequiresPermission("RPT.REPORT.READ", "檢視報告")]
     [ProducesResponseType(typeof(IReadOnlyList<ReportVoidRequestDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> VoidRequests([FromQuery] bool all = false, CancellationToken cancellationToken = default) =>
@@ -192,6 +200,7 @@ public sealed class ReportController(IReportService reportService) : ControllerB
 
     /// <summary>駁回作廢（須填原因）</summary>
     [HttpPost("void-requests/{requestId:guid}/reject")]
+    [Function("RejectReportVoid", "駁回作廢", Icon = "fa-solid fa-xmark", Order = 9, Description = "駁回報告作廢（與重發）申請")]
     [RequiresPermission("RPT.REPORT.VOID_APPROVE", "核准作廢報告")]
     public async Task<IActionResult> RejectVoid([FromRoute] Guid requestId, [FromBody] ReviewRequest request, CancellationToken cancellationToken = default) =>
         ToResult(await _service.RejectVoidAsync(requestId, request?.Comment, cancellationToken).ConfigureAwait(false));
@@ -211,6 +220,7 @@ public sealed class ReportController(IReportService reportService) : ControllerB
 
     /// <summary>預覽 PDF（加註檢視者浮水印，不具效力）</summary>
     [HttpGet("{id:guid}/preview")]
+    [Function("PreviewReport", "預覽報告", Icon = "fa-solid fa-file-pdf", Order = 11, Description = "預覽報告 PDF（加註檢視者浮水印，不具效力）")]
     [RequiresPermission("RPT.REPORT.READ", "檢視報告")]
     [Produces("application/pdf", "application/json")]
     public async Task<IActionResult> Preview([FromRoute] Guid id, CancellationToken cancellationToken = default)
