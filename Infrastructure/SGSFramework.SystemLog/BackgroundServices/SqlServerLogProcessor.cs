@@ -12,6 +12,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Serilog.Events;
 using SGSFramework.Core.Configurations;
+// 引入跨平台時區工具
+using SGSFramework.Core.Helpers;
 
 namespace SGSFramework.SystemLog.BackgroundServices
 {
@@ -163,9 +165,9 @@ namespace SGSFramework.SystemLog.BackgroundServices
         }
 
         private static DataTable BuildDataTable(
-            IEnumerable<LogEvent> items,
-            Dictionary<string, string> userMap,
-            Dictionary<string, string> tenantMap)
+             IEnumerable<LogEvent> items,
+             Dictionary<string, string> userMap,
+             Dictionary<string, string> tenantMap)
         {
             var dt = new DataTable();
             dt.Columns.Add("TimeStamp", typeof(DateTimeOffset));
@@ -192,8 +194,15 @@ namespace SGSFramework.SystemLog.BackgroundServices
             foreach (var item in items)
             {
                 var row = dt.NewRow();
-                row["TimeStamp"] = item.Timestamp;
-                row["CreatedAt"] = DateTimeOffset.Now;
+
+                // 🟢 優化：確保 TimeStamp 轉換為台灣時區 (+08:00)
+                var taiwanTimestamp = item.Timestamp != default
+                    ? DateTimeHelper.ConvertToTaiwanTime(item.Timestamp)
+                    : DateTimeHelper.GetTaiwanTime();
+
+                row["TimeStamp"] = taiwanTimestamp;
+                row["CreatedAt"] = DateTimeHelper.GetTaiwanTime(); // 🟢 確保帶有 +08:00 
+
                 row["Message"] = item.RenderMessage();
                 row["Level"] = item.Level.ToString();
                 row["Exception"] = item.Exception?.ToString();

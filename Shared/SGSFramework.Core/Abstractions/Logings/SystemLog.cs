@@ -121,9 +121,11 @@ namespace SGSFramework.Core.Abstractions.Logings
 
             builder.Property(e => e.Message).IsRequired(false);
             builder.Property(e => e.Level).HasMaxLength(128);
+
+            // 🟢 優化：改用明確帶有 +08:00 偏移量的 SQL 預設值
             builder.Property(e => e.TimeStamp)
                 .HasColumnType("DATETIMEOFFSET(7)")
-                .HasDefaultValueSql("SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time'")
+                .HasDefaultValueSql("TODATETIMEOFFSET(SYSUTCDATETIME(), '+08:00')")
                 .ValueGeneratedOnAdd();
 
             builder.Property(e => e.Exception).IsRequired(false);
@@ -132,17 +134,18 @@ namespace SGSFramework.Core.Abstractions.Logings
             builder.Property(e => e.TenantId).HasMaxLength(50);
             builder.Property(e => e.TenantName).HasMaxLength(100).IsRequired(false);
             builder.Property(e => e.UserId).HasMaxLength(50);
-            builder.Property(e => e.UserName).HasMaxLength(100); // 💡 新增設定
+            builder.Property(e => e.UserName).HasMaxLength(100);
             builder.Property(e => e.ModuleName).HasMaxLength(50);
             builder.Property(e => e.ControllerName).HasMaxLength(100);
             builder.Property(e => e.Operation).HasMaxLength(100);
-            builder.Property(e => e.OperationDesc).HasMaxLength(255); // 💡 新增設定`
+            builder.Property(e => e.OperationDesc).HasMaxLength(255);
             builder.Property(e => e.IP).HasMaxLength(45).IsUnicode(false);
             builder.Property(e => e.Url).HasMaxLength(2083).IsRequired(false).IsUnicode(true);
 
+            // 🟢 優化：改用明確帶有 +08:00 偏移量的 SQL 預設值
             builder.Property(e => e.CreatedAt)
                 .HasColumnType("DATETIMEOFFSET(7)")
-                .HasDefaultValueSql("SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time'")
+                .HasDefaultValueSql("TODATETIMEOFFSET(SYSUTCDATETIME(), '+08:00')")
                 .ValueGeneratedOnAdd();
 
             builder.Property(e => e.AlertId).HasColumnType("char(32)").IsRequired(false);

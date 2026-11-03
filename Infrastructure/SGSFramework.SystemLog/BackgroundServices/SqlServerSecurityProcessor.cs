@@ -10,6 +10,7 @@ using System.Data;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using SGSFramework.Core.Helpers;
 
 namespace SGSFramework.SystemLog.BackgroundServices
 {
@@ -46,10 +47,12 @@ namespace SGSFramework.SystemLog.BackgroundServices
 
                     using var command = new SqlCommand(sql, connection, transaction);
 
-                    // 基礎日誌本體
-                    // 必須以 DateTimeOffset 寫入：若用 .DateTime 會丟掉時區偏移，本地時間被當成 UTC 存入，
-                    // 讀出後前端 ToLocalTime() 會多加一次時差（台灣 +8 小時）
-                    command.Parameters.Add("@TimeStamp", System.Data.SqlDbType.DateTimeOffset).Value = log.Timestamp;
+                    // 🟢 優化：確保安全日誌的 Timestamp 強制轉換為台灣時區 (+08:00)
+                    var taiwanTimestamp = log.Timestamp != default
+                        ? DateTimeHelper.ConvertToTaiwanTime(log.Timestamp)
+                        : DateTimeHelper.GetTaiwanTime();
+
+                    command.Parameters.Add("@TimeStamp", System.Data.SqlDbType.DateTimeOffset).Value = taiwanTimestamp;
                     command.Parameters.AddWithValue("@Message", log.RenderMessage());
                     command.Parameters.AddWithValue("@Level", log.Level.ToString());
                     command.Parameters.AddWithValue("@Exception", log.Exception?.ToString() ?? (object)DBNull.Value);
@@ -60,7 +63,7 @@ namespace SGSFramework.SystemLog.BackgroundServices
                     command.Parameters.AddWithValue("@UserId", GetProperty(log, "UserId"));
                     command.Parameters.AddWithValue("@ClientIp", GetProperty(log, "ClientIp"));
 
-                    // 💡 新增擴充：高效查察與追蹤一等公民欄位
+                    // 高效查察與追蹤欄位
                     command.Parameters.AddWithValue("@CorrelationId", GetProperty(log, "CorrelationId"));
                     command.Parameters.AddWithValue("@AlertId", GetProperty(log, "AlertId"));
                     command.Parameters.AddWithValue("@Fingerprint", GetProperty(log, "Fingerprint"));

@@ -9,7 +9,7 @@ using SGSFramework.SystemLog.DTOs;
 namespace SGSFramework.SystemLog.Services
 {
     /// <summary>
-    /// 數據庫日誌查詢服務企業級實作（優化策略模式、強型別防禦與高效能映射）
+    /// 數據庫日誌查詢服務企業級實作（支援多關鍵字空白分隔 OR 檢索、強型別防禦與高效能映射）
     /// </summary>
     public class SystemLogQueryService : ISystemLogQueryService
     {
@@ -27,7 +27,6 @@ namespace SGSFramework.SystemLog.Services
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        // Path: Infrastructure/SGSFramework.SystemLog/Services/SystemLogQueryService.cs (GetSystemLogsAsync 篩選與映射優化片段)
         public async Task<PagedResult<SystemLogDto>> GetSystemLogsAsync(SystemLogQueryRequest request, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(request);
@@ -48,7 +47,6 @@ namespace SGSFramework.SystemLog.Services
                         query = query.Where(x => x.TenantId == tenantId);
                     }
 
-                    // 💡 新增：TenantName 模糊篩選
                     if (!string.IsNullOrWhiteSpace(request.Filter.TenantName))
                     {
                         var tenantName = request.Filter.TenantName.Trim();
@@ -63,12 +61,10 @@ namespace SGSFramework.SystemLog.Services
 
                     if (!string.IsNullOrWhiteSpace(request.Filter.IP))
                     {
-                        var userId = request.Filter.IP.Trim();
-                        query = query.Where(x => x.IP==request.Filter.IP);
+                        var ip = request.Filter.IP.Trim();
+                        query = query.Where(x => x.IP == ip);
                     }
 
-
-                    // 💡 新增：UserName 模糊篩選
                     if (!string.IsNullOrWhiteSpace(request.Filter.UserName))
                     {
                         var userName = request.Filter.UserName.Trim();
@@ -81,23 +77,18 @@ namespace SGSFramework.SystemLog.Services
                         query = query.Where(x => x.ModuleName != null && x.ModuleName.Contains(moduleName));
                     }
 
-
-
-
                     if (!string.IsNullOrWhiteSpace(request.Filter.Operation))
                     {
                         var operation = request.Filter.Operation.Trim();
                         query = query.Where(x => x.Operation != null && x.Operation.Contains(operation));
                     }
 
-                    // 💡 新增：OperationDesc 模糊篩選
                     if (!string.IsNullOrWhiteSpace(request.Filter.OperationDesc))
                     {
                         var operationDesc = request.Filter.OperationDesc.Trim();
                         query = query.Where(x => x.OperationDesc != null && x.OperationDesc.Contains(operationDesc));
                     }
 
-                    // 💡 新增：ControllerName 模糊篩選
                     if (!string.IsNullOrWhiteSpace(request.Filter.ControllerName))
                     {
                         var controllerName = request.Filter.ControllerName.Trim();
@@ -123,23 +114,36 @@ namespace SGSFramework.SystemLog.Services
                         query = query.Where(x => x.TimeStamp <= request.Filter.EndTimestamp.Value);
                 }
 
-                // 2. 全文檢索 (SearchTerm)
+                // 2. 多關鍵字檢索 (支援半形/全形空白分隔，改為 OR 邏輯：只要符合其中一個關鍵字即可)
                 if (!string.IsNullOrWhiteSpace(request.SearchTerm))
                 {
-                    var term = request.SearchTerm.Trim();
-                    query = query.Where(x => (x.Message != null && x.Message.Contains(term)) ||
-                                             (x.Exception != null && x.Exception.Contains(term)) ||
-                                             (x.UserName != null && x.UserName.Contains(term)) ||
-                                             (x.TenantName != null && x.TenantName.Contains(term)));
+                    var keywords = request.SearchTerm
+                        .Split(new[] { ' ', '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(k => k.Trim())
+                        .Where(k => !string.IsNullOrEmpty(k))
+                        .ToList();
+
+                    if (keywords.Count > 0)
+                    {
+                        query = query.Where(x => keywords.Any(keyword =>
+                            (x.Message != null && x.Message.Contains(keyword)) ||
+                            (x.Exception != null && x.Exception.Contains(keyword)) ||
+                            (x.UserName != null && x.UserName.Contains(keyword)) ||
+                            (x.TenantName != null && x.TenantName.Contains(keyword)) ||
+                            (x.ModuleName != null && x.ModuleName.Contains(keyword)) ||
+                            (x.Operation != null && x.Operation.Contains(keyword)) ||
+                            (x.ControllerName != null && x.ControllerName.Contains(keyword))
+                        ));
+                    }
                 }
 
-                // 3. 註冊排序策略上下文（擴充支援新欄位排序）
+                // 3. 註冊排序策略上下文
                 var sortContext = new SortStrategyContext<Core.Abstractions.Logings.SystemLog>()
                     .Register("Timestamp", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.TimeStamp))
                     .Register("Level", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.Level))
                     .Register("UserName", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.UserName!))
                     .Register("TenantName", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.TenantName!))
-                    .Register("ControllerName", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.ControllerName!)) // 💡 新增排序支援
+                    .Register("ControllerName", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.ControllerName!))
                     .Register("Id", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.Id));
 
                 var sorts = request.Sorts?.Count > 0
@@ -164,7 +168,7 @@ namespace SGSFramework.SystemLog.Services
                     idSelector: x => x.Id,
                     cancellationToken: cancellationToken);
 
-                // 5. 轉換為對應的 SystemLogDto 結構（包含完整新欄位映射）
+                // 5. 轉換為對應的 SystemLogDto 結構
                 var dtos = pagedEntities.Items.Select(e => new SystemLogDto(
                     Id: e.Id,
                     TimeStamp: e.TimeStamp,
@@ -195,7 +199,6 @@ namespace SGSFramework.SystemLog.Services
                 throw new InvalidOperationException("查詢系統日誌清單失敗。", ex);
             }
         }
-
 
         public async Task<PagedResult<SecurityLogDto>> GetSecurityLogsAsync(SecurityLogQueryRequest request, CancellationToken cancellationToken = default)
         {
@@ -240,13 +243,25 @@ namespace SGSFramework.SystemLog.Services
                     }
                 }
 
-                // 2. 全文檢索 (SearchTerm)
+                // 2. 多關鍵字檢索 (支援半形/全形空白分隔，改為 OR 邏輯：只要符合其中一個關鍵字即可)
                 if (!string.IsNullOrWhiteSpace(request.SearchTerm))
                 {
-                    var term = request.SearchTerm.Trim();
-                    query = query.Where(x => (x.Message != null && x.Message.Contains(term)) ||
-                                             (x.UserId != null && x.UserId.Contains(term)) ||
-                                             (x.ClientIp != null && x.ClientIp.Contains(term)));
+                    var keywords = request.SearchTerm
+                        .Split(new[] { ' ', '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(k => k.Trim())
+                        .Where(k => !string.IsNullOrEmpty(k))
+                        .ToList();
+
+                    if (keywords.Count > 0)
+                    {
+                        query = query.Where(x => keywords.Any(keyword =>
+                            (x.Message != null && x.Message.Contains(keyword)) ||
+                            (x.UserId != null && x.UserId.Contains(keyword)) ||
+                            (x.ClientIp != null && x.ClientIp.Contains(keyword)) ||
+                            (x.EventCategory != null && x.EventCategory.Contains(keyword)) ||
+                            (x.LogType != null && x.LogType.Contains(keyword))
+                        ));
+                    }
                 }
 
                 // 3. 註冊排序策略上下文
@@ -302,7 +317,6 @@ namespace SGSFramework.SystemLog.Services
             }
         }
 
-        // Path: Infrastructure/SGSFramework.SystemLog/Services/SystemLogQueryService.cs (GetSystemLogByIdAsync 單筆查詢對應優化)
         public async Task<SystemLogDto?> GetSystemLogByIdAsync(long id, CancellationToken cancellationToken = default)
         {
             try

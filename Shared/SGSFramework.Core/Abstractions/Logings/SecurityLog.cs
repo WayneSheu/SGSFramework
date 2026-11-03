@@ -117,31 +117,22 @@ namespace SGSFramework.Core.Abstractions.Logings
     /// <summary>
     /// 安全性審計總帳實體之 Fluent API 映射配置
     /// </summary>
-    /// <summary>
-    /// 安全性審計總帳實體之 Fluent API 映射配置
-    /// </summary>
     public class SecurityAuditLedgerConfiguration : IEntityTypeConfiguration<SecurityLog>
     {
         public void Configure(EntityTypeBuilder<SecurityLog> builder)
         {
             ArgumentNullException.ThrowIfNull(builder);
 
-            // 因 EF Core 不原生支援 .IsLedger() 語法，
-            // 且實體表已透過手動 DDL 建立，此處僅需進行標準資料表名稱映射。
             builder.ToTable("SecurityLog");
-            //啟用 Ledger Append-Only 屬性
             builder.HasAnnotation("SqlServer:IsLedger", true);
-            // 鎖定僅限附加模式 (Append-Only)
             builder.HasAnnotation("SqlServer:IsAppendOnly", true);
 
-            //主鍵與流水號配置
             builder.HasKey(e => e.Id);
             builder.Property(e => e.Id)
                    .UseIdentityColumn();
 
             builder.Property(e => e.CorrelationId).HasMaxLength(50).IsUnicode(false);
 
-            //欄位屬性與實體資料庫類型 (DDL) 嚴格對齊
             builder.Property(e => e.Message)
                    .HasColumnType("NVARCHAR(MAX)")
                    .IsRequired(false);
@@ -151,9 +142,10 @@ namespace SGSFramework.Core.Abstractions.Logings
                    .HasColumnType("NVARCHAR(128)")
                    .IsRequired(false);
 
+            // 🟢 優化：改用明確帶有 +08:00 偏移量的 SQL 預設值
             builder.Property(e => e.Timestamp)
                    .HasColumnType("DATETIMEOFFSET(7)")
-                   .HasDefaultValueSql("SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time'")
+                   .HasDefaultValueSql("TODATETIMEOFFSET(SYSUTCDATETIME(), '+08:00')")
                    .IsRequired();
 
             builder.Property(e => e.Exception)
@@ -184,7 +176,6 @@ namespace SGSFramework.Core.Abstractions.Logings
                    .HasColumnType("NVARCHAR(64)")
                    .IsRequired(false);
 
-            // 告警欄位配置
             builder.Property(e => e.AlertId)
                 .HasColumnType("char(32)")
                 .IsRequired(false);
@@ -193,12 +184,8 @@ namespace SGSFramework.Core.Abstractions.Logings
                 .HasColumnType("char(64)")
                 .IsRequired(false);
 
-            // 宣告啟用 MSSQL 2025 Ledger Append-Only 特性
             builder.HasAnnotation("SqlServer:IsLedgerAppendOnly", true);
-
         }
     }
-
-
 
 }
