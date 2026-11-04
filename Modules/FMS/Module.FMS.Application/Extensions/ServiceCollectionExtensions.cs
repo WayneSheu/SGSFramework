@@ -12,7 +12,7 @@ namespace SGS.Modules.FMS.Application.Extensions;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// 註冊 Application 層：檔案簽章檢查、ImageSharp 處理、縮圖快取與 LRU 清理、檔案管理服務。
+    /// 註冊 Application 層：檔案簽章檢查、Magick.NET 影像處理、縮圖快取與 LRU 清理、檔案管理服務。
     /// IFileManagementService 以 AddScoped 註冊，覆蓋 Core 預設的 NullFileManagementService（取最後一筆註冊）。
     /// </summary>
     public static IServiceCollection AddModuleFmsApplication(this IServiceCollection services, IConfiguration configuration)
@@ -22,7 +22,7 @@ public static class ServiceCollectionExtensions
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IFileSignatureInspector, FileSignatureInspector>();
-        services.TryAddSingleton<IImageProcessor, ImageSharpImageProcessor>();
+        services.TryAddSingleton<IImageProcessor, MagickImageProcessor>();
         services.TryAddSingleton<IImageCacheService, ImageCacheService>();
         services.AddHostedService<ImageCacheLruCleanupService>();
         services.AddScoped<IFileManagementService, FileManagementService>();

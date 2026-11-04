@@ -15,10 +15,11 @@
 
   <ItemGroup>
     <!--
-      Six Labors Split License：商用須確認已取得授權；3.2 起 Release 建置須提供 SixLaborsLicenseKey（3.1.x 有已知高風險弱點）。
-      外掛目錄僅部署 SGS.Modules.FMS*.dll，ImageSharp 由 Host（PhysLIMS.API 參考本模組）輸出至主程式目錄。
+      Magick.NET (Apache-2.0，不需授權金鑰)：取代 SixLabors.ImageSharp（3.2 起 Release 建置須商業授權金鑰）。
+      支援 JPEG / PNG / GIF（含動畫）/ WebP / BMP / TIFF 同格式重新編碼。
+      外掛目錄僅部署 SGS.Modules.FMS*.dll；Magick.NET 受管與原生組件由 Host（PhysLIMS.API 參考本模組）輸出至主程式目錄。
     -->
-    <PackageReference Include="SixLabors.ImageSharp" Version="3.2.0" />
+    <PackageReference Include="Magick.NET-Q8-AnyCPU" Version="14.17.2" />
   </ItemGroup>
 
   <ItemGroup>

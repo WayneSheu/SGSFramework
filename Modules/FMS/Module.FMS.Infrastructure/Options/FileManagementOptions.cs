@@ -109,7 +109,7 @@ public sealed class FileCategoryOptions
 public sealed class ImageProcessingOptions
 {
     /// <summary>
-    /// 上傳圖片落地前以 ImageSharp 解碼後重新編碼（洗除 Polyglot 夾帶代碼與 EXIF / GPS 等中繼資料）。
+    /// 上傳圖片落地前以影像處理器 (Magick.NET) 解碼後重新編碼（洗除 Polyglot 夾帶代碼與 EXIF / GPS 等中繼資料）。
     /// </summary>
     public bool ReencodeOnUpload { get; set; } = true;
 

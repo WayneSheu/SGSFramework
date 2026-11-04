@@ -7,7 +7,7 @@ namespace SGS.Modules.FMS.Application.Validation;
 /// <param name="Name">格式名稱（例如 JPEG、DOCX）</param>
 /// <param name="Extension">儲存時使用的安全副檔名（小寫，含句點）</param>
 /// <param name="ContentType">回應時使用的 MIME 類型</param>
-/// <param name="IsImage">是否為可由 ImageSharp 重新編碼 / 縮圖的點陣圖</param>
+/// <param name="IsImage">是否為可由影像處理器 (Magick.NET) 重新編碼 / 縮圖的點陣圖</param>
 public sealed record DetectedFileFormat(string Name, string Extension, string ContentType, bool IsImage);
 
 /// <summary>檔案簽章檢查結果</summary>

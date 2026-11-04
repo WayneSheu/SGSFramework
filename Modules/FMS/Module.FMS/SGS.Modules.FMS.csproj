@@ -30,7 +30,7 @@
   </ItemGroup>
 
   <!-- 建置後將模組主程式與附屬組件複製至 API 主專案的 plugins 目錄（由 ModuleLoader 以獨立 ALC 載入）；
-       第三方套件（ImageSharp）不得放入 plugins（會被當成主模組驗證簽章而隔離），由 Host 主程式目錄提供 -->
+       第三方套件（Magick.NET）不得放入 plugins（會被當成主模組驗證簽章而隔離），由 Host 主程式目錄提供 -->
   <Target Name="CopyModuleDllToHost" AfterTargets="Build">
     <ItemGroup>
       <ModuleFiles Include="$(TargetDir)SGS.Modules.FMS*.dll;$(TargetDir)SGS.Modules.FMS*.pdb" />
