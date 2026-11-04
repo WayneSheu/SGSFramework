@@ -191,7 +191,8 @@ public sealed record ReportVerificationDto(
     bool IsSuperseded,
     bool? FileMatches);
 
-public sealed record ReportFileResult(byte[] Content, string FileName);
+/// <summary>報告檔案內容（串流由 FileStreamResult 負責 Dispose）</summary>
+public sealed record ReportFileResult(Stream Content, string FileName);
 
 /// <summary>操作結果；NotFound 表示報告不存在或無權存取（一律以 404 回應，避免洩漏存在性）</summary>
 public sealed record ReportOpResult(bool Succeeded, string Message, bool NotFound = false, Guid? EntityId = null)

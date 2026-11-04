@@ -24,11 +24,11 @@ namespace SGSFramework.SystemLog.Services
         /// <summary>
         /// 依 ID 取得系統日誌詳細內容
         /// </summary>
-        Task<SystemLogDto?> GetSystemLogByIdAsync(long id, CancellationToken cancellationToken = default);
+        Task<SystemLogDto?> GetSystemLogByIdAsync(long id, CancellationToken cancellationToken = default, bool archive = false);
 
         /// <summary>
         /// 依 ID 取得安全性日誌詳細內容
         /// </summary>
-        Task<SecurityLogDto?> GetSecurityLogByIdAsync(int id, CancellationToken cancellationToken = default);
+        Task<SecurityLogDto?> GetSecurityLogByIdAsync(int id, CancellationToken cancellationToken = default, bool archive = false);
     }
 }

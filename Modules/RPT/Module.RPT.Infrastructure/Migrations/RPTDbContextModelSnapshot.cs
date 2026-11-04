@@ -76,10 +76,14 @@ namespace SGS.Modules.RPT.Infrastructure.Migrations
                         .HasColumnType("bit")
                         .HasComment("是否為盲樣（隱藏客戶與來源資訊）");
 
+                    b.Property<Guid?>("PdfFileId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("正式報告 PDF 於檔案管理模組 (fms.FileMetadatas) 的檔案識別碼");
+
                     b.Property<string>("PdfFileLink")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)")
-                        .HasComment("正式報告 PDF 儲存連結");
+                        .HasComment("舊版正式報告 PDF 儲存連結（LocalFileStorageHelper），僅供改接檔案管理前已簽署的報告讀取");
 
                     b.Property<string>("PdfSha256")
                         .HasMaxLength(64)
@@ -193,6 +197,8 @@ namespace SGS.Modules.RPT.Infrastructure.Migrations
                         .HasComment("作廢時間");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("PdfFileId");
 
                     b.HasIndex("ReportNo")
                         .IsUnique();

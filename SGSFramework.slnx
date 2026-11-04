@@ -18,7 +18,6 @@
     <Project Path="Infrastructure/SGSFramework.Identity/SGSFramework.Identity.csproj" />
     <Project Path="Infrastructure/SGSFramework.ModulePlugin/SGSFramework.ModulePlugin.csproj" />
     <Project Path="Infrastructure/SGSFramework.Persistent/SGSFramework.Persistent.csproj" />
-    <Project Path="Infrastructure/SGSFramework.Scheduler/SGSFramework.Scheduler.csproj" />
     <Project Path="Infrastructure/SGSFramework.SPAModulePlugin/SGSFramework.SPAModulePlugin.csproj" Id="f1a50e74-94e3-4428-a8d2-5702290d3e4a" />
     <Project Path="Infrastructure/SGSFramework.SystemLog/SGSFramework.SystemLog.csproj" />
     <Project Path="Infrastructure/SGSFramework.VerifyLedger/SGSFramework.VerifyLedger.csproj" />
@@ -32,6 +31,21 @@
     <Project Path="Modules/ORG/Module.ORG/SGS.Modules.ORG.csproj" />
     <Project Path="SGS.Modules.ORG.Contracts/SGS.Modules.ORG.Contracts.csproj" Id="cd6b1c20-9e54-4299-aafb-b905813a2788" />
   </Folder>
+  <Folder Name="/Modules/FMS/">
+    <Project Path="Modules/FMS/Module.FMS.Application/SGS.Modules.FMS.Application.csproj" />
+    <Project Path="Modules/FMS/Module.FMS.Infrastructure/SGS.Modules.FMS.Infrastructure.csproj" />
+    <Project Path="Modules/FMS/Module.FMS/SGS.Modules.FMS.csproj" />
+  </Folder>
+  <Folder Name="/Modules/SCH/">
+    <Project Path="Modules/SCH/Module.SCH.Application/SGS.Modules.SCH.Application.csproj" />
+    <Project Path="Modules/SCH/Module.SCH.Infrastructure/SGS.Modules.SCH.Infrastructure.csproj" />
+    <Project Path="Modules/SCH/Module.SCH/SGS.Modules.SCH.csproj" />
+  </Folder>
+  <Folder Name="/Modules/LOG/">
+    <Project Path="Modules/LOG/Module.LOG.Application/SGS.Modules.LOG.Application.csproj" />
+    <Project Path="Modules/LOG/Module.LOG.Infrastructure/SGS.Modules.LOG.Infrastructure.csproj" />
+    <Project Path="Modules/LOG/Module.LOG/SGS.Modules.LOG.csproj" />
+  </Folder>
   <Folder Name="/Modules/RPT/">
     <Project Path="Modules/RPT/Module.RPT.Application/SGS.Modules.RPT.Application.csproj" />
     <Project Path="Modules/RPT/Module.RPT.Infrastructure/SGS.Modules.RPT.Infrastructure.csproj" />
@@ -43,5 +57,7 @@
   <Folder Name="/Tests/">
     <Project Path="Tests/SGS.Modules.RPT.Tests/SGS.Modules.RPT.Tests.csproj" />
     <Project Path="Tests/SGSFramework.Core.Tests/SGSFramework.Core.Tests.csproj" />
+    <Project Path="Tests/SGS.Modules.FMS.Tests/SGS.Modules.FMS.Tests.csproj" />
+    <Project Path="Tests/SGS.Modules.SCH.Tests/SGS.Modules.SCH.Tests.csproj" />
   </Folder>
 </Solution>

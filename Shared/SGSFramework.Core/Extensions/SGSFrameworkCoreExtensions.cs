@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SGSFramework.Core.Abstractions.Adapters;
 using SGSFramework.Core.Abstractions.Identities;
+using SGSFramework.Core.FileManagement;
 using SGSFramework.Core.FileStorages;
 using SGSFramework.Core.Generators;
 using SGSFramework.Core.Identiies.CurrentUser;
@@ -69,6 +70,12 @@ namespace SGSFramework.Core.Extensions
             // 若 SGS.Modules.ORG 在後續階段有註冊真實實作，將會自動覆蓋此預設項目
             builder.Services.TryAddScoped<IOrganizationIntegrationService, NullOrganizationIntegrationService>();
 
+            // 檔案管理：SGS.Modules.FMS 外掛載入時以 AddScoped 覆蓋；未安裝時回應 503（模組未安裝）
+            builder.Services.TryAddScoped<IFileManagementService, NullFileManagementService>();
+
+            // 日誌儲存：SGS.Modules.LOG 外掛載入時以 AddSingleton 覆蓋；未安裝時落檔緩衝（Log_Buffer），恢復後回補
+            builder.Services.TryAddSingleton<SGSFramework.Core.Logging.ISystemLogStore, SGSFramework.Core.Logging.NullSystemLogStore>();
+            builder.Services.TryAddSingleton<SGSFramework.Core.Logging.ISecurityLogStore, SGSFramework.Core.Logging.NullSecurityLogStore>();
 
 
         }

@@ -23,8 +23,11 @@ namespace SGSFramework.SystemLog.BackgroundServices
         Task FallbackAsync(IEnumerable<LogEvent> items, Exception ex);
     }
 
-    public class SqlServerLogProcessor : ISqlServerLogProcessor
+    public class SqlServerLogProcessor : ISqlServerLogProcessor, SGSFramework.Core.Logging.ISystemLogStore
     {
+        Task SGSFramework.Core.Logging.ISystemLogStore.WriteBatchAsync(IReadOnlyList<LogEvent> events, CancellationToken cancellationToken)
+            => ProcessBatchAsync(events, cancellationToken);
+
         private readonly string _connectionString;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<SqlServerLogProcessor> _logger;

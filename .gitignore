@@ -364,4 +364,6 @@ FodyWeavers.xsd
 # --- 機密組態 / 金鑰 (ISO 27001 / 資安法：不得提交版控) ---
 claudesettings.json
 !claudesettings.example.json
+# ImageSharp 授權金鑰（機密）
+sixlabors.lic
 **/keys/key-*.xml

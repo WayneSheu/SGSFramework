@@ -1,0 +1,80 @@
+// ==========================================
+// 檔案路徑: Infrastructure/SGS.Modules.FMS.Infrastructure/Dbcontexts/FMSDbContextFactory.cs
+// 架構層級: Infrastructure Layer (EF Core Design Time Factory)
+// ==========================================
+
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Design;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using SGSFramework.AuditLog.Abstractions;
+using SGSFramework.AuditLog.Channels;
+using SGSFramework.AuditLog.Interceptors;
+using System;
+using System.IO;
+
+namespace SGS.Modules.FMS.Infrastructure.Dbcontexts
+{
+    /// <summary>
+    /// 提供設計時期 DbContext 工廠，供 EF Core CLI / Package Manager Console 執行 `add-migration` 與 `database update` 使用。
+    /// </summary>
+    public class FMSDbContextFactory : IDesignTimeDbContextFactory<FMSDbContext>
+    {
+        public FMSDbContext CreateDbContext(string[] args)
+        {
+            // 1. 安全解析 Assembly 與配置檔目錄路徑
+            var assemblyLocation = typeof(FMSDbContext).Assembly.Location;
+            var assemblyDirectory = string.IsNullOrWhiteSpace(assemblyLocation)
+                ? AppContext.BaseDirectory
+                : Path.GetDirectoryName(assemblyLocation) ?? AppContext.BaseDirectory;
+
+            var configuration = new ConfigurationBuilder()
+                .SetBasePath(assemblyDirectory)
+                .AddJsonFile("appsettings.json", optional: true)
+                .AddJsonFile("appsettings.Development.json", optional: true)
+                .AddJsonFile("claudesettings.json", optional: true) // 受保護機密組態 (不入版控)
+                .AddEnvironmentVariables()
+                .Build();
+
+            var optionsBuilder = new DbContextOptionsBuilder<FMSDbContext>();
+
+            // 優先嘗試從配置檔獲取連線字串，否則使用預設開發連線字串
+            // 空字串視同未設定 (正式組態以空值佔位)，避免 `??` 只對 null 回退而取得空連線字串
+            var connectionStrings = configuration.GetSection("PersistentSettings:ConnectionStrings");
+            var connectionString = new[] { connectionStrings["MigrationConnection"], connectionStrings["DefaultConnection"] }
+                .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))
+                ?? "Server=localhost;Database=PhysLIMS_DB;Integrated Security=True;TrustServerCertificate=True;";
+
+            optionsBuilder.UseSqlServer(connectionString, sql =>
+            {
+                var assemblyName = typeof(FMSDbContext).Assembly.FullName
+                    ?? throw new InvalidOperationException("無法取得 FMSDbContext Assembly 的完整名稱。");
+
+                sql.MigrationsAssembly(assemblyName);
+                sql.MigrationsHistoryTable("__EFMigrationsHistory", "fms");
+            });
+
+            // 2. 配置設計時期專用的 ServiceCollection，補足泛型 AuditChannel 與 AuditInterceptor 依賴
+            var services = new ServiceCollection();
+
+            services.AddLogging(builder => builder.AddConsole());
+            services.AddHttpContextAccessor();
+
+            // 註冊特定 Context (FMSDbContext) 專屬的獨立泛型 Channel 佇列與 Interceptors
+            services.AddSingleton<IAuditChannel<FMSDbContext>, AuditChannel<FMSDbContext>>();
+            services.AddTransient<AuditInterceptor>();
+
+            var serviceProvider = services.BuildServiceProvider();
+
+            // 3. 解析 AuditInterceptor 並掛載至 DbContextOptionsBuilder
+            var interceptor = serviceProvider.GetRequiredService<AuditInterceptor>();
+
+            // 權限類實體的稽核（含權限變更摘要）由 AuditInterceptor 統一處理
+            optionsBuilder.AddInterceptors(interceptor);
+
+            // 4. 傳入建構子參數並回傳實體
+            return new FMSDbContext(optionsBuilder.Options);
+        }
+    }
+}

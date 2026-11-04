@@ -90,7 +90,10 @@ public class Report : IAuditable, IConcurrencyAware
     [Comment("簽署 / 發行時間")]
     public DateTimeOffset? SignedAt { get; set; }
 
-    [Comment("正式報告 PDF 儲存連結")]
+    [Comment("正式報告 PDF 於檔案管理模組 (fms.FileMetadatas) 的檔案識別碼")]
+    public Guid? PdfFileId { get; set; }
+
+    [Comment("舊版正式報告 PDF 儲存連結（LocalFileStorageHelper），僅供改接檔案管理前已簽署的報告讀取")]
     public string? PdfFileLink { get; set; }
 
     [Comment("正式報告 PDF 之 SHA-256 雜湊（小寫十六進位）")]
@@ -147,6 +150,7 @@ public sealed class ReportConfiguration : IEntityTypeConfiguration<Report>
         builder.Property(x => x.SignerName).HasMaxLength(256);
         builder.Property(x => x.SignerCertificateNo).HasMaxLength(64);
         builder.Property(x => x.PdfFileLink).HasMaxLength(500);
+        builder.HasIndex(x => x.PdfFileId);
         builder.Property(x => x.PdfSha256).HasMaxLength(64);
         builder.Property(x => x.VerificationToken).HasMaxLength(32);
         builder.Property(x => x.VoidReason).HasMaxLength(500);

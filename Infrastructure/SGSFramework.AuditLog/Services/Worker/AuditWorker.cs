@@ -36,6 +36,8 @@ public class AuditWorker<TContext> : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<AuditWorker<TContext>> _logger;
     private readonly IAuditStorageStrategy<TContext> _storageStrategy;
+    // 外掛 SGS.Modules.LOG 提供時，改寫入獨立日誌庫；未提供則使用 _storageStrategy（模組自有 AuditLogs）
+    private readonly SGSFramework.Core.Logging.IAuditLogStore? _auditLogStore;
     private readonly string _moduleName;
     private readonly string _fallbackPath;
 
@@ -53,8 +55,10 @@ public class AuditWorker<TContext> : BackgroundService
         IAuditChannel<TContext> channel,
         IServiceScopeFactory scopeFactory,
         ILogger<AuditWorker<TContext>> logger,
-        IAuditStorageStrategy<TContext> storageStrategy)
+        IAuditStorageStrategy<TContext> storageStrategy,
+        SGSFramework.Core.Logging.IAuditLogStore? auditLogStore = null)
     {
+        _auditLogStore = auditLogStore;
         _channel = channel ?? throw new ArgumentNullException(nameof(channel));
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -140,10 +144,16 @@ public class AuditWorker<TContext> : BackgroundService
         {
             try
             {
-                using var scope = _scopeFactory.CreateScope();
-                var dbContext = scope.ServiceProvider.GetRequiredService<TContext>();
-
-                await _storageStrategy.SaveBatchAsync(dbContext, batch, ct).ConfigureAwait(false);
+                if (_auditLogStore is not null)
+                {
+                    await _auditLogStore.SaveBatchAsync(_moduleName, batch, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    var dbContext = scope.ServiceProvider.GetRequiredService<TContext>();
+                    await _storageStrategy.SaveBatchAsync(dbContext, batch, ct).ConfigureAwait(false);
+                }
                 _logger.LogInformation("[{Module}] SaveBatchAsync 成功寫入 {Count} 筆稽核資料至 DB。", _moduleName, batch.Count);
                 return;
             }
@@ -188,10 +198,16 @@ public class AuditWorker<TContext> : BackgroundService
 
                         if (batch != null && batch.Count > 0)
                         {
-                            using var scope = _scopeFactory.CreateScope();
-                            var dbContext = scope.ServiceProvider.GetRequiredService<TContext>();
-
-                            await _storageStrategy.RecoverLogsAsync(dbContext, batch, ct).ConfigureAwait(false);
+                            if (_auditLogStore is not null)
+                            {
+                                await _auditLogStore.SaveBatchAsync(_moduleName, batch, ct).ConfigureAwait(false);
+                            }
+                            else
+                            {
+                                using var scope = _scopeFactory.CreateScope();
+                                var dbContext = scope.ServiceProvider.GetRequiredService<TContext>();
+                                await _storageStrategy.RecoverLogsAsync(dbContext, batch, ct).ConfigureAwait(false);
+                            }
                             _logger.LogInformation("[{Module}] 檔案 {FileName} 復原成功。", _moduleName, Path.GetFileName(file));
                             File.Delete(file);
                         }

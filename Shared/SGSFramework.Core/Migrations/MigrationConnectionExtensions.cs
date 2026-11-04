@@ -35,6 +35,29 @@ namespace SGSFramework.Core.Migrations
             return new RestoreScope(database, currentConnection);
         }
 
+        /// <summary>
+        /// 同上，但使用指定設定鍵（例如獨立日誌庫的 PersistentSettings:ConnectionStrings:LogMigrationConnection）；
+        /// 指定鍵未設定時不切換，不會誤用主庫的 MigrationConnection。
+        /// </summary>
+        public static IDisposable UseMigrationConnection(this DatabaseFacade database, IConfiguration configuration, string migrationConnectionKey)
+        {
+            ArgumentNullException.ThrowIfNull(database);
+            ArgumentNullException.ThrowIfNull(configuration);
+            ArgumentException.ThrowIfNullOrWhiteSpace(migrationConnectionKey);
+
+            var migrationConnection = configuration[migrationConnectionKey];
+            var currentConnection = database.GetConnectionString();
+
+            if (string.IsNullOrWhiteSpace(migrationConnection)
+                || string.Equals(migrationConnection, currentConnection, StringComparison.Ordinal))
+            {
+                return NoopScope.Instance;
+            }
+
+            database.SetConnectionString(migrationConnection);
+            return new RestoreScope(database, currentConnection);
+        }
+
         private sealed class RestoreScope(DatabaseFacade database, string? originalConnection) : IDisposable
         {
             private bool _disposed;

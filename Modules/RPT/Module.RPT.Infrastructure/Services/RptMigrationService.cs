@@ -96,6 +96,9 @@ public sealed class RptMigrationService : IMigrationService
                 "IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'rpt') EXEC('CREATE SCHEMA rpt')",
                 cancellationToken).ConfigureAwait(false);
 
+            // 1-1. 執行期帳號 (DefaultConnection) 需 rpt 的 DML 權限（報表類別授權、存取紀錄）
+            await GrantRuntimeAccessAsync(cancellationToken).ConfigureAwait(false);
+
             // 2. 保障 __EFMigrationsHistory 存在
             await EnsureHistoryTableExistsAsync(cancellationToken).ConfigureAwait(false);
 
@@ -133,6 +136,47 @@ public sealed class RptMigrationService : IMigrationService
         {
             _logger.LogError(ex, "[RPT 模組] 資料庫遷移發生嚴重錯誤。");
             throw;
+        }
+    }
+
+    /// <summary>
+    /// 授予執行期帳號 rpt schema 的 DML 權限；部署帳號無權授權時僅記錄警告，改由 DBA 執行 docs/sql/20261104_grant_rpt_schema.sql
+    /// </summary>
+    private async Task GrantRuntimeAccessAsync(CancellationToken cancellationToken)
+    {
+        var defaultConnection = _configuration["PersistentSettings:ConnectionStrings:DefaultConnection"];
+        if (string.IsNullOrWhiteSpace(defaultConnection)) return;
+
+        string? runtimeUser;
+        try
+        {
+            runtimeUser = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(defaultConnection).UserID;
+        }
+        catch (ArgumentException)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(runtimeUser)) return;
+
+        try
+        {
+            // 帳號名稱以參數傳入，並於 T-SQL 內以 QUOTENAME 組合，避免注入
+            await _context.Database.ExecuteSqlRawAsync(
+                """
+                DECLARE @user sysname = {0};
+                IF DATABASE_PRINCIPAL_ID(@user) IS NOT NULL
+                BEGIN
+                    DECLARE @sql nvarchar(400) = N'GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::[rpt] TO ' + QUOTENAME(@user) + N';';
+                    EXEC (@sql);
+                END
+                """,
+                [runtimeUser],
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Microsoft.Data.SqlClient.SqlException ex)
+        {
+            _logger.LogWarning(ex, "[RPT 模組] 無法授予執行期帳號 rpt schema 權限，請由 DBA 執行 docs/sql/20261104_grant_rpt_schema.sql。");
         }
     }
 

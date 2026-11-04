@@ -14,8 +14,11 @@ using SGSFramework.Core.Helpers;
 
 namespace SGSFramework.SystemLog.BackgroundServices
 {
-    public class SqlServerSecurityProcessor : IPersistentProcessor<LogEvent>
+    public class SqlServerSecurityProcessor : IPersistentProcessor<LogEvent>, SGSFramework.Core.Logging.ISecurityLogStore
     {
+        Task SGSFramework.Core.Logging.ISecurityLogStore.WriteBatchAsync(IReadOnlyList<LogEvent> events, CancellationToken cancellationToken)
+            => ProcessBatchAsync(events, cancellationToken);
+
         private readonly string _connectionString;
 
         public SqlServerSecurityProcessor(IOptions<PersistentConnectionOptions> connectionOptions)

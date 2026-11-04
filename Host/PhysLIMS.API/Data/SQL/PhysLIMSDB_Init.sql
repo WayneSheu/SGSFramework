@@ -57,6 +57,12 @@ IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = N'core') EXEC('CREATE SCHE
 IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = N'org') EXEC('CREATE SCHEMA [org];');
 -- 排程框架 (Hangfire) 資料表，由 deploy_sgs_user 於 API 啟動時建立
 IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = N'hangfire') EXEC('CREATE SCHEMA [hangfire] AUTHORIZATION [dbo];');
+-- 排程管理外掛模組 SGS.Modules.SCH（排程設定、執行紀錄）
+IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = N'sch') EXEC('CREATE SCHEMA [sch] AUTHORIZATION [dbo];');
+-- 檔案管理外掛模組 SGS.Modules.FMS（檔案中繼資料）
+IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = N'fms') EXEC('CREATE SCHEMA [fms] AUTHORIZATION [dbo];');
+-- 報表外掛模組 SGS.Modules.RPT（報表類別授權、存取紀錄）
+IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = N'rpt') EXEC('CREATE SCHEMA [rpt] AUTHORIZATION [dbo];');
 
 GO
 
@@ -75,6 +81,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON SCHEMA::[core] TO [app_sgs_user
 GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON SCHEMA::[org] TO [app_sgs_user];
 -- 排程作業佇列、狀態與分散式鎖 (sp_getapplock 屬 public 權限)
 GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::[hangfire] TO [app_sgs_user];
+GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::[sch] TO [app_sgs_user];
+GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::[fms] TO [app_sgs_user];
+GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::[rpt] TO [app_sgs_user];
 
 GO
 
@@ -92,6 +101,9 @@ ALTER ROLE [db_datawriter] ADD MEMBER [deploy_sgs_user];
 GRANT ALTER, CONTROL ON SCHEMA::[core] TO [deploy_sgs_user];
 GRANT ALTER, CONTROL ON SCHEMA::[org] TO [deploy_sgs_user];
 GRANT ALTER, CONTROL ON SCHEMA::[hangfire] TO [deploy_sgs_user];
+GRANT ALTER, CONTROL ON SCHEMA::[sch] TO [deploy_sgs_user];
+GRANT ALTER, CONTROL ON SCHEMA::[fms] TO [deploy_sgs_user];
+GRANT ALTER, CONTROL ON SCHEMA::[rpt] TO [deploy_sgs_user];
 GO
 
 -- C. 設定資料庫備份帳號 (僅備份權限；備份目錄寫入權限需授予 SQL Server 服務帳號)

@@ -30,6 +30,7 @@ namespace SGSFramework.SystemLog.Services
     public sealed class AuditLogSourceResolver : IAuditLogSourceResolver
     {
         private const string MainSchema = "core";
+        private const string LogDbSchema = "log";
 
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<AuditLogSourceResolver> _logger;
@@ -71,6 +72,20 @@ namespace SGSFramework.SystemLog.Services
                 var name = isMain ? "主系統" : $"{schema.ToUpperInvariant()} 模組";
 
                 found.Add((new AuditLogSourceDto(contextType.Name, $"{name}（{schema}.{table}）", schema, isMain), context));
+            }
+
+            // 日誌外掛（獨立日誌庫，schema = log）啟用時：它是現行來源並作為預設；主庫與各模組的舊稽核表標示為封存
+            var hasLogDb = found.Any(f => string.Equals(f.Dto.Schema, LogDbSchema, StringComparison.OrdinalIgnoreCase));
+            if (hasLogDb)
+            {
+                found = found.Select(f =>
+                {
+                    var isLogDb = string.Equals(f.Dto.Schema, LogDbSchema, StringComparison.OrdinalIgnoreCase);
+                    var label = isLogDb
+                        ? $"日誌庫（現行）（{f.Dto.Schema}.AuditLogs）"
+                        : $"{(f.Dto.IsMain ? "主系統" : $"{f.Dto.Schema.ToUpperInvariant()} 模組")}（封存）（{f.Dto.Schema}.AuditLogs）";
+                    return (new AuditLogSourceDto(f.Dto.Key, label, f.Dto.Schema, isLogDb), f.Context);
+                }).ToList();
             }
 
             return found

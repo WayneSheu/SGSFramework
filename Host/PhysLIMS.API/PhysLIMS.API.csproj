@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -51,6 +51,9 @@
     <ProjectReference Include="..\..\Modules\ORG\Module.ORG.Infrastructure\SGS.Modules.ORG.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\ORG\Module.ORG\SGS.Modules.ORG.csproj" />
     <ProjectReference Include="..\..\Modules\RPT\Module.RPT\SGS.Modules.RPT.csproj" />
+    <ProjectReference Include="..\..\Modules\FMS\Module.FMS\SGS.Modules.FMS.csproj" />
+    <ProjectReference Include="..\..\Modules\SCH\Module.SCH\SGS.Modules.SCH.csproj" />
+    <ProjectReference Include="..\..\Modules\LOG\Module.LOG\SGS.Modules.LOG.csproj" />
     <ProjectReference Include="..\..\SGSFramework.ReportEngine\SGSFramework.ReportEngine.csproj" />
     <ProjectReference Include="..\..\Shared\SGSFramework.Core\SGSFramework.Core.csproj" />
     <ProjectReference Include="..\PhysLIMS.Controller\SGSFramework.ApiInfrastructure.csproj" />

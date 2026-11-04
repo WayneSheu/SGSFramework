@@ -42,7 +42,7 @@ public sealed class ReportController(IReportService reportService) : ControllerB
 
     /// <summary>報告明細（盲樣依授權遮蔽，並記錄檢視）</summary>
     [HttpGet("{id:guid}")]
-    [Function("GetReports", "報告明細", Icon = "fa-solid fa-eye", Order = 1, IsMenu = true, Description = "查詢報告明細（盲樣依授權遮蔽，並記錄檢視）")]
+    [Function("GetReports", "報告明細", Icon = "fa-solid fa-eye", Order = 1, Description = "查詢報告明細（盲樣依授權遮蔽，並記錄檢視）")]
     [RequiresPermission("RPT.REPORT.READ", "報告明細")]
     [ProducesResponseType(typeof(ReportDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -120,8 +120,8 @@ public sealed class ReportController(IReportService reportService) : ControllerB
 
     /// <summary>目前實驗室中可建立報告的類別</summary>
     [HttpGet("creatable-categories")]
-    [Function("GetCreatableReportCategories", "可建立報告類別", Icon = "fa-solid fa-list", Order = 3, Description = "查詢目前實驗室中您有權建立的檢驗報告類別")]
-    [RequiresPermission("RPT.REPORT.CREATE", "建立報告")]
+    [Function("GetCreatableReportCategories", "建立報告類別", Icon = "fa-solid fa-list", Order = 3, IsMenu =true,Description = "查詢目前實驗室中您有權建立的檢驗報告類別")]
+    [RequiresPermission("RPT.REPORT.CREATE", "建立報告類別")]
     [ProducesResponseType(typeof(IReadOnlyList<ReportCategoryOptionDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> CreatableCategories(CancellationToken cancellationToken = default) =>
         Ok(await _service.GetCreatableCategoriesAsync(cancellationToken).ConfigureAwait(false));

@@ -84,6 +84,10 @@ namespace SGSFramework.SystemLog.Extensions
             builder.Services.AddSingleton<SqlServerLogProcessor>();
             builder.Services.AddSingleton<ISecurityLogger, SecurityLogger>();
             builder.Services.AddSingleton<SqlServerSecurityProcessor>();
+            builder.Services.AddSingleton<SGSFramework.Core.Logging.ILogIdentityResolver, Services.DbLogIdentityResolver>();
+            // 過渡期：Host 內建 SQL 實作覆蓋 Core 的 Null 緩衝 store；SGS.Modules.LOG 外掛載入後再覆蓋此註冊
+            builder.Services.AddSingleton<SGSFramework.Core.Logging.ISystemLogStore>(sp => sp.GetRequiredService<SqlServerLogProcessor>());
+            builder.Services.AddSingleton<SGSFramework.Core.Logging.ISecurityLogStore>(sp => sp.GetRequiredService<SqlServerSecurityProcessor>());
 
             // =========================================================================
             // 6. 常駐背景服務註冊 (Hosted Services / Workers 消費端)

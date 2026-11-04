@@ -15,6 +15,7 @@ using SGSFramework.Core.Abstractions.Entities.ReportCategories;
 using SGSFramework.Core.Abstractions.Permissions.Entities;
 using SGSFramework.Core.Abstractions.ReportAccess;
 using SGSFramework.Core.FileStorages;
+using SGSFramework.Core.FileManagement;
 using SGSFramework.ReportEngine.Abstractions;
 
 namespace SGS.Modules.RPT.Application.Services;
@@ -69,7 +70,8 @@ public sealed class ReportService(
     IReportCategoryManagementService categoryService,
     IOrganizationIntegrationService orgIntegrationService,
     UserManager<ApplicationUser> userManager,
-    IFileStorageHelper<Report> fileStorage,
+    IFileManagementService fileManagement,
+    IFileStorageHelper<Report> legacyFileStorage,
     ReportAccessLogger accessLogger,
     IReportWorkflowNotifier notifier,
     IConfiguration configuration,
@@ -77,6 +79,9 @@ public sealed class ReportService(
     ILogger<ReportService> logger) : IReportService
 {
     private const int ListLimit = 500;
+
+    /// <summary>檔案管理分類（FileManagement:Categories:Report，須設 AllowGenericApi = false）</summary>
+    internal const string ReportFileCategory = "Report";
 
     private static readonly ReportActions[] DetailActions =
     [
@@ -168,7 +173,7 @@ public sealed class ReportService(
         var canSee = view.CanSeeBlindIdentity;
         var permissions = new ReportPermissionsDto(
             CanEdit: Allowed(ReportActions.Edit),
-            CanDownload: Allowed(ReportActions.Download) && report.PdfFileLink is not null,
+            CanDownload: Allowed(ReportActions.Download) && (report.PdfFileId is not null || report.PdfFileLink is not null),
             CanRequestVoid: report.Status == ReportLifecycleStatus.Published && !hasPendingVoid,
             CanViewAudit: Allowed(ReportActions.ViewAudit),
             CanSeeBlindIdentity: canSee,
@@ -450,7 +455,22 @@ public sealed class ReportService(
         report.Status = rule.To;
         AddHistory(report, from, rule.To, request.Transition.ToString(), Trim(request.Reason));
 
-        var saved = await SaveAsync(report, $"報告 {report.ReportNo} 已{ReportStateMachine.TransitionLabel(request.Transition)}。", cancellationToken).ConfigureAwait(false);
+        ReportOpResult saved;
+        try
+        {
+            saved = await SaveAsync(report, $"報告 {report.ReportNo} 已{ReportStateMachine.TransitionLabel(request.Transition)}。", cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            if (request.Transition == ReportTransition.Sign) await DiscardSignedPdfAsync(report).ConfigureAwait(false);
+            throw;
+        }
+
+        if (!saved.Succeeded && request.Transition == ReportTransition.Sign)
+        {
+            await DiscardSignedPdfAsync(report).ConfigureAwait(false);
+        }
+
         if (saved.Succeeded)
         {
             logger.LogInformation("[Report] {Actor} 對報告 {ReportNo} 執行 {Transition}：{From} → {To}",
@@ -463,6 +483,7 @@ public sealed class ReportService(
 
     /// <summary>
     /// 簽署：快照簽署人資格證號，產生正式 PDF 並保存，計算 SHA-256 與公開查驗碼。正式檔案自此不再重新產生。
+    /// PDF 存於檔案管理的 Report 分類（地端機密、禁止經通用 api/v1/files 存取），下載一律經本服務授權。
     /// </summary>
     private async Task<string?> SignAsync(Report report, Guid userId, DateTimeOffset now, CancellationToken cancellationToken)
     {
@@ -478,10 +499,47 @@ public sealed class ReportService(
 
         var pdf = ReportPdfGenerator.Generate(await BuildPdfDataAsync(report, preview: false, watermark: null, cancellationToken).ConfigureAwait(false));
 
-        await using var stream = new MemoryStream(pdf);
-        report.PdfFileLink = await fileStorage.SaveAsync(stream, $"{report.ReportNo}.pdf", report.CategoryCode).ConfigureAwait(false);
         report.PdfSha256 = Convert.ToHexStringLower(SHA256.HashData(pdf));
+
+        try
+        {
+            await using var stream = new MemoryStream(pdf, writable: false);
+            var file = await fileManagement.UploadAsync(
+                new FileUploadRequest(stream, $"{report.ReportNo}.pdf", ReportFileCategory, nameof(Report), report.Id.ToString()),
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            // 檔案管理以實際落地內容計算雜湊，須與簽署時的 PDF 一致（PDF 不經重新編碼）
+            if (!string.Equals(file.Sha256, report.PdfSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                await fileManagement.DeleteAsync(file.Id, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+                return "正式報告檔案保存後雜湊不一致，已取消簽署。";
+            }
+
+            report.PdfFileId = file.Id;
+            report.PdfFileLink = null;
+        }
+        catch (FileRejectedException ex)
+        {
+            logger.LogError(ex, "[Report] 報告 {ReportNo} 正式 PDF 保存失敗（{Status}）。", report.ReportNo, ex.StatusCode);
+            return $"正式報告檔案保存失敗：{ex.Message}";
+        }
+
         return null;
+    }
+
+    /// <summary>簽署未能寫入報告時，移除已保存的正式 PDF（虛擬刪除，由清除排程回收），避免孤兒檔案</summary>
+    private async Task DiscardSignedPdfAsync(Report report)
+    {
+        if (report.PdfFileId is not { } fileId) return;
+
+        try
+        {
+            await fileManagement.DeleteAsync(fileId, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "[Report] 報告 {ReportNo} 簽署失敗後無法移除正式 PDF {FileId}，需人工清理。", report.ReportNo, fileId);
+        }
     }
 
     // ===== 作廢與重發（Maker-Checker） =====
@@ -680,22 +738,63 @@ public sealed class ReportService(
     {
         var (report, denied) = await LoadAuthorizedAsync(id, ReportActions.Download, includeResults: false, cancellationToken).ConfigureAwait(false);
         if (report is null) return (denied!, null);
-        if (string.IsNullOrWhiteSpace(report.PdfFileLink)) return (ReportOpResult.Fail("此報告尚無正式 PDF。"), null);
+        if (report.PdfFileId is null && string.IsNullOrWhiteSpace(report.PdfFileLink)) return (ReportOpResult.Fail("此報告尚無正式 PDF。"), null);
 
-        var path = fileStorage.GetPhysicalPath(report.PdfFileLink);
-        if (!File.Exists(path)) return (ReportOpResult.Fail("正式報告檔案不存在，請聯絡系統管理員。"), null);
-
-        var content = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
-
-        // 完整性檢核：檔案雜湊須與簽署時保存者一致，否則拒絕提供並記錄
-        if (!string.Equals(Convert.ToHexStringLower(SHA256.HashData(content)), report.PdfSha256, StringComparison.OrdinalIgnoreCase))
+        Stream? content;
+        try
         {
-            logger.LogCritical("[Report] 報告 {ReportNo} 正式檔案雜湊不符，疑遭竄改：{Path}", report.ReportNo, path);
+            content = await OpenSignedPdfAsync(report, cancellationToken).ConfigureAwait(false);
+        }
+        catch (FileRejectedException ex)
+        {
+            logger.LogError(ex, "[Report] 報告 {ReportNo} 正式 PDF 無法讀取（{Status}）。", report.ReportNo, ex.StatusCode);
+            return (ReportOpResult.Fail("正式報告檔案暫時無法讀取，請聯絡系統管理員。"), null);
+        }
+
+        if (content is null) return (ReportOpResult.Fail("正式報告檔案不存在，請聯絡系統管理員。"), null);
+
+        // 完整性檢核：檔案雜湊須與簽署時保存者一致，否則拒絕提供並記錄（串流計算，不整檔讀入記憶體）
+        var actualHash = Convert.ToHexStringLower(await SHA256.HashDataAsync(content, cancellationToken).ConfigureAwait(false));
+        if (!string.Equals(actualHash, report.PdfSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            await content.DisposeAsync().ConfigureAwait(false);
+            logger.LogCritical("[Report] 報告 {ReportNo} 正式檔案雜湊不符，疑遭竄改：檔案 {FileId} / 舊版連結 {Link}",
+                report.ReportNo, report.PdfFileId, report.PdfFileLink);
             return (ReportOpResult.Fail("正式報告檔案完整性檢核失敗，已通報系統管理員。"), null);
         }
 
+        content.Position = 0;
         await accessLogger.LogReportAsync(report, ReportAccessAction.Download, cancellationToken: cancellationToken).ConfigureAwait(false);
         return (ReportOpResult.Ok("OK"), new ReportFileResult(content, $"{report.ReportNo}.pdf"));
+    }
+
+    /// <summary>
+    /// 開啟正式 PDF：改接檔案管理後以 PdfFileId 讀取；之前簽署的報告仍以舊版 PdfFileLink（LocalFileStorageHelper）讀取。
+    /// 不存在時回傳 null。
+    /// </summary>
+    private async Task<Stream?> OpenSignedPdfAsync(Report report, CancellationToken cancellationToken)
+    {
+        if (report.PdfFileId is { } fileId)
+        {
+            var download = await fileManagement.OpenDownloadAsync(fileId, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (download?.Content is null) return null;
+            if (download.Content.CanSeek) return download.Content;
+
+            // 雜湊驗證後需倒回開頭，不可定位的串流（未來的物件儲存體）先緩衝
+            var buffer = new MemoryStream();
+            await using (download.Content.ConfigureAwait(false))
+            {
+                await download.Content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+            }
+
+            buffer.Position = 0;
+            return buffer;
+        }
+
+        var path = legacyFileStorage.GetPhysicalPath(report.PdfFileLink!);
+        return File.Exists(path)
+            ? new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, useAsync: true)
+            : null;
     }
 
     public async Task<(ReportOpResult Result, ReportFileResult? File)> PreviewAsync(Guid id, CancellationToken cancellationToken = default)
@@ -716,7 +815,7 @@ public sealed class ReportService(
 
         var content = ReportPdfGenerator.Generate(data);
         await accessLogger.LogReportAsync(report, ReportAccessAction.Print, "preview", cancellationToken).ConfigureAwait(false);
-        return (ReportOpResult.Ok("OK"), new ReportFileResult(content, $"{report.ReportNo}_preview.pdf"));
+        return (ReportOpResult.Ok("OK"), new ReportFileResult(new MemoryStream(content, writable: false), $"{report.ReportNo}_preview.pdf"));
     }
 
     // ===== 軌跡 =====

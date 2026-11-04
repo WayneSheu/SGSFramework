@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <PackageId>SES.Modules.FMS</PackageId>
+    <Version>1.0.0</Version>
+    <Company>SES</Company>
+    <Description>生產級檔案管理外掛模組：多儲存體工廠分流、Magic Number 驗證、圖片二次編碼、動態縮圖 LRU 快取、虛擬刪除與排程清除</Description>
+    <SignAssembly>True</SignAssembly>
+    <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)..\..\..\MyModuleKey.snk</AssemblyOriginatorKeyFile>
+    <!-- 外掛部署目錄：不依賴 $(SolutionDir)，單獨建置專案亦可正確複製 -->
+    <HostPluginDir>$(MSBuildThisFileDirectory)..\..\..\Host\PhysLIMS.API\bin\$(Configuration)\net10.0\plugins\</HostPluginDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Infrastructure\SGSFramework.AuthTokenBucket\SGSFramework.AuthTokenBucket.csproj" />
+    <ProjectReference Include="..\Module.FMS.Application\SGS.Modules.FMS.Application.csproj" />
+    <ProjectReference Include="..\Module.FMS.Infrastructure\SGS.Modules.FMS.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <!-- 建置後將模組主程式與附屬組件複製至 API 主專案的 plugins 目錄（由 ModuleLoader 以獨立 ALC 載入）；
+       第三方套件（ImageSharp）不得放入 plugins（會被當成主模組驗證簽章而隔離），由 Host 主程式目錄提供 -->
+  <Target Name="CopyModuleDllToHost" AfterTargets="Build">
+    <ItemGroup>
+      <ModuleFiles Include="$(TargetDir)SGS.Modules.FMS*.dll;$(TargetDir)SGS.Modules.FMS*.pdb" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ModuleFiles)" DestinationFolder="$(HostPluginDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Exec Command="powershell -Command &quot;&amp; { Set-AuthenticodeSignature -FilePath '$(TargetPath)' -Certificate (Get-ChildItem -Path Cert:\CurrentUser\My\DB22B4CE33AE64287F9392F3025EBCB7880BE213) -TimestampServer 'http://timestamp.digicert.com' }&quot;" />
+  </Target>
+
+</Project>

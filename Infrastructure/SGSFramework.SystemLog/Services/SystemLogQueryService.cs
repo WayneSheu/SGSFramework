@@ -2,6 +2,7 @@
 #nullable enable
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using SGSFramework.Core.Logging;
 using SGSFramework.Core.Paginations;
 using SGSFramework.Core.Persistence;
 using SGSFramework.SystemLog.DTOs;
@@ -16,12 +17,15 @@ namespace SGSFramework.SystemLog.Services
         private readonly IQueryRepository<Core.Abstractions.Logings.SystemLog> _systemLogRepo;
         private readonly IQueryRepository<Core.Abstractions.Logings.SecurityLog> _securityLogRepo;
         private readonly ILogger<SystemLogQueryService> _logger;
+        private readonly ILogReadSource? _readSource;
 
         public SystemLogQueryService(
             IQueryRepository<Core.Abstractions.Logings.SystemLog> systemLogRepo,
             IQueryRepository<Core.Abstractions.Logings.SecurityLog> securityLogRepo,
-            ILogger<SystemLogQueryService> logger)
+            ILogger<SystemLogQueryService> logger,
+            ILogReadSource? readSource = null)
         {
+            _readSource = readSource;
             _systemLogRepo = systemLogRepo ?? throw new ArgumentNullException(nameof(systemLogRepo));
             _securityLogRepo = securityLogRepo ?? throw new ArgumentNullException(nameof(securityLogRepo));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -33,7 +37,7 @@ namespace SGSFramework.SystemLog.Services
 
             try
             {
-                var query = _systemLogRepo.GetQueryable();
+                var query = (!request.Archive && _readSource is not null) ? _readSource.SystemLogs : _systemLogRepo.GetQueryable();
 
                 // 1. 篩選條件處理 (Filter)
                 if (request.Filter != null)
@@ -206,7 +210,7 @@ namespace SGSFramework.SystemLog.Services
 
             try
             {
-                var query = _securityLogRepo.GetQueryable();
+                var query = (!request.Archive && _readSource is not null) ? _readSource.SecurityLogs : _securityLogRepo.GetQueryable();
 
                 // 1. 篩選條件處理 (Filter)
                 if (request.Filter != null)
@@ -317,11 +321,13 @@ namespace SGSFramework.SystemLog.Services
             }
         }
 
-        public async Task<SystemLogDto?> GetSystemLogByIdAsync(long id, CancellationToken cancellationToken = default)
+        public async Task<SystemLogDto?> GetSystemLogByIdAsync(long id, CancellationToken cancellationToken = default, bool archive = false)
         {
             try
             {
-                var entity = await _systemLogRepo.GetByIdAsync(id, cancellationToken);
+                var entity = (!archive && _readSource is not null)
+                    ? await _readSource.SystemLogs.FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
+                    : await _systemLogRepo.GetByIdAsync(id, cancellationToken);
                 if (entity == null) return null;
 
                 return new SystemLogDto(
@@ -353,11 +359,13 @@ namespace SGSFramework.SystemLog.Services
             }
         }
 
-        public async Task<SecurityLogDto?> GetSecurityLogByIdAsync(int id, CancellationToken cancellationToken = default)
+        public async Task<SecurityLogDto?> GetSecurityLogByIdAsync(int id, CancellationToken cancellationToken = default, bool archive = false)
         {
             try
             {
-                var entity = await _securityLogRepo.GetByIdAsync(id, cancellationToken);
+                var entity = (!archive && _readSource is not null)
+                    ? await _readSource.SecurityLogs.FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
+                    : await _securityLogRepo.GetByIdAsync(id, cancellationToken);
                 if (entity == null) return null;
 
                 return new SecurityLogDto(
