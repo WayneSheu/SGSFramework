@@ -183,6 +183,104 @@ public sealed class FunctionManagementController : ApiControllerBase
     }
 
     /// <summary>
+    /// 編輯指定功能之顯示欄位 (名稱 / 說明 / 排序 / 圖示)
+    /// </summary>
+    /// <param name="id">功能識別碼 (Guid)</param>
+    /// <param name="request">編輯內容</param>
+    /// <param name="cancellationToken">非同步取消權牌</param>
+    /// <returns>更新後的功能中繼資料</returns>
+    [HttpPut("functions/{id:guid}")]
+    [Function("UpdateFunctionMetadata", "編輯功能資訊", Icon = "fa-solid fa-pen-to-square", Order = 5, Description = "編輯系統功能的名稱、說明、排序與圖示；編輯後不會被啟動同步覆蓋。")]
+    [RequiresPermission("SYSTEM.FUNCTIONMANAGEMENT.UPDATE", "編輯功能資訊")]
+    [EndpointSummary("編輯功能資訊")]
+    [EndpointDescription("編輯系統功能的名稱、說明、排序與圖示。")]
+    [ProducesResponseType(typeof(ControllerMetadataDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> UpdateFunctionMetadata(
+        [FromRoute] Guid id,
+        [FromBody] UpdateFunctionMetadataRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (id == Guid.Empty)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "無效的請求參數",
+                Detail = "功能識別碼 (id) 不可為空 Guid。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+
+        try
+        {
+            var change = new FunctionMetadataChange(
+                request.DisplayName,
+                request.Description,
+                request.DisplayOrder,
+                request.Icon,
+                request.IsMenu,
+                HttpContext.Connection.RemoteIpAddress?.ToString());
+
+            var updated = await _controllerMetadataService.UpdateFunctionMetadataAsync(id, change, cancellationToken);
+            return Ok(updated);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "編輯功能資訊之請求內容無效。ID: {Id}", id);
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "無效的請求參數",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "拒絕編輯受保護功能之選單設定。ID: {Id}", id);
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "不允許的操作",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
+            });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            _logger.LogWarning(ex, "欲編輯的功能項目不存在。ID: {Id}", id);
+            return NotFound(new ProblemDetails
+            {
+                Status = StatusCodes.Status404NotFound,
+                Title = "資源不存在",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "編輯功能資訊時發生非預期錯誤。ID: {Id}", id);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "編輯功能資訊時發生系統異常，請聯繫系統管理員。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
+    /// <summary>
     /// 取得指定功能之狀態異動歷程 (稽核用)
     /// </summary>
     /// <param name="id">功能識別碼 (Guid)</param>

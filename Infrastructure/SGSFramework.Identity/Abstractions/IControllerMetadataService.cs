@@ -28,6 +28,11 @@ namespace SGSFramework.Identity.Abstractions
         Task<ControllerMetadataDto> UpdateFunctionStatusAsync(Guid id, FunctionStatusChange change, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// 編輯指定功能的顯示欄位（名稱 / 說明 / 排序 / 圖示），並標記為已自訂，使啟動同步不再覆蓋
+        /// </summary>
+        Task<ControllerMetadataDto> UpdateFunctionMetadataAsync(Guid id, FunctionMetadataChange change, CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// 取得指定功能的狀態異動歷程（新到舊，最多 200 筆）
         /// </summary>
         Task<IReadOnlyList<FunctionStatusLogDto>> GetFunctionStatusLogsAsync(Guid id, CancellationToken cancellationToken = default);

@@ -18,6 +18,23 @@ namespace SGSFramework.Identity.DTOs
         string? ClientIp);
 
     /// <summary>
+    /// 編輯系統功能顯示欄位之指令內容
+    /// </summary>
+    /// <param name="DisplayName">功能名稱（必填）</param>
+    /// <param name="Description">功能說明</param>
+    /// <param name="DisplayOrder">顯示排序</param>
+    /// <param name="Icon">圖示（Font Awesome class）</param>
+    /// <param name="IsMenu">是否為選單入口</param>
+    /// <param name="ClientIp">操作來源 IP</param>
+    public sealed record FunctionMetadataChange(
+        string DisplayName,
+        string? Description,
+        int DisplayOrder,
+        string? Icon,
+        bool IsMenu,
+        string? ClientIp);
+
+    /// <summary>
     /// 系統功能狀態異動歷程
     /// </summary>
     public sealed class FunctionStatusLogDto

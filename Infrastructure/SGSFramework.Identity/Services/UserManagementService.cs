@@ -133,7 +133,7 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
     }
 
     /// <inheritdoc />
-    public async Task<Result<PagedResult<UserResponse>>> GetPagedUsersAsync(
+    public async Task<Result<PagedResult<UserDto>>> GetPagedUsersAsync(
         UserQueryParameters queryParameters,
         CancellationToken cancellationToken = default)
     {
@@ -143,6 +143,7 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
         {
             var query = _userManager.Users.Where(u => !u.IsDeleted).AsNoTracking();
 
+            // 1. 全域關鍵字搜尋
             if (!string.IsNullOrWhiteSpace(queryParameters.SearchTerm))
             {
                 string searchTerm = queryParameters.SearchTerm.Trim();
@@ -150,6 +151,38 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                                          (u.Email != null && u.Email.Contains(searchTerm)) ||
                                          (u.FullName != null && u.FullName.Contains(searchTerm)) ||
                                          (u.EmployeeNo != null && u.EmployeeNo.Contains(searchTerm)));
+            }
+
+            // 2. 進階篩選條件 (FilterCriteria)
+            if (queryParameters.Filter is not null)
+            {
+                var criteria = queryParameters.Filter;
+
+                // 1. 員工編號 (EmployeeNo)
+                if (!string.IsNullOrWhiteSpace(criteria.EmployeeNo))
+                {
+                    string empNo = criteria.EmployeeNo.Trim();
+                    query = query.Where(u => u.EmployeeNo != null && u.EmployeeNo.Contains(empNo));
+                }
+
+                // 2. 姓名 (對應 Fullname)
+                if (!string.IsNullOrWhiteSpace(criteria.Fullname))
+                {
+                    string fullName = criteria.Fullname.Trim();
+                    query = query.Where(u => u.FullName != null && u.FullName.Contains(fullName));
+                }
+
+                // 3. 實驗室 (對應 Organization.Parent) 與 4. 區域實驗室 (對應 Organization 的 Code)
+                if (!string.IsNullOrWhiteSpace(criteria.LaboratoryParent) || !string.IsNullOrWhiteSpace(criteria.RegionalLaboratoryCode))
+                {
+                    var targetUserIds = await _orgIntegrationService.GetFilteredUserIdsAsync(
+                        criteria.LaboratoryParent,
+                        criteria.RegionalLaboratoryCode,
+                        cancellationToken
+                    ).ConfigureAwait(false);
+
+                    query = query.Where(u => targetUserIds.Contains(u.Id));
+                }
             }
 
             int totalCount = await query.CountAsync(cancellationToken).ConfigureAwait(false);
@@ -161,36 +194,46 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
 
-            var items = new List<UserResponse>(userEntities.Count);
+            var items = new List<UserDto>(userEntities.Count);
             foreach (var u in userEntities)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var roles = await _userManager.GetRolesAsync(u).ConfigureAwait(false);
+                var isLockedOut = await _userManager.IsLockedOutAsync(u).ConfigureAwait(false);
+
                 string userIdStr = u.Id.ToString() ?? string.Empty;
                 var accessibleOrgs = await _orgIntegrationService.GetUserAccessibleOrganizationsAsync(userIdStr, cancellationToken).ConfigureAwait(false);
-                var primaryOrg = accessibleOrgs.FirstOrDefault(o => o.IsPrimary) ?? accessibleOrgs.FirstOrDefault();
-                items.Add(new UserResponse
+
+                // 與 GetUsersAsync 一致：僅顯示主要歸屬區域實驗室
+                var primaryOrg = accessibleOrgs.FirstOrDefault(o => o.IsPrimary);
+
+                items.Add(new UserDto
                 {
-                    Id = u.Id is Guid gId ? gId : (Guid.TryParse(u.Id.ToString(), out var parsedId) ? parsedId : Guid.Empty),
-                    UserName = u.UserName ?? string.Empty,
+                    Id = userIdStr,
+                    Username = u.UserName ?? string.Empty,
                     Email = u.Email ?? string.Empty,
                     EmailConfirmed = u.EmailConfirmed,
+                    LockoutEnabled = u.LockoutEnabled,
                     EmployeeNo = u.EmployeeNo ?? string.Empty,
                     FullName = u.FullName ?? string.Empty,
                     PrimaryLabId = primaryOrg?.TenantLabId,
+                    PrimaryLabCode = primaryOrg?.Code,
                     PrimaryLabName = primaryOrg?.Name,
-                    Status = u.Status,
-                    CreatedAt = u.CreatedAt.UtcDateTime,
-                    // 【修正】改用 HasValue 判斷或提供預設值，避免 Nullable 拆箱失敗
-                    UpdatedAt = u.UpdatedAtUtc.HasValue ? u.UpdatedAtUtc.Value.UtcDateTime : u.CreatedAt.UtcDateTime,
+                    Status = u.Status.ToString(),
+                    IsLockedOut = isLockedOut,
+                    LastLoginAt = u.LastLoginAt,
+                    Roles = roles.ToList()
                 });
             }
 
-            var pagedResult = new PagedResult<UserResponse>(items, totalCount, queryParameters.PageIndex, queryParameters.PageSize);
+            var pagedResult = new PagedResult<UserDto>(items, totalCount, queryParameters.PageIndex, queryParameters.PageSize);
             return Result.Success(pagedResult);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "分頁查詢使用者清單時發生例外。");
-            return Result.Failure<PagedResult<UserResponse>>(Error.Unexpected("User.GetPaged.Exception", "查詢使用者列表時發生內部系統錯誤。"));
+            return Result.Failure<PagedResult<UserDto>>(Error.Unexpected("User.GetPaged.Exception", "查詢使用者列表時發生內部系統錯誤。"));
         }
     }
 

@@ -15,5 +15,15 @@ namespace SGSFramework.AuthTokenBucket.Abstractions
         /// <param name="cancellationToken">取消權牌</param>
         /// <returns>非同步任務</returns>
         Task SeedAndSyncMenusAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// 依單一功能目前的 IsMenu 狀態立即同步其選單頁面節點：
+        /// IsMenu = true 時建立（或恢復顯示）Section → Group → Page 節點；IsMenu = false 時隱藏該頁面節點，
+        /// 並隱藏因此變空的自動產生群組。僅處理指定功能，不影響其他選單節點。
+        /// </summary>
+        /// <param name="controllerMetadataId">功能中繼資料識別碼</param>
+        /// <param name="cancellationToken">取消權牌</param>
+        /// <returns>非同步任務</returns>
+        Task SyncFunctionMenuAsync(Guid controllerMetadataId, CancellationToken cancellationToken = default);
     }
 }

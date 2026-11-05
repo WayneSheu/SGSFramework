@@ -104,6 +104,11 @@ public class DynamicControllerRepository<T>(
                         targetEntity.IsActive = !targetEntity.IsManuallyDisabled;
                         _context.Entry(targetEntity).State = EntityState.Modified;
 
+                        // 管理者自訂過的顯示欄位先留存快照，同步完成後還原，避免被程式碼 Attribute 覆蓋
+                        var customSnapshot = targetEntity is ControllerMetadata { IsCustomized: true } customized
+                            ? (customized.DisplayName, customized.Description, customized.DisplayOrder, customized.Icon, customized.IsMenu)
+                            : ((string, string?, int, string?, bool)?)null;
+
                         var controllerType = GetCachedType(controller.ControllerTypeName);
                         if (controllerType != null && targetEntity is ControllerMetadata metadataEntity)
                         {
@@ -115,7 +120,11 @@ public class DynamicControllerRepository<T>(
                             var existingMethod = controllerType.GetMethod(metadataEntity.ActionName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase | BindingFlags.FlattenHierarchy);
                             var existingFuncAttr = existingMethod?.GetCustomAttribute<FunctionAttribute>();
 
-                            metadataEntity.IsMenu = existingFuncAttr?.IsMenu ?? false;
+                            // 管理者自訂過的功能，IsMenu 以資料庫為準，不被程式碼 [Function] 的 IsMenu 覆蓋
+                            if (!metadataEntity.IsCustomized)
+                            {
+                                metadataEntity.IsMenu = existingFuncAttr?.IsMenu ?? false;
+                            }
                             metadataEntity.Path = existingFuncAttr?.Path;
                             metadataEntity.ControllerIcon = existingTitleAttr?.Icon;
                             metadataEntity.ControllerOrder = existingTitleAttr?.Order ?? 0;
@@ -139,6 +148,14 @@ public class DynamicControllerRepository<T>(
                             {
                                 metaExisting.DisplayName = metaNew.DisplayName;
                             }
+                        }
+                        if (customSnapshot is { } snap && targetEntity is ControllerMetadata restoreTarget)
+                        {
+                            restoreTarget.DisplayName = snap.Item1;
+                            restoreTarget.Description = snap.Item2!;
+                            restoreTarget.DisplayOrder = snap.Item3;
+                            restoreTarget.Icon = snap.Item4;
+                            restoreTarget.IsMenu = snap.Item5;
                         }
                         targetEntity.PermissionKey = controller.PermissionKey;
                         updatedCount++;

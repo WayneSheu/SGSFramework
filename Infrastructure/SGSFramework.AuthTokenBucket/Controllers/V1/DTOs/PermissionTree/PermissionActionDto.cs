@@ -42,4 +42,10 @@ public sealed class PermissionActionDto
     /// </summary>
     [JsonPropertyName("bitPosition")]
     public long BitPosition { get; set; }
+
+    /// <summary>
+    /// 是否由管理者自訂過顯示名稱 / 說明 (啟動同步不會覆蓋)
+    /// </summary>
+    [JsonPropertyName("isCustomized")]
+    public bool IsCustomized { get; set; }
 }

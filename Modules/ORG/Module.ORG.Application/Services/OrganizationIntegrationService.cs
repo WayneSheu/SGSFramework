@@ -135,4 +135,32 @@ public class OrganizationIntegrationService(ORGDbContext orgDbContext) : IOrgani
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
     }
+
+    public async Task<List<Guid>> GetFilteredUserIdsAsync(
+        string? laboratoryParent,
+        string? regionalLaboratoryCode,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _orgDbContext.UserAccessibleLabReadModels
+            .AsNoTracking()
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(laboratoryParent))
+        {
+            string parent = laboratoryParent.Trim();
+            query = query.Where(x => x.ParentLabName != null && x.ParentLabName.Contains(parent));
+        }
+
+        if (!string.IsNullOrWhiteSpace(regionalLaboratoryCode))
+        {
+            string code = regionalLaboratoryCode.Trim();
+            query = query.Where(x => x.LabCode != null && x.LabCode.Contains(code));
+        }
+
+        return await query
+            .Select(x => x.UserId)
+            .Distinct()
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
 }

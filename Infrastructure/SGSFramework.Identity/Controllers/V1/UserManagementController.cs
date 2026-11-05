@@ -108,7 +108,7 @@ public sealed class UserManagementController(
     [RequiresPermission("SYSTEM.USERMANAGEMENT.READ")]
     [EndpointSummary("分頁查詢使用者")]
     [EndpointDescription("分頁取得系統使用者清單，支援關鍵字搜尋、條件過濾與進階排序。")]
-    [ProducesResponseType(typeof(Result<PagedResult<UserResponse>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(Result<PagedResult<UserDto>>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetPagedUsers(

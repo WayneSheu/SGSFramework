@@ -28,6 +28,23 @@ namespace SGSFramework.AuthTokenBucket.Abstractions
         
         //後台 UI 權限矩陣與樹狀結構維護 (Management DTOs)
         Task<List<PermissionModuleDto>> GetPermissionTreeAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// 編輯單一權限項的權限標題 (PermissionTitle) 與說明 (Description)，並標記為已自訂使啟動同步不覆蓋。
+        /// 動作標題 (ActionTitle) 取自程式碼，不可修改。同一控制器下共用同一權限鍵的多筆中繼資料會一併更新。
+        /// </summary>
+        /// <param name="permissionKey">權限鍵值</param>
+        /// <param name="controllerName">所屬控制器名稱 (權限鍵可能被多個控制器共用，需一併指定)</param>
+        /// <param name="permissionTitle">權限標題 (必填)</param>
+        /// <param name="description">說明</param>
+        /// <param name="cancellationToken">取消權牌</param>
+        /// <returns>更新後的權限項資料</returns>
+        Task<PermissionActionDto> UpdatePermissionMetadataAsync(
+            string permissionKey,
+            string controllerName,
+            string permissionTitle,
+            string? description,
+            CancellationToken cancellationToken = default);
         
         /// <summary>
         /// 獲取角色權限矩陣 (Read Operations)

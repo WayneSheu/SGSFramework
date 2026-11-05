@@ -1,8 +1,19 @@
-﻿using Microsoft.Extensions.Logging;
-using SGSFramework.Core.Abstractions.Adapters;
-using SGSFramework.Core.DTOs;
+﻿// ==========================================
+// 檔案路徑: src/Core/SGSFramework.Core/Services/NullOrganizationIntegrationService.cs
+// 架構層級: Core / Services (Fallback / Null Object)
+// ==========================================
+
+#nullable enable
 
 namespace SGSFramework.Core.Services;
+
+using Microsoft.Extensions.Logging;
+using SGSFramework.Core.Abstractions.Adapters;
+using SGSFramework.Core.DTOs;
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 
 /// <summary>
 /// 組織整合服務之 Fallback (Null Object) 實作。
@@ -56,6 +67,19 @@ public sealed class NullOrganizationIntegrationService : IOrganizationIntegratio
     {
         LogWarning(nameof(GetUserLabProfileAsync));
         return Task.FromResult<UserPermissionProfileDto?>(null);
+    }
+
+    /// <summary>
+    /// 依據實驗室與區域實驗室條件過濾符合的使用者識別碼 (Null Object Fallback 實作)
+    /// </summary>
+    public Task<List<Guid>> GetFilteredUserIdsAsync(
+        string? laboratoryParent,
+        string? regionalLaboratoryCode,
+        CancellationToken cancellationToken = default)
+    {
+        LogWarning(nameof(GetFilteredUserIdsAsync));
+        // Fallback 策略：未載入組織模組時回傳空清單
+        return Task.FromResult(new List<Guid>());
     }
 
     private void LogWarning(string methodName)

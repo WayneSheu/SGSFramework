@@ -29,6 +29,192 @@ public class MenuSeedService<TDbContext> : IMenuSeedService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <inheritdoc />
+    public async Task SyncFunctionMenuAsync(Guid controllerMetadataId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var meta = await _dbContext.Set<ControllerMetadata>()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(m => m.Id == controllerMetadataId, cancellationToken);
+
+            if (meta is null)
+            {
+                _logger.LogWarning("單一功能選單同步失敗，找不到功能中繼資料 {Id}。", controllerMetadataId);
+                return;
+            }
+
+            var menuItems = await _dbContext.Set<MenuItem>().ToListAsync(cancellationToken);
+
+            string moduleName = string.IsNullOrWhiteSpace(meta.ModuleName) ? "System" : meta.ModuleName;
+            string controllerName = meta.ControllerName;
+            string fallbackKey = $"PAG_{controllerName.ToUpperInvariant()}_{meta.ActionName.ToUpperInvariant()}";
+            string pageKey = string.IsNullOrWhiteSpace(meta.PermissionKey) ? fallbackKey : meta.PermissionKey;
+
+            // 1. 先找「由此功能產生」的頁面節點（以 ControllerId 識別，最可靠）
+            var pageNode = menuItems.FirstOrDefault(m => m.Type == MenuType.Page && m.ControllerId == meta.Id);
+
+            // 2. 找不到時以 Key 查找；多個功能可能共用同一權限鍵（例如同步權限元數據與系統權限清單），
+            //    該權限鍵的節點若已屬於其他功能，不可沿用（否則會誤以為已存在而不建立），改用「控制器_動作」專屬 Key。
+            if (pageNode == null)
+            {
+                var byKey = menuItems.FirstOrDefault(m => m.Key == pageKey);
+                if (byKey != null && (byKey.ControllerId == null || byKey.ControllerId == meta.Id))
+                {
+                    pageNode = byKey;
+                }
+                else if (byKey != null)
+                {
+                    pageKey = fallbackKey;
+                    pageNode = menuItems.FirstOrDefault(m => m.Key == pageKey);
+                }
+            }
+
+            bool isModified = false;
+
+            if (meta.IsMenu)
+            {
+                // 1. Section
+                string sectionKey = $"SEC_{moduleName.ToUpperInvariant()}";
+                var sectionNode = menuItems.FirstOrDefault(m => m.Key == sectionKey);
+                if (sectionNode == null)
+                {
+                    sectionNode = new MenuItem
+                    {
+                        Id = Guid.NewGuid(),
+                        Key = sectionKey,
+                        DisplayName = string.IsNullOrWhiteSpace(meta.ModuleTitle) ? moduleName : meta.ModuleTitle,
+                        Icon = "fa-solid fa-folder",
+                        DisplayOrder = 10,
+                        Type = MenuType.Section,
+                        ModuleName = moduleName,
+                        IsActive = true,
+                        IsVisible = true
+                    };
+                    _dbContext.Set<MenuItem>().Add(sectionNode);
+                    menuItems.Add(sectionNode);
+                    isModified = true;
+                }
+
+                // 2. Group
+                string groupKey = $"GRP_{moduleName.ToUpperInvariant()}_{controllerName.ToUpperInvariant()}";
+                var groupNode = menuItems.FirstOrDefault(m => m.Key == groupKey);
+                if (groupNode == null)
+                {
+                    groupNode = new MenuItem
+                    {
+                        Id = Guid.NewGuid(),
+                        ParentId = sectionNode.Id,
+                        Key = groupKey,
+                        DisplayName = string.IsNullOrWhiteSpace(meta.ControllerTitle) ? controllerName : meta.ControllerTitle,
+                        Icon = string.IsNullOrWhiteSpace(meta.ControllerIcon) ? "fa-solid fa-layer-group" : meta.ControllerIcon,
+                        DisplayOrder = meta.ControllerOrder,
+                        Type = MenuType.Group,
+                        ModuleName = moduleName,
+                        IsActive = true,
+                        IsVisible = true
+                    };
+                    _dbContext.Set<MenuItem>().Add(groupNode);
+                    menuItems.Add(groupNode);
+                    isModified = true;
+                }
+                else if (!groupNode.IsVisible || !groupNode.IsActive)
+                {
+                    // 群組曾因子節點全部隱藏而被隱藏，現在有頁面要顯示，一併恢復
+                    groupNode.IsVisible = true;
+                    groupNode.IsActive = true;
+                    isModified = true;
+                }
+
+                // 3. Page
+                if (pageNode == null)
+                {
+                    string defaultRoute = !string.IsNullOrWhiteSpace(meta.Path)
+                        ? meta.Path
+                        : $"/{moduleName.ToLowerInvariant()}/{controllerName.Replace("Controller", "", StringComparison.OrdinalIgnoreCase).ToLowerInvariant()}";
+
+                    pageNode = new MenuItem
+                    {
+                        Id = Guid.NewGuid(),
+                        ControllerId = meta.Id,
+                        ParentId = groupNode.Id,
+                        Key = pageKey,
+                        DisplayName = string.IsNullOrWhiteSpace(meta.DisplayName) ? meta.ActionName : meta.DisplayName,
+                        Icon = string.IsNullOrWhiteSpace(meta.Icon) ? "fa-solid fa-file" : meta.Icon,
+                        Route = defaultRoute,
+                        DisplayOrder = meta.DisplayOrder,
+                        Type = MenuType.Page,
+                        ModuleName = moduleName,
+                        PermissionKey = meta.PermissionKey,
+                        IsActive = true,
+                        IsVisible = true
+                    };
+                    _dbContext.Set<MenuItem>().Add(pageNode);
+                    isModified = true;
+                    _logger.LogInformation("功能 [{Action}] 已加入選單，頁面節點 [{Key}]。", meta.ActionName, pageKey);
+                }
+                else if (!pageNode.IsVisible || !pageNode.IsActive)
+                {
+                    pageNode.IsVisible = true;
+                    pageNode.IsActive = true;
+                    isModified = true;
+                    _logger.LogInformation("功能 [{Action}] 的選單頁面節點 [{Key}] 已恢復顯示。", meta.ActionName, pageKey);
+                }
+
+                // 共用同一權限鍵、但已不是選單入口的功能所遺留的頁面節點（例如改成按鈕的功能）：隱藏，避免選單重複指向同一頁面
+                if (!string.IsNullOrWhiteSpace(meta.PermissionKey))
+                {
+                    var nonMenuIds = (await _dbContext.Set<ControllerMetadata>()
+                            .AsNoTracking()
+                            .Where(m => !m.IsMenu && m.PermissionKey == meta.PermissionKey)
+                            .Select(m => m.Id)
+                            .ToListAsync(cancellationToken))
+                        .ToHashSet();
+
+                    foreach (var stale in menuItems.Where(m =>
+                                 m.Type == MenuType.Page && m.IsVisible && m.Id != pageNode.Id &&
+                                 m.ControllerId.HasValue && m.ControllerId != meta.Id &&
+                                 nonMenuIds.Contains(m.ControllerId.Value)).ToList())
+                    {
+                        stale.IsVisible = false;
+                        isModified = true;
+                        _logger.LogInformation("選單頁面節點 [{Key}] 的功能已不是選單入口，已隱藏。", stale.Key);
+                    }
+                }
+            }
+            else if (pageNode is { Type: MenuType.Page, IsVisible: true } && pageNode.ControllerId == meta.Id)
+            {
+                // 僅處理由此功能產生的頁面節點；同一權限鍵若改由其他功能提供入口則不動
+                pageNode.IsVisible = false;
+                isModified = true;
+                _logger.LogInformation("功能 [{Action}] 已移出選單，頁面節點 [{Key}] 已隱藏。", meta.ActionName, pageKey);
+
+                // 自動產生的群組若已無可見子節點，一併隱藏，避免出現空資料夾
+                if (pageNode.ParentId.HasValue)
+                {
+                    var parentId = pageNode.ParentId.Value;
+                    var group = menuItems.FirstOrDefault(m => m.Id == parentId);
+                    if (group is { Type: MenuType.Group, IsVisible: true } &&
+                        group.Key.StartsWith("GRP_", StringComparison.Ordinal) &&
+                        !menuItems.Any(m => m.ParentId == parentId && m.IsVisible))
+                    {
+                        group.IsVisible = false;
+                    }
+                }
+            }
+
+            if (isModified)
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "執行單一功能選單同步時發生未預期例外。功能識別碼: {Id}", controllerMetadataId);
+            throw;
+        }
+    }
+
     public async Task SeedAndSyncMenusAsync(CancellationToken cancellationToken = default)
     {
         try
@@ -218,6 +404,13 @@ public class MenuSeedService<TDbContext> : IMenuSeedService
             {
                 await _dbContext.SaveChangesAsync(cancellationToken);
                 _logger.LogInformation("動態選單樹狀結構 (Section -> Group -> Page) 種子同步完成。");
+            }
+
+            // 管理者在「系統功能管理」自訂為選單入口的功能：上面的整批同步以權限鍵為節點 Key，
+            // 與其他功能共用權限鍵者會被視為「已存在」而略過，這裡逐一以單一功能同步補建。
+            foreach (var customized in menuTargets.Where(m => m.IsCustomized))
+            {
+                await SyncFunctionMenuAsync(customized.Id, cancellationToken);
             }
         }
         catch (Exception ex)

@@ -148,11 +148,13 @@ namespace SGSFramework.Identity.Services
                         if (!string.Equals(existingRecord.ControllerName, controllerName, StringComparison.Ordinal)) { existingRecord.ControllerName = controllerName; isModified = true; }
                         if (!string.Equals(existingRecord.ControllerTitle, controllerTitle, StringComparison.Ordinal)) { existingRecord.ControllerTitle = controllerTitle; isModified = true; }
                         if (!string.Equals(existingRecord.ActionName, actionName, StringComparison.Ordinal)) { existingRecord.ActionName = actionName; isModified = true; }
+                        // 動作標題取自程式碼，每次同步；管理者自訂過的權限標題 / 說明不被程式碼的值覆蓋
                         if (!string.Equals(existingRecord.ActionTitle, actionTitle, StringComparison.Ordinal)) { existingRecord.ActionTitle = actionTitle; isModified = true; }
-                        if (!string.Equals(existingRecord.PermissionTitle, permissionTitle, StringComparison.Ordinal)) { existingRecord.PermissionTitle = permissionTitle; isModified = true; }
+                        if (!existingRecord.IsCustomized && !string.Equals(existingRecord.PermissionTitle, permissionTitle, StringComparison.Ordinal)) { existingRecord.PermissionTitle = permissionTitle; isModified = true; }
                         if (existingRecord.Category != category) { existingRecord.Category = category; isModified = true; }
 
-                        if (string.IsNullOrEmpty(existingRecord.Description) || existingRecord.Description.StartsWith("Auto-scanned permission:"))
+                        if (!existingRecord.IsCustomized &&
+                            (string.IsNullOrEmpty(existingRecord.Description) || existingRecord.Description.StartsWith("Auto-scanned permission:")))
                         {
                             if (!string.Equals(existingRecord.Description, description, StringComparison.Ordinal))
                             {

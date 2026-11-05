@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.AuthTokenBucket.Services;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Abstractions.Identities;
@@ -21,6 +22,7 @@ namespace SGSFramework.Identity.Services
         ICurrentUserService currentUserService,
         IPermissionChangeNotifier permissionChangeNotifier,
         TimeProvider timeProvider,
+        IMenuSeedService menuSeedService,
         ILogger<ControllerMetadataService> logger) : IControllerMetadataService
     {
         /// <summary>SignalR 廣播原因代碼，前端據此重新載入選單與系統公告</summary>
@@ -31,7 +33,8 @@ namespace SGSFramework.Identity.Services
         private readonly ICurrentUserService _currentUserService = currentUserService ?? throw new ArgumentNullException(nameof(currentUserService));
         private readonly IPermissionChangeNotifier _permissionChangeNotifier = permissionChangeNotifier ?? throw new ArgumentNullException(nameof(permissionChangeNotifier));
         private readonly TimeProvider _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
-        private readonly ILogger<ControllerMetadataService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        private readonly IMenuSeedService _menuSeedService = menuSeedService ?? throw new ArgumentNullException(nameof(menuSeedService));
+        private readonly ILogger<ControllerMetadataService> _logger =logger ?? throw new ArgumentNullException(nameof(logger));
 
         public async Task<IEnumerable<ControllerMetadataDto>> GetAllControllerMetadatasAsync(bool includeInactive = false, CancellationToken cancellationToken = default)
         {
@@ -57,9 +60,11 @@ namespace SGSFramework.Identity.Services
                         Icon = m.Icon, //[cite: 10]
                         DisplayOrder = m.DisplayOrder, //[cite: 10]
                         ParentMenuName = m.ParentMenuName, //[cite: 10]
+                        IsMenu = m.IsMenu,
                         PermissionKey = m.PermissionKey, //[cite: 10]
                         IsActive = m.IsActive, //[cite: 10]
                         IsManuallyDisabled = m.IsManuallyDisabled,
+                        IsCustomized = m.IsCustomized,
                         DisabledNotice = m.DisabledNotice,
                         DisabledAt = m.DisabledAt,
                         ExpectedRestoreAt = m.ExpectedRestoreAt
@@ -179,6 +184,74 @@ namespace SGSFramework.Identity.Services
             }
         }
 
+        public async Task<ControllerMetadataDto> UpdateFunctionMetadataAsync(Guid id, FunctionMetadataChange change, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(change);
+
+            if (id == Guid.Empty)
+            {
+                throw new ArgumentException("識別碼不可為空 Guid。", nameof(id));
+            }
+
+            var displayName = Normalize(change.DisplayName)
+                ?? throw new ArgumentException("功能名稱不可為空白。", nameof(change));
+
+            if (displayName.Length > 100)
+            {
+                throw new ArgumentException("功能名稱長度不可超過 100 字。", nameof(change));
+            }
+
+            var icon = Normalize(change.Icon);
+            if (icon is { Length: > 100 })
+            {
+                throw new ArgumentException("圖示長度不可超過 100 字。", nameof(change));
+            }
+
+            var entity = await _dbContext.Set<ControllerMetadata>()
+                .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
+            if (entity == null)
+            {
+                throw new KeyNotFoundException($"找不到識別碼為 '{id}' 的功能中繼資料。");
+            }
+
+            // 系統功能管理本身的選單入口不可移出選單，避免管理者找不到入口而無法再調整設定
+            if (entity.IsMenu && !change.IsMenu && FunctionStatusRules.IsProtected(entity.ControllerName))
+            {
+                throw new InvalidOperationException("「系統功能管理」本身的選單入口不可移出選單。");
+            }
+
+            bool menuChanged = entity.IsMenu != change.IsMenu;
+            var before = $"名稱={entity.DisplayName}; 說明={entity.Description}; 排序={entity.DisplayOrder}; 圖示={entity.Icon}; IsMenu={entity.IsMenu}";
+
+            entity.DisplayName = displayName;
+            entity.Description = Normalize(change.Description);
+            entity.DisplayOrder = change.DisplayOrder;
+            entity.Icon = icon;
+            entity.IsMenu = change.IsMenu;
+            // 標記為已自訂：啟動同步不再以程式碼 Attribute 覆蓋這些欄位
+            entity.IsCustomized = true;
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            // IsMenu 有變動：立即建立（或恢復）/ 隱藏該功能的選單頁面節點，必須在中繼資料存檔之後執行
+            // IsMenu 開啟時每次儲存都同步（冪等）：可補建先前漏建的節點
+            if (menuChanged || change.IsMenu)
+            {
+                await _menuSeedService.SyncFunctionMenuAsync(entity.Id, cancellationToken);
+            }
+
+            // 通知所有連線使用者重新載入選單與公告
+            await _permissionChangeNotifier.BroadcastAsync(FunctionStatusChangedReason, cancellationToken);
+
+            _logger.LogWarning("功能顯示欄位已編輯。識別碼: {Id}, 功能: {Function}, 變更前: {Before}, 變更後: 名稱={DisplayName}; 說明={Description}; 排序={Order}; 圖示={Icon}; IsMenu={IsMenu}, 操作者: {Actor}, 來源 IP: {ClientIp}",
+                id, $"{entity.ControllerName}.{entity.ActionName}", before,
+                entity.DisplayName, entity.Description, entity.DisplayOrder, entity.Icon, entity.IsMenu,
+                _currentUserService.UserName ?? "Unknown", change.ClientIp);
+
+            return ToDto(entity);
+        }
+
         public async Task<IReadOnlyList<FunctionStatusLogDto>> GetFunctionStatusLogsAsync(Guid id, CancellationToken cancellationToken = default)
         {
             return await _dbContext.Set<FunctionStatusLog>()
@@ -232,8 +305,14 @@ namespace SGSFramework.Identity.Services
             DisplayName = entity.DisplayName,
             PermissionKey = entity.PermissionKey,
             RouteTemplate = entity.RouteTemplate,
+            Description = entity.Description,
+            Icon = entity.Icon,
+            DisplayOrder = entity.DisplayOrder,
+            ParentMenuName = entity.ParentMenuName,
+            IsMenu = entity.IsMenu,
             IsActive = entity.IsActive,
             IsManuallyDisabled = entity.IsManuallyDisabled,
+            IsCustomized = entity.IsCustomized,
             DisabledNotice = entity.DisabledNotice,
             DisabledAt = entity.DisabledAt,
             ExpectedRestoreAt = entity.ExpectedRestoreAt

@@ -484,6 +484,12 @@ namespace PhysLIMS.API.Migrations
                         .HasDefaultValue(true)
                         .HasComment("標記是否啟用");
 
+                    b.Property<bool>("IsCustomized")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasComment("是否由管理者自訂過功能名稱、說明、排序、圖示；啟動同步不會覆蓋這些欄位。");
+
                     b.Property<bool>("IsManuallyDisabled")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
@@ -2754,6 +2760,12 @@ namespace PhysLIMS.API.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)")
                         .HasComment("操作說明，對應ControllerMetadatas 的Description。");
+
+                    b.Property<bool>("IsCustomized")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasComment("是否由管理者自訂過操作標題與說明；啟動同步不會覆蓋這些欄位。");
 
                     b.Property<int>("Level")
                         .HasColumnType("int")

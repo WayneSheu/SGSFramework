@@ -34,7 +34,7 @@ public interface IUserManagementService<TUser, TRole, TKey>
     /// <param name="queryParameters"></param>
     /// <param name="cancellationToken"></param>
     /// <returns></returns>
-    Task<Result<PagedResult<UserResponse>>> GetPagedUsersAsync(UserQueryParameters queryParameters, CancellationToken cancellationToken = default);
+    Task<Result<PagedResult<UserDto>>> GetPagedUsersAsync(UserQueryParameters queryParameters, CancellationToken cancellationToken = default);
     
     /// <summary>
     /// 取得使用者資訊

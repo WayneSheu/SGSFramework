@@ -164,6 +164,14 @@ public class ControllerMetadata : IControllerMetadata
     [Comment("手動停用時公告的預計恢復時間 (UTC)，僅供公告不會自動恢復。")]
     public DateTimeOffset? ExpectedRestoreAt { get; set; }
 
+    /// <summary>
+    /// 是否由管理者於「系統功能管理」自訂過顯示欄位 (名稱 / 說明 / 排序 / 圖示)。
+    /// 為 true 時，啟動同步不會以程式碼 Attribute 覆蓋這四個欄位。
+    /// </summary>
+    [DisplayName("已自訂顯示欄位")]
+    [Comment("是否由管理者自訂過功能名稱、說明、排序、圖示；啟動同步不會覆蓋這些欄位。")]
+    public bool IsCustomized { get; set; } = false;
+
     [DisplayName("建立日期")]
     [Comment("建立日期")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -194,6 +202,7 @@ public class ControllerMetadataConfig : IEntityTypeConfiguration<ControllerMetad
         builder.Property(e => e.IsActive).HasDefaultValue(true);
         builder.Property(e => e.IsMenu).HasDefaultValue(false);
         builder.Property(e => e.IsManuallyDisabled).HasDefaultValue(false);
+        builder.Property(e => e.IsCustomized).HasDefaultValue(false);
 
         // 高頻選單查詢複合索引
         builder.HasIndex(x => x.IsMenu).HasDatabaseName("IX_Metadata_IsMenu");

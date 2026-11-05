@@ -62,5 +62,16 @@ public interface IOrganizationIntegrationService
     /// </summary>
     Task<List<OrganizationInfoContract>> GetAllActiveOrganizationsAsync(
         CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// 獲取全系統所有未刪除且有效的區域實驗室/組織 (專供系統管理員特權開路呼叫)
+    /// </summary>
+    /// <param name="laboratoryParent"></param>
+    /// <param name="regionalLaboratoryCode"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    Task<List<Guid>> GetFilteredUserIdsAsync(string? laboratoryParent, string? regionalLaboratoryCode, CancellationToken cancellationToken = default);
+
+    
 
 }

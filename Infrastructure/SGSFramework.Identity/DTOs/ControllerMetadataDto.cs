@@ -23,11 +23,17 @@ namespace SGSFramework.Identity.DTOs
         public string? Icon { get; init; }
         public int DisplayOrder { get; init; }
         public string? ParentMenuName { get; init; }
+
+        /// <summary>是否為選單入口（IsMenu = true 者會產生選單頁面節點）</summary>
+        public bool IsMenu { get; init; }
         public string PermissionKey { get; init; } = string.Empty;
         public bool IsActive { get; init; }
 
         /// <summary>是否由管理者手動停用（停用後 API 會被拒絕、選單隱藏）</summary>
         public bool IsManuallyDisabled { get; init; }
+
+        /// <summary>是否由管理者自訂過顯示欄位（名稱 / 說明 / 排序 / 圖示），啟動同步不會覆蓋</summary>
+        public bool IsCustomized { get; init; }
 
         /// <summary>停用時對使用者的公告內容</summary>
         public string? DisabledNotice { get; init; }

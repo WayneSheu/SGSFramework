@@ -185,7 +185,8 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                             ActionName = readEntity.ActionName,
                             ActionTitle = readEntity.ActionTitle,
                             Description = readEntity.Description,
-                            BitPosition = readEntity.BitPosition
+                            BitPosition = readEntity.BitPosition,
+                            IsCustomized = readEntity.IsCustomized
                         };
                     }
                     var actions = controllerGroup.DistinctBy(x => x.PermissionKey).ToList();
@@ -205,7 +206,8 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                                 ? actionEntity.ActionTitle
                                 : actionEntity.PermissionTitle,
                             Description = actionEntity.Description,
-                            BitPosition = actionEntity.BitPosition
+                            BitPosition = actionEntity.BitPosition,
+                            IsCustomized = actionEntity.IsCustomized
                         });
                     }
 
@@ -222,6 +224,68 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
             _logger.LogError(ex, "[PermissionManagementService] 建立權限樹狀圖時發生錯誤");
             throw;
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<PermissionActionDto> UpdatePermissionMetadataAsync(
+        string permissionKey,
+        string controllerName,
+        string permissionTitle,
+        string? description,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(permissionKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(controllerName);
+
+        var title = permissionTitle?.Trim();
+        if (string.IsNullOrEmpty(title))
+        {
+            throw new ArgumentException("權限標題不可為空白。", nameof(permissionTitle));
+        }
+
+        if (title.Length > 128)
+        {
+            throw new ArgumentException("權限標題長度不可超過 128 字。", nameof(permissionTitle));
+        }
+
+        var desc = string.IsNullOrWhiteSpace(description) ? string.Empty : description.Trim();
+        if (desc.Length > 256)
+        {
+            throw new ArgumentException("說明長度不可超過 256 字。", nameof(description));
+        }
+
+        var rows = await _dbContext.Set<PermissionMetadata>()
+            .Where(p => p.PermissionKey == permissionKey && p.ControllerName == controllerName)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (rows.Count == 0)
+        {
+            throw new KeyNotFoundException($"找不到權限 '{permissionKey}' (控制器 '{controllerName}')。");
+        }
+
+        foreach (var row in rows)
+        {
+            // 動作標題 (ActionTitle) 取自程式碼不可修改，只更新權限標題與說明
+            row.PermissionTitle = title;
+            row.Description = desc;
+            // 標記為已自訂：啟動同步不再以程式碼的值覆蓋權限標題與說明
+            row.IsCustomized = true;
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        var first = rows[0];
+        return new PermissionActionDto
+        {
+            PermissionKey = first.PermissionKey,
+            PermissionTitle = first.PermissionTitle,
+            ActionName = first.ActionName,
+            ActionTitle = first.ActionTitle,
+            Description = first.Description,
+            BitPosition = first.BitPosition,
+            IsCustomized = first.IsCustomized
+        };
     }
 
     /// <inheritdoc />

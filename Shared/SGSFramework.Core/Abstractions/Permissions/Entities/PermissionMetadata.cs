@@ -85,6 +85,13 @@ namespace SGSFramework.Core.Abstractions.Permissions.Entities
         [Comment("權限代碼，對應ControllerMetadatas 的PermissionKey。")]
         public string PermissionKey { get; set; } = string.Empty;
 
+        /// <summary>
+        /// 是否由管理者於「系統權限清單」自訂過顯示名稱 / 說明；為 true 時啟動同步不會覆蓋。
+        /// </summary>
+        [DisplayName("已自訂顯示欄位")]
+        [Comment("是否由管理者自訂過操作標題與說明；啟動同步不會覆蓋這些欄位。")]
+        public bool IsCustomized { get; set; } = false;
+
         [DisplayName("操作敏感別")]
         [Comment("用於區分該節點為一般檢視、業務操作或關鍵管理權限")]
         public ActionCategory Category { get; set; } = ActionCategory.Basic;
@@ -192,6 +199,9 @@ namespace SGSFramework.Core.Abstractions.Permissions.Entities
 
             builder.Property(x => x.Description)
                 .HasMaxLength(256);
+
+            builder.Property(x => x.IsCustomized)
+                .HasDefaultValue(false);
 
             // 自我參考階層架構設定 (IHierarchicalEntity)
             builder.HasOne(e => e.Parent)

@@ -93,7 +93,7 @@ public sealed class PermissionController : ApiControllerBase
     /// 同步權限元數據並回傳 DTO 投影資料清單
     /// </summary>
     [HttpPost("metadata/sync")]
-    [Function("SyncPermissionMetadata", "同步權限元數據", Icon = "fa-solid fa-sitemap", Order = 1, Description = "同步權限元數據並回傳 DTO 投影資料清單",IsMenu =true)]
+    [Function("SyncPermissionMetadata", "同步權限元數據", Icon = "fa-solid fa-sitemap", Order = 1, Description = "同步權限元數據並回傳 DTO 投影資料清單", IsMenu = false)]
     [RequiresPermission("SYSTEM.PERMISSION.READ", "權限管理")]
     [EndpointSummary("同步權限元數據")]
     [EndpointDescription("同步權限元數據並回傳 DTO 投影資料清單")]
@@ -181,6 +181,79 @@ public sealed class PermissionController : ApiControllerBase
         }
     }
 
+
+    /// <summary>
+    /// 編輯單一權限項的顯示名稱與說明 (重啟後保留)
+    /// </summary>
+    [HttpPut("metadata")]
+    [Function("UpdatePermissionMetadata", "編輯權限資訊", Icon = "fa-solid fa-pen-to-square", Order = 21, Description = "編輯權限項的顯示名稱與說明；編輯後不會被啟動同步覆蓋。", IsMenu = false)]
+    [RequiresPermission("SYSTEM.PERMISSION.UPDATE", "編輯權限資訊")]
+    [EndpointSummary("編輯權限資訊")]
+    [EndpointDescription("編輯權限項的顯示名稱與說明。")]
+    [ProducesResponseType(typeof(PermissionActionDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> UpdatePermissionMetadata(
+        [FromBody] UpdatePermissionMetadataRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        try
+        {
+            var updated = await _permissionService.UpdatePermissionMetadataAsync(
+                request.PermissionKey,
+                request.ControllerName,
+                request.PermissionTitle,
+                request.Description,
+                cancellationToken).ConfigureAwait(false);
+
+            // 清除權限樹快取，使變更立即反映在清單與其他使用權限樹的畫面
+            _memoryCache.Remove(PermissionTreeCacheKey);
+
+            _logger.LogWarning("權限資訊已編輯。權限: {PermissionKey}, 控制器: {Controller}, 新權限標題: {Title}, 新說明: {Description}, 操作者: {Actor}, 來源 IP: {ClientIp}",
+                request.PermissionKey, request.ControllerName, updated.PermissionTitle, updated.Description,
+                User.Identity?.Name ?? "Unknown", HttpContext.Connection.RemoteIpAddress?.ToString());
+
+            return Ok(updated);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "無效的請求參數",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
+            });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new ProblemDetails
+            {
+                Status = StatusCodes.Status404NotFound,
+                Title = "資源不存在",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "編輯權限資訊時發生非預期錯誤。權限: {PermissionKey}", request.PermissionKey);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "編輯權限資訊時發生系統異常，請聯繫系統管理員。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
 
     /// <summary>
     /// 取得指定角色的權限設定清單

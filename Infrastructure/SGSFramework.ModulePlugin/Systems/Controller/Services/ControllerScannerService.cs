@@ -226,11 +226,15 @@ namespace SGSFramework.ModulePlugin.Systems.Controller.Services
                 {
                     existingItem.ModuleName = newItem.ModuleName;
                     existingItem.ModuleTitle = newItem.ModuleTitle;
-                    existingItem.DisplayName = newItem.DisplayName;
-                    existingItem.Description = newItem.Description;
+                    // 管理者自訂過的顯示欄位 (名稱 / 說明 / 排序) 不被程式碼 Attribute 覆蓋
+                    if (!existingItem.IsCustomized)
+                    {
+                        existingItem.DisplayName = newItem.DisplayName;
+                        existingItem.Description = newItem.Description;
+                        existingItem.DisplayOrder = newItem.DisplayOrder;
+                    }
                     existingItem.RouteTemplate = newItem.RouteTemplate;
                     existingItem.PermissionKey = newItem.PermissionKey;
-                    existingItem.DisplayOrder = newItem.DisplayOrder;
                     existingItem.ParentMenuName = newItem.ParentMenuName;
                     existingItem.BitPosition = newItem.BitPosition;
                     existingItem.AttributesJson = newItem.AttributesJson;
