@@ -134,7 +134,7 @@ public sealed class PermissionController : ApiControllerBase
     /// 取得完整系統與動態模組權限清單 (階層式：Module -> Function -> ReadPermission / ActionPermissions)
     /// </summary>
     [HttpGet("tree")]
-    [Function("GetPermissionTree", "系統權限清單", Icon = "fa-solid fa-sitemap", Order = 1, Description = "取得完整系統與動態模組權限清單", IsMenu = false)]
+    [Function("GetPermissionTree", "系統權限清單", Icon = "fa-solid fa-sitemap", Order = 1, Description = "取得完整系統與動態模組權限清單", IsMenu = true)]
     [ProducesResponseType(typeof(List<PermissionModuleDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     [RequiresPermission("SYSTEM.PERMISSION.READ")]

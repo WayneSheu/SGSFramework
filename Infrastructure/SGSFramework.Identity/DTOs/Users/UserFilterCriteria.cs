@@ -30,12 +30,12 @@ namespace SGSFramework.Identity.DTOs.Users
         public string? Fullname { get; init; }
 
         /// <summary>
-        /// 實驗室 (對應 Organization.Parent)
+        /// 實驗室代碼 (Level 1 類別，對應 Organization.Parent 的 Code；精確比對)
         /// </summary>
         public string? LaboratoryParent { get; init; }
 
         /// <summary>
-        /// 區域實驗室 (對應 Organization 的 Code)
+        /// 區域實驗室代碼 (Level 2，對應 Organization 的 Code；精確比對)
         /// </summary>
         public string? RegionalLaboratoryCode { get; init; }
     }

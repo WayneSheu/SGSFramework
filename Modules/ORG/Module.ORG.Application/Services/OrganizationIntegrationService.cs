@@ -145,16 +145,26 @@ public class OrganizationIntegrationService(ORGDbContext orgDbContext) : IOrgani
             .AsNoTracking()
             .AsQueryable();
 
+        // 實驗室（上層類別）：以類別「代碼」篩選。使用者可存取實驗室檢視表只有上層名稱，
+        // 故先由組織表以代碼查出類別名稱再比對；代碼不存在時比對空集合，結果為無資料
         if (!string.IsNullOrWhiteSpace(laboratoryParent))
         {
-            string parent = laboratoryParent.Trim();
-            query = query.Where(x => x.ParentLabName != null && x.ParentLabName.Contains(parent));
+            string parentCode = laboratoryParent.Trim();
+            var parentNames = await _orgDbContext.Organizations
+                .AsNoTracking()
+                .Where(o => !o.IsDeleted && o.Code == parentCode)
+                .Select(o => o.Name)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            query = query.Where(x => x.ParentLabName != null && parentNames.Contains(x.ParentLabName));
         }
 
+        // 區域實驗室：以實驗室「代碼」精確比對
         if (!string.IsNullOrWhiteSpace(regionalLaboratoryCode))
         {
             string code = regionalLaboratoryCode.Trim();
-            query = query.Where(x => x.LabCode != null && x.LabCode.Contains(code));
+            query = query.Where(x => x.LabCode != null && x.LabCode == code);
         }
 
         return await query
