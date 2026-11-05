@@ -367,3 +367,8 @@ claudesettings.json
 # ImageSharp 授權金鑰（機密）
 sixlabors.lic
 **/keys/key-*.xml
+
+# 日誌外掛模組原始碼：[Ll]og/、*.log 為執行期日誌規則，Git 在 Windows 不分大小寫，
+# 會誤含 Modules/LOG 與 Module.LOG 目錄（須置於檔尾，才能覆蓋前面的規則）
+!Modules/LOG/
+!Modules/LOG/Module.LOG/

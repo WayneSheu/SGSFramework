@@ -12,7 +12,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using SGSFramework.ModulePlugin.Configurations;
 using SGSFramework.ModulePlugin.Abstractions;
 using SGSFramework.ModulePlugin.DTOs;
 using SGSFramework.ModulePlugin.Systems.Module.Loaders;
@@ -25,13 +28,19 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
     private readonly IModuleRepository _moduleRepo;
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<ModuleManagementApplicationService> _logger;
+    private readonly IHostApplicationLifetime _lifetime;
+    private readonly IOptions<ModularOptions> _options;
 
     public ModuleManagementApplicationService(
         IModuleRegistry moduleRegistry,
         IModuleRepository moduleRepo,
         IServiceProvider serviceProvider,
+        IHostApplicationLifetime lifetime,
+        IOptions<ModularOptions> options,
         ILogger<ModuleManagementApplicationService> logger)
     {
+        _lifetime = lifetime ?? throw new ArgumentNullException(nameof(lifetime));
+        _options = options ?? throw new ArgumentNullException(nameof(options));
         _moduleRegistry = moduleRegistry ?? throw new ArgumentNullException(nameof(moduleRegistry));
         _moduleRepo = moduleRepo ?? throw new ArgumentNullException(nameof(moduleRepo));
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
@@ -143,13 +152,25 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
                 await ModuleLoaderExtensions.RegisterModuleToDbAsync(assembly, detectedModuleName, mainDllFullPath, scope.ServiceProvider).ConfigureAwait(false);
             }
 
+            // 外掛的 DI 註冊與資料庫遷移（含獨立資料庫建置）只在啟動時執行：排定重新啟動，新模組才會實際生效
+            var restart = _options.Value.RestartAfterUpload;
+            var delay = _options.Value.RestartDelaySeconds;
+            if (restart)
+            {
+                ScheduleRestart(detectedModuleName, TimeSpan.FromSeconds(delay));
+            }
+
             return new ModuleUploadResponseDto
             {
                 Success = true,
-                Message = $"模組 [{detectedModuleName}] 相關檔案上傳成功，已完成元資料與控制器同步。",
+                Message = restart
+                    ? $"模組 [{detectedModuleName}] 上傳成功，API 將於 {delay} 秒後自動重新啟動，以註冊模組服務並執行資料庫遷移。"
+                    : $"模組 [{detectedModuleName}] 上傳成功，已完成元資料與控制器同步；請重新啟動 API 以註冊模組服務並執行資料庫遷移。",
                 ModuleName = detectedModuleName,
                 Version = detectedVersion,
-                Files = uploadedFilesResult
+                Files = uploadedFilesResult,
+                RestartScheduled = restart,
+                RestartDelaySeconds = restart ? delay : 0
             };
         }
         finally
@@ -166,6 +187,26 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// 延遲後停止應用程式（讓上傳回應先送達）。IIS 會重新啟動應用程式，啟動時載入新模組並執行其資料庫遷移。
+    /// </summary>
+    private void ScheduleRestart(string moduleName, TimeSpan delay)
+    {
+        _logger.LogWarning("[模組部署] 模組 {ModuleName} 已上傳，API 將於 {Delay} 秒後重新啟動以套用模組。", moduleName, delay.TotalSeconds);
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(delay, _lifetime.ApplicationStopping).ConfigureAwait(false);
+                _lifetime.StopApplication();
+            }
+            catch (OperationCanceledException)
+            {
+                // 應用程式已在停止中，不需重複觸發
+            }
+        });
     }
 
     public async Task<ToggleStatusResponseDto> ToggleModuleStatusAsync(string moduleName, bool isActive, CancellationToken cancellationToken = default)
