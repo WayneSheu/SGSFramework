@@ -277,6 +277,7 @@ public class AuditWorker<TContext> : BackgroundService
             Timestamp = targetTimestamp,
             CreatedAt = taiwanTime,
             UserId = dto.UserId?.Length > 128 ? dto.UserId[..128] : dto.UserId,
+            UserName= dto.UserName?.Length > 128 ? dto.UserName[..128] : dto.UserName,
             TraceId = safeTraceId,
             RemoteIp = dto.RemoteIp?.Length > 64 ? dto.RemoteIp[..64] : dto.RemoteIp,
             KeyValues = dto.KeyValues?.Count > 0 ? JsonSerializer.Serialize(dto.KeyValues, JsonOptions) : null,

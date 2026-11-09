@@ -370,6 +370,11 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("nvarchar(128)")
                         .HasComment("使用者識別");
 
+                    b.Property<string>("UserName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("人員姓名");
+
                     b.HasKey("Id", "CreatedAt");
 
                     b.HasIndex("IsRepaired")

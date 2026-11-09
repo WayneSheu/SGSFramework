@@ -676,6 +676,10 @@ namespace SGS.Modules.RPT.Infrastructure.Migrations
                         .HasColumnType("nvarchar(max)")
                         .HasComment("使用者識別");
 
+                    b.Property<string>("UserName")
+                        .HasColumnType("nvarchar(max)")
+                        .HasComment("人員姓名");
+
                     b.HasKey("Id");
 
                     b.ToTable("AuditLogs", "rpt", t =>

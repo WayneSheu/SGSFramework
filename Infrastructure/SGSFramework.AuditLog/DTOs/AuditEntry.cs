@@ -73,6 +73,9 @@ namespace SGSFramework.AuditLog.DTOs
         //來自 HTTP Context 的環境資訊
         public string? TraceId { get; set; }
         public string? UserId { get; set; }
+
+        public string? UserName { get; set; }
+
         public string? RemoteIp { get; set; }
 
         /// <summary>

@@ -29,6 +29,11 @@ namespace SGSFramework.Core.Abstractions.Entities.AuditLogs
         [Comment("使用者識別")]
         public string? UserId { get; set; }
 
+        [DisplayName("人員姓名")]
+        [Comment("人員姓名")]
+        public string? UserName { get; set; }
+
+
         [DisplayName("遠端 IP")]
         [Comment("遠端 IP 位址")]
         public string? RemoteIp { get; set; }
@@ -142,6 +147,8 @@ namespace SGSFramework.Core.Abstractions.Entities.AuditLogs
             builder.Property(e => e.UserId)
                    .HasMaxLength(128)
                    .IsRequired(false);
+
+            builder.Property(e => e.UserName).HasMaxLength(100);
 
             builder.Property(e => e.RemoteIp)
                    .HasMaxLength(64)
