@@ -30,6 +30,9 @@ public sealed class NullFileManagementService(ILogger<NullFileManagementService>
     public Task<FileImageContent?> GetImageAsync(Guid id, int? width, int? height, string? mode, FileAccessScope scope = FileAccessScope.Internal, CancellationToken cancellationToken = default) =>
         throw Unavailable(nameof(GetImageAsync));
 
+    public Task<FileViewContent?> OpenWatermarkedViewAsync(Guid id, string watermarkText, FileAccessScope scope = FileAccessScope.Internal, CancellationToken cancellationToken = default) =>
+        throw Unavailable(nameof(OpenWatermarkedViewAsync));
+
     public Task<bool> DeleteAsync(Guid id, FileAccessScope scope = FileAccessScope.Internal, CancellationToken cancellationToken = default) =>
         throw Unavailable(nameof(DeleteAsync));
 

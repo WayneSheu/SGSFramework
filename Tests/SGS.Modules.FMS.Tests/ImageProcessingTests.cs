@@ -1,7 +1,5 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Time.Testing;
-using SGS.Modules.FMS.Application.HostedServices;
 using SGS.Modules.FMS.Application.Imaging;
 using SGS.Modules.FMS.Infrastructure.Options;
 using ImageMagick;
@@ -145,47 +143,51 @@ public sealed class ImageProcessingTests : IDisposable
     }
 
     [Fact]
-    public async Task Image_cache_creates_once_then_hits()
+    public async Task Image_cache_creates_once_then_hits_in_memory()
     {
-        _options.ImageCache.RootPath = _temp.Path;
-        var cache = new ImageCacheService(new TestOptionsMonitor<FileManagementOptions>(_options), TimeProvider.System, NullLogger<ImageCacheService>.Instance);
-        var key = new ImageCacheKey(Guid.NewGuid(), 64, 64, ImageResizeMode.Max, ".png");
+        using var cache = new ImageCacheService(new TestOptionsMonitor<FileManagementOptions>(_options));
+        var key = new ImageCacheKey(Guid.NewGuid(), 64, 64, ImageResizeMode.Max);
         var calls = 0;
 
-        async Task Factory(Stream s, CancellationToken ct)
+        Task<byte[]> Factory(CancellationToken ct)
         {
             calls++;
-            await s.WriteAsync(new byte[] { 1, 2, 3 }, ct);
+            return Task.FromResult(new byte[] { 1, 2, 3 });
         }
 
-        await using (var first = await cache.GetOrCreateAsync(key, Factory)) { first.Length.Should().Be(3); }
-        await using (var second = await cache.GetOrCreateAsync(key, Factory)) { second.Length.Should().Be(3); }
+        (await cache.GetOrCreateAsync(key, Factory)).Should().Equal(1, 2, 3);
+        (await cache.GetOrCreateAsync(key, Factory)).Should().Equal(1, 2, 3);
 
         calls.Should().Be(1);
         cache.Remove(key.FileId).Should().Be(1);
+        await cache.GetOrCreateAsync(key, Factory);
+        calls.Should().Be(2);
     }
 
     [Fact]
-    public void Lru_cleanup_deletes_least_recently_accessed_until_low_watermark()
+    public async Task Image_cache_respects_memory_limit()
     {
-        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        _options.ImageCache.RootPath = _temp.Path;
-        var monitor = new TestOptionsMonitor<FileManagementOptions>(_options);
-        var cache = new ImageCacheService(monitor, clock, NullLogger<ImageCacheService>.Instance);
-        var service = new ImageCacheLruCleanupService(cache, monitor, clock, NullLogger<ImageCacheLruCleanupService>.Instance);
+        _options.ThumbnailCache.MaxMemoryBytes = 1000;
+        using var cache = new ImageCacheService(new TestOptionsMonitor<FileManagementOptions>(_options));
+        var calls = 0;
 
-        var files = Enumerable.Range(0, 5).Select(i =>
+        Task<byte[]> Factory(CancellationToken ct)
         {
-            var path = Path.Combine(_temp.Path, $"f{i}.png");
-            File.WriteAllBytes(path, new byte[100]);
-            File.SetLastAccessTimeUtc(path, DateTime.UtcNow.AddHours(-10 + i)); // f0 最舊
-            return path;
-        }).ToList();
+            calls++;
+            return Task.FromResult(new byte[2000]);
+        }
 
-        var settings = new ImageCacheOptions { HighWatermarkBytes = 400, LowWatermarkBytes = 250 };
-        var deleted = service.RunCleanup(_temp.Path, settings, CancellationToken.None);
+        var key = new ImageCacheKey(Guid.NewGuid(), 64, 64, ImageResizeMode.Max);
+        await cache.GetOrCreateAsync(key, Factory);
+        await cache.GetOrCreateAsync(key, Factory);
 
-        deleted.Should().Be(3);
-        files.Where(File.Exists).Should().Equal(files[3], files[4]);
+        calls.Should().Be(2, "超過容量上限的項目不會被快取");
+    }
+
+    [Fact]
+    public void No_local_disk_cache_remains()
+    {
+        typeof(ImageCacheService).Assembly.GetTypes()
+            .Should().NotContain(t => t.Name == "ImageCacheLruCleanupService", "無狀態伺服器不得在本機磁碟保留縮圖");
     }
 }

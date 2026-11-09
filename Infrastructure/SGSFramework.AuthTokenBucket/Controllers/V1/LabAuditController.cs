@@ -9,7 +9,7 @@ namespace SGSFramework.AuthTokenBucket.Controllers.V1;
 
 /// <summary>
 /// 稽核指派：稽核權限 = 稽核角色（全域權限）＋ 稽核指派（區域實驗室 × 起訖期間）。
-/// 選單入口位於 組織管理 → 實驗室管理 的「稽核指派」頁簽。
+/// 入口：獨立選單頁「稽核指派」（跨實驗室），以及 組織管理 → 實驗室管理 的「稽核指派」頁簽（單一實驗室）。
 /// </summary>
 [ApiController]
 [Authorize]
@@ -22,6 +22,18 @@ public sealed class LabAuditController(ILabAuditService labAuditService) : Contr
     private readonly ILabAuditService _service = labAuditService ?? throw new ArgumentNullException(nameof(labAuditService));
 
     public sealed record RevokeRequest(string? Reason);
+
+    /// <summary>
+    /// 稽核指派（選單入口）：獨立頁面可跨實驗室檢視與維護稽核指派。
+    /// 此端點僅提供選單節點的歸屬與頁面路徑，不回傳業務資料。
+    /// </summary>
+    [HttpGet("entry")]
+    [Function("LabAuditEntry", "稽核指派", Icon = "fa-solid fa-user-secret", Order = 0,
+        Description = "跨實驗室檢視、新增與撤銷稽核指派", IsMenu = true, Path = "/sgsframework.org/labaudit")]
+    [RequiresPermission("ORG.LABAUDIT.READ", "檢視稽核指派")]
+    [EndpointSummary("稽核指派")]
+    [EndpointDescription("選單入口，實際作業請使用 api/v1/lab-audits。")]
+    public IActionResult Entry() => Ok(new { Path = "/sgsframework.org/labaudit" });
 
     /// <summary>查詢稽核指派（可依實驗室或使用者篩選）</summary>
     [HttpGet]

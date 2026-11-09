@@ -1,0 +1,45 @@
+# =====================================================================================
+# 檔案管理模組 (SGS.Modules.FMS) 本機儲存體模擬：MinIO（S3 相容）與 Azurite（Azure Blob）
+# 用途：本機驗證 FileManagement:Targets:{Target}:Provider 切換為 S3 / AzureBlob 的行為。
+#
+# 啟動：  copy .env.example .env （修改帳密）→ docker compose up -d
+# MinIO： API http://localhost:9000、主控台 http://localhost:9001
+#         claudesettings.json 設定 FileManagement:Targets:LocalPrivate:S3:AccessKey / SecretKey（= .env 的帳密）
+# Azurite：Blob http://localhost:10000
+#         FileManagement:Targets:LocalPrivate:AzureBlob:ConnectionString = "UseDevelopmentStorage=true"
+#
+# NAS（SMB）：Windows 主機已占用 445 埠，無法以容器模擬；請以 FileSystem 驅動指向本機目錄或實際的 UNC 共享。
+# 驗收：於 MinIO 主控台 / Azure Storage Explorer 下載物件，內容應為 SGSE 開頭的密文，無法直接開啟。
+# =====================================================================================
+name: physlims-fms-storage
+
+services:
+  minio:
+    # MinIO 官方映像改由 quay.io 發佈；如標籤已下架請改用最新 RELEASE.* 標籤（勿使用 latest）
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?請於 .env 設定 MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?請於 .env 設定 MINIO_ROOT_PASSWORD}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.37.0
+    command: azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --loose
+    ports:
+      - "127.0.0.1:10000:10000"
+    volumes:
+      - azurite-data:/data
+
+volumes:
+  minio-data:
+  azurite-data:

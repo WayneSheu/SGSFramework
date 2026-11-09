@@ -23,6 +23,93 @@ namespace SGS.Modules.FMS.Infrastructure.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("SGS.Modules.FMS.Infrastructure.Entities.FileAccessLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasComment("動作：Upload / Download / View / Thumbnail / Delete / Purge / Encrypt / Denied / IntegrityFailure");
+
+                    b.Property<string>("Category")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("檔案分類");
+
+                    b.Property<string>("ClientId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .HasComment("系統帳號的 client_id；人員為 null");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("補充說明（失敗原因、縮圖尺寸等）");
+
+                    b.Property<Guid?>("FileId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("檔案識別碼；上傳失敗等尚無檔案時為 null");
+
+                    b.Property<string>("ForwardedFor")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("X-Forwarded-For 原始值（僅記錄，不作為信任依據）");
+
+                    b.Property<bool>("IsSuccess")
+                        .HasColumnType("bit")
+                        .HasComment("是否成功");
+
+                    b.Property<bool>("IsSystemAccount")
+                        .HasColumnType("bit")
+                        .HasComment("是否為 M2M 系統帳號（Client Credentials）");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("發生時間（UTC）");
+
+                    b.Property<string>("RemoteIp")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasComment("連線來源 IP（RemoteIpAddress）");
+
+                    b.Property<string>("TraceId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasComment("全鏈路追蹤碼（CorrelationId / TraceIdentifier）");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasComment("User-Agent");
+
+                    b.Property<string>("UserId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasComment("使用者 / 系統帳號識別碼（NameIdentifier）；匿名為 null");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("使用者名稱或系統帳號顯示名稱");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OccurredAt");
+
+                    b.HasIndex("FileId", "OccurredAt");
+
+                    b.ToTable("FileAccessLogs", "fms", t =>
+                        {
+                            t.HasComment("檔案存取稽核紀錄（Ledger APPEND_ONLY）：上傳 / 下載 / 檢視 / 刪除 / 清除與失敗事件，區分人員與系統帳號");
+                        });
+                });
+
             modelBuilder.Entity("SGS.Modules.FMS.Infrastructure.Entities.FileMetadata", b =>
                 {
                     b.Property<Guid>("Id")
@@ -66,6 +153,10 @@ namespace SGS.Modules.FMS.Infrastructure.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)")
                         .HasComment("執行刪除的人員");
+
+                    b.Property<int?>("EncryptionVersion")
+                        .HasColumnType("int")
+                        .HasComment("儲存加密格式版本（1 = SGSE 分塊 AES-256-GCM）；null 表示未加密（舊資料或公開分類）");
 
                     b.Property<string>("Extension")
                         .IsRequired()
@@ -127,6 +218,10 @@ namespace SGS.Modules.FMS.Infrastructure.Migrations
                         .HasColumnType("nvarchar(500)")
                         .HasComment("容器內的實體儲存鍵（yyyy/MM/{Id}{副檔名}），由系統產生");
 
+                    b.Property<long>("StoredSize")
+                        .HasColumnType("bigint")
+                        .HasComment("儲存體上的實際大小（位元組，加密時為密文大小）");
+
                     b.Property<DateTimeOffset?>("UpdatedAtUtc")
                         .HasColumnType("datetimeoffset")
                         .HasComment("最後異動時間");
@@ -135,6 +230,11 @@ namespace SGS.Modules.FMS.Infrastructure.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)")
                         .HasComment("最後異動人員");
+
+                    b.Property<string>("WrappedKey")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)")
+                        .HasComment("以 Data Protection 主金鑰環包裝的檔案資料金鑰（fk:v1:）；明文金鑰不落地");
 
                     b.HasKey("Id");
 

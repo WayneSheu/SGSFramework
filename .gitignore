@@ -366,6 +366,8 @@ claudesettings.json
 !claudesettings.example.json
 # ImageSharp 授權金鑰（機密）
 sixlabors.lic
+# 本機儲存體模擬帳密（deploy/dev/fms-storage）
+deploy/dev/fms-storage/.env
 **/keys/key-*.xml
 
 # 日誌外掛模組原始碼：[Ll]og/、*.log 為執行期日誌規則，Git 在 Windows 不分大小寫，

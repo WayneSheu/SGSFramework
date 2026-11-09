@@ -12,6 +12,7 @@ public static class FileMetadataMapping
 
         return new FileMetadataDto(
             e.Id, e.OriginalFileName, e.Extension, e.ContentType, e.FileSize, e.Sha256, e.Category, e.StorageTarget,
-            e.ReferenceType, e.ReferenceId, e.ImageWidth, e.ImageHeight, e.IsDeleted, e.DeletedAtUtc, e.CreatedBy, e.CreatedAtUtc);
+            e.ReferenceType, e.ReferenceId, e.ImageWidth, e.ImageHeight, e.IsDeleted, e.DeletedAtUtc, e.CreatedBy, e.CreatedAtUtc,
+            IsEncrypted: e.EncryptionVersion is not null);
     }
 }

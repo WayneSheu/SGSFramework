@@ -22,6 +22,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!--
+      儲存驅動：S3 相容（MinIO / AWS S3）與 Azure Blob（皆 Apache-2.0 / MIT）。
+      外掛目錄僅部署 SGS.Modules.FMS*.dll；SDK 組件由 Host（PhysLIMS.API 參考本模組）輸出至主程式目錄。
+    -->
+    <PackageReference Include="AWSSDK.S3" Version="4.0.104.11" />
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.30.1" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\..\Infrastructure\SGSFramework.ModulePlugin\SGSFramework.ModulePlugin.csproj" />
     <ProjectReference Include="..\..\..\Infrastructure\SGSFramework.Persistent\SGSFramework.Persistent.csproj" />
   </ItemGroup>

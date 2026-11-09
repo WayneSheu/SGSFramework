@@ -28,6 +28,8 @@ namespace SGS.Modules.FMS.Infrastructure.Dbcontexts
 
         public DbSet<FileMetadata> FileMetadatas { get; set; } = null!;
 
+        public DbSet<FileAccessLog> FileAccessLogs { get; set; } = null!;
+
         #endregion
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)

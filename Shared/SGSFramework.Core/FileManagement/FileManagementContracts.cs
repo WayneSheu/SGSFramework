@@ -40,8 +40,10 @@ public sealed class FileRejectedException(string message, int statusCode = 400) 
 public interface IFileManagementService
 {
     /// <summary>
-    /// 上傳：分類分流 → 大小檢查 → Magic Number 驗證 → 圖片二次編碼 → SHA-256 → 寫入儲存體（Guid 檔名）→ 寫入中繼資料。
-    /// 中繼資料寫入失敗時回補刪除實體檔案。驗證失敗拋出 <see cref="FileRejectedException"/>。
+    /// 上傳（無本機暫存）：分類分流 → Magic Number 驗證 → 圖片二次編碼 → 串流計算 SHA-256 並以 AES-256-GCM 信封加密
+    /// → 直接寫入儲存體（Guid 檔名）→ 寫入中繼資料與存取稽核。
+    /// 提供 <see cref="FileUploadRequest.ExpectedSha256"/> 時比對傳輸完整性；中繼資料寫入失敗時回補刪除實體檔案。
+    /// 驗證失敗拋出 <see cref="FileRejectedException"/>。
     /// </summary>
     Task<FileMetadataDto> UploadAsync(FileUploadRequest request, FileAccessScope scope = FileAccessScope.Internal, CancellationToken cancellationToken = default);
 
@@ -50,11 +52,21 @@ public interface IFileManagementService
 
     Task<PagedResult<FileMetadataDto>> SearchAsync(FileQueryRequest request, FileAccessScope scope = FileAccessScope.Internal, CancellationToken cancellationToken = default);
 
-    /// <summary>開啟下載；不存在或已刪除回傳 null。回傳串流由呼叫端 Dispose</summary>
+    /// <summary>
+    /// 開啟下載（記憶體內串流解密，可定位時支援 Range）；不存在或已刪除回傳 null。回傳串流由呼叫端 Dispose。
+    /// 通用端點下載「僅供檢視」分類時拋出 403；解密 / 完整性驗證失敗時讀取串流會拋出 CryptographicException。
+    /// </summary>
     Task<FileDownload?> OpenDownloadAsync(Guid id, FileAccessScope scope = FileAccessScope.Internal, CancellationToken cancellationToken = default);
 
     /// <summary>取得動態縮圖（尺寸 / 模式須在白名單內）；不存在、已刪除或非圖片回傳 null</summary>
     Task<FileImageContent?> GetImageAsync(Guid id, int? width, int? height, string? mode, FileAccessScope scope = FileAccessScope.Internal, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 帶動態浮水印的檢視內容（PDF 逐頁點陣化並將浮水印繪入像素、圖片直接繪製），全程於記憶體處理；
+    /// 不存在或已刪除回傳 null，不支援的格式拋出 415。
+    /// </summary>
+    /// <param name="watermarkText">浮水印文字（例如「使用者 | UTC 時間 | IP」）</param>
+    Task<FileViewContent?> OpenWatermarkedViewAsync(Guid id, string watermarkText, FileAccessScope scope = FileAccessScope.Internal, CancellationToken cancellationToken = default);
 
     /// <summary>虛擬刪除（僅標記 IsDeleted，實體檔案由排程於保留期滿後清除）；不存在或已刪除回傳 false</summary>
     Task<bool> DeleteAsync(Guid id, FileAccessScope scope = FileAccessScope.Internal, CancellationToken cancellationToken = default);
@@ -64,17 +76,19 @@ public interface IFileManagementService
 }
 
 /// <summary>上傳請求（與 ASP.NET 無關，業務模組可直接呼叫服務）</summary>
-/// <param name="Content">檔案內容；不可定位時會先緩衝至暫存檔</param>
+/// <param name="Content">檔案內容（可為不可定位的網路串流；全程記憶體處理，不落地本機）</param>
 /// <param name="FileName">原始檔名</param>
 /// <param name="Category">業務分類代碼（決定儲存目標與允許格式）；null 使用預設分類</param>
 /// <param name="ReferenceType">關聯的業務實體類型</param>
 /// <param name="ReferenceId">關聯的業務實體識別碼</param>
+/// <param name="ExpectedSha256">傳輸簽章：用戶端計算的原始內容 SHA-256（十六進位）；提供時須與伺服器計算值相符，否則拒絕並移除</param>
 public sealed record FileUploadRequest(
     Stream Content,
     string FileName,
     string? Category = null,
     string? ReferenceType = null,
-    string? ReferenceId = null);
+    string? ReferenceId = null,
+    string? ExpectedSha256 = null);
 
 /// <summary>檔案中繼資料（不含實體儲存屬性：容器、儲存鍵不對外揭露）</summary>
 public sealed record FileMetadataDto(
@@ -93,7 +107,8 @@ public sealed record FileMetadataDto(
     bool IsDeleted,
     DateTimeOffset? DeletedAtUtc,
     string CreatedBy,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    bool IsEncrypted = false);
 
 /// <summary>檔案查詢條件</summary>
 public record FileQueryFilter
@@ -121,6 +136,9 @@ public record FileQueryRequest : PagedQueryParameters<FileQueryFilter>;
 
 /// <summary>下載內容：Content 與 RedirectUri 擇一（支援預簽名網址的公開資源回傳 RedirectUri）</summary>
 public sealed record FileDownload(FileMetadataDto Metadata, Stream? Content, Uri? RedirectUri, int CacheMaxAgeSeconds);
+
+/// <summary>帶浮水印的檢視內容（記憶體內產生）</summary>
+public sealed record FileViewContent(FileMetadataDto Metadata, byte[] Content, string ContentType);
 
 /// <summary>縮圖內容</summary>
 public sealed record FileImageContent(FileMetadataDto Metadata, Stream Content, string ETag, int CacheMaxAgeSeconds);

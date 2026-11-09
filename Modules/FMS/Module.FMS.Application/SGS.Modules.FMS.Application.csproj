@@ -23,6 +23,19 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!--
+      動態浮水印（點陣化融合）：PDFtoImage（PDFium + SkiaSharp，MIT）逐頁渲染，SkiaSharp 繪製浮水印並以 SKDocument 重組 PDF。
+      版本須維持 SkiaSharp 2.88 系列（與 QuestPDF 2022.12 共用同一份 SkiaSharp）；PDFtoImage 4.1.1 為最後支援 2.88 的版本。
+      PDFium 原生程式庫另行指定較新版本（解析使用者上傳的 PDF，需取得安全性修正；PDFium C API 向下相容）。
+    -->
+    <PackageReference Include="PDFtoImage" Version="4.1.1" />
+    <PackageReference Include="SkiaSharp" Version="2.88.9" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="2.88.9" />
+    <PackageReference Include="bblanchon.PDFium.Win32" Version="159.0.8138" />
+    <PackageReference Include="bblanchon.PDFium.Linux" Version="159.0.8138" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Module.FMS.Infrastructure\SGS.Modules.FMS.Infrastructure.csproj" />
   </ItemGroup>
 

@@ -6,8 +6,9 @@ namespace SGS.Modules.FMS.Infrastructure.Options;
 /// <summary>
 /// 檔案管理組態（區段 FileManagement）。
 /// <para>
-/// 儲存隔離：檔案一律寫入 <see cref="Targets"/> 指定的儲存體（NAS / UNC / 物件儲存），嚴禁指向 wwwroot 或 Web 伺服器本機目錄。
-/// 業務分流：上傳時依 <see cref="Categories"/> 決定儲存目標、允許格式與大小上限，用戶端無法自行指定儲存目標。
+/// 無狀態：檔案一律寫入 <see cref="Targets"/> 指定的儲存體（NAS / MinIO(S3) / Azure Blob），Web / API 節點不保存任何實體檔案或暫存檔，
+/// 上傳、加解密、縮圖與浮水印全程於記憶體串流處理。
+/// 業務分流：上傳時依 <see cref="Categories"/> 決定儲存目標、允許格式、大小上限、是否加密與是否僅供檢視，用戶端無法自行指定。
 /// </para>
 /// 陣列預設值一律為空：.NET 組態繫結會「附加」到既有陣列，空白時改用程式內建清單。
 /// </summary>
@@ -36,12 +37,13 @@ public sealed class FileManagementOptions
     [Range(4096, 81920)]
     public int StreamBufferSize { get; set; } = 64 * 1024;
 
-    /// <summary>上傳暫存目錄（圖片重新編碼、不可定位串流緩衝）；空白時使用系統暫存目錄</summary>
-    public string? TempPath { get; set; }
+    public UploadOptions Upload { get; set; } = new();
 
     public ImageProcessingOptions Image { get; set; } = new();
 
-    public ImageCacheOptions ImageCache { get; set; } = new();
+    public ThumbnailCacheOptions ThumbnailCache { get; set; } = new();
+
+    public WatermarkOptions Watermark { get; set; } = new();
 
     public FilePurgeOptions Purge { get; set; } = new();
 
@@ -53,11 +55,17 @@ public sealed class FileManagementOptions
     ];
 }
 
-/// <summary>儲存體實作種類</summary>
+/// <summary>儲存體實作種類（環境切換只需變更 FileManagement:Targets:{Target}:Provider）</summary>
 public enum StorageProviderKind
 {
-    /// <summary>檔案系統（本機磁碟、NAS 網路共享 UNC / SMB / NFS 掛載路徑）</summary>
-    FileSystem = 0
+    /// <summary>檔案系統：地端 NAS（SMB / UNC、NFS 掛載路徑）；本機開發亦可指向非應用程式目錄</summary>
+    FileSystem = 0,
+
+    /// <summary>S3 相容物件儲存：MinIO（地端 / 本機 Docker）或 AWS S3</summary>
+    S3 = 1,
+
+    /// <summary>Azure Blob Storage（雲端；本機可用 Azurite 模擬）</summary>
+    AzureBlob = 2
 }
 
 public sealed class StorageTargetOptions
@@ -70,10 +78,48 @@ public sealed class StorageTargetOptions
     /// </summary>
     public string? RootPath { get; set; }
 
-    /// <summary>未由分類指定容器時使用的容器名稱（檔案系統為子目錄）</summary>
+    /// <summary>未由分類指定容器時使用的容器名稱（檔案系統為子目錄、S3 為 Bucket、Azure 為 Container）</summary>
     [Required(AllowEmptyStrings = false)]
     [RegularExpression("^[a-z0-9][a-z0-9-]{1,62}$", ErrorMessage = "容器名稱僅允許小寫英數與連字號（2~63 字元，相容 S3 Bucket 規則）。")]
     public string DefaultContainer { get; set; } = "files";
+
+    public S3StorageOptions S3 { get; set; } = new();
+
+    public AzureBlobStorageOptions AzureBlob { get; set; } = new();
+}
+
+/// <summary>S3 相容儲存設定；AccessKey / SecretKey 屬機密，僅能由環境變數或 claudesettings.json 注入</summary>
+public sealed class S3StorageOptions
+{
+    /// <summary>服務端點（MinIO 例：https://minio.internal:9000）；空白表示 AWS S3（依 Region）</summary>
+    public string? ServiceUrl { get; set; }
+
+    /// <summary>區域（AWS 必填；MinIO 可沿用 us-east-1）</summary>
+    public string Region { get; set; } = "us-east-1";
+
+    public string? AccessKey { get; set; }
+
+    public string? SecretKey { get; set; }
+
+    /// <summary>路徑式定址（MinIO 必須為 true）</summary>
+    public bool ForcePathStyle { get; set; } = true;
+
+    /// <summary>容器（Bucket）不存在時自動建立</summary>
+    public bool AutoCreateBucket { get; set; }
+
+    /// <summary>多段上傳分段大小（MB，S3 最小 5MB）；分段於記憶體緩衝</summary>
+    [Range(5, 512)]
+    public int PartSizeMb { get; set; } = 8;
+}
+
+/// <summary>Azure Blob 設定；ConnectionString 屬機密，僅能由環境變數或 claudesettings.json 注入</summary>
+public sealed class AzureBlobStorageOptions
+{
+    /// <summary>連線字串（Azurite 例：UseDevelopmentStorage=true）；含帳戶金鑰時才能產生 SAS 預簽名網址</summary>
+    public string? ConnectionString { get; set; }
+
+    /// <summary>容器不存在時自動建立</summary>
+    public bool AutoCreateContainer { get; set; }
 }
 
 public sealed class FileCategoryOptions
@@ -100,9 +146,37 @@ public sealed class FileCategoryOptions
     /// </summary>
     public bool AllowGenericApi { get; set; } = true;
 
+    /// <summary>
+    /// 儲存時是否加密（AES-256-GCM 信封加密）。預設 true（儲存必加密）；
+    /// 僅公開且需 CDN / 預簽名網址直連的資源（例如公開商品圖）才設為 false。
+    /// </summary>
+    public bool Encrypt { get; set; } = true;
+
+    /// <summary>僅供檢視：通用端點不提供原檔下載，只能經 /view 取得帶動態浮水印的內容（業務模組 Internal 存取不受限）</summary>
+    public bool ViewOnly { get; set; }
+
     /// <summary>瀏覽器 / CDN 快取秒數；地端機密資源一律為 private 快取</summary>
     [Range(0, 31536000)]
     public int CacheMaxAgeSeconds { get; set; } = 86400;
+}
+
+/// <summary>上傳（區段 FileManagement:Upload）：無本機暫存，需完整內容的格式於記憶體緩衝並限制併發</summary>
+public sealed class UploadOptions
+{
+    /// <summary>
+    /// 需完整內容才能驗證 / 處理的格式（圖片重新編碼、OOXML 結構檢查）之記憶體緩衝上限（位元組）；
+    /// 超過即拒絕（413）。其餘格式（PDF、文字、舊版 Office）以串流邊收邊加密，不受此限。
+    /// </summary>
+    [Range(1, long.MaxValue)]
+    public long MaxInMemoryBufferBytes { get; set; } = 50L * 1024 * 1024;
+
+    /// <summary>同時進行記憶體緩衝的上傳數上限（超過者排隊），避免高併發大檔耗盡記憶體</summary>
+    [Range(1, 256)]
+    public int MaxConcurrentBufferedUploads { get; set; } = 8;
+
+    /// <summary>加密分塊大小（位元組）；影響 Range 讀取粒度</summary>
+    [Range(4096, 4 * 1024 * 1024)]
+    public int EncryptionChunkSize { get; set; } = 64 * 1024;
 }
 
 /// <summary>圖片處理（區段 FileManagement:Image）</summary>
@@ -138,26 +212,42 @@ public sealed class ImageProcessingOptions
         ["64x64", "128x128", "256x256", "512x512", "1024x1024", "1920x1080", "256x0", "512x0", "1024x0"];
 }
 
-/// <summary>縮圖快取（區段 FileManagement:ImageCache），採 Cache-Aside + LRU 水位清理</summary>
-public sealed class ImageCacheOptions
+/// <summary>縮圖快取（區段 FileManagement:ThumbnailCache）：各節點記憶體快取（有容量上限），不寫入本機磁碟</summary>
+public sealed class ThumbnailCacheOptions
 {
-    /// <summary>停用時每次請求即時產生縮圖（僅建議開發環境）</summary>
+    /// <summary>停用時每次請求即時產生縮圖（仍有 HTTP ETag / Cache-Control）</summary>
     public bool Enabled { get; set; } = true;
 
-    /// <summary>縮圖快取目錄（建議為伺服器本機高速 SSD；屬可重建的衍生資料，不需備份）</summary>
-    public string? RootPath { get; set; }
-
-    /// <summary>高水位（位元組）：快取總量超過時開始清理</summary>
+    /// <summary>快取容量上限（位元組），超過時依存取頻率與時間淘汰</summary>
     [Range(1, long.MaxValue)]
-    public long HighWatermarkBytes { get; set; } = 40L * 1024 * 1024 * 1024;
+    public long MaxMemoryBytes { get; set; } = 256L * 1024 * 1024;
 
-    /// <summary>低水位（位元組）：依最後存取時間由舊到新刪除直到低於此值</summary>
-    [Range(0, long.MaxValue)]
-    public long LowWatermarkBytes { get; set; } = 30L * 1024 * 1024 * 1024;
+    /// <summary>未被存取的縮圖保留時間（分鐘）</summary>
+    [Range(1, 10080)]
+    public int SlidingExpirationMinutes { get; set; } = 60;
+}
 
-    /// <summary>檢查週期（分鐘）</summary>
-    [Range(1, 1440)]
-    public int CheckIntervalMinutes { get; set; } = 10;
+/// <summary>動態浮水印檢視（區段 FileManagement:Watermark）：浮水印繪入像素（點陣化），無法以圖層移除</summary>
+public sealed class WatermarkOptions
+{
+    /// <summary>PDF 逐頁渲染解析度（DPI）；越高越清晰但檔案越大、耗用越多 CPU</summary>
+    [Range(72, 300)]
+    public int Dpi { get; set; } = 120;
+
+    /// <summary>單次檢視最多渲染頁數（超過拒絕，防 DoS）</summary>
+    [Range(1, 500)]
+    public int MaxPages { get; set; } = 50;
+
+    /// <summary>浮水印不透明度（0~255）</summary>
+    [Range(10, 255)]
+    public int Opacity { get; set; } = 60;
+
+    /// <summary>輸出頁面影像的 JPEG 品質</summary>
+    [Range(30, 100)]
+    public int JpegQuality { get; set; } = 80;
+
+    /// <summary>浮水印字型檔（支援中文，例如 Noto Sans TC）；空白時使用內建搜尋路徑與系統字型</summary>
+    public string? FontPath { get; set; }
 }
 
 /// <summary>虛擬刪除檔案的實體清除（區段 FileManagement:Purge）</summary>

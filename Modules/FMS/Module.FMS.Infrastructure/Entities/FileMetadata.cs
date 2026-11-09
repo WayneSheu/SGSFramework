@@ -88,6 +88,18 @@ namespace SGS.Modules.FMS.Infrastructure.Entities
         [Comment("實體檔案自儲存體清除的時間；null 表示實體檔案仍存在")]
         public DateTimeOffset? PurgedAtUtc { get; set; }
 
+        [DisplayName("加密格式版本")]
+        [Comment("儲存加密格式版本（1 = SGSE 分塊 AES-256-GCM）；null 表示未加密（舊資料或公開分類）")]
+        public int? EncryptionVersion { get; set; }
+
+        [DisplayName("包裝後資料金鑰")]
+        [Comment("以 Data Protection 主金鑰環包裝的檔案資料金鑰（fk:v1:）；明文金鑰不落地")]
+        public string? WrappedKey { get; set; }
+
+        [DisplayName("儲存大小")]
+        [Comment("儲存體上的實際大小（位元組，加密時為密文大小）")]
+        public long StoredSize { get; set; }
+
         [DisplayName("建立人員")]
         [Comment("上傳人員")]
         public string CreatedBy { get; set; } = string.Empty;
@@ -126,6 +138,7 @@ namespace SGS.Modules.FMS.Infrastructure.Entities
             builder.Property(x => x.DeletedBy).HasMaxLength(256);
             builder.Property(x => x.CreatedBy).HasMaxLength(256).IsRequired();
             builder.Property(x => x.UpdatedBy).HasMaxLength(256);
+            builder.Property(x => x.WrappedKey).HasMaxLength(1024);
 
             builder.HasIndex(x => new { x.StorageTarget, x.ContainerName, x.StoredKey }).IsUnique();
             builder.HasIndex(x => new { x.ReferenceType, x.ReferenceId });
