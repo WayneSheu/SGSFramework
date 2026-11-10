@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using SGS.Modules.RPT.Infrastructure.Entities;
 using SGS.Modules.RPT.Infrastructure.Migrations;
 using SGSFramework.Core.Abstractions.DbContexts;
-using SGSFramework.Core.Abstractions.Entities.AuditLogs;
 using SGSFramework.Core.Abstractions.Outbox;
 using SGSFramework.Persistent.Abstractions.Dbcontexts;
 
@@ -13,7 +12,7 @@ namespace SGS.Modules.RPT.Infrastructure.Dbcontexts
     /// <summary>
     /// RPT 模組專屬 DbContext（schema: rpt）：檢驗報告、結果數據、指派、狀態軌跡、作廢申請與存取紀錄。
     /// </summary>
-    public class RPTDbContext : BaseDbContext<RPTDbContext>, IAuditDbContext
+    public class RPTDbContext : BaseDbContext<RPTDbContext>
     {
         public RPTDbContext(DbContextOptions<RPTDbContext> options)
             : base(options)
@@ -21,8 +20,6 @@ namespace SGS.Modules.RPT.Infrastructure.Dbcontexts
         }
 
         #region DbSets
-
-        public DbSet<AuditLogEntity> AuditLogs { get; set; } = null!;
 
         public DbSet<OutboxMessage> OutboxMessages { get; set; } = null!;
 
@@ -63,7 +60,6 @@ namespace SGS.Modules.RPT.Infrastructure.Dbcontexts
 
             modelBuilder.ApplyConfigurationsFromAssembly(typeof(RPTDbContext).Assembly);
 
-            modelBuilder.Entity<AuditLogEntity>(b => b.ToTable("AuditLogs", "rpt"));
             modelBuilder.Entity<OutboxMessage>(b => b.ToTable("OutboxMessages", "rpt"));
         }
     }

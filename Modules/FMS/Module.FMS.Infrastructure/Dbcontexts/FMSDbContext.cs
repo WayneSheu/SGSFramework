@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using SGS.Modules.FMS.Infrastructure.Entities;
 using SGS.Modules.FMS.Infrastructure.Migrations;
 using SGSFramework.Core.Abstractions.DbContexts;
-using SGSFramework.Core.Abstractions.Entities.AuditLogs;
 using SGSFramework.Core.Abstractions.Outbox;
 using SGSFramework.Persistent.Abstractions.Dbcontexts;
 
@@ -13,7 +12,7 @@ namespace SGS.Modules.FMS.Infrastructure.Dbcontexts
     /// <summary>
     /// FMS 模組專屬 DbContext（schema: fms）：檔案中繼資料與其資料異動稽核。
     /// </summary>
-    public class FMSDbContext : BaseDbContext<FMSDbContext>, IAuditDbContext
+    public class FMSDbContext : BaseDbContext<FMSDbContext>
     {
         public FMSDbContext(DbContextOptions<FMSDbContext> options)
             : base(options)
@@ -21,8 +20,6 @@ namespace SGS.Modules.FMS.Infrastructure.Dbcontexts
         }
 
         #region DbSets
-
-        public DbSet<AuditLogEntity> AuditLogs { get; set; } = null!;
 
         public DbSet<OutboxMessage> OutboxMessages { get; set; } = null!;
 
@@ -55,7 +52,6 @@ namespace SGS.Modules.FMS.Infrastructure.Dbcontexts
 
             modelBuilder.ApplyConfigurationsFromAssembly(typeof(FMSDbContext).Assembly);
 
-            modelBuilder.Entity<AuditLogEntity>(b => b.ToTable("AuditLogs", "fms"));
             modelBuilder.Entity<OutboxMessage>(b => b.ToTable("OutboxMessages", "fms"));
         }
     }

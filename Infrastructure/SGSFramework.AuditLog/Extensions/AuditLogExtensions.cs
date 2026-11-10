@@ -13,7 +13,6 @@ using SGSFramework.AuditLog.Abstractions;
 using SGSFramework.AuditLog.Channels;
 using SGSFramework.AuditLog.Configurations;
 using SGSFramework.AuditLog.Interceptors;
-using SGSFramework.AuditLog.Services.Strategies;
 using SGSFramework.AuditLog.Services.Worker;
 using SGSFramework.Core.Abstractions.AuditLogs;
 using SGSFramework.Core.Abstractions.DbContexts;
@@ -41,16 +40,18 @@ public static class AuditLogExtensions
     }
 
     /// <summary>
-    /// 註冊特定模組的 DbContext、DbContextFactory、獨立泛型 AuditChannel、StorageStrategy 與專屬 AuditWorker
+    /// 註冊特定模組的 DbContext、DbContextFactory、獨立泛型 AuditChannel 與專屬 AuditWorker。
+    /// 稽核資料由 AuditWorker 交給 <see cref="SGSFramework.Core.Logging.IAuditLogStore"/>（SGS.Modules.LOG）寫入獨立日誌庫，
+    /// 模組自身資料庫不再有 AuditLogs 資料表。
     /// </summary>
-    /// <typeparam name="TContext">符合 IAuditDbContext 介面之模組 DbContext</typeparam>
+    /// <typeparam name="TContext">模組 DbContext</typeparam>
     public static IServiceCollection AddModuleDatabaseWithAudit<TContext>(
         this IServiceCollection services,
         IConfiguration configuration,
         string connectionStringKey,
         string? schemaName = null,
         Action<DbContextOptionsBuilder>? configureOptions = null)
-        where TContext : DbContext, IAuditDbContext
+        where TContext : DbContext
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -74,10 +75,7 @@ public static class AuditLogExtensions
             // 1. 為此 TContext 註冊專屬的泛型 Channel 佇列 (Singleton)
             services.AddSingleton<IAuditChannel<TContext>, AuditChannel<TContext>>();
 
-            // 2. 為此 TContext 註冊獨立的 Bulk 持久化儲存策略 (Singleton/Scoped 視實作而定)
-            services.AddSingleton<IAuditStorageStrategy<TContext>, SqlBulkAuditStorageStrategy<TContext>>();
-
-            // 3. 配置 DbContext 與 DbContextFactory 的選項 build 邏輯
+            // 2. 配置 DbContext 與 DbContextFactory 的選項 build 邏輯
             Action<IServiceProvider, DbContextOptionsBuilder> buildOptions = (sp, options) =>
             {
                 options.UseSqlServer(connectionString, sqlOptions =>
@@ -94,7 +92,7 @@ public static class AuditLogExtensions
             services.AddDbContextFactory<TContext>(buildOptions);
             services.AddDbContext<TContext>(buildOptions, ServiceLifetime.Scoped, ServiceLifetime.Singleton);
 
-            // 4. 為此 TContext 註冊專屬的泛型背景消費服務 (HostedService)
+            // 3. 為此 TContext 註冊專屬的泛型背景消費服務 (HostedService)
             services.AddHostedService<AuditWorker<TContext>>();
 
             return services;

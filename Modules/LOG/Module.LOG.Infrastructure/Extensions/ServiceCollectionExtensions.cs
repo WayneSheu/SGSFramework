@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using SGS.Modules.LOG.Infrastructure.Dbcontexts;
 using SGS.Modules.LOG.Infrastructure.Services;
+using SGSFramework.Core.Logging;
 using SGSFramework.Core.Scheduling;
 
 namespace SGS.Modules.LOG.Infrastructure.Extensions;
@@ -35,6 +37,14 @@ public static class ServiceCollectionExtensions
         // 導致 Singleton 工廠解析失敗而使 Host 無法啟動）。Scoped 的 LogDbContext 由同一工廠建立，Scope 結束時一併釋放。
         services.AddDbContextFactory<LogDbContext>(Configure);
         services.AddScoped(sp => sp.GetRequiredService<IDbContextFactory<LogDbContext>>().CreateDbContext());
+
+        // 冷熱分層：熱庫 + LogArchive:Databases 設定的唯讀冷庫（年度換庫後的歷史庫）
+        services.AddSingleton<ILogTierCatalog>(_ => new LogTierCatalog(configuration));
+        services.AddSingleton<LogColdContextFactory>();
+
+        // 年度換庫（半自動）：換庫專用帳號 RotationConnection（rotate_sgs_user）；未設定時僅無法換庫，不影響日誌寫入與查詢
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<LogRotationService>();
 
         // 以具體型別註冊（不註冊 IMigrationService，避免覆蓋其他模組）
         services.AddScoped<LogMigrationService>();

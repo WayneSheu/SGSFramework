@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SGSFramework.Core.Logging;
 using SGSFramework.Core.Paginations;
-using SGSFramework.Core.Persistence;
 using SGSFramework.SystemLog.DTOs;
 
 namespace SGSFramework.SystemLog.Services
@@ -14,22 +13,23 @@ namespace SGSFramework.SystemLog.Services
     /// </summary>
     public class SystemLogQueryService : ISystemLogQueryService
     {
-        private readonly IQueryRepository<Core.Abstractions.Logings.SystemLog> _systemLogRepo;
-        private readonly IQueryRepository<Core.Abstractions.Logings.SecurityLog> _securityLogRepo;
         private readonly ILogger<SystemLogQueryService> _logger;
         private readonly ILogReadSource? _readSource;
 
         public SystemLogQueryService(
-            IQueryRepository<Core.Abstractions.Logings.SystemLog> systemLogRepo,
-            IQueryRepository<Core.Abstractions.Logings.SecurityLog> securityLogRepo,
             ILogger<SystemLogQueryService> logger,
             ILogReadSource? readSource = null)
         {
             _readSource = readSource;
-            _systemLogRepo = systemLogRepo ?? throw new ArgumentNullException(nameof(systemLogRepo));
-            _securityLogRepo = securityLogRepo ?? throw new ArgumentNullException(nameof(securityLogRepo));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
+
+        public IReadOnlyList<LogSourceDto> GetSources() =>
+            _readSource?.Sources.Select(s => new LogSourceDto(s.Key, s.DisplayName, s.IsHot)).ToList() ?? [];
+
+        /// <summary>系統 / 資安日誌一律讀取獨立日誌庫（SGS.Modules.LOG）；模組未載入或未設定 LogConnection 時無資料來源</summary>
+        private ILogReadSource RequireReadSource() =>
+            _readSource ?? throw new InvalidOperationException("日誌模組未啟用：請設定 PersistentSettings:ConnectionStrings:LogConnection 並部署 SGS.Modules.LOG。");
 
         public async Task<PagedResult<SystemLogDto>> GetSystemLogsAsync(SystemLogQueryRequest request, CancellationToken cancellationToken = default)
         {
@@ -37,8 +37,160 @@ namespace SGSFramework.SystemLog.Services
 
             try
             {
-                var query = (!request.Archive && _readSource is not null) ? _readSource.SystemLogs : _systemLogRepo.GetQueryable();
+                var source = RequireReadSource();
+                var keys = ResolveKeys(request.Sources);
+                if (keys.Count > 1) return await GetMergedAsync(request, source, keys, cancellationToken);
 
+                var query = source.SystemLogsOf(keys[0]);
+
+                query = ApplySystemLogFilter(query, request);
+
+                // 3. 註冊排序策略上下文
+                var sortContext = new SortStrategyContext<Core.Abstractions.Logings.SystemLog>()
+                    .Register("Timestamp", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.TimeStamp))
+                    .Register("Level", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.Level))
+                    .Register("UserName", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.UserName!))
+                    .Register("TenantName", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.TenantName!))
+                    .Register("ControllerName", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.ControllerName!))
+                    .Register("Id", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.Id));
+
+                var sorts = request.Sorts?.Count > 0
+                    ? request.Sorts
+                    : new[] { new SortCriteria { SortBy = "Timestamp", Direction = SortDirection.Descending } };
+
+                var queryParameters = new PagedQueryParameters<object>
+                {
+                    Type = request.Type,
+                    PageIndex = request.PageIndex,
+                    PageSize = request.PageSize,
+                    SearchTerm = request.SearchTerm,
+                    Sorts = sorts,
+                    LastSortValue = request.LastSortValue,
+                    LastIdValue = request.LastIdValue
+                };
+
+                // 4. 執行高效能分頁
+                var pagedEntities = await query.ToPagedResultAsync(
+                    parameters: queryParameters,
+                    sortContext: sortContext,
+                    idSelector: x => x.Id,
+                    cancellationToken: cancellationToken);
+
+                // 5. 轉換為對應的 SystemLogDto 結構
+                var dtos = pagedEntities.Items.Select(e => new SystemLogDto(
+                    Id: e.Id,
+                    TimeStamp: e.TimeStamp,
+                    Level: e.Level,
+                    Message: e.Message,
+                    Exception: e.Exception,
+                    TenantId: e.TenantId,
+                    TenantName: e.TenantName,
+                    UserId: e.UserId,
+                    UserName: e.UserName,
+                    ModuleName: e.ModuleName,
+                    Operation: e.Operation,
+                    OperationDesc: e.OperationDesc,
+                    ControllerName: e.ControllerName,
+                    CorrelationId: e.CorrelationId,
+                    IP: e.IP,
+                    Url: e.Url,
+                    Payload: e.Payload,
+                    AlertId: e.AlertId,
+                    CreatedAt: e.CreatedAt
+                )).ToList();
+
+                return new PagedResult<SystemLogDto>(dtos, pagedEntities.TotalCount, pagedEntities.PageIndex, pagedEntities.PageSize);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "查詢系統日誌清單時發生未預期的內核錯誤。");
+                throw new InvalidOperationException("查詢系統日誌清單失敗。", ex);
+            }
+        }
+
+        public async Task<PagedResult<SecurityLogDto>> GetSecurityLogsAsync(SecurityLogQueryRequest request, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            try
+            {
+                var source = RequireReadSource();
+                var keys = ResolveKeys(request.Sources);
+                if (keys.Count > 1) return await GetMergedSecurityAsync(request, source, keys, cancellationToken);
+
+                var query = source.SecurityLogsOf(keys[0]);
+
+                query = ApplySecurityLogFilter(query, request);
+
+                // 3. 註冊排序策略上下文
+                var sortContext = new SortStrategyContext<Core.Abstractions.Logings.SecurityLog>()
+                    .Register("Timestamp", new ExpressionSortStrategy<Core.Abstractions.Logings.SecurityLog>(x => x.Timestamp))
+                    .Register("EventCategory", new ExpressionSortStrategy<Core.Abstractions.Logings.SecurityLog>(x => x.EventCategory))
+                    .Register("Id", new ExpressionSortStrategy<Core.Abstractions.Logings.SecurityLog>(x => x.Id));
+
+                var sorts = request.Sorts?.Count > 0
+                    ? request.Sorts
+                    : new[] { new SortCriteria { SortBy = "Timestamp", Direction = SortDirection.Descending } };
+
+                var queryParameters = new PagedQueryParameters<object>
+                {
+                    Type = request.Type,
+                    PageIndex = request.PageIndex,
+                    PageSize = request.PageSize,
+                    SearchTerm = request.SearchTerm,
+                    Sorts = sorts,
+                    LastSortValue = request.LastSortValue,
+                    LastIdValue = request.LastIdValue
+                };
+
+                // 4. 執行高效能分頁
+                var pagedEntities = await query.ToPagedResultAsync(
+                    parameters: queryParameters,
+                    sortContext: sortContext,
+                    idSelector: x => x.Id,
+                    cancellationToken: cancellationToken);
+
+                // 5. 轉換為對應的 SecurityLogDto 結構
+                var dtos = pagedEntities.Items.Select(e => new SecurityLogDto(
+                    Id: e.Id,
+                    Timestamp: e.Timestamp,
+                    Level: e.Level,
+                    Message: e.Message,
+                    Exception: e.Exception,
+                    LogType: e.LogType,
+                    EventCategory: e.EventCategory,
+                    UserId: e.UserId,
+                    ClientIp: e.ClientIp,
+                    CorrelationId: e.CorrelationId,
+                    Properties: e.Properties,
+                    AlertId: e.AlertId
+                )).ToList();
+
+                return new PagedResult<SecurityLogDto>(dtos, pagedEntities.TotalCount, pagedEntities.PageIndex, pagedEntities.PageSize);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "查詢資安日誌清單時發生未預期的內核錯誤。");
+                throw new InvalidOperationException("查詢資安日誌清單失敗。", ex);
+            }
+        }
+
+        /// <summary>來源清單：多選的 Sources 優先；空值 = 熱庫。去除空白與重複。</summary>
+        private static IReadOnlyList<string?> ResolveKeys(IReadOnlyList<string>? sources)
+        {
+            var keys = (sources ?? [])
+                .Where(k => !string.IsNullOrWhiteSpace(k))
+                .Select(k => k.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Cast<string?>()
+                .ToList();
+
+            return keys.Count > 0 ? keys : [null];
+        }
+
+        private static IQueryable<Core.Abstractions.Logings.SystemLog> ApplySystemLogFilter(
+            IQueryable<Core.Abstractions.Logings.SystemLog> query, SystemLogQueryRequest request)
+        {
                 // 1. 篩選條件處理 (Filter)
                 if (request.Filter != null)
                 {
@@ -141,77 +293,12 @@ namespace SGSFramework.SystemLog.Services
                     }
                 }
 
-                // 3. 註冊排序策略上下文
-                var sortContext = new SortStrategyContext<Core.Abstractions.Logings.SystemLog>()
-                    .Register("Timestamp", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.TimeStamp))
-                    .Register("Level", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.Level))
-                    .Register("UserName", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.UserName!))
-                    .Register("TenantName", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.TenantName!))
-                    .Register("ControllerName", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.ControllerName!))
-                    .Register("Id", new ExpressionSortStrategy<Core.Abstractions.Logings.SystemLog>(x => x.Id));
-
-                var sorts = request.Sorts?.Count > 0
-                    ? request.Sorts
-                    : new[] { new SortCriteria { SortBy = "Timestamp", Direction = SortDirection.Descending } };
-
-                var queryParameters = new PagedQueryParameters<object>
-                {
-                    Type = request.Type,
-                    PageIndex = request.PageIndex,
-                    PageSize = request.PageSize,
-                    SearchTerm = request.SearchTerm,
-                    Sorts = sorts,
-                    LastSortValue = request.LastSortValue,
-                    LastIdValue = request.LastIdValue
-                };
-
-                // 4. 執行高效能分頁
-                var pagedEntities = await query.ToPagedResultAsync(
-                    parameters: queryParameters,
-                    sortContext: sortContext,
-                    idSelector: x => x.Id,
-                    cancellationToken: cancellationToken);
-
-                // 5. 轉換為對應的 SystemLogDto 結構
-                var dtos = pagedEntities.Items.Select(e => new SystemLogDto(
-                    Id: e.Id,
-                    TimeStamp: e.TimeStamp,
-                    Level: e.Level,
-                    Message: e.Message,
-                    Exception: e.Exception,
-                    TenantId: e.TenantId,
-                    TenantName: e.TenantName,
-                    UserId: e.UserId,
-                    UserName: e.UserName,
-                    ModuleName: e.ModuleName,
-                    Operation: e.Operation,
-                    OperationDesc: e.OperationDesc,
-                    ControllerName: e.ControllerName,
-                    CorrelationId: e.CorrelationId,
-                    IP: e.IP,
-                    Url: e.Url,
-                    Payload: e.Payload,
-                    AlertId: e.AlertId,
-                    CreatedAt: e.CreatedAt
-                )).ToList();
-
-                return new PagedResult<SystemLogDto>(dtos, pagedEntities.TotalCount, pagedEntities.PageIndex, pagedEntities.PageSize);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.LogError(ex, "查詢系統日誌清單時發生未預期的內核錯誤。");
-                throw new InvalidOperationException("查詢系統日誌清單失敗。", ex);
-            }
+            return query;
         }
 
-        public async Task<PagedResult<SecurityLogDto>> GetSecurityLogsAsync(SecurityLogQueryRequest request, CancellationToken cancellationToken = default)
+        private static IQueryable<Core.Abstractions.Logings.SecurityLog> ApplySecurityLogFilter(
+            IQueryable<Core.Abstractions.Logings.SecurityLog> query, SecurityLogQueryRequest request)
         {
-            ArgumentNullException.ThrowIfNull(request);
-
-            try
-            {
-                var query = (!request.Archive && _readSource is not null) ? _readSource.SecurityLogs : _securityLogRepo.GetQueryable();
-
                 // 1. 篩選條件處理 (Filter)
                 if (request.Filter != null)
                 {
@@ -268,66 +355,74 @@ namespace SGSFramework.SystemLog.Services
                     }
                 }
 
-                // 3. 註冊排序策略上下文
-                var sortContext = new SortStrategyContext<Core.Abstractions.Logings.SecurityLog>()
-                    .Register("Timestamp", new ExpressionSortStrategy<Core.Abstractions.Logings.SecurityLog>(x => x.Timestamp))
-                    .Register("EventCategory", new ExpressionSortStrategy<Core.Abstractions.Logings.SecurityLog>(x => x.EventCategory))
-                    .Register("Id", new ExpressionSortStrategy<Core.Abstractions.Logings.SecurityLog>(x => x.Id));
-
-                var sorts = request.Sorts?.Count > 0
-                    ? request.Sorts
-                    : new[] { new SortCriteria { SortBy = "Timestamp", Direction = SortDirection.Descending } };
-
-                var queryParameters = new PagedQueryParameters<object>
-                {
-                    Type = request.Type,
-                    PageIndex = request.PageIndex,
-                    PageSize = request.PageSize,
-                    SearchTerm = request.SearchTerm,
-                    Sorts = sorts,
-                    LastSortValue = request.LastSortValue,
-                    LastIdValue = request.LastIdValue
-                };
-
-                // 4. 執行高效能分頁
-                var pagedEntities = await query.ToPagedResultAsync(
-                    parameters: queryParameters,
-                    sortContext: sortContext,
-                    idSelector: x => x.Id,
-                    cancellationToken: cancellationToken);
-
-                // 5. 轉換為對應的 SecurityLogDto 結構
-                var dtos = pagedEntities.Items.Select(e => new SecurityLogDto(
-                    Id: e.Id,
-                    Timestamp: e.Timestamp,
-                    Level: e.Level,
-                    Message: e.Message,
-                    Exception: e.Exception,
-                    LogType: e.LogType,
-                    EventCategory: e.EventCategory,
-                    UserId: e.UserId,
-                    ClientIp: e.ClientIp,
-                    CorrelationId: e.CorrelationId,
-                    Properties: e.Properties,
-                    AlertId: e.AlertId
-                )).ToList();
-
-                return new PagedResult<SecurityLogDto>(dtos, pagedEntities.TotalCount, pagedEntities.PageIndex, pagedEntities.PageSize);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.LogError(ex, "查詢資安日誌清單時發生未預期的內核錯誤。");
-                throw new InvalidOperationException("查詢資安日誌清單失敗。", ex);
-            }
+            return query;
         }
 
-        public async Task<SystemLogDto?> GetSystemLogByIdAsync(long id, CancellationToken cancellationToken = default, bool archive = false)
+        /// <summary>多來源（熱庫 + 冷庫）合併：各來源取前 N 筆、加總筆數，再依時間合併切頁；僅支援依時間排序。</summary>
+        private async Task<PagedResult<SystemLogDto>> GetMergedAsync(
+            SystemLogQueryRequest request, ILogReadSource source, IReadOnlyList<string?> keys, CancellationToken cancellationToken)
+        {
+            var take = LogPageMerger.TakePerSource(request.PageIndex, request.PageSize);
+            var ascending = request.Sorts?.FirstOrDefault(x => string.Equals(x.SortBy, "Timestamp", StringComparison.OrdinalIgnoreCase))?.Direction == SortDirection.Ascending;
+
+            var total = 0;
+            var rows = new List<(Core.Abstractions.Logings.SystemLog Item, string? Source)>();
+            foreach (var key in keys)
+            {
+                var query = ApplySystemLogFilter(source.SystemLogsOf(key), request);
+                total += await query.CountAsync(cancellationToken);
+
+                var ordered = ascending
+                    ? query.OrderBy(x => x.TimeStamp).ThenBy(x => x.Id)
+                    : query.OrderByDescending(x => x.TimeStamp).ThenByDescending(x => x.Id);
+                rows.AddRange((await ordered.Take(take).ToListAsync(cancellationToken)).Select(e => (e, key)));
+            }
+
+            var page = LogPageMerger.MergePage(rows, e => e.TimeStamp, e => e.Id, request.PageIndex, request.PageSize, ascending);
+            var dtos = page.Select(r => ToDto(r.Item)).ToList();
+            return new PagedResult<SystemLogDto>(dtos, total, Math.Max(request.PageIndex, 1), Math.Clamp(request.PageSize, 1, 500));
+        }
+
+        private async Task<PagedResult<SecurityLogDto>> GetMergedSecurityAsync(
+            SecurityLogQueryRequest request, ILogReadSource source, IReadOnlyList<string?> keys, CancellationToken cancellationToken)
+        {
+            var take = LogPageMerger.TakePerSource(request.PageIndex, request.PageSize);
+            var ascending = request.Sorts?.FirstOrDefault(x => string.Equals(x.SortBy, "Timestamp", StringComparison.OrdinalIgnoreCase))?.Direction == SortDirection.Ascending;
+
+            var total = 0;
+            var rows = new List<(Core.Abstractions.Logings.SecurityLog Item, string? Source)>();
+            foreach (var key in keys)
+            {
+                var query = ApplySecurityLogFilter(source.SecurityLogsOf(key), request);
+                total += await query.CountAsync(cancellationToken);
+
+                var ordered = ascending
+                    ? query.OrderBy(x => x.Timestamp).ThenBy(x => x.Id)
+                    : query.OrderByDescending(x => x.Timestamp).ThenByDescending(x => x.Id);
+                rows.AddRange((await ordered.Take(take).ToListAsync(cancellationToken)).Select(e => (e, key)));
+            }
+
+            var page = LogPageMerger.MergePage(rows, e => e.Timestamp, e => e.Id, request.PageIndex, request.PageSize, ascending);
+            var dtos = page.Select(r => ToSecurityDto(r.Item)).ToList();
+            return new PagedResult<SecurityLogDto>(dtos, total, Math.Max(request.PageIndex, 1), Math.Clamp(request.PageSize, 1, 500));
+        }
+
+        private static SystemLogDto ToDto(Core.Abstractions.Logings.SystemLog e) => new(
+            Id: e.Id, TimeStamp: e.TimeStamp, Level: e.Level, Message: e.Message, Exception: e.Exception,
+            TenantId: e.TenantId, TenantName: e.TenantName, UserId: e.UserId, UserName: e.UserName,
+            ModuleName: e.ModuleName, Operation: e.Operation, OperationDesc: e.OperationDesc, ControllerName: e.ControllerName,
+            CorrelationId: e.CorrelationId, IP: e.IP, Url: e.Url, Payload: e.Payload, AlertId: e.AlertId, CreatedAt: e.CreatedAt);
+
+        private static SecurityLogDto ToSecurityDto(Core.Abstractions.Logings.SecurityLog e) => new(
+            Id: e.Id, Timestamp: e.Timestamp, Level: e.Level, Message: e.Message, Exception: e.Exception,
+            LogType: e.LogType, EventCategory: e.EventCategory, UserId: e.UserId, ClientIp: e.ClientIp,
+            CorrelationId: e.CorrelationId, Properties: e.Properties, AlertId: e.AlertId);
+
+        public async Task<SystemLogDto?> GetSystemLogByIdAsync(long id, CancellationToken cancellationToken = default)
         {
             try
             {
-                var entity = (!archive && _readSource is not null)
-                    ? await _readSource.SystemLogs.FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
-                    : await _systemLogRepo.GetByIdAsync(id, cancellationToken);
+                var entity = await RequireReadSource().SystemLogs.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
                 if (entity == null) return null;
 
                 return new SystemLogDto(
@@ -359,13 +454,11 @@ namespace SGSFramework.SystemLog.Services
             }
         }
 
-        public async Task<SecurityLogDto?> GetSecurityLogByIdAsync(int id, CancellationToken cancellationToken = default, bool archive = false)
+        public async Task<SecurityLogDto?> GetSecurityLogByIdAsync(int id, CancellationToken cancellationToken = default)
         {
             try
             {
-                var entity = (!archive && _readSource is not null)
-                    ? await _readSource.SecurityLogs.FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
-                    : await _securityLogRepo.GetByIdAsync(id, cancellationToken);
+                var entity = await RequireReadSource().SecurityLogs.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
                 if (entity == null) return null;
 
                 return new SecurityLogDto(

@@ -10,7 +10,6 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using SGS.Modules.ORG.Infrastructure.Entities.Org;
 using SGS.Modules.ORG.Infrastructure.Migrations;
 using SGSFramework.Core.Abstractions.DbContexts;
-using SGSFramework.Core.Abstractions.Entities.AuditLogs;
 using SGSFramework.Core.Abstractions.Outbox;
 using SGSFramework.Persistent.Abstractions.Dbcontexts;
 
@@ -19,7 +18,7 @@ namespace SGS.Modules.ORG.Infrastructure.Dbcontexts
     /// <summary>
     /// ORG 模組專屬 DbContext，負責處理組織架構、稽核紀錄與 Outbox 訊息持久化。
     /// </summary>
-    public class ORGDbContext : BaseDbContext<ORGDbContext>, IAuditDbContext
+    public class ORGDbContext : BaseDbContext<ORGDbContext>
     {
         /// <summary>
         /// 初始化 <see cref="ORGDbContext"/> 類別的新實體。
@@ -32,11 +31,6 @@ namespace SGS.Modules.ORG.Infrastructure.Dbcontexts
         }
 
         #region DbSets
-
-        /// <summary>
-        /// 稽核紀錄資料集 (實作 <see cref="IAuditDbContext"/>)
-        /// </summary>
-        public DbSet<AuditLogEntity> AuditLogs { get; set; } = null!;
 
         /// <summary>
         /// Outbox 發送訊息佇列資料集
@@ -88,11 +82,6 @@ namespace SGS.Modules.ORG.Infrastructure.Dbcontexts
             modelBuilder.ApplyConfigurationsFromAssembly(typeof(ORGDbContext).Assembly);
 
             // 3. 強制確保核心與共用 Entity 映射至 org Schema
-            modelBuilder.Entity<AuditLogEntity>(b =>
-            {
-                b.ToTable("AuditLogs", "org");
-            });
-
             modelBuilder.Entity<OutboxMessage>(b =>
             {
                 b.ToTable("OutboxMessages", "org");

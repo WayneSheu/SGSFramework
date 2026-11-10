@@ -12,7 +12,7 @@ namespace SGS.Modules.LOG.Infrastructure.Dbcontexts;
 
 /// <summary>
 /// LOG 日誌模組專屬 DbContext（獨立資料庫、schema: log）：系統日誌、資安日誌、資料日誌三張 SQL Ledger APPEND_ONLY 資料表。
-/// 刻意不實作 IAuditDbContext、不掛 AuditInterceptor：日誌庫本身不再產生資料稽核（避免稽核自己）。
+/// 刻意不掛 AuditInterceptor：日誌庫本身不再產生資料稽核（避免稽核自己）。
 /// </summary>
 public class LogDbContext : BaseDbContext<LogDbContext>
 {

@@ -1,117 +1,57 @@
 #nullable enable
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using SGSFramework.Core.Abstractions.Entities.AuditLogs;
+using SGSFramework.Core.Logging;
 using SGSFramework.SystemLog.DTOs;
-using System.Reflection;
 
 namespace SGSFramework.SystemLog.Services
 {
     /// <summary>
-    /// 資料日誌來源解析：找出所有「已註冊且模型含 AuditLogEntity」的 DbContext（主系統與各外掛模組，如 ORG），
-    /// 供資料日誌查詢依來源動態切換。
+    /// 資料日誌來源解析：資料日誌一律存放於獨立日誌庫（SGS.Modules.LOG），來源為熱庫（現行）與年度換庫後的唯讀冷庫，
+    /// 供資料日誌查詢依來源動態切換 / 複選。
     /// </summary>
     public interface IAuditLogSourceResolver
     {
-        /// <summary>列出可查詢的資料日誌來源（主系統固定排第一）</summary>
+        /// <summary>列出可查詢的資料日誌來源（熱庫固定排第一）</summary>
         IReadOnlyList<AuditLogSourceDto> GetSources();
 
         /// <summary>
-        /// 取得指定來源的唯讀查詢串流；<paramref name="sourceKey"/> 為空時使用主系統。
-        /// 找不到來源時回傳 null。
+        /// 取得指定來源的唯讀查詢串流；<paramref name="sourceKey"/> 為空時使用熱庫。
+        /// 找不到來源（或日誌模組未啟用）時回傳 null。
         /// </summary>
         IQueryable<AuditLogEntity>? GetQueryable(string? sourceKey);
     }
 
     /// <remarks>
-    /// 動態模組 (如 ORG) 載入於獨立 AssemblyLoadContext，同名 DbContext 型別可能同時存在於 Host 直接參考的組件中。
-    /// 因此 DbContext 以 DI 實際可解析者為準，不依型別名稱挑選；AuditLogEntity 由 Core 共用，以該 DbContext 的模型確認。
+    /// 來源由 <see cref="ILogReadSource"/>（日誌外掛提供，含冷庫目錄）決定，不再掃描各模組 DbContext：
+    /// 主庫與各模組已沒有 AuditLogs 資料表。
     /// </remarks>
     public sealed class AuditLogSourceResolver : IAuditLogSourceResolver
     {
-        private const string MainSchema = "core";
-        private const string LogDbSchema = "log";
+        private const string LogSchema = "log";
 
-        private readonly IServiceProvider _serviceProvider;
-        private readonly ILogger<AuditLogSourceResolver> _logger;
+        private readonly ILogReadSource? _readSource;
 
-        public AuditLogSourceResolver(IServiceProvider serviceProvider, ILogger<AuditLogSourceResolver> logger)
-        {
-            _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        }
+        public AuditLogSourceResolver(ILogReadSource? readSource = null) => _readSource = readSource;
 
         public IReadOnlyList<AuditLogSourceDto> GetSources() =>
-            Discover().Select(s => s.Dto).ToList();
+            _readSource is null
+                ? []
+                : _readSource.Sources
+                    .Select(s => new AuditLogSourceDto(s.Key, $"{s.DisplayName}（{LogSchema}.AuditLogs）", LogSchema, s.IsHot))
+                    .ToList();
 
         public IQueryable<AuditLogEntity>? GetQueryable(string? sourceKey)
         {
-            var sources = Discover();
-            var index = string.IsNullOrWhiteSpace(sourceKey)
-                ? (sources.Count > 0 ? 0 : -1)
-                : sources.FindIndex(s => string.Equals(s.Dto.Key, sourceKey.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (_readSource is null) return null;
 
-            return index < 0 ? null : sources[index].Context.Set<AuditLogEntity>().AsNoTracking();
-        }
-
-        private List<(AuditLogSourceDto Dto, DbContext Context)> Discover()
-        {
-            var found = new List<(AuditLogSourceDto Dto, DbContext Context)>();
-
-            foreach (var contextType in FindDbContextTypes())
+            try
             {
-                // 僅取 DI 實際註冊者，避免挑到另一個 ALC 的同名型別
-                if (_serviceProvider.GetService(contextType) is not DbContext context) continue;
-
-                var entityType = context.Model.FindEntityType(typeof(AuditLogEntity));
-                if (entityType is null) continue;
-
-                var schema = entityType.GetSchema() ?? context.Model.GetDefaultSchema() ?? MainSchema;
-                var table = entityType.GetTableName() ?? "AuditLogs";
-                var isMain = string.Equals(schema, MainSchema, StringComparison.OrdinalIgnoreCase);
-                var name = isMain ? "主系統" : $"{schema.ToUpperInvariant()} 模組";
-
-                found.Add((new AuditLogSourceDto(contextType.Name, $"{name}（{schema}.{table}）", schema, isMain), context));
+                return _readSource.AuditLogsOf(sourceKey);
             }
-
-            // 日誌外掛（獨立日誌庫，schema = log）啟用時：它是現行來源並作為預設；主庫與各模組的舊稽核表標示為封存
-            var hasLogDb = found.Any(f => string.Equals(f.Dto.Schema, LogDbSchema, StringComparison.OrdinalIgnoreCase));
-            if (hasLogDb)
+            catch (ArgumentException)
             {
-                found = found.Select(f =>
-                {
-                    var isLogDb = string.Equals(f.Dto.Schema, LogDbSchema, StringComparison.OrdinalIgnoreCase);
-                    var label = isLogDb
-                        ? $"日誌庫（現行）（{f.Dto.Schema}.AuditLogs）"
-                        : $"{(f.Dto.IsMain ? "主系統" : $"{f.Dto.Schema.ToUpperInvariant()} 模組")}（封存）（{f.Dto.Schema}.AuditLogs）";
-                    return (new AuditLogSourceDto(f.Dto.Key, label, f.Dto.Schema, isLogDb), f.Context);
-                }).ToList();
+                return null;
             }
-
-            return found
-                .DistinctBy(s => s.Dto.Key)
-                .OrderByDescending(s => s.Dto.IsMain)
-                .ThenBy(s => s.Dto.Schema, StringComparer.OrdinalIgnoreCase)
-                .ToList();
         }
-
-        private IEnumerable<Type> FindDbContextTypes() =>
-            AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic)
-                .SelectMany(a =>
-                {
-                    try
-                    {
-                        return a.GetTypes();
-                    }
-                    catch (ReflectionTypeLoadException ex)
-                    {
-                        _logger.LogDebug(ex, "[AuditLogSourceResolver] 略過無法完整載入的組件 {Assembly}", a.FullName);
-                        return ex.Types.OfType<Type>();
-                    }
-                })
-                .Where(t => t is { IsClass: true, IsAbstract: false, IsGenericTypeDefinition: false }
-                            && t != typeof(DbContext)
-                            && typeof(DbContext).IsAssignableFrom(t));
     }
 }

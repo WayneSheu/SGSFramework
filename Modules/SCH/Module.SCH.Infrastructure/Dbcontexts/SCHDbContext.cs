@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using SGS.Modules.SCH.Infrastructure.Entities;
 using SGS.Modules.SCH.Infrastructure.Migrations;
 using SGSFramework.Core.Abstractions.DbContexts;
-using SGSFramework.Core.Abstractions.Entities.AuditLogs;
 using SGSFramework.Core.Abstractions.Outbox;
 using SGSFramework.Persistent.Abstractions.Dbcontexts;
 
@@ -13,14 +12,12 @@ namespace SGS.Modules.SCH.Infrastructure.Dbcontexts;
 /// <summary>
 /// SCH 排程模組專屬 DbContext（schema: sch）：排程作業設定（IAuditable，變更寫入 sch.AuditLogs）與執行紀錄。
 /// </summary>
-public class SCHDbContext : BaseDbContext<SCHDbContext>, IAuditDbContext
+public class SCHDbContext : BaseDbContext<SCHDbContext>
 {
     public SCHDbContext(DbContextOptions<SCHDbContext> options)
         : base(options)
     {
     }
-
-    public DbSet<AuditLogEntity> AuditLogs { get; set; } = null!;
 
     public DbSet<OutboxMessage> OutboxMessages { get; set; } = null!;
 
@@ -51,7 +48,6 @@ public class SCHDbContext : BaseDbContext<SCHDbContext>, IAuditDbContext
 
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(SCHDbContext).Assembly);
 
-        modelBuilder.Entity<AuditLogEntity>(b => b.ToTable("AuditLogs", "sch"));
         modelBuilder.Entity<OutboxMessage>(b => b.ToTable("OutboxMessages", "sch"));
     }
 }

@@ -28,15 +28,13 @@ using SGSFramework.Core.Helpers; // 🟢 引入 DateTimeHelper 命名空間
 /// 企業級稽核日誌背景非同步處理服務
 /// 職責：由 System.Threading.Channels 佇列消費 AuditEntry，並進行批次寫入、定時 Flush、異常重試與降級備份。
 /// </summary>
-/// <typeparam name="TContext">遵循 IAuditDbContext 介面之資料庫內容物件</typeparam>
+/// <typeparam name="TContext">產生稽核紀錄的資料庫內容物件（僅作為來源識別，稽核資料不再存放於其自身資料庫）</typeparam>
 public class AuditWorker<TContext> : BackgroundService
-    where TContext : DbContext, IAuditDbContext
+    where TContext : DbContext
 {
     private readonly IAuditChannel<TContext> _channel;
-    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<AuditWorker<TContext>> _logger;
-    private readonly IAuditStorageStrategy<TContext> _storageStrategy;
-    // 外掛 SGS.Modules.LOG 提供時，改寫入獨立日誌庫；未提供則使用 _storageStrategy（模組自有 AuditLogs）
+    // 稽核資料一律寫入 SGS.Modules.LOG 的獨立日誌庫；未載入 / 未設定時為 null，批次改落本地降級檔，待日誌模組恢復後回補
     private readonly SGSFramework.Core.Logging.IAuditLogStore? _auditLogStore;
     private readonly string _moduleName;
     private readonly string _fallbackPath;
@@ -53,16 +51,12 @@ public class AuditWorker<TContext> : BackgroundService
 
     public AuditWorker(
         IAuditChannel<TContext> channel,
-        IServiceScopeFactory scopeFactory,
         ILogger<AuditWorker<TContext>> logger,
-        IAuditStorageStrategy<TContext> storageStrategy,
         SGSFramework.Core.Logging.IAuditLogStore? auditLogStore = null)
     {
         _auditLogStore = auditLogStore;
         _channel = channel ?? throw new ArgumentNullException(nameof(channel));
-        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _storageStrategy = storageStrategy ?? throw new ArgumentNullException(nameof(storageStrategy));
 
         _moduleName = typeof(TContext).Name;
         _fallbackPath = Path.Combine(AppContext.BaseDirectory, "Audit_Failures", _moduleName);
@@ -139,21 +133,19 @@ public class AuditWorker<TContext> : BackgroundService
     {
         if (batch == null || batch.Count == 0) return;
 
+        if (_auditLogStore is null)
+        {
+            // 日誌模組（SGS.Modules.LOG）未載入或未設定 LogConnection：不重試，直接落本地降級檔，避免遺失
+            await SaveToFallbackDiskAsync(batch, new InvalidOperationException("未註冊 IAuditLogStore（日誌模組未啟用）。")).ConfigureAwait(false);
+            return;
+        }
+
         int retryCount = 0;
         while (retryCount < MaxRetries)
         {
             try
             {
-                if (_auditLogStore is not null)
-                {
-                    await _auditLogStore.SaveBatchAsync(_moduleName, batch, ct).ConfigureAwait(false);
-                }
-                else
-                {
-                    using var scope = _scopeFactory.CreateScope();
-                    var dbContext = scope.ServiceProvider.GetRequiredService<TContext>();
-                    await _storageStrategy.SaveBatchAsync(dbContext, batch, ct).ConfigureAwait(false);
-                }
+                await _auditLogStore.SaveBatchAsync(_moduleName, batch, ct).ConfigureAwait(false);
                 _logger.LogInformation("[{Module}] SaveBatchAsync 成功寫入 {Count} 筆稽核資料至 DB。", _moduleName, batch.Count);
                 return;
             }
@@ -176,6 +168,9 @@ public class AuditWorker<TContext> : BackgroundService
 
     private async Task RecoverFallbackLogsAsync(CancellationToken ct)
     {
+        // 沒有日誌儲存實作就無處回補，保留檔案待日誌模組啟用後的下次啟動
+        if (_auditLogStore is null) return;
+
         try
         {
             var files = Directory.GetFiles(_fallbackPath, "*.json");
@@ -198,16 +193,7 @@ public class AuditWorker<TContext> : BackgroundService
 
                         if (batch != null && batch.Count > 0)
                         {
-                            if (_auditLogStore is not null)
-                            {
-                                await _auditLogStore.SaveBatchAsync(_moduleName, batch, ct).ConfigureAwait(false);
-                            }
-                            else
-                            {
-                                using var scope = _scopeFactory.CreateScope();
-                                var dbContext = scope.ServiceProvider.GetRequiredService<TContext>();
-                                await _storageStrategy.RecoverLogsAsync(dbContext, batch, ct).ConfigureAwait(false);
-                            }
+                            await _auditLogStore!.SaveBatchAsync(_moduleName, batch, ct).ConfigureAwait(false);
                             _logger.LogInformation("[{Module}] 檔案 {FileName} 復原成功。", _moduleName, Path.GetFileName(file));
                             File.Delete(file);
                         }

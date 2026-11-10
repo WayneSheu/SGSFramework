@@ -20,18 +20,14 @@ using SGSFramework.Persistent.Extensions;
 
 namespace PhysLIMS.API.Dbcontexts;
 
-public class PhysLIMSDbContext : BaseIdentityDbContext<ApplicationUser, ApplicationRole, Guid, PhysLIMSDbContext>, ICoreDbContext, ILogDbContext, ITokenDbContext, IAuditDbContext
+public class PhysLIMSDbContext : BaseIdentityDbContext<ApplicationUser, ApplicationRole, Guid, PhysLIMSDbContext>, ICoreDbContext, ITokenDbContext
 {
     public PhysLIMSDbContext(DbContextOptions<PhysLIMSDbContext> options, ITenantService? tenantService = null)
         : base(options, tenantService)
     {
     }
 
-    public DbSet<AuditLogEntity> AuditLogs { get; }
-
     public DbSet<OutboxMessage> OutboxMessages { get; set; } = null!;
-    public DbSet<SystemLog> SystemLogs { get; set; } = null!;
-    public DbSet<SecurityLog> SecurityLogs { get; set; } = null!;
     public DbSet<UserRefreshToken> UserRefreshTokens { get; set; } = null!;
     public DbSet<RemediationTicket> RemediationTickets { get; set; } = null!;
     public DbSet<ModuleMetadata> ModuleMetadatas { get; set; } = null!;
@@ -72,6 +68,12 @@ public class PhysLIMSDbContext : BaseIdentityDbContext<ApplicationUser, Applicat
 
         // UserLabMappingConfiguration
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(UserLabMappingConfiguration).Assembly);
+
+        // 系統日誌 / 資安日誌 / 資料日誌已移至 SGS.Modules.LOG 的獨立日誌庫（LogDbContext），主庫不再有這三張資料表。
+        // Core 組件的組態掃描仍會帶入這些實體，於此排除（對應資料表由 migration DropMainDbLogTables 移除）
+        modelBuilder.Ignore<AuditLogEntity>();
+        modelBuilder.Ignore<SystemLog>();
+        modelBuilder.Ignore<SecurityLog>();
 
         // 3. 針對所有實作 ILedgerEntity 的實體自動附加 MSSQL Ledger 標註
         var ledgerEntityTypes = modelBuilder.Model.GetEntityTypes()

@@ -13,7 +13,7 @@ namespace SGS.Modules.LOG.Initializer;
 
 /// <summary>
 /// LOG 日誌管理外掛模組初始化器：註冊獨立日誌庫 (LogDbContext) 與三種日誌的儲存實作（覆蓋 Core Null 緩衝 store）。
-/// 未設定 PersistentSettings:ConnectionStrings:LogConnection 時整個模組停用，Host 維持原行為（不註冊、不遷移）。
+/// PersistentSettings:ConnectionStrings:LogConnection 為必要設定；未設定時不註冊也不遷移，日誌僅落本機緩衝檔（Log_Buffer / Audit_Failures）。
 /// 啟動時先以 LogDatabaseProvisioner 自動建立獨立日誌庫（不存在時）與帳號權限，再套用 Migration。
 /// 日誌庫連不上時不阻擋啟動：Host Worker 會把日誌落檔至 Log_Buffer，恢復後自動回補。
 /// 模組含 Singleton store，不支援執行中熱抽換，更新模組須重新啟動 API。
@@ -30,7 +30,7 @@ public sealed class ModuleLogInitializer : IModuleInitializer
 
     public ModuleHealthReport GetHealthStatus()
     {
-        // 未設定 LogConnection 屬刻意停用（沿用 Host 內建寫入），不應觸發「模組相依性異常」告警
+        // 未設定 LogConnection 時模組未啟用（已於註冊階段記錄 Error）；健康檢查維持正常，避免重複觸發「模組相依性異常」告警
         if (!_enabled)
         {
             return new ModuleHealthReport(ModuleName, TimeSpan.Zero, true, GC.GetTotalMemory(false));
@@ -64,7 +64,10 @@ public sealed class ModuleLogInitializer : IModuleInitializer
 
         if (!LogDatabaseOptions.IsConfigured(configuration))
         {
-            Log.Warning("[{ModuleName}] 未設定 {Key}，日誌模組停用（沿用 Host 內建日誌寫入）。", ModuleName, LogDatabaseOptions.RuntimeConnectionKey);
+            // LogConnection 為必要設定：主庫已不再有日誌資料表，未設定時日誌無處可寫。
+            // 不讓 API 因此無法啟動：Core 的 Null store 會把系統 / 資安日誌落檔至 Log_Buffer、資料日誌落檔至 Audit_Failures，
+            // 補上設定並重啟後自動回補。
+            Log.Error("[{ModuleName}] 未設定必要設定 {Key}：日誌無法寫入日誌庫，暫存於本機 Log_Buffer / Audit_Failures，請補設定後重啟。", ModuleName, LogDatabaseOptions.RuntimeConnectionKey);
             return services;
         }
 
@@ -92,6 +95,17 @@ public sealed class ModuleLogInitializer : IModuleInitializer
         _serviceProvider = app.ApplicationServices;
 
         if (!_enabled || _isMigrated) return;
+
+        // 冷熱分層：記錄熱庫與已登記的冷庫（唯讀歷史庫，不套用 Migration、不寫入）；設定有誤的冷庫項目被略過並警告
+        var catalog = app.ApplicationServices.GetRequiredService<ILogTierCatalog>();
+        catalog.Refresh(); // 自動偵測同一伺服器上唯讀的 {熱庫}_{年度} 冷庫（年度換庫後免改設定、免重啟）
+        foreach (var problem in catalog.Problems)
+        {
+            Log.Warning("[{ModuleName}] 冷庫設定被略過：{Problem}", ModuleName, problem);
+        }
+
+        Log.Information("[{ModuleName}] 日誌庫分層：熱庫 {Hot}；冷庫 {ColdCount} 個 {Colds}",
+            ModuleName, catalog.Hot.Database, catalog.Colds.Count, catalog.Colds.Select(c => c.Database).ToArray());
 
         await MigrationLock.WaitAsync().ConfigureAwait(false);
         try

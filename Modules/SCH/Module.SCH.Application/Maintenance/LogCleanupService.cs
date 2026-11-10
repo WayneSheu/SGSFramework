@@ -49,15 +49,6 @@ public sealed class LogCleanupService(
         new("[core].[FunctionStatusLogs]", "功能狀態異動紀錄", "CreatedAt < @threshold", AuditTrail)
     ];
 
-    /// <summary>僅附加 Ledger 資料表：資料庫層禁止 DELETE（防篡改），僅回報現有筆數</summary>
-    private static readonly (string Table, string Description)[] LedgerTables =
-    [
-        ("[core].[SystemLogs]", "系統日誌"),
-        ("[core].[SecurityLog]", "資安日誌"),
-        ("[core].[AuditLogs]", "資料異動稽核"),
-        ("[org].[AuditLogs]", "組織模組資料異動稽核")
-    ];
-
     /// <summary>獨立日誌庫的 Ledger 資料表（key 與 ILogReadSource.GetApproximateRowCountsAsync 一致）</summary>
     private static readonly (string Table, string Description)[] LogDbTables =
     [
@@ -99,16 +90,6 @@ public sealed class LogCleanupService(
                 logger.LogWarning(ex, "[LogCleanup] 清除 {Table}（{Description}）失敗 (SQL 錯誤 {Number})。", target.Table, target.Description, ex.Number);
                 results.Add(new(target.Table, target.Description, retention, null, $"清除失敗：{ex.Message}"));
             }
-        }
-
-        // 日誌模組啟用時，現行日誌在獨立日誌庫（以其連線統計）；主庫舊表為封存，不再增加
-        var archived = logReadSource is not null;
-        foreach (var (table, description) in LedgerTables)
-        {
-            var rows = await CountRowsAsync(table, cancellationToken).ConfigureAwait(false);
-            var label = archived ? $"{description}（封存）" : description;
-            results.Add(new(table, label, 0, null,
-                rows is null ? "僅附加 Ledger 資料表，資料庫禁止刪除" : $"僅附加 Ledger 資料表，資料庫禁止刪除（目前 {rows:N0} 筆）"));
         }
 
         if (logReadSource is not null)
@@ -162,21 +143,6 @@ public sealed class LogCleanupService(
         return total;
     }
 
-    private async Task<long?> CountRowsAsync(string table, CancellationToken cancellationToken)
-    {
-        try
-        {
-            // sys.partitions 取近似筆數，避免對大型日誌表 COUNT(*) 全表掃描
-            return await dbContext.Database.SqlQueryRaw<long>(
-                    "SELECT CAST(SUM(rows) AS bigint) AS [Value] FROM sys.partitions WHERE object_id = OBJECT_ID({0}) AND index_id IN (0, 1)",
-                    table)
-                .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (SqlException)
-        {
-            return null;
-        }
-    }
 }
 
 /// <summary>清除無法執行（全部對象失敗），屬可預期的業務失敗</summary>

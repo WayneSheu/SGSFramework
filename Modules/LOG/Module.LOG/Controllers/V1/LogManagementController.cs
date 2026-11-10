@@ -151,6 +151,15 @@ public class LogManagerController : ControllerBase
     }
 
     /// <summary>
+    /// 列出可查詢的日誌來源：熱庫（現行）與年度換庫後的唯讀冷庫，供系統日誌 / 資安日誌頁複選
+    /// </summary>
+    [HttpGet("sources")]
+    [Function("GetLogSources", "取得日誌來源", Icon = "fa-solid fa-layer-group", Order = 6, Description = "列出熱庫與冷庫（年度換庫後的唯讀歷史庫）日誌來源")]
+    [RequiresPermission("LOG.LOGMANAGER.READ")]
+    [ProducesResponseType(typeof(IReadOnlyList<LogSourceDto>), StatusCodes.Status200OK)]
+    public IActionResult GetSources() => Ok(_logQueryService.GetSources());
+
+    /// <summary>
     /// 依 ID 取得系統日誌單筆詳細資訊
     /// </summary>
     [HttpGet("system-logs/{id:long}")]
@@ -158,9 +167,9 @@ public class LogManagerController : ControllerBase
     [RequiresPermission("LOG.LOGMANAGER.READ")]
     [ProducesResponseType(typeof(SystemLogDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetSystemLogById([FromRoute] long id, [FromQuery] bool archive = false, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> GetSystemLogById([FromRoute] long id, CancellationToken cancellationToken = default)
     {
-        var log = await _logQueryService.GetSystemLogByIdAsync(id, cancellationToken, archive);
+        var log = await _logQueryService.GetSystemLogByIdAsync(id, cancellationToken);
         if (log == null)
         {
             return NotFound(new ProblemDetails

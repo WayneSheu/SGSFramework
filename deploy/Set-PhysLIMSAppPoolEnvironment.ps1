@@ -55,11 +55,11 @@ param(
     [string]$SchedulerClientId,
 
     # 選用機密 (依功能啟用情況)
-    [ValidateSet('MigrationConnection', 'BackupConnection', 'LogConnection', 'LogMigrationConnection', 'SchedulerClientSecret', 'SeedAdminPassword', 'SmtpPassword', 'HmsSharedSecret', 'RabbitMqUsername', 'RabbitMqPassword', 'PfxPassword')]
+    [ValidateSet('MigrationConnection', 'BackupConnection', 'LogConnection', 'LogMigrationConnection', 'RotationConnection', 'SchedulerClientSecret', 'SeedAdminPassword', 'SmtpPassword', 'HmsSharedSecret', 'RabbitMqUsername', 'RabbitMqPassword', 'PfxPassword')]
     [string[]]$OptionalSecrets = @(),
 
     # 只處理指定的機密 (輪替時使用)；未指定則處理全部必要機密 + OptionalSecrets
-    [ValidateSet('DefaultConnection', 'JwtSecretKey', 'MigrationConnection', 'BackupConnection', 'LogConnection', 'LogMigrationConnection', 'SchedulerClientSecret', 'SeedAdminPassword', 'SmtpPassword', 'HmsSharedSecret', 'RabbitMqUsername', 'RabbitMqPassword', 'PfxPassword')]
+    [ValidateSet('DefaultConnection', 'JwtSecretKey', 'MigrationConnection', 'BackupConnection', 'LogConnection', 'LogMigrationConnection', 'RotationConnection', 'SchedulerClientSecret', 'SeedAdminPassword', 'SmtpPassword', 'HmsSharedSecret', 'RabbitMqUsername', 'RabbitMqPassword', 'PfxPassword')]
     [string[]]$OnlySecrets = @(),
 
     # Microsoft.PowerShell.SecretManagement 保管庫名稱；機密名稱為 'PhysLIMS-<環境變數名稱>'
@@ -89,6 +89,8 @@ $SecretSpecs = [ordered]@{
     # 日誌外掛 (SGS.Modules.LOG) 獨立資料庫 PhysLIMSLogDB；LogConnection 未設定時日誌模組停用（沿用主庫寫入）
     LogConnection          = @{ Name = 'PersistentSettings__ConnectionStrings__LogConnection';          Required = $false; Kind = 'SqlConnection' }
     LogMigrationConnection = @{ Name = 'PersistentSettings__ConnectionStrings__LogMigrationConnection'; Required = $false; Kind = 'SqlConnection' }
+    # 日誌庫年度換庫專用帳號 rotate_sgs_user (CREATE ANY DATABASE + 熱庫 db_owner，見 docs/sql/20261110_grant_log_rotation_account.sql)；未設定時僅無法換庫
+    RotationConnection     = @{ Name = 'PersistentSettings__ConnectionStrings__RotationConnection';     Required = $false; Kind = 'SqlConnection' }
     SchedulerClientSecret = @{ Name = 'Scheduler__SystemAccount__ClientSecret';                   Required = $false; Kind = 'Text' }
     SeedAdminPassword   = @{ Name = 'SeedAdmin__Password';                                        Required = $false; Kind = 'Text' }
     SmtpPassword        = @{ Name = 'AlertSettings__Smtp__Password';                              Required = $false; Kind = 'Text' }
@@ -243,6 +245,13 @@ try {
     if ($sqlUsers.ContainsKey('LogConnection') -and $sqlUsers.ContainsKey('LogMigrationConnection') `
         -and $sqlUsers['LogConnection'] -and $sqlUsers['LogConnection'] -eq $sqlUsers['LogMigrationConnection']) {
         throw 'LogConnection 與 LogMigrationConnection 使用同一個 SQL 帳號，違反最小權限原則 (執行期應使用僅具 SELECT / INSERT 權限的帳號)。'
+    }
+    if ($sqlUsers.ContainsKey('RotationConnection') -and $sqlUsers['RotationConnection']) {
+        foreach ($other in 'DefaultConnection', 'MigrationConnection', 'BackupConnection', 'LogConnection', 'LogMigrationConnection') {
+            if ($sqlUsers.ContainsKey($other) -and $sqlUsers[$other] -and $sqlUsers[$other] -eq $sqlUsers['RotationConnection']) {
+                throw "RotationConnection 必須使用專用帳號 (rotate_sgs_user，僅 CREATE ANY DATABASE + 日誌庫 db_owner)，不可與 $other 共用。"
+            }
+        }
     }
     if ($sqlUsers.ContainsKey('BackupConnection') -and $sqlUsers['BackupConnection'] -and
         ($sqlUsers['BackupConnection'] -eq $sqlUsers['DefaultConnection'] -or $sqlUsers['BackupConnection'] -eq $sqlUsers['MigrationConnection'])) {

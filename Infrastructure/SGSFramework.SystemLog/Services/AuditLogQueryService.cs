@@ -26,8 +26,6 @@ namespace SGSFramework.SystemLog.Services
 
     public class AuditLogQueryService : IAuditLogQueryService
     {
-        /// <summary>多來源合併分頁時，每個來源最多取回的筆數（= 頁碼 × 每頁筆數的上限），避免深頁耗盡記憶體</summary>
-        private const int MaxMergeDepth = 5000;
 
         private readonly IAuditLogSourceResolver _sources;
         private readonly ILogger<AuditLogQueryService> _logger;
@@ -106,11 +104,7 @@ namespace SGSFramework.SystemLog.Services
         {
             var pageIndex = Math.Max(request.PageIndex, 1);
             var pageSize = Math.Clamp(request.PageSize, 1, 500);
-            var take = Math.Min(pageIndex * pageSize, MaxMergeDepth);
-            if ((pageIndex - 1) * pageSize >= MaxMergeDepth)
-            {
-                throw new ArgumentException($"多來源合併查詢最多檢視前 {MaxMergeDepth} 筆，請縮小時間區間或增加篩選條件。", nameof(request));
-            }
+            var take = LogPageMerger.TakePerSource(pageIndex, pageSize);
 
             var ascending = request.Sorts?.FirstOrDefault(s => string.Equals(s.SortBy, "Timestamp", StringComparison.OrdinalIgnoreCase))
                 ?.Direction == SortDirection.Ascending;
@@ -133,12 +127,7 @@ namespace SGSFramework.SystemLog.Services
                 }
             }
 
-            var page = (ascending
-                    ? merged.OrderBy(m => m.Entity.Timestamp).ThenBy(m => m.Entity.Id)
-                    : merged.OrderByDescending(m => m.Entity.Timestamp).ThenByDescending(m => m.Entity.Id))
-                .Skip((pageIndex - 1) * pageSize)
-                .Take(pageSize)
-                .ToList();
+            var page = LogPageMerger.MergePage(merged, e => e.Timestamp, e => e.Id, pageIndex, pageSize, ascending);
 
             var items = await ToListItemsAsync(page, cancellationToken);
             return new PagedResult<AuditLogListItemDto>(items, total, pageIndex, pageSize);

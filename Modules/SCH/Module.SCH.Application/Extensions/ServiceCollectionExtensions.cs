@@ -64,6 +64,14 @@ public static class ServiceCollectionExtensions
         services.AddRecurringJob<AccessReviewCampaignJob>(AccessReviewCampaignJob.JobId, "定期權限覆核", "0 8 1 1,4,7,10 *");
         services.AddRecurringJob<LogCleanupJob>(LogCleanupJob.JobId, "日誌清除", "30 3 * * *");
 
+        // 日誌庫年度換庫準備（端點由 SGS.Modules.LOG 外掛提供）：僅於設定換庫帳號連線時註冊，未設定時不產生每年失敗的作業。
+        // 只做到「備份並還原為待核准的冷庫」，不可逆的刪除舊熱庫 / 建立新熱庫需管理者核准
+        if (!string.IsNullOrWhiteSpace(configuration["PersistentSettings:ConnectionStrings:RotationConnection"])
+            && !string.IsNullOrWhiteSpace(configuration["PersistentSettings:ConnectionStrings:LogConnection"]))
+        {
+            services.AddRecurringJob<LogRotationPrepareJob>(LogRotationPrepareJob.JobId, "日誌庫換庫準備", "0 1 1 1 *");
+        }
+
         // 已刪除檔案清除（端點由 SGS.Modules.FMS 外掛提供）：僅於 FileManagement:Enabled 時註冊，避免模組未啟用時每日失敗告警
         if (configuration.GetValue<bool>("FileManagement:Enabled"))
         {

@@ -79,15 +79,12 @@ namespace SGSFramework.SystemLog.Extensions
             builder.Services.AddScoped<IAuditLogQueryService, AuditLogQueryService>();
 
             // =========================================================================
-            // 5. 持久化核心處理器註冊 (Processors)
+            // 5. 資安日誌記錄器與名稱解析
+            //    日誌持久化（系統 / 資安 / 資料日誌）一律由 SGS.Modules.LOG 外掛提供 ISystemLogStore / ISecurityLogStore / IAuditLogStore
+            //    寫入獨立日誌庫；外掛未載入或未設定 LogConnection 時，Core 的 Null store 會把日誌落檔至 Log_Buffer，待恢復後回補。
             // =========================================================================
-            builder.Services.AddSingleton<SqlServerLogProcessor>();
             builder.Services.AddSingleton<ISecurityLogger, SecurityLogger>();
-            builder.Services.AddSingleton<SqlServerSecurityProcessor>();
             builder.Services.AddSingleton<SGSFramework.Core.Logging.ILogIdentityResolver, Services.DbLogIdentityResolver>();
-            // 過渡期：Host 內建 SQL 實作覆蓋 Core 的 Null 緩衝 store；SGS.Modules.LOG 外掛載入後再覆蓋此註冊
-            builder.Services.AddSingleton<SGSFramework.Core.Logging.ISystemLogStore>(sp => sp.GetRequiredService<SqlServerLogProcessor>());
-            builder.Services.AddSingleton<SGSFramework.Core.Logging.ISecurityLogStore>(sp => sp.GetRequiredService<SqlServerSecurityProcessor>());
 
             // =========================================================================
             // 6. 常駐背景服務註冊 (Hosted Services / Workers 消費端)

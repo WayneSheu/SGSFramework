@@ -5,6 +5,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using SGS.Modules.LOG.Infrastructure.Dbcontexts;
+using SGS.Modules.LOG.Infrastructure.Services;
 using SGSFramework.Core.Abstractions.Entities.AuditLogs;
 using SGSFramework.Core.Logging;
 
@@ -19,7 +20,15 @@ public sealed class AuditLogStore : IAuditLogStore
 {
     private readonly IDbContextFactory<LogDbContext> _factory;
 
-    public AuditLogStore(IDbContextFactory<LogDbContext> factory) => _factory = factory;
+    private readonly ILogTierCatalog _catalog;
+    private readonly LogColdContextFactory _coldFactory;
+
+    public AuditLogStore(IDbContextFactory<LogDbContext> factory, ILogTierCatalog catalog, LogColdContextFactory coldFactory)
+    {
+        _factory = factory;
+        _catalog = catalog;
+        _coldFactory = coldFactory;
+    }
 
     public async Task SaveBatchAsync(string sourceKey, IReadOnlyList<AuditLogEntity> batch, CancellationToken cancellationToken)
     {
@@ -97,12 +106,37 @@ public sealed class AuditLogStore : IAuditLogStore
         if (result < 0) throw new TimeoutException($"取得稽核雜湊鏈鎖定逾時（schema={schema}, code={result}）。");
     }
 
-    private static async Task<string> ReadLastHashAsync(SqlConnection connection, SqlTransaction tx, string schema, CancellationToken ct)
+    private async Task<string> ReadLastHashAsync(SqlConnection connection, SqlTransaction tx, string schema, CancellationToken ct)
     {
         await using var cmd = new SqlCommand(
             "SELECT TOP 1 [StoredHash] FROM [log].[AuditLogs] WHERE [Schema] = @s ORDER BY [Id] DESC", connection, tx);
         cmd.Parameters.AddWithValue("@s", schema);
-        return (await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) as string) ?? string.Empty;
+        var hash = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
+        if (!string.IsNullOrEmpty(hash)) return hash;
+
+        // 熱庫此 Schema 尚無資料（例如年度換庫後的新庫）：從最新的冷庫銜接雜湊鏈，使鏈跨資料庫連續
+        return await ReadLastHashFromColdAsync(schema, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 由新到舊在冷庫尋找該 Schema 最後一筆 StoredHash。冷庫無法讀取時擲出例外（寧可批次落檔重試，也不讓雜湊鏈在換庫處悄悄斷開）。
+    /// </summary>
+    private async Task<string> ReadLastHashFromColdAsync(string schema, CancellationToken ct)
+    {
+        foreach (var cold in _catalog.Colds.Reverse())
+        {
+            await using var db = _coldFactory.Create(cold.Key);
+            var hash = await db.AuditLogs
+                .Where(x => x.Schema == schema)
+                .OrderByDescending(x => x.Id)
+                .Select(x => x.StoredHash)
+                .FirstOrDefaultAsync(ct)
+                .ConfigureAwait(false);
+
+            if (!string.IsNullOrEmpty(hash)) return hash;
+        }
+
+        return string.Empty;
     }
 
     private static void Sanitize(AuditLogEntity log)

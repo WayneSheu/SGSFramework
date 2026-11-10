@@ -28,7 +28,6 @@ namespace SGSFramework.AuditLog.Configurations
         public bool IncludeRelationships { get; set; } = true;
         // 只有當中間表的「兩端實體」都在此清單，才進行紀錄 (嚴格模式)
         public bool StrictRelationshipAudit { get; set; } = true;
-        public bool StoreInSeparateDatabase { get; set; }
         public int RetentionDays { get; set; }
         // 當 buffer 未達批次上限時，最多等待多少秒後強制 flush（可由設定檔覆寫）
         public int FlushPeriodSeconds { get; set; } = 5;
