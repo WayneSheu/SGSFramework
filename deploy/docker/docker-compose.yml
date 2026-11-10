@@ -1,0 +1,33 @@
+# PhysLIMS 方案 A（Windows 容器）。需先將 Docker Desktop 切換到 Windows containers。
+# 使用：  copy .env.example .env（填入機密）→ .\publish.ps1 → docker compose up -d --build
+#
+# 注意：ASPNETCORE_ENVIRONMENT 預設為 Production 組態檔 (appsettings.Production.json)，
+#       但「此 compose 僅供本機 / 測試驗證」；部署到名稱含 prod 的真實主機請由負責人手動執行並審核。
+name: physlims
+
+services:
+  physlims-api:
+    image: physlims-api:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Windows 11 主機只能以 Hyper-V 隔離執行 Windows Server 映像
+    isolation: hyperv
+    ports:
+      - "127.0.0.1:${HOST_PORT:-8080}:8080"
+    env_file: .env
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+    volumes:
+      - dp-keys:C:/data/keys
+      - app-logs:C:/app/logs
+      # DataProtection 金鑰環加密用 PFX（機密，勿進版控）：放在 ./secrets/dataprotection.pfx
+      - type: bind
+        source: ./secrets
+        target: C:/secrets
+        read_only: true
+    restart: unless-stopped
+
+volumes:
+  dp-keys: {}
+  app-logs: {}

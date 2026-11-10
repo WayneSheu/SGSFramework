@@ -1,0 +1,8 @@
+.env
+.env.*
+secrets/
+*.pfx
+*.snk
+*.pdb
+publish.ps1
+README.md

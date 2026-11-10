@@ -146,14 +146,24 @@ public sealed class WatermarkRenderer(IOptionsMonitor<FileManagementOptions> opt
         using var canvas = new SKCanvas(bitmap);
         var fontSize = Math.Clamp(Math.Min(bitmap.Width, bitmap.Height) / 28f, 12f, 72f);
 
+        // 雙色疊印（深色陰影 + 淺色本體）：在淺色、深色與中間色底圖上都清晰可辨，單一灰色在中間色底圖上幾乎看不出來
+        using var shadow = new SKPaint
+        {
+            Typeface = _typeface.Value,
+            TextSize = fontSize,
+            IsAntialias = true,
+            Color = new SKColor(0, 0, 0, (byte)settings.Opacity),
+            TextAlign = SKTextAlign.Left
+        };
         using var paint = new SKPaint
         {
             Typeface = _typeface.Value,
             TextSize = fontSize,
             IsAntialias = true,
-            Color = new SKColor(128, 128, 128, (byte)settings.Opacity),
+            Color = new SKColor(255, 255, 255, (byte)settings.Opacity),
             TextAlign = SKTextAlign.Left
         };
+        var outlineOffset = Math.Max(1f, fontSize / 18f);
 
         var textWidth = paint.MeasureText(text);
         var stepX = textWidth + fontSize * 4;
@@ -170,7 +180,8 @@ public sealed class WatermarkRenderer(IOptionsMonitor<FileManagementOptions> opt
             var offset = row % 2 == 0 ? 0 : stepX / 2;
             for (var x = -diagonal - offset; x < diagonal; x += stepX)
             {
-                canvas.DrawText(text, x, y, paint);
+                canvas.DrawText(text, x, y, shadow);
+                canvas.DrawText(text, x - outlineOffset, y - outlineOffset, paint);
             }
         }
 

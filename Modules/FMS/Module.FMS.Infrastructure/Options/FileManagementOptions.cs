@@ -240,7 +240,7 @@ public sealed class WatermarkOptions
 
     /// <summary>浮水印不透明度（0~255）</summary>
     [Range(10, 255)]
-    public int Opacity { get; set; } = 60;
+    public int Opacity { get; set; } = 80;
 
     /// <summary>輸出頁面影像的 JPEG 品質</summary>
     [Range(30, 100)]

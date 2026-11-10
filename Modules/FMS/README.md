@@ -72,7 +72,21 @@ AES-256-GCM 信封加密、傳輸簽章、動態浮水印檢視、記憶體縮�
 - 下載：地端機密為 `Cache-Control: private`，公開資源為 `public, immutable`；一律 `nosniff` 與 CSP `sandbox`，支援 ETag 與 Range（儲存串流可定位時）。
 - 檢視：浮水印內容「使用者（系統帳號為 client_id）| UTC 時間 | IP」，因人因時而異，一律 `no-store`。
 
-## 前端串接（Blazor WASM / Vue 3）
+## 前端（Blazor RCL：`FrontendFrameWork.RCL.Feature.FileManagement`）
+
+已實作於前端專案（`AddFileManagementFeature()`，頁面由 BlazorWasmApp 的 `AdditionalAssemblies` 載入）：
+
+| 頁面 / 元件 | 路由 | 說明 |
+| --- | --- | --- |
+| 檔案清單 `FileManagement` | `/sgs.modules.fms/files` | 分頁查詢（POST search）、分類 / 上傳人員 / 含已刪除篩選；檢視、下載、刪除；顯示加密 / 儲存目標標示；`ViewOnly` 分類不顯示下載 |
+| 上傳對話框 `FileUploadDialog` | — | 分類、允許格式與大小上限由 `GET files/categories` 動態取得；前端先行檢查，送出時附 `X-Content-SHA256` |
+| 安全檢視 `FileViewerDialog` | — | 以帶 JWT 的 HTTP 取得 `files/{id}/view`，純記憶體 Blob 網址顯示 PDF / 圖片，關閉即 `revokeObjectURL`；停用右鍵 / 拖曳 / 選取、列印時隱藏 |
+| 存取紀錄 `FileAccessLogs` | `/sgs.modules.fms/accesslog` | 動作 / 帳號類型（人員 / 系統帳號）/ 使用者 / 檔案 / 時間區間 / 僅失敗篩選；可由檔案識別碼追查單一檔案 |
+
+- PDF 以 `<object>` 顯示（`#toolbar=0&navpanes=0`），**刻意不設 `pointer-events:none`**，否則多頁文件無法捲動；前端防護僅是使用者體驗層，實質防護仍是伺服器端點陣化浮水印與存取稽核。
+- 選單由後端 `[Function(IsMenu = true, Path = ...)]` 產生；已被管理者自訂（`IsCustomized`）的功能不會被程式碼覆蓋。
+
+## 前端串接（Vue 3 或其他前端）
 
 - 上傳：`multipart/form-data`，分類等欄位放查詢字串；建議以 Web Crypto 計算 SHA-256 放入 `X-Content-SHA256`。
 - 檢視：以帶 JWT 的 `fetch` / `HttpClient` 取得 `api/v1/files/{id}/view` 二進位，`URL.createObjectURL(blob)` 後交給 `<object>`，用畢 `revokeObjectURL`；不要將 Token 放入網址。

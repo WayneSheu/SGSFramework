@@ -7,9 +7,11 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 using SGS.Modules.FMS.Application.Auditing;
 using SGS.Modules.FMS.Application.Services;
+using SGS.Modules.FMS.Infrastructure.Options;
 using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Identities;
 using SGSFramework.Core.Abstractions.Permissions.Enums;
@@ -17,6 +19,15 @@ using SGSFramework.Core.FileManagement;
 using SGSFramework.Core.Paginations;
 
 namespace SGS.Modules.FMS.Controllers.V1;
+
+/// <summary>可上傳分類資訊</summary>
+/// <param name="Code">分類代碼</param>
+/// <param name="IsDefault">是否為預設分類</param>
+/// <param name="AllowedExtensions">允許的副檔名（含句點）</param>
+/// <param name="MaxFileSizeBytes">單檔大小上限（位元組）</param>
+/// <param name="Encrypt">是否加密儲存</param>
+/// <param name="ViewOnly">是否僅供線上檢視（不提供原檔下載）</param>
+public sealed record FileCategoryDto(string Code, bool IsDefault, string[] AllowedExtensions, long MaxFileSizeBytes, bool Encrypt, bool ViewOnly);
 
 /// <summary>
 /// 檔案管理（無狀態安全儲存）：串流上傳（Magic Number 驗證、圖片二次編碼、AES-256-GCM 加密、傳輸簽章）、
@@ -118,10 +129,38 @@ public sealed class FilesController(
         }
     }
 
+    /// <summary>可由通用端點上傳的檔案分類（供上傳介面動態顯示允許格式與大小上限）</summary>
+    [HttpGet("categories")]
+    [Function("GetFileCategories", "上傳分類", Icon = "fa-solid fa-tags", Order = 11, Description = "取得可上傳的檔案分類、允許格式與大小上限")]
+    [RequiresPermission("FMS.FILE.UPLOAD", "上傳檔案", ActionCategory.Operational)]
+    [ProducesResponseType(typeof(IReadOnlyList<FileCategoryDto>), StatusCodes.Status200OK)]
+    public IActionResult GetCategories([FromServices] IOptionsMonitor<FileManagementOptions> options)
+    {
+        var settings = options.CurrentValue;
+        var categories = settings.Categories.Count == 0
+            ? new Dictionary<string, FileCategoryOptions>(StringComparer.OrdinalIgnoreCase) { [FileCategoryOptions.GeneralCategory] = new() }
+            : settings.Categories;
+
+        IReadOnlyList<FileCategoryDto> result = categories
+            .Where(c => c.Value.AllowGenericApi)
+            .Select(c => new FileCategoryDto(
+                c.Key,
+                c.Key.Equals(settings.DefaultCategory, StringComparison.OrdinalIgnoreCase),
+                c.Value.AllowedExtensions is { Length: > 0 } exts
+                    ? exts.Select(e => e.Trim().ToLowerInvariant()).Select(e => e.StartsWith('.') ? e : "." + e).ToArray()
+                    : FileManagementOptions.DefaultAllowedExtensions,
+                Math.Min(c.Value.MaxFileSizeBytes ?? settings.MaxFileSizeBytes, settings.MaxFileSizeBytes),
+                c.Value.Encrypt,
+                c.Value.ViewOnly))
+            .OrderByDescending(c => c.IsDefault).ThenBy(c => c.Code, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return Ok(result);
+    }
+
     /// <summary>分頁查詢檔案中繼資料</summary>
     [HttpPost("search")]
     [Consumes(MediaTypeNames.Application.Json)]
-    [Function("SearchFiles", "查詢檔案", Icon = "fa-solid fa-magnifying-glass", Order = 2, Description = "分頁查詢檔案中繼資料，支援分類、關聯與上傳人員篩選")]
+    [Function("SearchFiles", "檔案清單", Icon = "fa-solid fa-folder-open", Order = 1, IsMenu = true, Path = "/sgs.modules.fms/files", Description = "分頁查詢檔案中繼資料，支援分類、關聯與上傳人員篩選")]
     [RequiresPermission("FMS.FILE.READ", "查詢 / 下載檔案")]
     [ProducesResponseType(typeof(PagedResult<FileMetadataDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Search([FromBody] FileQueryRequest request, CancellationToken cancellationToken = default)
@@ -260,7 +299,7 @@ public sealed class FilesController(
     /// <summary>分頁查詢檔案存取稽核紀錄（Ledger，區分人員與系統帳號）</summary>
     [HttpPost("access-logs/search")]
     [Consumes(MediaTypeNames.Application.Json)]
-    [Function("SearchFileAccessLogs", "檔案存取紀錄", Icon = "fa-solid fa-clipboard-list", Order = 8, Description = "查詢檔案上傳、下載、檢視、刪除與完整性失敗等存取稽核紀錄")]
+    [Function("SearchFileAccessLogs", "檔案存取紀錄", Icon = "fa-solid fa-clipboard-list", Order = 2, IsMenu = true, Path = "/sgs.modules.fms/accesslog", Description = "查詢檔案上傳、下載、檢視、刪除與完整性失敗等存取稽核紀錄")]
     [RequiresPermission("FMS.FILE.AUDIT", "檢視檔案存取紀錄")]
     [ProducesResponseType(typeof(PagedResult<FileAccessLogDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> SearchAccessLogs([FromBody] FileAccessLogQueryRequest request, CancellationToken cancellationToken = default)
