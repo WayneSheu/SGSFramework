@@ -16,7 +16,7 @@
 		<PublishRepositoryUrl>true</PublishRepositoryUrl>
 		<EmbedUntrackedSources>true</EmbedUntrackedSources>
 		<SignAssembly>True</SignAssembly>
-		<AssemblyOriginatorKeyFile>C:\專案\SES\src\MyModuleKey.snk</AssemblyOriginatorKeyFile>
+		<AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)..\..\..\MyModuleKey.snk</AssemblyOriginatorKeyFile>
 
 	</PropertyGroup>
 	<Target Name="PushToBaGet" AfterTargets="Pack" Condition="'$(Configuration)' == 'Release' And '$(LocalNuGetApiKey)' != ''">

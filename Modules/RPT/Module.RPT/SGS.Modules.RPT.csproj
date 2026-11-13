@@ -13,7 +13,7 @@
     <Company>SES</Company>
     <Description>檢驗報告管理套件（報告類別權限、生命週期、簽署與真偽查驗）</Description>
     <SignAssembly>True</SignAssembly>
-    <AssemblyOriginatorKeyFile>C:\專案\SES\src\MyModuleKey.snk</AssemblyOriginatorKeyFile>
+    <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)..\..\..\MyModuleKey.snk</AssemblyOriginatorKeyFile>
     <!-- 外掛部署目錄：不依賴 $(SolutionDir)，單獨建置專案亦可正確複製 -->
     <HostPluginDir>$(MSBuildThisFileDirectory)..\..\..\Host\PhysLIMS.API\bin\$(Configuration)\net10.0\plugins\</HostPluginDir>
   </PropertyGroup>
