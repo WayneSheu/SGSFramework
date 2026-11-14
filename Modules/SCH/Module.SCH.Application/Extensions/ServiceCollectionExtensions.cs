@@ -78,6 +78,15 @@ public static class ServiceCollectionExtensions
             services.AddRecurringJob<FilePurgeJob>(FilePurgeJob.JobId, "已刪除檔案清除", "0 4 * * *");
         }
 
+        // PMS 排程作業：CR 評估逾期提醒、月度維運報告自動產生（端點由 SGS.Modules.PMS 外掛提供）：僅於 ProjectManagement:Enabled 時註冊，
+        // 避免未部署專案管理模組時每個工作日失敗告警。預設平日 09:00（台灣時間），工作日由 PMS 端再依國定假日判斷
+        if (configuration.GetValue<bool>("ProjectManagement:Enabled"))
+        {
+            services.AddRecurringJob<PmsCrEvalWatchJob>(PmsCrEvalWatchJob.JobId, "PMS CR 評估逾期提醒", "0 9 * * 1-5");
+            // 每天 18:00（台灣時間）執行；是否為月底最後工作日／月初補產日由 PMS 端依國定假日判斷，故不必在假日調整 cron
+            services.AddRecurringJob<PmsMonthlyReportJob>(PmsMonthlyReportJob.JobId, "PMS 月度維運報告自動產生", "0 18 * * *");
+        }
+
         // Hangfire 只序列化 Core 的 IScheduledJobDispatcher（Default ALC），再由此實作依作業 ID 執行外掛內的作業類別
         services.TryAddSingleton<ScheduledJobCatalog>();
         services.TryAddScoped<IScheduledJobDispatcher, ScheduledJobDispatcher>();

@@ -60,7 +60,9 @@ namespace SGSFramework.SystemLog.Notifications
             }
 
             var isSecurity = "Security".Equals(message.LogType, StringComparison.OrdinalIgnoreCase);
-            var subjectPrefix = isSecurity ? "🚨 [資安威脅警報]" : "🔥 [系統崩潰異常]";
+            // 業務提醒（例如 PMS CR 評估逾期）：非系統故障，使用中性主旨與版型，主旨取 MessageTemplate
+            var isBusiness = "Business".Equals(message.LogType, StringComparison.OrdinalIgnoreCase);
+            var subjectPrefix = isBusiness ? "📌 [業務提醒]" : isSecurity ? "🚨 [資安威脅警報]" : "🔥 [系統崩潰異常]";
 
             var rawSummary = message.RenderedMessage ?? string.Empty;
             var cleanedSummary = Regex.Replace(rawSummary, @"\s+", " ").Trim();
@@ -73,7 +75,7 @@ namespace SGSFramework.SystemLog.Notifications
             using var mailMessage = new MailMessage
             {
                 From = new MailAddress(config.FromAddress ?? "SGSFramework-alert@yourdomain.com", "SGSFramework 智慧賦能監控中樞"),
-                Subject = $"{subjectPrefix} ({message.LogLevel}) - {cleanedSummary}",
+                Subject = isBusiness ? $"{subjectPrefix} {message.MessageTemplate}" : $"{subjectPrefix} ({message.LogLevel}) - {cleanedSummary}",
                 BodyEncoding = Encoding.UTF8,
                 IsBodyHtml = true
             };
@@ -98,8 +100,8 @@ namespace SGSFramework.SystemLog.Notifications
                 mailMessage.Headers.Add("X-Priority", "3");
             }
 
-            var statusColor = isSecurity ? "#E63946" : "#D90429";
-            var headerText = isSecurity ? "SECURITY AUDIT ALERT" : "SYSTEM CRITICAL ALERT";
+            var statusColor = isBusiness ? "#E09F00" : isSecurity ? "#E63946" : "#D90429";
+            var headerText = isBusiness ? "BUSINESS REMINDER" : isSecurity ? "SECURITY AUDIT ALERT" : "SYSTEM CRITICAL ALERT";
 
             mailMessage.Body = $"""
             <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #F8F9FA; padding: 24px; color: #212529;">

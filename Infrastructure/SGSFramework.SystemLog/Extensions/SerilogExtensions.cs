@@ -71,6 +71,8 @@ namespace SGSFramework.SystemLog.Extensions
             // =========================================================================
             builder.Services.AddSingleton<IAlertCoordinator, AlertCoordinator>();
             builder.Services.AddSingleton<INotificationStrategy, EmailNotificationStrategy>();
+            // 一般郵件寄送（寄給客戶等；沿用 AlertSettings:Smtp，寄送失敗會拋出例外供呼叫端處理）
+            builder.Services.AddSingleton<IMailSender, SmtpMailSender>();
             // 註冊泛型查詢倉儲 (QueryRepository)
 
 
