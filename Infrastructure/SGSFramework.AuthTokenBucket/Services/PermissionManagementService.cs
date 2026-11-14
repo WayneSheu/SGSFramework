@@ -735,16 +735,24 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
             var key = !string.IsNullOrWhiteSpace(page.PermissionKey) ? page.PermissionKey! : page.Key;
             entries.TryAdd(key, new MenuEntry(page.DisplayName, page.Route));
 
-            if (!_permissionRegistry.TryGetPermission(key, out var meta) || meta is null) continue;
+            // 同一把權限鍵可能由多個功能（Controller）共用（例如專案維護與交付物管理共用 PMS.PROJECT.READ）：
+            // 全部歸入此選單頁面所在群組，而不是只取註冊表的第一筆，否則其餘功能會掉到獨立的模組群組
+            var metas = _permissionRegistry.GetAllPermissions()
+                .Where(p => string.Equals(p.PermissionKey, key, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (metas.Count == 0) continue;
 
             MenuItem? group = null;
             if (page.ParentId is { } groupId && byId.TryGetValue(groupId, out var groupNode)) group = groupNode;
             var section = group?.ParentId is { } sectionId && byId.TryGetValue(sectionId, out var s) ? s : null;
             if (group is null) continue;
 
-            byController.TryAdd(ControllerKey(meta.ModuleName, meta.ControllerName), new MenuPlacement(
-                section?.DisplayName ?? meta.ModuleTitle ?? meta.ModuleName, section?.DisplayOrder ?? int.MaxValue,
-                group.DisplayName, group.DisplayOrder));
+            foreach (var meta in metas)
+            {
+                byController.TryAdd(ControllerKey(meta.ModuleName, meta.ControllerName), new MenuPlacement(
+                    section?.DisplayName ?? meta.ModuleTitle ?? meta.ModuleName, section?.DisplayOrder ?? int.MaxValue,
+                    group.DisplayName, group.DisplayOrder));
+            }
         }
 
         return new MenuLookup(byController, entries);

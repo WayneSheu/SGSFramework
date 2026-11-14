@@ -59,7 +59,9 @@ public class MenuSeedService<TDbContext> : IMenuSeedService
             if (pageNode == null)
             {
                 var byKey = menuItems.FirstOrDefault(m => m.Key == pageKey);
-                if (byKey != null && (byKey.ControllerId == null || byKey.ControllerId == meta.Id))
+                // 只有選單入口功能（IsMenu）才能認領尚未綁定功能的頁面節點；
+                // 與選單共用權限鍵的非選單功能（例如詳情、下載、匯出）不得認領，否則節點會被改綁到非選單功能而被隱藏
+                if (byKey != null && (byKey.ControllerId == meta.Id || (byKey.ControllerId == null && meta.IsMenu)))
                 {
                     pageNode = byKey;
                 }

@@ -186,6 +186,618 @@ namespace SGS.Modules.PMS.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.Contract", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ApprovalCycle")
+                        .HasColumnType("int")
+                        .HasComment("送審週期（每次送審加一；退回後再送審為新週期）");
+
+                    b.Property<bool>("AuditCostOnVendor")
+                        .HasColumnType("bit")
+                        .HasComment("稽核費用由乙方負擔");
+
+                    b.Property<int?>("AuditNoticeDays")
+                        .HasColumnType("int")
+                        .HasComment("實地稽核須事前通知天數；null＝未約定");
+
+                    b.Property<int?>("AuditPerYear")
+                        .HasColumnType("int")
+                        .HasComment("每年實地稽核次數上限；null＝未約定");
+
+                    b.Property<string>("ContractNo")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasComment("合約編號 CT-YYYY-NNN，核發後不可變");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("CustomerContactEmail")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("甲方窗口 Email（正式通知用，個資）");
+
+                    b.Property<string>("CustomerContactName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("甲方窗口姓名");
+
+                    b.Property<string>("CustomerName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasComment("客戶（甲方）名稱");
+
+                    b.Property<int?>("DeemedAcceptanceWorkdays")
+                        .HasColumnType("int")
+                        .HasComment("擬制驗收期限（交付後工作日）；null＝無擬制驗收條款");
+
+                    b.Property<bool>("DeemedPassOnTimeout")
+                        .HasColumnType("bit")
+                        .HasComment("逾期未回覆視為通過");
+
+                    b.Property<DateOnly?>("DeliveryDate")
+                        .HasColumnType("date")
+                        .HasComment("原定交付／驗收日（合約約定，變更與展延另計）");
+
+                    b.Property<bool>("ExcludesIndirectLoss")
+                        .HasColumnType("bit")
+                        .HasComment("排除間接損害與所失利益");
+
+                    b.Property<bool>("FinalPaymentHeldForMinorDefects")
+                        .HasColumnType("bit")
+                        .HasComment("允許因微幅瑕疵扣留全部尾款");
+
+                    b.Property<int?>("IncidentNotifyHours")
+                        .HasColumnType("int")
+                        .HasComment("重大資安事件正式通報時限（小時）；null＝未約定");
+
+                    b.Property<byte>("Industry")
+                        .HasColumnType("tinyint");
+
+                    b.Property<byte>("IpRule")
+                        .HasColumnType("tinyint");
+
+                    b.Property<byte>("LiabilityCap")
+                        .HasColumnType("tinyint");
+
+                    b.Property<decimal?>("LiabilityCapAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasComment("賠償上限金額（上限類型為 FixedAmount 時使用）");
+
+                    b.Property<int?>("MaxReviewRounds")
+                        .HasColumnType("int")
+                        .HasComment("彙整修改次數上限；null＝未約定");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasComment("備註");
+
+                    b.Property<bool>("OpenEndedScope")
+                        .HasColumnType("bit")
+                        .HasComment("條款含「包含但不限於」等開放式範疇字眼");
+
+                    b.Property<DateOnly?>("QuoteDate")
+                        .HasColumnType("date")
+                        .HasComment("報價日");
+
+                    b.Property<int?>("ReviewDeadlineWorkdays")
+                        .HasColumnType("int")
+                        .HasComment("甲方文件審查期限（工作日）；null＝合約未約定期限");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<byte>("ScanRule")
+                        .HasColumnType("tinyint");
+
+                    b.Property<string>("ServiceHours")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasComment("標準服務時間");
+
+                    b.Property<Guid?>("SignedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly?>("SignedDate")
+                        .HasColumnType("date")
+                        .HasComment("簽約日（用印完成日）");
+
+                    b.Property<string>("SnapshotHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasComment("送審時鎖定的條款與審閱結果 SHA-256；核決與簽約前比對");
+
+                    b.Property<DateOnly?>("StartDate")
+                        .HasColumnType("date")
+                        .HasComment("合約起日");
+
+                    b.Property<byte>("Status")
+                        .HasColumnType("tinyint");
+
+                    b.Property<DateTimeOffset?>("SubmittedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("SubmittedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SupportChannel")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasComment("唯一正式報修管道（客服信箱或系統）");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasComment("合約／專案名稱");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasComment("合約總價金（新台幣，未稅）");
+
+                    b.Property<byte>("Type")
+                        .HasColumnType("tinyint");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<int>("WarrantyMonths")
+                        .HasColumnType("int")
+                        .HasComment("免費保固月數");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContractNo")
+                        .IsUnique();
+
+                    b.HasIndex("CustomerName");
+
+                    b.HasIndex("Status", "DeliveryDate");
+
+                    b.ToTable("Contracts", "pms", t =>
+                        {
+                            t.HasComment("專案合約主檔：條款參數、狀態、核決快照；僅合約成員可見");
+                        });
+                });
+
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractApproval", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid>("ContractId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Cycle")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("DecidedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("DecidedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DecidedByName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<byte>("Decision")
+                        .HasColumnType("tinyint");
+
+                    b.Property<byte>("Step")
+                        .HasColumnType("tinyint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContractId", "Cycle", "Step");
+
+                    b.ToTable("ContractApprovals", "pms", t =>
+                        {
+                            t.HasComment("合約核決紀錄（PM 初審、法務審、高階主管核決）");
+                        });
+                });
+
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractAttachment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ContentType")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("ContractId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid>("FileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("nvarchar(260)");
+
+                    b.Property<long>("FileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<byte>("Kind")
+                        .HasColumnType("tinyint");
+
+                    b.Property<string>("OriginalFileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("nvarchar(260)");
+
+                    b.Property<string>("Sha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContractId", "IsDeleted");
+
+                    b.ToTable("ContractAttachments", "pms", t =>
+                        {
+                            t.HasComment("合約附件中繼資料；檔案內容存放於檔案管理（FMS）");
+                        });
+                });
+
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractDeliverableItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AcceptMethod")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasComment("確認／驗收方式");
+
+                    b.Property<Guid>("ContractId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Format")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("交付形式");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasComment("交付項目名稱");
+
+                    b.Property<bool>("RequiresCustomerSignoff")
+                        .HasColumnType("bit")
+                        .HasComment("需甲方書面簽認（第二期：文件審查計時依據）");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Stage")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasComment("階段（規劃、分析、設計、測試、訓練、結案…）");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContractId", "SortOrder");
+
+                    b.ToTable("ContractDeliverableItems", "pms", t =>
+                        {
+                            t.HasComment("附件一交付項目清單：正面表列的交付物與確認方式");
+                        });
+                });
+
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("ContractId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<byte>("Type")
+                        .HasColumnType("tinyint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContractId", "At");
+
+                    b.ToTable("ContractEvents", "pms", t =>
+                        {
+                            t.HasComment("合約事件軌跡：狀態轉移、核決、簽約與異動");
+                        });
+                });
+
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractMember", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ContractId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<byte>("Role")
+                        .HasColumnType("tinyint");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("ContractId", "UserId", "Role")
+                        .IsUnique();
+
+                    b.ToTable("ContractMembers", "pms", t =>
+                        {
+                            t.HasComment("合約成員與角色（業務／PM／法務／核決人）；資料列授權依據");
+                        });
+                });
+
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractProject", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ContractId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContractId");
+
+                    b.HasIndex("ProjectId")
+                        .IsUnique();
+
+                    b.ToTable("ContractProjects", "pms", t =>
+                        {
+                            t.HasComment("合約綁定的 PMS 專案");
+                        });
+                });
+
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractReviewItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ClientClause")
+                        .HasMaxLength(1500)
+                        .HasColumnType("nvarchar(1500)")
+                        .HasComment("甲方原條款（摘錄）");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasComment("項目代碼（SCOPE、DOC_REVIEW、IPR、VULN_SCAN、ACCEPTANCE、LIABILITY、SECURITY）");
+
+                    b.Property<Guid>("ContractId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1500)
+                        .HasColumnType("nvarchar(1500)")
+                        .HasComment("審閱說明或折衷方案");
+
+                    b.Property<byte>("Result")
+                        .HasColumnType("tinyint");
+
+                    b.Property<DateTimeOffset?>("ReviewedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("ReviewedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte>("Stance")
+                        .HasColumnType("tinyint");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContractId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("ContractReviewItems", "pms", t =>
+                        {
+                            t.HasComment("審約檢核表：甲方原條款、乙方立場與審閱結果");
+                        });
+                });
+
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractSlaLevel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ContractId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Definition")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("Level")
+                        .HasColumnType("int")
+                        .HasComment("等級 1~3");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<decimal>("ResponseHours")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)")
+                        .HasComment("回應時間（標準服務時間內，小時）");
+
+                    b.Property<string>("Target")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("處理目標說明");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContractId", "Level")
+                        .IsUnique();
+
+                    b.ToTable("ContractSlaLevels", "pms", t =>
+                        {
+                            t.HasComment("附件二 SLA 分級：定義、回應時間與處理目標");
+                        });
+                });
+
             modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.CrEvent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1937,6 +2549,102 @@ namespace SGS.Modules.PMS.Infrastructure.Migrations
                     b.Navigation("Project");
                 });
 
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractApproval", b =>
+                {
+                    b.HasOne("SGS.Modules.PMS.Infrastructure.Entities.Contract", "Contract")
+                        .WithMany("Approvals")
+                        .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Contract");
+                });
+
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractAttachment", b =>
+                {
+                    b.HasOne("SGS.Modules.PMS.Infrastructure.Entities.Contract", "Contract")
+                        .WithMany()
+                        .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Contract");
+                });
+
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractDeliverableItem", b =>
+                {
+                    b.HasOne("SGS.Modules.PMS.Infrastructure.Entities.Contract", "Contract")
+                        .WithMany("DeliverableItems")
+                        .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Contract");
+                });
+
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractEvent", b =>
+                {
+                    b.HasOne("SGS.Modules.PMS.Infrastructure.Entities.Contract", "Contract")
+                        .WithMany()
+                        .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Contract");
+                });
+
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractMember", b =>
+                {
+                    b.HasOne("SGS.Modules.PMS.Infrastructure.Entities.Contract", "Contract")
+                        .WithMany("Members")
+                        .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Contract");
+                });
+
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractProject", b =>
+                {
+                    b.HasOne("SGS.Modules.PMS.Infrastructure.Entities.Contract", "Contract")
+                        .WithMany("Projects")
+                        .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SGS.Modules.PMS.Infrastructure.Entities.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Contract");
+
+                    b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractReviewItem", b =>
+                {
+                    b.HasOne("SGS.Modules.PMS.Infrastructure.Entities.Contract", "Contract")
+                        .WithMany("ReviewItems")
+                        .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Contract");
+                });
+
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractSlaLevel", b =>
+                {
+                    b.HasOne("SGS.Modules.PMS.Infrastructure.Entities.Contract", "Contract")
+                        .WithMany("SlaLevels")
+                        .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Contract");
+                });
+
             modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.CrEvent", b =>
                 {
                     b.HasOne("SGS.Modules.PMS.Infrastructure.Entities.ChangeRequest", "ChangeRequest")
@@ -2201,6 +2909,21 @@ namespace SGS.Modules.PMS.Infrastructure.Migrations
                     b.Navigation("Events");
 
                     b.Navigation("Signoffs");
+                });
+
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.Contract", b =>
+                {
+                    b.Navigation("Approvals");
+
+                    b.Navigation("DeliverableItems");
+
+                    b.Navigation("Members");
+
+                    b.Navigation("Projects");
+
+                    b.Navigation("ReviewItems");
+
+                    b.Navigation("SlaLevels");
                 });
 
             modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.Project", b =>

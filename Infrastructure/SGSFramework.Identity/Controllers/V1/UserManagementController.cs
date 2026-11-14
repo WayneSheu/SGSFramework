@@ -98,6 +98,27 @@ public sealed class UserManagementController(
     }
 
     /// <summary>
+    /// 批次取得使用者顯示名稱（僅姓名與帳號，不含 Email）。任何已登入使用者皆可呼叫，
+    /// 讓沒有「使用者管理」檢視權限的人也能看到負責人、成員等欄位的姓名；一次最多 200 筆，不提供列舉整個使用者清單的能力。
+    /// </summary>
+    [HttpPost("names")]
+    [AuthenticatedOnly]
+    [Function("GetUserNames", "批次取得使用者名稱", Order = 10, Description = "依識別碼批次取得使用者顯示名稱（不含 Email），供各功能顯示姓名")]
+    [EndpointSummary("批次取得使用者名稱")]
+    [ProducesResponseType(typeof(Result<List<UserNameDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetUserNames([FromBody] UserNamesRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request?.UserIds is null || request.UserIds.Count == 0)
+            return BadRequest(new ProblemDetails { Status = StatusCodes.Status400BadRequest, Title = "Invalid Request", Detail = "請提供要查詢的使用者識別碼。" });
+        if (request.UserIds.Count > 200)
+            return BadRequest(new ProblemDetails { Status = StatusCodes.Status400BadRequest, Title = "Invalid Request", Detail = "一次最多查詢 200 位使用者。" });
+
+        var result = await _userService.GetUserNamesAsync(request.UserIds, cancellationToken).ConfigureAwait(false);
+        return HandleResult(result);
+    }
+
+    /// <summary>
     /// 分頁查詢使用者列表 (已優化狀態與詳細欄位對應)
     /// </summary>
     /// <summary>

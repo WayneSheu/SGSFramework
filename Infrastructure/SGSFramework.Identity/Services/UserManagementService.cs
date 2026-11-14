@@ -70,6 +70,40 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
     }
 
     /// <inheritdoc />
+    public const int MaxUserNameBatch = 200;
+
+    /// <inheritdoc />
+    public async Task<Result<List<UserNameDto>>> GetUserNamesAsync(IReadOnlyCollection<Guid> userIds, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(userIds);
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var wanted = userIds.Where(id => id != Guid.Empty).Distinct().Take(MaxUserNameBatch).ToList();
+            if (wanted.Count == 0) return Result.Success(new List<UserNameDto>());
+
+            var users = await _userManager.Users
+                .AsNoTracking()
+                .Where(u => !u.IsDeleted && wanted.Contains(u.Id))
+                .Select(u => new UserNameDto { Id = u.Id.ToString(), FullName = u.FullName ?? string.Empty, Username = u.UserName ?? string.Empty })
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return Result.Success(users);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "批次查詢使用者名稱時發生例外。");
+            return Result.Failure<List<UserNameDto>>(Error.Unexpected("User.GetNames.Exception", "查詢使用者名稱失敗。"));
+        }
+    }
+
     public async Task<Result<List<UserDto>>> GetUsersAsync(CancellationToken cancellationToken = default)
     {
         try

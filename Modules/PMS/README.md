@@ -145,9 +145,10 @@ API（`api/v1/pms`）：`tickets/search`、`tickets`（建單）、`tickets/{id}
 - **月報排程自動產生**：SCH 作業 `pms-report-monthly` 每天 18:00 呼叫 `POST api/v1/pms/reports/monthly/auto-generate`（scope `pms.report.monthly`；具 `PMS.SETTINGS.MANAGE` 者可手動執行並以 `?period=YYYY-MM` 回補）。月底最後一個工作日產生當月、月初前 3 個工作日補產上月缺漏；只處理進行中且維運期的專案；已有月報不覆蓋；產生後 Email 通知該專案 PM／Tech Lead（需有 Email 且系統告警 SMTP 已設定）。作業僅在 `ProjectManagement:Enabled=true` 時註冊。
 - **專案風險表**（`api/v1/pms/risks`）：PM／Tech Lead 新增與維護風險（標題、等級、狀態、因應措施、負責人），風險負責人更新自己風險的狀態與因應措施；結案自動記錄時間；作廢為軟刪除；僅專案內部成員可見，客戶看不到。選單「風險表」，權限 `PMS.RISK.READ`、`PMS.RISK.MANAGE`；遷移 `PMSDB_RiskItems`。
 - **專案甘特圖**（`api/v1/pms/projects/{id}/gantt`，頁面 `/sgs.modules.pms/gantt`，專案詳情有「甘特圖」入口）：WBS 任務（階層、起迄、負責人、進度、里程碑）、前置相依（完成後才開始，可設落後天數；循環偵測；違反時標示衝突）、基準線與偏差（延後／提前天數）、圖上拖曳移動／縮放（可連動順延後繼任務）、自動疊加凍結線／Gate／上線／CR 順延／UAT 驗收里程碑、一鍵套用六階段預設計畫。PM／Tech Lead 維護，被指派者更新自己任務進度，客戶看不到。日期為日曆日（不扣週末與假日）。**匯出**：工具列「匯出 WBS」（Excel）與「匯出甘特圖」（PDF，A4 橫式，多頁，含相依線／基準線／里程碑），沿用 `PMS.GANTT.READ`。權限 `PMS.GANTT.READ`、`PMS.GANTT.MANAGE`；遷移 `PMSDB_Gantt`。
-- **權限配置**：以上權限建議全部放在「專案管理使用者」角色；實際誰能做哪個動作由專案成員角色（RACI）判斷。
+- **專案合約管理（第一期）**（`api/v1/pms/contracts`，頁面 `/sgs.modules.pms/contracts`）：依《資訊系統專案合約管理規範與指引（乙方標準版）》——合約主檔與條款參數、審約檢核表（依條款自動比對乙方底線並標示偏離）、PM→法務→高階主管核決（職責分離、送審快照鎖定）、簽約登錄、附件一《交付項目清單》與附件二《SLA 分級》、簽約後綁定 1~N 個 PMS 專案、合約附件（FMS `pms-contract`，檢視加浮水印）。僅合約成員可見，客戶看不到。權限 `PMS.CONTRACT.READ`／`MANAGE`／`REVIEW`／`APPROVE` **請依職責個別授權（業務、PM、法務、管理層），不屬「專案管理使用者」預設角色**；遷移 `PMSDB_Contracts`。第二期（協力遲延通知書、審查期限與擬制驗收、合約變更、付款）與第三期（保固維運、產業合規、儀表與匯出）規劃中。
+- **權限配置**：以上權限建議全部放在「專案管理使用者」角色（`PMS.CONTRACT.*` 除外，見上）；實際誰能做哪個動作由專案成員角色（RACI）判斷。
 - **遷移**：`PMSDB_RcaReports`、`PMSDB_UatSignoffs`、`PMSDB_MonthlyReports`（啟動 API 時自動套用）。
-- **尚未驗證**：僅完成單元測試（448 通過）與建置；未實機驗證（特別是月報 PDF 經 FMS 存取、RCA 與 UAT 流程）。需重啟 API 並確認 FMS 已啟用（`pms-form` 分類已改為僅允許 `.pdf`）。
+- **尚未驗證**：僅完成單元測試（503 通過）與建置；未實機驗證（特別是月報 PDF 經 FMS 存取、RCA 與 UAT 流程）。需重啟 API 並確認 FMS 已啟用（`pms-form` 分類已改為僅允許 `.pdf`）。
 - **尚未實作**：UAT 客戶自行簽核（待 Stakeholder 外部簽核帳號）。
 
 ## 專案文件 × FMS 整合（2026-11-14）

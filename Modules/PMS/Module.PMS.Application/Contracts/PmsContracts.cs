@@ -57,7 +57,7 @@ public sealed record ProjectDetailDto(
     Guid Id, string Code, string Name, ProjectPhase Phase, ProjectStage Stage, ProjectStatus Status,
     Guid PmUserId, Guid TechLeadUserId, DateOnly? FreezeLineDate, string? ContractSlaNote,
     IReadOnlyList<ProjectMemberDto> Members, IReadOnlyList<PmsModuleDto> Modules, IReadOnlyList<ProjectGateDto> Gates,
-    string RowVersion);
+    string RowVersion, Guid? ContractId = null, string? ContractNo = null);
 
 public sealed record CreateProjectRequest(
     string Code, string Name, ProjectStage Stage, Guid PmUserId, Guid TechLeadUserId,

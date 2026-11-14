@@ -64,6 +64,15 @@ public class PMSDbContext : BaseDbContext<PMSDbContext>
     public DbSet<ProjectTaskDependency> ProjectTaskDependencies { get; set; } = null!;
     public DbSet<ProjectBaseline> ProjectBaselines { get; set; } = null!;
     public DbSet<ProjectBaselineTask> ProjectBaselineTasks { get; set; } = null!;
+    public DbSet<Contract> Contracts { get; set; } = null!;
+    public DbSet<ContractMember> ContractMembers { get; set; } = null!;
+    public DbSet<ContractReviewItem> ContractReviewItems { get; set; } = null!;
+    public DbSet<ContractApproval> ContractApprovals { get; set; } = null!;
+    public DbSet<ContractDeliverableItem> ContractDeliverableItems { get; set; } = null!;
+    public DbSet<ContractSlaLevel> ContractSlaLevels { get; set; } = null!;
+    public DbSet<ContractProject> ContractProjects { get; set; } = null!;
+    public DbSet<ContractEvent> ContractEvents { get; set; } = null!;
+    public DbSet<ContractAttachment> ContractAttachments { get; set; } = null!;
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {

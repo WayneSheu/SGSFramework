@@ -27,6 +27,11 @@ public interface IUserManagementService<TUser, TRole, TKey>
     /// <param name="cancellationToken"></param>
     /// <returns></returns>
     Task<Result<List<UserDto>>> GetUsersAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 依識別碼批次取得使用者顯示名稱（姓名與帳號；不含 Email；排除已軟刪除者）。一次最多 200 筆，供前端解析名稱。
+    /// </summary>
+    Task<Result<List<UserNameDto>>> GetUserNamesAsync(IReadOnlyCollection<Guid> userIds, CancellationToken cancellationToken = default);
     
     /// <summary>
     /// 取得分頁使用者列表

@@ -152,7 +152,17 @@ public sealed class ProjectService(PMSDbContext db, TimeProvider clock)
         if (access == ProjectAccessLevel.None) return PmsError.NotFound();
 
         var dto = await GetCoreAsync(id, ct).ConfigureAwait(false);
-        return dto is null ? PmsError.NotFound() : PmsResult<ProjectDetailDto>.Success(dto);
+        if (dto is null) return PmsError.NotFound();
+
+        // 所屬合約編號僅對內部成員顯示（客戶 Stakeholder 看不到合約資訊）
+        if (access == ProjectAccessLevel.Internal)
+        {
+            var link = await db.ContractProjects.AsNoTracking().Where(l => l.ProjectId == id)
+                .Select(l => new { l.ContractId, l.Contract!.ContractNo }).FirstOrDefaultAsync(ct).ConfigureAwait(false);
+            if (link is not null) dto = dto with { ContractId = link.ContractId, ContractNo = link.ContractNo };
+        }
+
+        return PmsResult<ProjectDetailDto>.Success(dto);
     }
 
     public async Task<PmsResult<ProjectDetailDto>> UpdateAsync(Guid userId, string actor, Guid id, UpdateProjectRequest request, CancellationToken ct)

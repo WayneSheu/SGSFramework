@@ -66,13 +66,18 @@ namespace SGSFramework.AuthTokenBucket.Services
                     string controllerName = perm.ControllerName ?? string.Empty;
                     string actionName = perm.ActionName ?? string.Empty;
 
-                    var matchedMeta = controllerMetadatas.FirstOrDefault(c =>
+                    // 比對順序：同一控制器＋動作 → 同一控制器的任一筆 → 同一權限鍵（最後手段，僅作舊資料相容）。
+                    // 權限鍵可能由多個控制器共用（例如 RCA 與問題單共用 PMS.TICKET.READ），不可讓「同鍵的別的控制器」
+                    // 優先於「同一控制器」，否則控制器標題與動作說明會被貼成別人的。
+                    var exactMeta = controllerMetadatas.FirstOrDefault(c =>
                         c.ControllerName.Equals(controllerName, StringComparison.OrdinalIgnoreCase) &&
-                        c.ActionName.Equals(actionName, StringComparison.OrdinalIgnoreCase))
-                        ?? controllerMetadatas.FirstOrDefault(c =>
-                        c.PermissionKey.Equals(key, StringComparison.OrdinalIgnoreCase))
+                        c.ActionName.Equals(actionName, StringComparison.OrdinalIgnoreCase));
+                    var controllerMeta = exactMeta
                         ?? controllerMetadatas.FirstOrDefault(c =>
                         c.ControllerName.Equals(controllerName, StringComparison.OrdinalIgnoreCase));
+                    var matchedMeta = controllerMeta
+                        ?? controllerMetadatas.FirstOrDefault(c =>
+                        c.PermissionKey.Equals(key, StringComparison.OrdinalIgnoreCase));
 
                     string moduleName = !string.IsNullOrEmpty(matchedMeta?.ModuleName)
                         ? matchedMeta.ModuleName
@@ -90,8 +95,8 @@ namespace SGSFramework.AuthTokenBucket.Services
                         ? matchedMeta.ControllerTitle
                         : (!string.IsNullOrEmpty(perm.ControllerTitle) ? perm.ControllerTitle : controllerName);
 
-                    string actionTitle = !string.IsNullOrEmpty(matchedMeta?.DisplayName)
-                        ? matchedMeta.DisplayName
+                    string actionTitle = !string.IsNullOrEmpty(exactMeta?.DisplayName)
+                        ? exactMeta.DisplayName
                         : (!string.IsNullOrEmpty(perm.ActionTitle) ? perm.ActionTitle : actionName);
 
                     string defaultCalculatedTitle = (key.EndsWith(".READ", StringComparison.OrdinalIgnoreCase) || key.EndsWith("_READ", StringComparison.OrdinalIgnoreCase))
@@ -102,8 +107,8 @@ namespace SGSFramework.AuthTokenBucket.Services
                         ? perm.PermissionTitle
                         : defaultCalculatedTitle;
 
-                    string description = !string.IsNullOrEmpty(matchedMeta?.Description)
-                        ? matchedMeta.Description
+                    string description = !string.IsNullOrEmpty(exactMeta?.Description)
+                        ? exactMeta.Description
                         : (perm.Description ?? $"Auto-scanned permission: {key}");
 
                     ActionCategory category = DetermineDefaultCategory(actionName, key);
@@ -133,8 +138,7 @@ namespace SGSFramework.AuthTokenBucket.Services
 
                         if (existingRecord.Category != category) { existingRecord.Category = category; isModified = true; }
 
-                        if (!existingRecord.IsCustomized &&
-                            (string.IsNullOrEmpty(existingRecord.Description) || existingRecord.Description.StartsWith("Auto-scanned permission:")))
+                        if (!existingRecord.IsCustomized)
                         {
                             if (!string.Equals(existingRecord.Description, description, StringComparison.Ordinal))
                             {
