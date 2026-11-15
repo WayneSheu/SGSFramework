@@ -295,6 +295,27 @@ namespace SGS.Modules.PMS.Infrastructure.Migrations
                         .HasColumnType("bit")
                         .HasComment("條款含「包含但不限於」等開放式範疇字眼");
 
+                    b.Property<decimal>("OvertimeHolidayRate")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(4, 2)
+                        .HasColumnType("decimal(4,2)")
+                        .HasDefaultValue(2.5m)
+                        .HasComment("國定假日加班倍率（預設 2.5）");
+
+                    b.Property<decimal>("OvertimeNightRestRate")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(4, 2)
+                        .HasColumnType("decimal(4,2)")
+                        .HasDefaultValue(2.0m)
+                        .HasComment("深夜與例假日加班倍率（預設 2.0）");
+
+                    b.Property<decimal>("OvertimeWeekdayRate")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(4, 2)
+                        .HasColumnType("decimal(4,2)")
+                        .HasDefaultValue(1.5m)
+                        .HasComment("平日加班倍率（預設 1.5）");
+
                     b.Property<DateOnly?>("QuoteDate")
                         .HasColumnType("date")
                         .HasComment("報價日");
@@ -343,10 +364,42 @@ namespace SGS.Modules.PMS.Infrastructure.Migrations
                     b.Property<Guid?>("SubmittedBy")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int>("SupportAdvanceWorkdays")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(5)
+                        .HasComment("非服務時間支援須提前申請的工作日數（預設 5）");
+
                     b.Property<string>("SupportChannel")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)")
                         .HasComment("唯一正式報修管道（客服信箱或系統）");
+
+                    b.Property<int>("SupportMaxWindowDays")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(7)
+                        .HasComment("非服務時間支援單次窗口上限（天，預設 7）");
+
+                    b.Property<bool>("SupportRequiresApproval")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasComment("非服務時間支援是否須乙方高階主管內部核准（預設是；否則申請即視為已核准）");
+
+                    b.Property<string>("SupportSettingsReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("最近一次調整非服務時間支援參數的原因");
+
+                    b.Property<DateTimeOffset?>("SupportSettingsUpdatedAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("最近一次調整非服務時間支援參數的時間");
+
+                    b.Property<string>("SupportSettingsUpdatedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("最近一次調整非服務時間支援參數的人");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -446,6 +499,10 @@ namespace SGS.Modules.PMS.Infrastructure.Migrations
                     b.Property<string>("UpdatedBy")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
+
+                    b.Property<int>("WarrantyReminderStage")
+                        .HasColumnType("int")
+                        .HasComment("保固到期提醒進度：0 未提醒、1 已提醒 60 天、2 已提醒 30 天、3 已提醒 7 天、4 已提醒到期");
 
                     b.HasKey("Id");
 
@@ -642,6 +699,58 @@ namespace SGS.Modules.PMS.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractComplianceItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasComment("項目代碼（例 FIN_DR、MED_SAMD、MFG_DOWNTIME）");
+
+                    b.Property<Guid>("ContractId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasComment("說明：納入的條款位置，或不適用的原因");
+
+                    b.Property<byte>("Status")
+                        .HasColumnType("tinyint");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContractId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("ContractComplianceItems", "pms", t =>
+                        {
+                            t.HasComment("產業合規清單：金融／醫療／製造專屬條款的處理狀態");
+                        });
+                });
+
             modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractCoopItem", b =>
                 {
                     b.Property<Guid>("Id")
@@ -741,11 +850,33 @@ namespace SGS.Modules.PMS.Infrastructure.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("DeliveredChannel")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasComment("交付方式（Email、系統上線、紙本面交、雲端連結等）");
+
+                    b.Property<DateOnly?>("DeliveredDate")
+                        .HasColumnType("date")
+                        .HasComment("實際交付日（由業務／合約 PM 記錄；空表示尚未交付）");
+
+                    b.Property<string>("DeliveredNote")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasComment("交付備註（對象、網址、版本等）");
+
+                    b.Property<DateOnly?>("DeliveryDate")
+                        .HasColumnType("date")
+                        .HasComment("指定交付日（合約約定該項目交付給甲方的日期；未約定為空）");
+
                     b.Property<string>("Format")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
                         .HasComment("交付形式");
+
+                    b.Property<DateTimeOffset?>("LastReminderAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("最近一次到期提醒時間（每個台灣日最多一次）");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -1170,6 +1301,11 @@ namespace SGS.Modules.PMS.Infrastructure.Migrations
                     b.Property<byte>("Outcome")
                         .HasColumnType("tinyint");
 
+                    b.Property<string>("RespondedChannel")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasComment("甲方簽認（回覆）的方式：書面簽回、Email、會議簽認、線上簽核等；系統自動擬制通過者為空");
+
                     b.Property<DateOnly?>("RespondedDate")
                         .HasColumnType("date");
 
@@ -1226,6 +1362,15 @@ namespace SGS.Modules.PMS.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<decimal?>("DueHours")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)")
+                        .HasComment("處理期限（時鐘小時，例：Level 1 於 4 小時內提出替代方案）；與 DueWorkdays 擇一，皆空＝不覆寫系統 SLA");
+
+                    b.Property<int?>("DueWorkdays")
+                        .HasColumnType("int")
+                        .HasComment("處理期限（工作日，例：Level 2 於 2 個工作日內提供修正）；與 DueHours 擇一");
+
                     b.Property<int>("Level")
                         .HasColumnType("int")
                         .HasComment("等級 1~3");
@@ -1261,6 +1406,141 @@ namespace SGS.Modules.PMS.Infrastructure.Migrations
                     b.ToTable("ContractSlaLevels", "pms", t =>
                         {
                             t.HasComment("附件二 SLA 分級：定義、回應時間與處理目標");
+                        });
+                });
+
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractSupportRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("ActualEnd")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<decimal?>("ActualOvertimeHours")
+                        .HasPrecision(8, 2)
+                        .HasColumnType("decimal(8,2)")
+                        .HasComment("實際加班時數");
+
+                    b.Property<DateTimeOffset?>("ActualStart")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<decimal?>("ActualWeightedHours")
+                        .HasPrecision(8, 2)
+                        .HasColumnType("decimal(8,2)")
+                        .HasComment("實際加權時數（請款依據）");
+
+                    b.Property<string>("ClientRequestChannel")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasComment("甲方提出方式（Email／電話／會議／即時通訊／其他）");
+
+                    b.Property<string>("ClientRequestRef")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("甲方提出的佐證說明（信件主旨、聯絡人、單號等）");
+
+                    b.Property<DateOnly?>("ClientRequestedDate")
+                        .HasColumnType("date")
+                        .HasComment("甲方提出此支援需求的日期（佐證：甲方須提前申請）");
+
+                    b.Property<Guid>("ContractId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset?>("DecidedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("DecidedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DecidedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<decimal>("EstimatedHours")
+                        .HasPrecision(8, 2)
+                        .HasColumnType("decimal(8,2)")
+                        .HasComment("預估總時數（含標準服務時間內）");
+
+                    b.Property<decimal>("EstimatedOvertimeHours")
+                        .HasPrecision(8, 2)
+                        .HasColumnType("decimal(8,2)")
+                        .HasComment("預估加班時數（標準服務時間以外）");
+
+                    b.Property<decimal>("EstimatedWeightedHours")
+                        .HasPrecision(8, 2)
+                        .HasColumnType("decimal(8,2)")
+                        .HasComment("預估加權時數（加班時數 × 倍率合計）");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasComment("核准／駁回意見、完成或取消備註");
+
+                    b.Property<int>("Number")
+                        .HasColumnType("int")
+                        .HasComment("合約內流水號");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("RequestedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RequestedByName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<byte>("Status")
+                        .HasColumnType("tinyint");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasComment("支援事由");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset>("WindowEnd")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("預計支援迄（含時區）");
+
+                    b.Property<DateTimeOffset>("WindowStart")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("預計支援起（含時區）");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContractId", "Number")
+                        .IsUnique();
+
+                    b.HasIndex("ContractId", "Status");
+
+                    b.ToTable("ContractSupportRequests", "pms", t =>
+                        {
+                            t.HasComment("非服務時間支援申請：窗口、加班加權時數、核准與實際執行");
                         });
                 });
 
@@ -2533,6 +2813,10 @@ namespace SGS.Modules.PMS.Infrastructure.Migrations
                         .HasColumnType("datetimeoffset")
                         .HasComment("首次回應時間（分流時寫入）");
 
+                    b.Property<DateTimeOffset?>("FirstResponseDueAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("首次回應期限（專案綁定履約中合約時，依附件二回應時間以標準服務時間計；否則為空，畫面以系統預設估算）");
+
                     b.Property<Guid?>("FixerUserId")
                         .HasColumnType("uniqueidentifier");
 
@@ -3059,6 +3343,17 @@ namespace SGS.Modules.PMS.Infrastructure.Migrations
                     b.Navigation("Contract");
                 });
 
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractComplianceItem", b =>
+                {
+                    b.HasOne("SGS.Modules.PMS.Infrastructure.Entities.Contract", "Contract")
+                        .WithMany()
+                        .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Contract");
+                });
+
             modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractCoopItem", b =>
                 {
                     b.HasOne("SGS.Modules.PMS.Infrastructure.Entities.Contract", "Contract")
@@ -3186,6 +3481,17 @@ namespace SGS.Modules.PMS.Infrastructure.Migrations
                 {
                     b.HasOne("SGS.Modules.PMS.Infrastructure.Entities.Contract", "Contract")
                         .WithMany("SlaLevels")
+                        .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Contract");
+                });
+
+            modelBuilder.Entity("SGS.Modules.PMS.Infrastructure.Entities.ContractSupportRequest", b =>
+                {
+                    b.HasOne("SGS.Modules.PMS.Infrastructure.Entities.Contract", "Contract")
+                        .WithMany()
                         .HasForeignKey("ContractId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

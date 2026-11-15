@@ -19,9 +19,10 @@ public sealed record ContractFlag(string ItemCode, ContractFlagSeverity Severity
 public sealed record ReviewItemSpec(string Code, string Name, string ClientTrap, string Defense);
 
 /// <summary>預設附件一／附件二的種子列。</summary>
-public sealed record DeliverableSeed(string Stage, string Name, string Format, string AcceptMethod, bool RequiresCustomerSignoff);
+public sealed record DeliverableSeed(string Stage, string Name, string Format, string AcceptMethod, bool RequiresCustomerSignoff, DateOnly? DeliveryDate = null);
 
-public sealed record SlaLevelSeed(int Level, string Name, string Definition, decimal ResponseHours, string Target);
+/// <param name="DueHours">處理期限（時鐘小時）；與 <paramref name="DueWorkdays"/> 擇一，皆空＝不覆寫系統 SLA。</param>
+public sealed record SlaLevelSeed(int Level, string Name, string Definition, decimal ResponseHours, string Target, decimal? DueHours = null, int? DueWorkdays = null);
 
 /// <summary>
 /// 專案合約管理規則（乙方標準版）：條款驗證、審約自動比對、核決步驟與職責分離、狀態轉移、合約編號與預設附件。全為純函式，不碰資料庫。
@@ -65,9 +66,9 @@ public static class ContractRules
 
     public static IReadOnlyList<SlaLevelSeed> DefaultSlaLevels { get; } =
     [
-        new(1, "Level 1 緊急", "系統完全無法運作、核心交易中斷，且無替代方案。", 2m, "立即排查，於 4 小時內提出暫時性替代方案（Workaround）恢復運作。"),
-        new(2, "Level 2 一般", "部分非核心功能異常，但不影響系統整體運作與主要業務。", 4m, "安排工程師檢修，預計於 2 個工作日內提供修正版本。"),
-        new(3, "Level 3 輕微", "畫面排版微調、文字顯示異常或操作方式諮詢。", 8m, "彙整於下次定期更新修正，或於 3 個工作日內回覆說明。")
+        new(1, "Level 1 緊急", "系統完全無法運作、核心交易中斷，且無替代方案。", 2m, "立即排查，於 4 小時內提出暫時性替代方案（Workaround）恢復運作。", DueHours: 4m),
+        new(2, "Level 2 一般", "部分非核心功能異常，但不影響系統整體運作與主要業務。", 4m, "安排工程師檢修，預計於 2 個工作日內提供修正版本。", DueWorkdays: 2),
+        new(3, "Level 3 輕微", "畫面排版微調、文字顯示異常或操作方式諮詢。", 8m, "彙整於下次定期更新修正，或於 3 個工作日內回覆說明。", DueWorkdays: 3)
     ];
 
     // ---------- 狀態與編修權 ----------
@@ -225,7 +226,8 @@ public static class ContractRules
 
     /// <summary>送審前檢查；回傳所有阻擋原因（空＝可送審）。</summary>
     public static IReadOnlyList<string> ValidateSubmit(
-        Contract c, IReadOnlyList<ContractReviewItem> items, IReadOnlyList<(Guid UserId, ContractMemberRole Role)> members)
+        Contract c, IReadOnlyList<ContractReviewItem> items, IReadOnlyList<(Guid UserId, ContractMemberRole Role)> members,
+        IReadOnlyList<ContractComplianceItem>? compliance = null)
     {
         ArgumentNullException.ThrowIfNull(c);
         ArgumentNullException.ThrowIfNull(items);
@@ -260,6 +262,10 @@ public static class ContractRules
         var required = RequiredSteps(items, flags);
         if (required.Contains(ContractApprovalStep.Legal) && !members.Any(m => m.Role == ContractMemberRole.Legal))
             problems.Add("本合約有偏離或折衷條款，須指派法務審核。");
+
+        // 金融、醫療、製造須逐項確認產業合規項目（已納入或不適用並說明）
+        if (c.Industry != ContractIndustry.General)
+            problems.AddRange(ContractComplianceCatalog.ValidateForSubmit(c.Industry, compliance ?? []));
 
         return problems;
     }
@@ -378,6 +384,7 @@ public static class ContractRules
             if (string.IsNullOrWhiteSpace(item.Name) || item.Name.Trim().Length > 200) return "交付項目名稱必填且不得超過 200 字。";
             if (string.IsNullOrWhiteSpace(item.Format) || item.Format.Trim().Length > 100) return "交付形式必填且不得超過 100 字。";
             if (string.IsNullOrWhiteSpace(item.AcceptMethod) || item.AcceptMethod.Trim().Length > 200) return "確認／驗收方式必填且不得超過 200 字。";
+            if (item.DeliveryDate is { } date && (date.Year < 2000 || date.Year > 2100)) return $"「{item.Name.Trim()}」的指定交付日不正確。";
         }
 
         return null;
@@ -396,6 +403,8 @@ public static class ContractRules
             if (string.IsNullOrWhiteSpace(l.Definition) || l.Definition.Trim().Length > 500) return "SLA 定義必填且不得超過 500 字。";
             if (string.IsNullOrWhiteSpace(l.Target) || l.Target.Trim().Length > 500) return "SLA 處理目標必填且不得超過 500 字。";
             if (l.ResponseHours is <= 0 or > 240m) return "回應時間須大於 0 且不超過 240 小時。";
+            var due = ContractSlaRules.ValidateDue(l.DueHours, l.DueWorkdays);
+            if (due is not null) return due;
         }
 
         return null;

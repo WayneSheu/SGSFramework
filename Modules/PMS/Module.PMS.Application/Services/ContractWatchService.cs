@@ -41,7 +41,7 @@ public sealed class ContractWatchService(
 
         var contracts = await db.Contracts.Where(c => Watched.Contains(c.Status)).Include(c => c.Members).AsSplitQuery().ToListAsync(ct).ConfigureAwait(false);
 
-        int coop = 0, deemedReviews = 0, deemedAcceptances = 0, promoted = 0, remindedPayments = 0, skipped = 0;
+        int coop = 0, deemedReviews = 0, deemedAcceptances = 0, promoted = 0, remindedPayments = 0, remindedWarranty = 0, remindedDeliverables = 0, skipped = 0;
 
         foreach (var contract in contracts)
         {
@@ -107,8 +107,49 @@ public sealed class ContractWatchService(
                     }
                 }
 
-                // ④ 付款期別放行與提醒
+                // ③-2 保固：驗收完成後進入保固期；到期前 60／30／7 天與到期後各提醒一次
                 var accepted = acceptance is not null && ContractFulfillmentRules.IsAccepted(acceptance.Status);
+                if (accepted && acceptance!.AcceptedDate is { } acceptedOn)
+                {
+                    var amendments = await db.ContractAmendments.AsNoTracking().Where(a => a.ContractId == contract.Id).ToListAsync(ct).ConfigureAwait(false);
+                    var months = ContractFulfillmentRules.CurrentWarrantyMonths(contract.WarrantyMonths, amendments);
+
+                    if (contract.Status == ContractStatus.Accepted && months > 0)
+                    {
+                        contract.Status = ContractStatus.Warranty;
+                        contract.UpdatedBy = Actor;
+                        contract.UpdatedAtUtc = now;
+                        db.ContractEvents.Add(ContractFulfillmentService.NewEvent(contract.Id, ContractEventType.Warranty,
+                            $"保固期開始：自 {acceptedOn:yyyy-MM-dd} 起 {months} 個月（至 {acceptedOn.AddMonths(months):yyyy-MM-dd}）", Guid.Empty, Actor, now));
+                    }
+
+                    if (ContractWarrantyRules.WarrantyEnd(acceptedOn, months) is { } warrantyEnd)
+                    {
+                        var daysLeft = ContractWarrantyRules.DaysLeft(warrantyEnd, today);
+                        var stage = ContractWarrantyRules.StageFor(daysLeft);
+                        if (ContractWarrantyRules.ShouldRemind(stage, acceptance.WarrantyReminderStage) && contract.Status is ContractStatus.Warranty or ContractStatus.Accepted)
+                        {
+                            lines.Add(ContractWarrantyRules.Message(stage, warrantyEnd, daysLeft));
+                            remindOnSend.Add(() => acceptance.WarrantyReminderStage = stage);
+                            remindedWarranty++;
+                        }
+                    }
+                }
+
+                // ③-3 附件一交付項目：到期前 3 個工作日內與逾期仍未記錄交付者提醒（每項每個台灣日最多一次）
+                var pendingDeliverables = await db.ContractDeliverableItems
+                    .Where(i => i.ContractId == contract.Id && i.DeliveryDate != null && i.DeliveredDate == null).OrderBy(i => i.SortOrder).ToListAsync(ct).ConfigureAwait(false);
+                foreach (var d in pendingDeliverables)
+                {
+                    var dState = ContractDeliverableRules.StateOf(d.DeliveryDate, d.DeliveredDate, today, calendar);
+                    if (dState is not (DeliverableState.DueSoon or DeliverableState.Overdue) || RemindedToday(d.LastReminderAt, now)) continue;
+
+                    lines.Add(ContractDeliverableRules.ReminderMessage(d.Name, d.DeliveryDate!.Value, dState, today, calendar));
+                    remindOnSend.Add(() => d.LastReminderAt = now);
+                    remindedDeliverables++;
+                }
+
+                // ④ 付款期別放行與提醒
                 var newlyPromoted = await fulfillment.PromotePaymentsAsync(contract, accepted, Actor, now, ct).ConfigureAwait(false);
                 if (newlyPromoted > 0) lines.Add($"{newlyPromoted} 個付款期別已達請款條件，請開立發票並於系統登記。");
                 promoted += newlyPromoted;
@@ -155,10 +196,10 @@ public sealed class ContractWatchService(
             }
         }
 
-        var summary = $"監看 {contracts.Count} 份合約：協力提醒 {coop}、擬制通過 {deemedReviews}、擬制驗收 {deemedAcceptances}、付款放行 {promoted}、請款提醒 {remindedPayments}"
+        var summary = $"監看 {contracts.Count} 份合約：協力提醒 {coop}、擬制通過 {deemedReviews}、擬制驗收 {deemedAcceptances}、保固提醒 {remindedWarranty}、交付到期提醒 {remindedDeliverables}、付款放行 {promoted}、請款提醒 {remindedPayments}"
                       + (skipped > 0 ? $"；{skipped} 份因無收件人、寄送失敗或處理失敗未提醒，下次再試" : null);
         logger.LogInformation("[PMS] 合約履約監看：{Summary}", summary);
-        return new ContractWatchResult(coop, deemedReviews, deemedAcceptances, promoted, remindedPayments, skipped, summary);
+        return new ContractWatchResult(coop, deemedReviews, deemedAcceptances, promoted, remindedPayments, skipped, summary, remindedWarranty, remindedDeliverables);
     }
 
     private static bool RemindedToday(DateTimeOffset? last, DateTimeOffset now) =>

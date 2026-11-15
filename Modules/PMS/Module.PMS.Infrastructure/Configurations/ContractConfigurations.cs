@@ -26,6 +26,14 @@ public sealed class ContractConfiguration : IEntityTypeConfiguration<Contract>
         builder.Property(x => x.TotalAmount).HasPrecision(18, 2);
         builder.Property(x => x.LiabilityCapAmount).HasPrecision(18, 2);
         builder.Property(x => x.CoopNoticeWorkdays).HasDefaultValue(3);
+        builder.Property(x => x.SupportAdvanceWorkdays).HasDefaultValue(5);
+        builder.Property(x => x.SupportMaxWindowDays).HasDefaultValue(7);
+        builder.Property(x => x.SupportRequiresApproval).HasDefaultValue(true);
+        builder.Property(x => x.SupportSettingsReason).HasMaxLength(500);
+        builder.Property(x => x.SupportSettingsUpdatedBy).HasMaxLength(256);
+        builder.Property(x => x.OvertimeWeekdayRate).HasPrecision(4, 2).HasDefaultValue(1.5m);
+        builder.Property(x => x.OvertimeNightRestRate).HasPrecision(4, 2).HasDefaultValue(2.0m);
+        builder.Property(x => x.OvertimeHolidayRate).HasPrecision(4, 2).HasDefaultValue(2.5m);
         builder.Property(x => x.ServiceHours).HasMaxLength(200).IsRequired();
         builder.Property(x => x.SupportChannel).HasMaxLength(200);
         builder.Property(x => x.Notes).HasMaxLength(2000);
@@ -112,6 +120,8 @@ public sealed class ContractDeliverableItemConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.Name).HasMaxLength(200).IsRequired();
         builder.Property(x => x.Format).HasMaxLength(100).IsRequired();
         builder.Property(x => x.AcceptMethod).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.DeliveredChannel).HasMaxLength(50);
+        builder.Property(x => x.DeliveredNote).HasMaxLength(200);
         builder.Property(x => x.CreatedBy).HasMaxLength(256);
         builder.Property(x => x.UpdatedBy).HasMaxLength(256);
 
@@ -132,6 +142,7 @@ public sealed class ContractSlaLevelConfiguration : IEntityTypeConfiguration<Con
         builder.Property(x => x.Name).HasMaxLength(50).IsRequired();
         builder.Property(x => x.Definition).HasMaxLength(500).IsRequired();
         builder.Property(x => x.ResponseHours).HasPrecision(6, 2);
+        builder.Property(x => x.DueHours).HasPrecision(6, 2);
         builder.Property(x => x.Target).HasMaxLength(500).IsRequired();
         builder.Property(x => x.CreatedBy).HasMaxLength(256);
         builder.Property(x => x.UpdatedBy).HasMaxLength(256);

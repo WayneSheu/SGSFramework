@@ -219,6 +219,9 @@ public class ContractReviewRound : IAuditable
     [Comment("甲方意見摘要或備註")]
     public string? Note { get; set; }
 
+    [Comment("甲方簽認（回覆）的方式：書面簽回、Email、會議簽認、線上簽核等；系統自動擬制通過者為空")]
+    public string? RespondedChannel { get; set; }
+
     [Comment("彙整修改次數超過合約約定（超出部分須走 CR 另行計費）")]
     public bool ExceedsRoundLimit { get; set; }
 
@@ -259,6 +262,9 @@ public class ContractAcceptance : IAuditable
     public string? Note { get; set; }
 
     public DateTimeOffset? LastReminderAt { get; set; }
+
+    [Comment("保固到期提醒進度：0 未提醒、1 已提醒 60 天、2 已提醒 30 天、3 已提醒 7 天、4 已提醒到期")]
+    public int WarrantyReminderStage { get; set; }
 
     public byte[] RowVersion { get; set; } = [];
 

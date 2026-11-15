@@ -246,7 +246,7 @@ public static class WebApplicationBuilderExtensions
                       .AllowAnyMethod()
                       .AllowAnyHeader()
                       // 讓跨來源的前端 (7252 → 7253) 讀得到追蹤碼，用於錯誤回報與日誌追朔
-                      .WithExposedHeaders("X-Correlation-ID")
+                      .WithExposedHeaders("X-Correlation-ID", "Content-Disposition")
                       .AllowCredentials();
             });
         });

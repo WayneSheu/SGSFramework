@@ -82,7 +82,7 @@ public sealed class ContractFulfillmentService(
 
         var roundDtos = rounds.OrderByDescending(r => r.SubmittedDate).ThenByDescending(r => r.RoundNo).Select(r => new ReviewRoundDto(
             r.Id, r.DeliverableItemId, itemNames.GetValueOrDefault(r.DeliverableItemId, "（已移除的交付項目）"), r.RoundNo, r.SubmittedDate, r.ResponseDue,
-            r.Outcome, r.RespondedDate, r.Note, r.ExceedsRoundLimit, r.Outcome == ReviewOutcome.Pending && r.ResponseDue is { } due && today > due)).ToList();
+            r.Outcome, r.RespondedDate, r.Note, r.ExceedsRoundLimit, r.Outcome == ReviewOutcome.Pending && r.ResponseDue is { } due && today > due, r.RespondedChannel)).ToList();
 
         var accStatus = acceptance?.Status ?? AcceptanceStatus.NotDelivered;
         int? daysLeft = null;
@@ -113,7 +113,8 @@ public sealed class ContractFulfillmentService(
             payments.Where(p => p.Status == PaymentStatus.Paid).Sum(p => p.InvoicedAmount ?? 0),
             c.DeliveryDate, ContractFulfillmentRules.AmendedDeliveryDate(c.DeliveryDate, amendments), extension,
             ContractFulfillmentRules.EffectiveDeliveryDate(c.DeliveryDate, amendments, extension, calendar),
-            c.WarrantyMonths, currentWarranty, acceptance?.AcceptedDate is { } acceptedDate ? acceptedDate.AddMonths(currentWarranty) : null);
+            c.WarrantyMonths, currentWarranty, ContractWarrantyRules.WarrantyEnd(acceptance?.AcceptedDate, currentWarranty),
+            ContractWarrantyRules.WarrantyEnd(acceptance?.AcceptedDate, currentWarranty) is { } warrantyEnd ? ContractWarrantyRules.DaysLeft(warrantyEnd, today) : null);
 
         var actions = new FulfillmentActionsDto(
             manage,
@@ -516,17 +517,20 @@ public sealed class ContractFulfillmentService(
         var responded = request.RespondedDate ?? today;
         var invalid = ContractFulfillmentRules.ValidateRespond(round.Outcome, request.Outcome, round.SubmittedDate, responded, today);
         if (invalid is not null) return PmsError.Validation(invalid);
+        var channelInvalid = ContractSignoffRules.ValidateChannel(request.Channel);
+        if (channelInvalid is not null) return PmsError.Validation(channelInvalid);
 
         var now = clock.GetUtcNow();
         round.Outcome = request.Outcome;
         round.RespondedDate = responded;
         round.Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
+        round.RespondedChannel = request.Channel!.Trim();
         round.UpdatedBy = actor;
         round.UpdatedAtUtc = now;
 
         var name = c.DeliverableItems.FirstOrDefault(i => i.Id == round.DeliverableItemId)?.Name ?? "文件";
         AddEvent(c, ContractEventType.ReviewRound,
-            $"「{name}」第 {round.RoundNo} 次送審：甲方{(request.Outcome == ReviewOutcome.Approved ? "簽認通過" : "提出修改意見")}（{responded:yyyy-MM-dd}）", userId, actor, now);
+            $"「{name}」第 {round.RoundNo} 次送審：甲方{(request.Outcome == ReviewOutcome.Approved ? "簽認通過" : "提出修改意見")}（{responded:yyyy-MM-dd}，以{request.Channel!.Trim()}回覆，由{actor}代登錄）{ContractService.EvidenceNote(request.EvidenceFileName)}", userId, actor, now);
         return await SaveAsync(userId, contractId, ct).ConfigureAwait(false);
     }
 

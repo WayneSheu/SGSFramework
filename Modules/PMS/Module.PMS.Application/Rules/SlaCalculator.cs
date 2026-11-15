@@ -17,6 +17,9 @@ public sealed class WorkCalendar
         _overrides = (holidays ?? []).GroupBy(h => h.Date).ToDictionary(g => g.Key, g => g.Last().IsWorkday);
     }
 
+    /// <summary>該日是否為明確標示的假日（國定假日等；補班日與一般週末不算）。</summary>
+    public bool IsHoliday(DateOnly date) => _overrides.TryGetValue(date, out var isWorkday) && !isWorkday;
+
     public bool IsWorkday(DateOnly date) =>
         _overrides.TryGetValue(date, out var isWorkday)
             ? isWorkday
@@ -105,7 +108,7 @@ public static class SlaCalculator
         return deadline - now < DueSoonThreshold ? SlaStatus.DueSoon : SlaStatus.InProgress;
     }
 
-    private static DateTimeOffset AddWorkdays(DateTimeOffset receivedAt, int workdays, WorkCalendar calendar)
+    internal static DateTimeOffset AddWorkdays(DateTimeOffset receivedAt, int workdays, WorkCalendar calendar)
     {
         var local = receivedAt.ToOffset(Offset);
         var dueDate = calendar.AddWorkdays(DateOnly.FromDateTime(local.DateTime), workdays);

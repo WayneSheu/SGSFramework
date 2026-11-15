@@ -25,6 +25,9 @@ public abstract class PmsControllerBase : ControllerBase
     protected void ApplySecurityHeaders()
     {
         Response.Headers.XContentTypeOptions = "nosniff";
+
+        // 前端與 API 不同來源時，瀏覽器預設讀不到 Content-Disposition（檔名會退回前端的預設名稱）
+        Response.Headers["Access-Control-Expose-Headers"] = "Content-Disposition";
         Response.Headers.ContentSecurityPolicy = "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox";
     }
 

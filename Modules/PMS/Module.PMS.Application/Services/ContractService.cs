@@ -11,7 +11,7 @@ namespace SGS.Modules.PMS.Application.Services;
 /// 專案合約管理（乙方標準版）第一期：合約主檔與條款、審約檢核表（自動比對乙方底線）、PM→法務→高階主管核決（職責分離、送審快照鎖定）、
 /// 簽約登錄、附件一／二、與 PMS 專案綁定。僅合約成員可見，非成員一律 404；客戶 Stakeholder 不在合約成員之列，看不到任何合約。
 /// </summary>
-public sealed class ContractService(PMSDbContext db, TimeProvider clock)
+public sealed class ContractService(PMSDbContext db, HolidayService holidays, TimeProvider clock)
 {
     private const int MaxPageSize = 200;
     private const int MaxEvents = 200;
@@ -117,10 +117,12 @@ public sealed class ContractService(PMSDbContext db, TimeProvider clock)
                 contract.SlaLevels.Add(new ContractSlaLevel
                 {
                     Id = Guid.NewGuid(), Level = seed.Level, Name = seed.Name, Definition = seed.Definition,
-                    ResponseHours = seed.ResponseHours, Target = seed.Target, CreatedBy = actor, CreatedAtUtc = now
+                    ResponseHours = seed.ResponseHours, Target = seed.Target, DueHours = seed.DueHours, DueWorkdays = seed.DueWorkdays,
+                    CreatedBy = actor, CreatedAtUtc = now
                 });
 
             db.Contracts.Add(contract);
+            await SyncComplianceItemsAsync(contract.Id, contract.Industry, actor, now, ct).ConfigureAwait(false);
             db.ContractEvents.Add(NewEvent(contract.Id, ContractEventType.Created, $"建立合約 {contract.ContractNo}", userId, actor, now));
 
             try
@@ -164,6 +166,7 @@ public sealed class ContractService(PMSDbContext db, TimeProvider clock)
         }
 
         var now = clock.GetUtcNow();
+        await SyncComplianceItemsAsync(c.Id, c.Industry, actor, now, ct).ConfigureAwait(false);
         c.UpdatedBy = actor;
         c.UpdatedAtUtc = now;
         db.ContractEvents.Add(NewEvent(c.Id, ContractEventType.Updated, "更新合約條款", userId, actor, now));
@@ -286,7 +289,9 @@ public sealed class ContractService(PMSDbContext db, TimeProvider clock)
         if (c.Status is not (ContractStatus.Reviewing or ContractStatus.Negotiating))
             return PmsError.Conflict("PMS.INVALID_TRANSITION", "僅「審約」或「談判」階段的合約可送審；請先將狀態改為審約。");
 
-        var problems = ContractRules.ValidateSubmit(c, c.ReviewItems.ToList(), Members(c));
+        await SyncComplianceItemsAsync(c.Id, c.Industry, actor, clock.GetUtcNow(), ct).ConfigureAwait(false);
+        var compliance = await db.ContractComplianceItems.Where(i => i.ContractId == c.Id).ToListAsync(ct).ConfigureAwait(false);
+        var problems = ContractRules.ValidateSubmit(c, c.ReviewItems.ToList(), Members(c), compliance);
         if (problems.Count > 0) return PmsError.Validation("尚不能送審：" + string.Join("；", problems));
 
         var now = clock.GetUtcNow();
@@ -444,9 +449,11 @@ public sealed class ContractService(PMSDbContext db, TimeProvider clock)
         if (blocked is not null) return blocked;
         if (!ContractRules.CanEditTerms(c.Status)) return PmsError.Conflict("PMS.CONTENT_LOCKED", "合約已送審或已簽約，附件一鎖定。");
 
-        var seeds = (request.Items ?? []).Select(i => new DeliverableSeed(i.Stage ?? string.Empty, i.Name ?? string.Empty, i.Format ?? string.Empty, i.AcceptMethod ?? string.Empty, i.RequiresCustomerSignoff)).ToList();
+        var seeds = (request.Items ?? []).Select(i => new DeliverableSeed(i.Stage ?? string.Empty, i.Name ?? string.Empty, i.Format ?? string.Empty, i.AcceptMethod ?? string.Empty, i.RequiresCustomerSignoff, i.DeliveryDate)).ToList();
         var invalid = ContractRules.ValidateDeliverableItems(seeds);
         if (invalid is not null) return PmsError.Validation(invalid);
+        if (c.StartDate is { } start && seeds.FirstOrDefault(s => s.DeliveryDate is { } d && d < start) is { } early)
+            return PmsError.Validation($"「{early.Name.Trim()}」的指定交付日不得早於合約起日 {start:yyyy-MM-dd}。");
 
         var now = clock.GetUtcNow();
         db.ContractDeliverableItems.RemoveRange(c.DeliverableItems);
@@ -456,12 +463,12 @@ public sealed class ContractService(PMSDbContext db, TimeProvider clock)
             db.ContractDeliverableItems.Add(new ContractDeliverableItem
             {
                 Id = Guid.NewGuid(), ContractId = c.Id, SortOrder = ++order, Stage = s.Stage.Trim(), Name = s.Name.Trim(), Format = s.Format.Trim(),
-                AcceptMethod = s.AcceptMethod.Trim(), RequiresCustomerSignoff = s.RequiresCustomerSignoff, CreatedBy = actor, CreatedAtUtc = now
+                AcceptMethod = s.AcceptMethod.Trim(), RequiresCustomerSignoff = s.RequiresCustomerSignoff, DeliveryDate = s.DeliveryDate, CreatedBy = actor, CreatedAtUtc = now
             });
 
         c.UpdatedBy = actor;
         c.UpdatedAtUtc = now;
-        db.ContractEvents.Add(NewEvent(c.Id, ContractEventType.AppendixUpdated, $"更新附件一交付項目清單（{seeds.Count} 項）", userId, actor, now));
+        db.ContractEvents.Add(NewEvent(c.Id, ContractEventType.AppendixUpdated, $"更新附件一交付項目清單（{seeds.Count} 項，其中 {seeds.Count(s => s.DeliveryDate is not null)} 項有指定交付日）", userId, actor, now));
         return await SaveAsync(userId, id, ct).ConfigureAwait(false);
     }
 
@@ -477,7 +484,8 @@ public sealed class ContractService(PMSDbContext db, TimeProvider clock)
         if (blocked is not null) return blocked;
         if (!ContractRules.CanEditTerms(c.Status)) return PmsError.Conflict("PMS.CONTENT_LOCKED", "合約已送審或已簽約，附件二鎖定。");
 
-        var seeds = (request.Levels ?? []).Select(l => new SlaLevelSeed(l.Level, l.Name ?? string.Empty, l.Definition ?? string.Empty, l.ResponseHours, l.Target ?? string.Empty)).ToList();
+        var seeds = (request.Levels ?? []).Select(l => new SlaLevelSeed(
+            l.Level, l.Name ?? string.Empty, l.Definition ?? string.Empty, l.ResponseHours, l.Target ?? string.Empty, l.DueHours, l.DueWorkdays)).ToList();
         var invalid = ContractRules.ValidateSlaLevels(seeds);
         if (invalid is not null) return PmsError.Validation(invalid);
 
@@ -488,7 +496,7 @@ public sealed class ContractService(PMSDbContext db, TimeProvider clock)
             db.ContractSlaLevels.Add(new ContractSlaLevel
             {
                 Id = Guid.NewGuid(), ContractId = c.Id, Level = s.Level, Name = s.Name.Trim(), Definition = s.Definition.Trim(),
-                ResponseHours = s.ResponseHours, Target = s.Target.Trim(), CreatedBy = actor, CreatedAtUtc = now
+                ResponseHours = s.ResponseHours, Target = s.Target.Trim(), DueHours = s.DueHours, DueWorkdays = s.DueWorkdays, CreatedBy = actor, CreatedAtUtc = now
             });
 
         c.UpdatedBy = actor;
@@ -496,6 +504,201 @@ public sealed class ContractService(PMSDbContext db, TimeProvider clock)
         db.ContractEvents.Add(NewEvent(c.Id, ContractEventType.AppendixUpdated, $"更新附件二 SLA 分級（{seeds.Count} 級）", userId, actor, now));
         return await SaveAsync(userId, id, ct).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// 履約階段（履約中、已驗收、保固中）調整附件二各等級的「處理期限」：只改 DueHours／DueWorkdays，不動等級、定義與回應時間；
+    /// 須填原因並留事件。這是維運參數，會影響之後分流的問題單到期日（已分流者不變）。
+    /// </summary>
+    public async Task<PmsResult<ContractDto>> UpdateSlaDueAsync(Guid userId, string actor, Guid id, UpdateSlaDueRequest request, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var loaded = await LoadAsync(userId, id, track: true, ct).ConfigureAwait(false);
+        if (loaded.Error is { } error) return error;
+        var c = loaded.Value!;
+
+        var blocked = RequireManage(userId, c);
+        if (blocked is not null) return blocked;
+        if (c.Status is not (ContractStatus.Active or ContractStatus.Accepted or ContractStatus.Warranty))
+            return PmsError.Conflict("PMS.INVALID_TRANSITION", "簽約前請直接編輯附件二；僅履約中、已驗收、保固中的合約可調整處理期限。");
+        if (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Trim().Length > 500) return PmsError.Validation("請填寫調整原因（500 字內）。");
+
+        // 簽約後的附件二屬合約內容，須雙方協議才可調整：留下協議日期與方式作為佐證
+        var agreementInvalid = ContractSlaRules.ValidateAgreement(
+            request.AgreementDate, request.AgreementChannel, request.AgreementRef, DateOnly.FromDateTime(clock.GetUtcNow().ToOffset(SlaCalculator.Offset).DateTime));
+        if (agreementInvalid is not null) return PmsError.Validation(agreementInvalid);
+
+        var items = request.Levels ?? [];
+        if (items.Select(i => i.Level).Distinct().Count() != items.Count) return PmsError.Validation("等級重複。");
+
+        var changes = new List<string>();
+        foreach (var item in items)
+        {
+            var level = c.SlaLevels.FirstOrDefault(l => l.Level == item.Level);
+            if (level is null) return PmsError.Validation($"Level {item.Level} 不存在。");
+
+            var invalid = ContractSlaRules.ValidateDue(item.DueHours, item.DueWorkdays);
+            if (invalid is not null) return PmsError.Validation($"Level {item.Level}：{invalid}");
+
+            var newResponse = item.ResponseHours ?? level.ResponseHours;
+            if (newResponse is <= 0 or > 240m) return PmsError.Validation($"Level {item.Level}：回應時間須大於 0 且不超過 240 小時。");
+
+            var dueChanged = level.DueHours != item.DueHours || level.DueWorkdays != item.DueWorkdays;
+            var responseChanged = level.ResponseHours != newResponse;
+            if (!dueChanged && !responseChanged) continue;
+
+            if (responseChanged) changes.Add($"Level {level.Level} 回應時間 {level.ResponseHours:0.##}→{newResponse:0.##} 小時");
+            if (dueChanged) changes.Add($"Level {level.Level} 處理期限 {ContractSlaRules.Describe(level.DueHours, level.DueWorkdays)}→{ContractSlaRules.Describe(item.DueHours, item.DueWorkdays)}");
+            level.ResponseHours = newResponse;
+            level.DueHours = item.DueHours;
+            level.DueWorkdays = item.DueWorkdays;
+            level.UpdatedBy = actor;
+            level.UpdatedAtUtc = clock.GetUtcNow();
+        }
+
+        if (changes.Count == 0) return PmsError.Validation("回應時間與處理期限都與目前相同，無需儲存。");
+
+        var now = clock.GetUtcNow();
+        c.UpdatedBy = actor;
+        c.UpdatedAtUtc = now;
+        db.ContractEvents.Add(NewEvent(c.Id, ContractEventType.AppendixUpdated, $"調整附件二（雙方協議：{request.AgreementDate:yyyy-MM-dd} 以{request.AgreementChannel!.Trim()}{(string.IsNullOrWhiteSpace(request.AgreementRef) ? string.Empty : "，" + request.AgreementRef.Trim())}）：{string.Join("；", changes)}（{request.Reason.Trim()}）{EvidenceNote(request.EvidenceFileName)}", userId, actor, now));
+        return await SaveAsync(userId, id, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>附件一項目 DTO：含交付狀態與甲方簽認進度（彙整該項目的送審回合）；manage 為真時才提供送審與記錄回覆的操作。</summary>
+    private static ContractDeliverableItemDto ToDeliverableDto(
+        ContractDeliverableItem i, IReadOnlyList<ContractReviewRound> rounds, DateOnly today, WorkCalendar calendar, bool manage)
+    {
+        var mine = rounds.Where(r => r.DeliverableItemId == i.Id).ToList();
+        var last = mine.OrderByDescending(r => r.RoundNo).FirstOrDefault();
+        var pending = last is { Outcome: ReviewOutcome.Pending } ? last : null;
+
+        return new ContractDeliverableItemDto(
+            i.Id, i.SortOrder, i.Stage, i.Name, i.Format, i.AcceptMethod, i.RequiresCustomerSignoff, i.DeliveryDate,
+            i.DeliveredDate, i.DeliveredNote, ContractDeliverableRules.StateOf(i.DeliveryDate, i.DeliveredDate, today, calendar), i.DeliveredChannel,
+            ContractSignoffRules.StateOf(i.RequiresCustomerSignoff, last, today), pending?.ResponseDue, mine.Count, pending?.Id,
+            manage && ContractFulfillmentRules.ValidateNewRound(mine, i.RequiresCustomerSignoff) is null);
+    }
+
+    private static bool IsPerformance(Contract c) => c.Status is ContractStatus.Active or ContractStatus.Accepted or ContractStatus.Warranty;
+
+    /// <summary>記錄（更正、取消）附件一項目的實際交付；履約階段由業務／合約 PM 操作，並留事件。</summary>
+    public async Task<PmsResult<ContractDto>> MarkDeliveredAsync(Guid userId, string actor, Guid id, Guid itemId, MarkDeliveredRequest request, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var loaded = await LoadAsync(userId, id, track: true, ct).ConfigureAwait(false);
+        if (loaded.Error is { } error) return error;
+        var c = loaded.Value!;
+
+        var blocked = RequireManage(userId, c);
+        if (blocked is not null) return blocked;
+        if (!IsPerformance(c)) return PmsError.Conflict("PMS.INVALID_TRANSITION", "合約進入履約階段（履約中、已驗收、保固中）才能記錄交付。");
+
+        var item = c.DeliverableItems.FirstOrDefault(i => i.Id == itemId);
+        if (item is null) return PmsError.NotFound("交付項目不存在。");
+
+        var now = clock.GetUtcNow();
+        var today = DateOnly.FromDateTime(now.ToOffset(SlaCalculator.Offset).DateTime);
+        var invalid = ContractDeliverableRules.ValidateDelivered(request.DeliveredDate, request.Note, today, c.StartDate, request.Channel);
+        if (invalid is not null) return PmsError.Validation(invalid);
+        var newNote = request.DeliveredDate is null || string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
+        var newChannel = request.DeliveredDate is null ? null : request.Channel!.Trim();
+        if (item.DeliveredDate == request.DeliveredDate && item.DeliveredNote == newNote && item.DeliveredChannel == newChannel && string.IsNullOrWhiteSpace(request.EvidenceFileName))
+            return PmsError.Validation("交付記錄與目前相同，無需儲存。");
+
+        // 需甲方簽認的文件在簽認完成前交付：不阻擋，但在事件紀錄留下提醒（交付與簽認的先後可能因合約而異）
+        var signoffNote = string.Empty;
+        if (request.DeliveredDate is not null && item.RequiresCustomerSignoff)
+        {
+            var lastRound = await db.ContractReviewRounds.AsNoTracking().Where(r => r.DeliverableItemId == item.Id)
+                .OrderByDescending(r => r.RoundNo).FirstOrDefaultAsync(ct).ConfigureAwait(false);
+            var signoff = ContractSignoffRules.StateOf(true, lastRound, today);
+            if (ContractSignoffRules.DeliveredBeforeSignoff(signoff)) signoffNote = $"；注意：交付時甲方簽認尚未完成（{ContractSignoffRules.Describe(signoff)}）";
+        }
+
+        string message;
+        if (request.DeliveredDate is { } delivered)
+        {
+            var late = item.DeliveryDate is { } due && delivered > due;
+            message = $"記錄交付：「{item.Name}」於 {delivered:yyyy-MM-dd} 交付" +
+                      (item.DeliveryDate is { } d ? $"（指定交付日 {d:yyyy-MM-dd}，{(late ? "逾期交付" : "準時")}）" : "（未約定交付日）") +
+                      $"；交付方式：{newChannel}" +
+                      (newNote is null ? string.Empty : $"；備註：{newNote}") +
+                      EvidenceNote(request.EvidenceFileName) + signoffNote;
+        }
+        else
+        {
+            message = $"取消交付記錄：「{item.Name}」（原記錄 {item.DeliveredDate:yyyy-MM-dd}）";
+        }
+
+        item.DeliveredDate = request.DeliveredDate;
+        item.DeliveredChannel = newChannel;
+        item.DeliveredNote = newNote;
+        item.LastReminderAt = null;
+        item.UpdatedBy = actor;
+        item.UpdatedAtUtc = now;
+        c.UpdatedBy = actor;
+        c.UpdatedAtUtc = now;
+        db.ContractEvents.Add(NewEvent(c.Id, ContractEventType.AppendixUpdated, message, userId, actor, now));
+        return await SaveAsync(userId, id, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 簽約後調整附件一的指定交付日（雙方協議變更）：須填協議日期與方式、原因，並留事件（含各項前後日期與佐證附件名稱）。
+    /// 已記錄交付的項目也可調整（更正約定日）；調整後重新計算到期提醒。
+    /// </summary>
+    public async Task<PmsResult<ContractDto>> UpdateDeliverableDatesAsync(Guid userId, string actor, Guid id, UpdateDeliverableDatesRequest request, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var loaded = await LoadAsync(userId, id, track: true, ct).ConfigureAwait(false);
+        if (loaded.Error is { } error) return error;
+        var c = loaded.Value!;
+
+        var blocked = RequireManage(userId, c);
+        if (blocked is not null) return blocked;
+        if (!IsPerformance(c)) return PmsError.Conflict("PMS.INVALID_TRANSITION", "簽約前請直接編輯附件一；僅履約中、已驗收、保固中的合約可協議調整交付日。");
+        if (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Trim().Length > 500) return PmsError.Validation("請填寫調整原因（500 字內）。");
+
+        var now = clock.GetUtcNow();
+        var today = DateOnly.FromDateTime(now.ToOffset(SlaCalculator.Offset).DateTime);
+        var agreementInvalid = ContractSlaRules.ValidateAgreement(request.AgreementDate, request.AgreementChannel, request.AgreementRef, today);
+        if (agreementInvalid is not null) return PmsError.Validation(agreementInvalid);
+
+        var items = request.Items ?? [];
+        if (items.Select(i => i.ItemId).Distinct().Count() != items.Count) return PmsError.Validation("交付項目重複。");
+
+        var changes = new List<string>();
+        foreach (var entry in items)
+        {
+            var item = c.DeliverableItems.FirstOrDefault(i => i.Id == entry.ItemId);
+            if (item is null) return PmsError.NotFound("交付項目不存在。");
+
+            var invalid = ContractDeliverableRules.ValidateDeliveryDate(item.Name, entry.DeliveryDate, c.StartDate);
+            if (invalid is not null) return PmsError.Validation(invalid);
+            if (item.DeliveryDate == entry.DeliveryDate) continue;
+
+            changes.Add($"「{item.Name}」{(item.DeliveryDate is { } o ? o.ToString("yyyy-MM-dd") : "未約定")}→{(entry.DeliveryDate is { } n ? n.ToString("yyyy-MM-dd") : "取消約定")}");
+            item.DeliveryDate = entry.DeliveryDate;
+            item.LastReminderAt = null;
+            item.UpdatedBy = actor;
+            item.UpdatedAtUtc = now;
+        }
+
+        if (changes.Count == 0) return PmsError.Validation("指定交付日與目前相同，無需儲存。");
+
+        c.UpdatedBy = actor;
+        c.UpdatedAtUtc = now;
+        db.ContractEvents.Add(NewEvent(c.Id, ContractEventType.AppendixUpdated,
+            $"調整附件一指定交付日（雙方協議：{request.AgreementDate:yyyy-MM-dd} 以{request.AgreementChannel!.Trim()}{(string.IsNullOrWhiteSpace(request.AgreementRef) ? string.Empty : "，" + request.AgreementRef.Trim())}）：" +
+            $"{string.Join("；", changes)}（{request.Reason.Trim()}）{EvidenceNote(request.EvidenceFileName)}", userId, actor, now));
+        return await SaveAsync(userId, id, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>事件訊息的佐證附件字樣；檔名由使用者端上傳後帶入，僅作顯示，截斷避免過長。</summary>
+    internal static string EvidenceNote(string? fileName) =>
+        string.IsNullOrWhiteSpace(fileName) ? string.Empty : $"；附件：{(fileName.Trim().Length > 200 ? fileName.Trim()[..200] : fileName.Trim())}";
 
     // ---------- 綁定專案 ----------
 
@@ -688,6 +891,16 @@ public sealed class ContractService(PMSDbContext db, TimeProvider clock)
         var attachments = await db.ContractAttachments.AsNoTracking().Where(a => a.ContractId == c.Id && !a.IsDeleted).OrderByDescending(a => a.CreatedAtUtc)
             .ToListAsync(ct).ConfigureAwait(false);
 
+        var today = DateOnly.FromDateTime(clock.GetUtcNow().ToOffset(SlaCalculator.Offset).DateTime);
+        var deliverableCalendar = c.DeliverableItems.Any(i => i.DeliveryDate is not null && i.DeliveredDate is null)
+            ? await holidays.LoadCalendarAsync(today.AddDays(-30), today.AddDays(120), ct).ConfigureAwait(false)
+            : new WorkCalendar();
+
+        var signoffRounds = c.DeliverableItems.Any(i => i.RequiresCustomerSignoff)
+            ? await db.ContractReviewRounds.AsNoTracking().Where(r => r.ContractId == c.Id).ToListAsync(ct).ConfigureAwait(false)
+            : [];
+        var manageSignoff = ContractRules.CanManage(userId, Members(c)) && IsPerformance(c);
+
         var members = Members(c);
         var flags = ContractRules.AutoFlags(c);
         var (next, canDecide, required, blockedReason) = Decision(c, userId);
@@ -714,6 +927,15 @@ public sealed class ContractService(PMSDbContext db, TimeProvider clock)
             c.FinalPaymentHeldForMinorDefects, c.LiabilityCap, c.LiabilityCapAmount, c.ExcludesIndirectLoss, c.WarrantyMonths, c.IncidentNotifyHours,
             c.AuditNoticeDays, c.AuditPerYear, c.AuditCostOnVendor, c.ServiceHours, c.SupportChannel, c.Notes, c.CoopNoticeWorkdays);
 
+        var complianceRows = c.Industry == ContractIndustry.General
+            ? []
+            : await db.ContractComplianceItems.AsNoTracking().Where(i => i.ContractId == c.Id).ToListAsync(ct).ConfigureAwait(false);
+        var complianceDtos = ContractComplianceCatalog.For(c.Industry).Select(spec =>
+        {
+            var row = complianceRows.FirstOrDefault(i => i.Code == spec.Code);
+            return new ContractComplianceItemDto(spec.Code, spec.Name, spec.Risk, spec.Defense, row?.Status ?? ComplianceStatus.Pending, row?.Note);
+        }).ToList();
+
         var reviewItems = ContractRules.ReviewCatalog.Select(spec =>
         {
             var item = c.ReviewItems.FirstOrDefault(i => i.Code == spec.Code);
@@ -729,12 +951,65 @@ public sealed class ContractService(PMSDbContext db, TimeProvider clock)
             flags.Select(f => new ContractFlagDto(f.ItemCode, f.Severity, f.Message)).ToList(),
             c.Approvals.OrderBy(a => a.DecidedAt).Select(a => new ContractApprovalDto(a.Cycle, a.Step, a.Decision, a.Comment, a.DecidedBy, a.DecidedByName, a.DecidedAt)).ToList(),
             required, next,
-            c.DeliverableItems.OrderBy(i => i.SortOrder).Select(i => new ContractDeliverableItemDto(i.Id, i.SortOrder, i.Stage, i.Name, i.Format, i.AcceptMethod, i.RequiresCustomerSignoff)).ToList(),
-            c.SlaLevels.OrderBy(l => l.Level).Select(l => new ContractSlaLevelDto(l.Id, l.Level, l.Name, l.Definition, l.ResponseHours, l.Target)).ToList(),
+            c.DeliverableItems.OrderBy(i => i.SortOrder).Select(i => ToDeliverableDto(i, signoffRounds, today, deliverableCalendar, manageSignoff)).ToList(),
+            c.SlaLevels.OrderBy(l => l.Level).Select(l => new ContractSlaLevelDto(l.Id, l.Level, l.Name, l.Definition, l.ResponseHours, l.Target, l.DueHours, l.DueWorkdays)).ToList(),
             c.Projects.Where(p => p.Project is not null).OrderBy(p => p.Project!.Code)
                 .Select(p => new ContractProjectDto(p.ProjectId, p.Project!.Code, p.Project.Name, p.Project.Status, p.CreatedBy, p.CreatedAtUtc)).ToList(),
             attachments.Select(ContractAttachmentService.ToDto).ToList(),
-            events, actions, c.CreatedBy, c.CreatedAtUtc, Convert.ToBase64String(c.RowVersion));
+            events, actions, c.CreatedBy, c.CreatedAtUtc, Convert.ToBase64String(c.RowVersion), complianceDtos);
+    }
+
+    // ---------- 產業合規清單 ----------
+
+    /// <summary>
+    /// 依產業別同步合規項目：補齊該產業缺少的項目；其他產業遺留且尚未處理的項目移除（已處理的保留作紀錄）。
+    /// 不呼叫儲存，與呼叫端同一交易。
+    /// </summary>
+    private async Task SyncComplianceItemsAsync(Guid contractId, ContractIndustry industry, string actor, DateTimeOffset now, CancellationToken ct)
+    {
+        var existing = await db.ContractComplianceItems.Where(i => i.ContractId == contractId).ToListAsync(ct).ConfigureAwait(false);
+        var wanted = ContractComplianceCatalog.For(industry);
+
+        foreach (var spec in wanted.Where(s => existing.All(i => i.Code != s.Code)))
+            db.ContractComplianceItems.Add(new ContractComplianceItem { Id = Guid.NewGuid(), ContractId = contractId, Code = spec.Code, CreatedBy = actor, CreatedAtUtc = now });
+
+        foreach (var stale in existing.Where(i => i.Status == ComplianceStatus.Pending && wanted.All(s => s.Code != i.Code)))
+            db.ContractComplianceItems.Remove(stale);
+    }
+
+    /// <summary>更新產業合規項目：合約 PM、法務或業務可標示已納入或不適用（簽約前三階段，送審後鎖定）。</summary>
+    public async Task<PmsResult<ContractDto>> UpdateComplianceItemAsync(Guid userId, string actor, Guid id, string code, UpdateComplianceItemRequest request, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var loaded = await LoadAsync(userId, id, track: true, ct).ConfigureAwait(false);
+        if (loaded.Error is { } error) return error;
+        var c = loaded.Value!;
+
+        var members = Members(c);
+        if (!ContractRules.CanManage(userId, members) && !ContractRules.CanReview(userId, members))
+            return PmsError.Forbidden("僅合約的業務、合約 PM 或法務可更新產業合規項目。");
+        if (!ContractRules.CanEditTerms(c.Status)) return PmsError.Conflict("PMS.CONTENT_LOCKED", "合約已送審或已簽約，產業合規項目鎖定。");
+
+        var invalid = ContractComplianceCatalog.ValidateUpdate(code, c.Industry, request.Status, request.Note);
+        if (invalid is not null) return PmsError.Validation(invalid);
+
+        var now = clock.GetUtcNow();
+        await SyncComplianceItemsAsync(c.Id, c.Industry, actor, now, ct).ConfigureAwait(false);
+        await db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+        var item = await db.ContractComplianceItems.FirstOrDefaultAsync(i => i.ContractId == c.Id && i.Code == code, ct).ConfigureAwait(false);
+        if (item is null) return PmsError.NotFound("合規項目不存在。");
+
+        item.Status = request.Status;
+        item.Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
+        item.UpdatedByUserId = userId;
+        item.UpdatedBy = actor;
+        item.UpdatedAtUtc = now;
+        db.ContractEvents.Add(NewEvent(c.Id, ContractEventType.Compliance,
+            $"產業合規「{ContractComplianceCatalog.Find(code)!.Name}」：{(request.Status == ComplianceStatus.Included ? "已納入合約" : request.Status == ComplianceStatus.NotApplicable ? "不適用" : "待處理")}", userId, actor, now));
+
+        return await SaveAsync(userId, id, ct).ConfigureAwait(false);
     }
 
     public static string StatusName(ContractStatus s) => s switch

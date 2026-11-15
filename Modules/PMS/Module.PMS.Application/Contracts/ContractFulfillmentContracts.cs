@@ -16,7 +16,7 @@ public sealed record ExtensionNoticeDto(
 
 public sealed record ReviewRoundDto(
     Guid Id, Guid DeliverableItemId, string DeliverableName, int RoundNo, DateOnly SubmittedDate, DateOnly? ResponseDue, ReviewOutcome Outcome,
-    DateOnly? RespondedDate, string? Note, bool ExceedsRoundLimit, bool IsOverdue);
+    DateOnly? RespondedDate, string? Note, bool ExceedsRoundLimit, bool IsOverdue, string? RespondedChannel = null);
 
 /// <summary>需甲方簽認的交付項目與其審查回合彙總（畫面逐項顯示、可送審）。</summary>
 public sealed record ReviewTrackDto(
@@ -38,7 +38,7 @@ public sealed record PaymentTermDto(
 public sealed record FulfillmentSummaryDto(
     decimal OriginalAmount, decimal AmendmentTotal, decimal CurrentAmount, decimal InvoicedAmount, decimal PaidAmount,
     DateOnly? OriginalDelivery, DateOnly? AmendedDelivery, int ExtensionWorkdays, DateOnly? EffectiveDelivery,
-    int OriginalWarrantyMonths, int CurrentWarrantyMonths, DateOnly? WarrantyEnd);
+    int OriginalWarrantyMonths, int CurrentWarrantyMonths, DateOnly? WarrantyEnd, int? WarrantyDaysLeft = null);
 
 public sealed record FulfillmentActionsDto(bool CanManage, bool CanDeliver, bool CanReportDefects, bool CanConfirm, bool CanEditPayments, bool Active);
 
@@ -69,7 +69,7 @@ public sealed record NoticeDefaultsDto(
 
 public sealed record SubmitReviewRoundRequest(Guid DeliverableItemId, DateOnly? SubmittedDate);
 
-public sealed record RespondReviewRoundRequest(ReviewOutcome Outcome, DateOnly? RespondedDate, string? Note);
+public sealed record RespondReviewRoundRequest(ReviewOutcome Outcome, DateOnly? RespondedDate, string? Note, string? Channel = null, string? EvidenceFileName = null);
 
 public sealed record DeliverRequest(DateOnly DeliveredDate, string? Note);
 
@@ -88,7 +88,8 @@ public sealed record MovePaymentRequest(PaymentStatus Status, string? InvoiceNo,
 
 /// <summary>每日監看結果（排程呼叫）。</summary>
 public sealed record ContractWatchResult(
-    int CoopReminded, int ReviewsDeemed, int AcceptancesDeemed, int PaymentsPromoted, int PaymentsReminded, int Skipped, string Message);
+    int CoopReminded, int ReviewsDeemed, int AcceptancesDeemed, int PaymentsPromoted, int PaymentsReminded, int Skipped, string Message,
+    int WarrantyReminded = 0, int DeliverablesReminded = 0);
 
 /// <summary>展延通知書 PDF／下載檔案。</summary>
 public sealed record NoticePdfFile(byte[] Content, string FileName);

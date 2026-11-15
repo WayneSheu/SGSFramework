@@ -53,6 +53,7 @@
     <ProjectReference Include="..\..\Modules\RPT\Module.RPT\SGS.Modules.RPT.csproj" />
     <ProjectReference Include="..\..\Modules\FMS\Module.FMS\SGS.Modules.FMS.csproj" />
     <ProjectReference Include="..\..\Modules\PMS\Module.PMS\SGS.Modules.PMS.csproj" />
+    <ProjectReference Include="..\..\Modules\CAL\Module.CAL\SGS.Modules.CAL.csproj" />
     <ProjectReference Include="..\..\Modules\SCH\Module.SCH\SGS.Modules.SCH.csproj" />
     <ProjectReference Include="..\..\Modules\LOG\Module.LOG\SGS.Modules.LOG.csproj" />
     <ProjectReference Include="..\..\SGSFramework.ReportEngine\SGSFramework.ReportEngine.csproj" />

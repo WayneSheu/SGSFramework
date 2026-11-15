@@ -30,6 +30,7 @@ namespace SGS.Modules.PMS.Controllers.V1;
 [Produces(MediaTypeNames.Application.Json)]
 public sealed class ContractsController(
     ContractService contracts, ContractAttachmentService attachments, ContractFulfillmentService fulfillment, ContractWatchService watch,
+    ContractSupportService support, ContractDashboardService dashboard, ContractExportService exports,
     TimeProvider timeProvider) : PmsControllerBase
 {
     /// <summary>附件 20MB（對應 FMS 分類 pms-contract）加表單欄位與 multipart 開銷。</summary>
@@ -151,6 +152,30 @@ public sealed class ContractsController(
     [ProducesResponseType(typeof(ContractDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<ContractDto>> UpdateSlaLevels(Guid id, [FromBody] UpdateSlaLevelsRequest request, CancellationToken ct = default) =>
         FromResult(await contracts.UpdateSlaLevelsAsync(CurrentUserId, Actor, id, request, ct).ConfigureAwait(false));
+
+    /// <summary>記錄（更正、取消）附件一項目的實際交付；日期為空代表取消交付記錄</summary>
+    [HttpPost("{id:guid}/deliverables/{itemId:guid}/delivered")]
+    [Function("MarkContractDeliverable", "記錄附件一交付", Order = 49, Description = "記錄、更正或取消交付項目的實際交付日")]
+    [RequiresPermission("PMS.CONTRACT.MANAGE", "維護專案合約", ActionCategory.Operational)]
+    [ProducesResponseType(typeof(ContractDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ContractDto>> MarkDelivered(Guid id, Guid itemId, [FromBody] MarkDeliveredRequest request, CancellationToken ct = default) =>
+        FromResult(await contracts.MarkDeliveredAsync(CurrentUserId, Actor, id, itemId, request, ct).ConfigureAwait(false));
+
+    /// <summary>簽約後協議調整附件一的指定交付日（須協議佐證與原因，並留事件）</summary>
+    [HttpPut("{id:guid}/deliverable-dates")]
+    [Function("UpdateContractDeliverableDates", "調整附件一指定交付日", Order = 50, Description = "履約階段經雙方協議調整指定交付日")]
+    [RequiresPermission("PMS.CONTRACT.MANAGE", "維護專案合約", ActionCategory.Critical)]
+    [ProducesResponseType(typeof(ContractDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ContractDto>> UpdateDeliverableDates(Guid id, [FromBody] UpdateDeliverableDatesRequest request, CancellationToken ct = default) =>
+        FromResult(await contracts.UpdateDeliverableDatesAsync(CurrentUserId, Actor, id, request, ct).ConfigureAwait(false));
+
+    /// <summary>履約階段調整附件二的處理期限（覆寫問題單到期日；須填原因並留事件）</summary>
+    [HttpPut("{id:guid}/sla-due")]
+    [Function("UpdateContractSlaDue", "調整合約 SLA 處理期限", Order = 48, Description = "履約階段調整附件二各等級的處理期限")]
+    [RequiresPermission("PMS.CONTRACT.MANAGE", "維護專案合約", ActionCategory.Critical)]
+    [ProducesResponseType(typeof(ContractDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ContractDto>> UpdateSlaDue(Guid id, [FromBody] UpdateSlaDueRequest request, CancellationToken ct = default) =>
+        FromResult(await contracts.UpdateSlaDueAsync(CurrentUserId, Actor, id, request, ct).ConfigureAwait(false));
 
     /// <summary>綁定 PMS 專案（簽約後；一個專案至多屬於一份合約）</summary>
     [HttpPost("{id:guid}/projects")]
@@ -450,6 +475,92 @@ public sealed class ContractsController(
     [ProducesResponseType(typeof(ContractWatchResult), StatusCodes.Status200OK)]
     public async Task<ActionResult<ContractWatchResult>> Watch(CancellationToken ct = default) =>
         Ok(await watch.ScanAsync(ct).ConfigureAwait(false));
+
+    // ---------- 保固維運、合規、儀表與匯出（第三期） ----------
+
+    /// <summary>更新產業合規項目（已納入／不適用／待處理；不適用須填原因）</summary>
+    [HttpPut("{id:guid}/compliance/{code}")]
+    [Function("UpdateContractCompliance", "更新產業合規項目", Order = 40, Description = "金融、醫療、製造產業合規清單的納入狀態")]
+    [RequiresPermission("PMS.CONTRACT.MANAGE", "維護專案合約", ActionCategory.Operational)]
+    [ProducesResponseType(typeof(ContractDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ContractDto>> UpdateCompliance(Guid id, string code, [FromBody] UpdateComplianceItemRequest request, CancellationToken ct = default) =>
+        FromResult(await contracts.UpdateComplianceItemAsync(CurrentUserId, Actor, id, code, request, ct).ConfigureAwait(false));
+
+    /// <summary>非服務時間支援申請清單與加權時數統計</summary>
+    [HttpGet("{id:guid}/support-requests")]
+    [Function("GetContractSupportRequests", "非服務時間支援申請", Order = 41, Description = "支援申請、核准與實際加班計費")]
+    [RequiresPermission("PMS.CONTRACT.READ", "檢視專案合約")]
+    [ProducesResponseType(typeof(SupportOverviewDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<SupportOverviewDto>> GetSupportRequests(Guid id, CancellationToken ct = default) =>
+        FromResult(await support.GetAsync(CurrentUserId, id, ct).ConfigureAwait(false));
+
+    /// <summary>調整本合約的支援參數：提前申請工作日、窗口上限與三種加班倍率（法規修正或雙方約定；須填原因並留事件）</summary>
+    [HttpPut("{id:guid}/support-settings")]
+    [Function("UpdateContractSupportSettings", "調整非服務時間支援參數", Order = 47, Description = "提前申請工作日、窗口上限與加班倍率")]
+    [RequiresPermission("PMS.CONTRACT.MANAGE", "維護專案合約", ActionCategory.Critical)]
+    [ProducesResponseType(typeof(SupportOverviewDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<SupportOverviewDto>> UpdateSupportSettings(Guid id, [FromBody] UpdateSupportSettingsRequest request, CancellationToken ct = default) =>
+        FromResult(await support.UpdateSettingsAsync(CurrentUserId, Actor, id, request, ct).ConfigureAwait(false));
+
+    /// <summary>試算加班倍率與加權時數，並檢查提前申請的規則</summary>
+    [HttpPost("{id:guid}/support-requests/estimate")]
+    [RequiresPermission("PMS.CONTRACT.READ", "檢視專案合約")]
+    [ProducesResponseType(typeof(OvertimeEstimateDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<OvertimeEstimateDto>> EstimateSupport(Guid id, [FromBody] EstimateSupportRequest request, CancellationToken ct = default) =>
+        FromResult(await support.EstimateAsync(CurrentUserId, id, request, ct).ConfigureAwait(false));
+
+    /// <summary>提出非服務時間支援申請（業務／合約 PM；須提前 5 個工作日）</summary>
+    [HttpPost("{id:guid}/support-requests")]
+    [Function("CreateContractSupportRequest", "提出非服務時間支援申請", Order = 42, Description = "平日加班 1.5 倍、深夜與例假日 2.0 倍、國定假日 2.5 倍")]
+    [RequiresPermission("PMS.CONTRACT.MANAGE", "維護專案合約", ActionCategory.Operational)]
+    [ProducesResponseType(typeof(SupportOverviewDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<SupportOverviewDto>> CreateSupportRequest(Guid id, [FromBody] CreateSupportRequest request, CancellationToken ct = default) =>
+        FromResult(await support.CreateAsync(CurrentUserId, Actor, id, request, ct).ConfigureAwait(false));
+
+    /// <summary>核決支援申請（高階主管；不得核准自己的申請）</summary>
+    [HttpPost("{id:guid}/support-requests/{requestId:guid}/decision")]
+    [Function("DecideContractSupportRequest", "核決非服務時間支援", Order = 43, Description = "高階主管核准或駁回支援申請")]
+    [RequiresPermission("PMS.CONTRACT.APPROVE", "核決專案合約", ActionCategory.Critical)]
+    [ProducesResponseType(typeof(SupportOverviewDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<SupportOverviewDto>> DecideSupportRequest(Guid id, Guid requestId, [FromBody] DecideSupportRequest request, CancellationToken ct = default) =>
+        FromResult(await support.DecideAsync(CurrentUserId, Actor, id, requestId, request, ct).ConfigureAwait(false));
+
+    /// <summary>記錄支援實際起訖並計算實際加權時數</summary>
+    [HttpPost("{id:guid}/support-requests/{requestId:guid}/complete")]
+    [Function("CompleteContractSupportRequest", "完成非服務時間支援", Order = 44, Description = "登記實際起訖與加班加權時數")]
+    [RequiresPermission("PMS.CONTRACT.MANAGE", "維護專案合約", ActionCategory.Operational)]
+    [ProducesResponseType(typeof(SupportOverviewDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<SupportOverviewDto>> CompleteSupportRequest(Guid id, Guid requestId, [FromBody] CompleteSupportRequest request, CancellationToken ct = default) =>
+        FromResult(await support.CompleteAsync(CurrentUserId, Actor, id, requestId, request, ct).ConfigureAwait(false));
+
+    /// <summary>取消尚未完成的支援申請</summary>
+    [HttpPost("{id:guid}/support-requests/{requestId:guid}/cancel")]
+    [Function("CancelContractSupportRequest", "取消非服務時間支援", Order = 45, Description = "取消待核決或已核准的支援申請")]
+    [RequiresPermission("PMS.CONTRACT.MANAGE", "維護專案合約", ActionCategory.Operational)]
+    [ProducesResponseType(typeof(SupportOverviewDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<SupportOverviewDto>> CancelSupportRequest(Guid id, Guid requestId, [FromBody] CancelSupportRequest request, CancellationToken ct = default) =>
+        FromResult(await support.CancelAsync(CurrentUserId, Actor, id, requestId, request, ct).ConfigureAwait(false));
+
+    /// <summary>合約儀表：進行中、待我核決、協力遲延、保固將到期、可請款與提醒清單（僅我參與的合約）</summary>
+    [HttpGet("dashboard")]
+    [RequiresPermission("PMS.CONTRACT.READ", "檢視專案合約")]
+    [ProducesResponseType(typeof(ContractDashboardDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ContractDashboardDto>> Dashboard(CancellationToken ct = default) =>
+        Ok(await dashboard.GetAsync(CurrentUserId, ct).ConfigureAwait(false));
+
+    /// <summary>合約知識庫：談判話術、Kick-off 簡報大綱、產業合規避雷與保固除外條款</summary>
+    [HttpGet("playbook")]
+    [RequiresPermission("PMS.CONTRACT.READ", "檢視專案合約")]
+    [ProducesResponseType(typeof(PlaybookDto), StatusCodes.Status200OK)]
+    public ActionResult<PlaybookDto> Playbook() => Ok(ContractPlaybook.Build());
+
+    /// <summary>匯出內部文件 PDF：review-checklist（審約檢核表）、appendices（附件一／二）、fulfillment-summary（履約摘要）</summary>
+    [HttpGet("{id:guid}/export/{kind}")]
+    [Function("ExportContractDocument", "匯出合約文件", Order = 46, Description = "審約檢核表、附件一二與履約摘要 PDF（內部文件）")]
+    [RequiresPermission("PMS.CONTRACT.READ", "檢視專案合約")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> Export(Guid id, string kind, CancellationToken ct = default) =>
+        ToPdf(await exports.ExportAsync(CurrentUserId, id, kind, ct).ConfigureAwait(false));
 
     private IActionResult ToPdf(PmsResult<NoticePdfFile> result)
     {

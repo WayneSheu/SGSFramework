@@ -51,7 +51,7 @@ public sealed record TicketDetailDto(
     DateTimeOffset? DueAt, DateTimeOffset? ResolvedAt, SlaStatus SlaStatus,
     Guid? FixerUserId, Guid? VerifierUserId, bool RcaRequired, Guid? ChangeRequestId, string? ChangeRequestNo,
     IReadOnlyList<TicketAttachmentDto> Attachments, IReadOnlyList<TicketEventDto> Events,
-    TicketActionsDto Actions, string RowVersion);
+    TicketActionsDto Actions, string RowVersion, bool FirstResponseOverdue = false);
 
 // ===== 動作請求 =====
 
@@ -77,12 +77,3 @@ public sealed record ReopenTicketRequest(string Reason, string RowVersion);
 
 public sealed record CancelTicketRequest(string Reason, string RowVersion);
 
-// ===== 假日 =====
-
-public sealed record HolidaySearchRequest(int? Year);
-
-public sealed record HolidayDto(DateOnly Date, string Name, bool IsWorkday);
-
-public sealed record UpsertHolidaysRequest(IReadOnlyList<HolidayDto> Items);
-
-public sealed record UpsertHolidaysResultDto(int Upserted);

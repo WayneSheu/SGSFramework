@@ -79,6 +79,8 @@ public class PMSDbContext : BaseDbContext<PMSDbContext>
     public DbSet<ContractAcceptance> ContractAcceptances { get; set; } = null!;
     public DbSet<ContractAmendment> ContractAmendments { get; set; } = null!;
     public DbSet<ContractPaymentTerm> ContractPaymentTerms { get; set; } = null!;
+    public DbSet<ContractSupportRequest> ContractSupportRequests { get; set; } = null!;
+    public DbSet<ContractComplianceItem> ContractComplianceItems { get; set; } = null!;
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {

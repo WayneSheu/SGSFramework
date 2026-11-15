@@ -346,6 +346,17 @@ public class ContractRulesTests
     }
 
     [Fact]
+    public void DeliverableItems_DeliveryDate_Optional_ButMustBeSane()
+    {
+        var ok = new DeliverableSeed("設計", "SA/SD", "PDF", "簽認", true, new DateOnly(2026, 12, 1));
+        var none = new DeliverableSeed("設計", "SA/SD", "PDF", "簽認", true);
+        var bad = new DeliverableSeed("設計", "SA/SD", "PDF", "簽認", true, new DateOnly(1999, 1, 1));
+
+        ContractRules.ValidateDeliverableItems([ok, none]).Should().BeNull();
+        ContractRules.ValidateDeliverableItems([bad]).Should().Contain("指定交付日");
+    }
+
+    [Fact]
     public void DeliverableItems_RejectEmptyList() =>
         ContractRules.ValidateDeliverableItems([]).Should().Contain("至少");
 

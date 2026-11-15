@@ -46,9 +46,19 @@ public sealed record ContractReviewItemDto(
 public sealed record ContractApprovalDto(
     int Cycle, ContractApprovalStep Step, ApprovalDecision Decision, string? Comment, Guid DecidedBy, string DecidedByName, DateTimeOffset DecidedAt);
 
-public sealed record ContractDeliverableItemDto(Guid Id, int SortOrder, string Stage, string Name, string Format, string AcceptMethod, bool RequiresCustomerSignoff);
+public sealed record ContractDeliverableItemDto(
+    Guid Id, int SortOrder, string Stage, string Name, string Format, string AcceptMethod, bool RequiresCustomerSignoff, DateOnly? DeliveryDate = null,
+    DateOnly? DeliveredDate = null, string? DeliveredNote = null, DeliverableState State = DeliverableState.NoDate, string? DeliveredChannel = null,
+    SignoffState Signoff = SignoffState.NotRequired, DateOnly? SignoffDue = null, int SignoffRounds = 0, Guid? PendingRoundId = null, bool CanSubmitRound = false);
 
-public sealed record ContractSlaLevelDto(Guid Id, int Level, string Name, string Definition, decimal ResponseHours, string Target);
+public sealed record ContractSlaLevelDto(
+    Guid Id, int Level, string Name, string Definition, decimal ResponseHours, string Target, decimal? DueHours = null, int? DueWorkdays = null);
+
+/// <param name="Risk">規範列出的風險說明。</param>
+/// <param name="Defense">乙方談判底線與防禦對策。</param>
+public sealed record ContractComplianceItemDto(string Code, string Name, string Risk, string Defense, ComplianceStatus Status, string? Note);
+
+public sealed record UpdateComplianceItemRequest(ComplianceStatus Status, string? Note);
 
 public sealed record ContractProjectDto(Guid ProjectId, string ProjectCode, string ProjectName, ProjectStatus ProjectStatus, string BoundBy, DateTimeOffset BoundAtUtc);
 
@@ -79,7 +89,8 @@ public sealed record ContractDto(
     IReadOnlyList<ContractApprovalDto> Approvals, IReadOnlyList<ContractApprovalStep> RequiredSteps, ContractApprovalStep? NextStep,
     IReadOnlyList<ContractDeliverableItemDto> DeliverableItems, IReadOnlyList<ContractSlaLevelDto> SlaLevels,
     IReadOnlyList<ContractProjectDto> Projects, IReadOnlyList<ContractAttachmentDto> Attachments, IReadOnlyList<ContractEventDto> Events,
-    ContractActionsDto Actions, string CreatedBy, DateTimeOffset CreatedAtUtc, string RowVersion);
+    ContractActionsDto Actions, string CreatedBy, DateTimeOffset CreatedAtUtc, string RowVersion,
+    IReadOnlyList<ContractComplianceItemDto>? ComplianceItems = null);
 
 public sealed record CreateContractRequest(ContractTermsDto Terms);
 
@@ -101,11 +112,11 @@ public sealed record ContractReviewDecisionRequest(ContractApprovalStep Step, Ap
 
 public sealed record SignContractRequest(DateOnly SignedDate, DateOnly? StartDate, string RowVersion);
 
-public sealed record ContractDeliverableItemRequest(string Stage, string Name, string Format, string AcceptMethod, bool RequiresCustomerSignoff);
+public sealed record ContractDeliverableItemRequest(string Stage, string Name, string Format, string AcceptMethod, bool RequiresCustomerSignoff, DateOnly? DeliveryDate = null);
 
 public sealed record UpdateDeliverableListRequest(IReadOnlyList<ContractDeliverableItemRequest> Items);
 
-public sealed record ContractSlaLevelRequest(int Level, string Name, string Definition, decimal ResponseHours, string Target);
+public sealed record ContractSlaLevelRequest(int Level, string Name, string Definition, decimal ResponseHours, string Target, decimal? DueHours = null, int? DueWorkdays = null);
 
 public sealed record UpdateSlaLevelsRequest(IReadOnlyList<ContractSlaLevelRequest> Levels);
 

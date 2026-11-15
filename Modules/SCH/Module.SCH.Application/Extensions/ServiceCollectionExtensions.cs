@@ -89,6 +89,14 @@ public static class ServiceCollectionExtensions
             services.AddRecurringJob<PmsMonthlyReportJob>(PmsMonthlyReportJob.JobId, "PMS 月度維運報告自動產生", "0 18 * * *");
         }
 
+        // CAL 排程作業（端點由 SGS.Modules.CAL 外掛提供）：僅於 Calendar:Enabled 時註冊，避免未部署行事曆模組時持續失敗告警。
+        // 政府辦公日曆每月 1 日 03:00 自動同步（伺服器須能連外網）；活動提醒每 5 分鐘掃描一次到期提醒
+        if (configuration.GetValue<bool>("Calendar:Enabled"))
+        {
+            services.AddRecurringJob<CalHolidaySyncJob>(CalHolidaySyncJob.JobId, "CAL 政府辦公日曆同步", "0 3 1 * *");
+            services.AddRecurringJob<CalEventReminderJob>(CalEventReminderJob.JobId, "CAL 活動提醒派送", "*/5 * * * *");
+        }
+
         // Hangfire 只序列化 Core 的 IScheduledJobDispatcher（Default ALC），再由此實作依作業 ID 執行外掛內的作業類別
         services.TryAddSingleton<ScheduledJobCatalog>();
         services.TryAddScoped<IScheduledJobDispatcher, ScheduledJobDispatcher>();

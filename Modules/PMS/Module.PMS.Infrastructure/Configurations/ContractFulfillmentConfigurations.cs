@@ -63,6 +63,7 @@ public sealed class ContractReviewRoundConfiguration : IEntityTypeConfiguration<
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Outcome).HasConversion<byte>();
         builder.Property(x => x.Note).HasMaxLength(1000);
+        builder.Property(x => x.RespondedChannel).HasMaxLength(50);
         builder.Property(x => x.CreatedBy).HasMaxLength(256);
         builder.Property(x => x.UpdatedBy).HasMaxLength(256);
 

@@ -73,6 +73,9 @@ namespace SGSFramework.Core.Extensions
             // 檔案管理：SGS.Modules.FMS 外掛載入時以 AddScoped 覆蓋；未安裝時回應 503（模組未安裝）
             builder.Services.TryAddScoped<IFileManagementService, NullFileManagementService>();
 
+            // 公司工作日曆：SGS.Modules.CAL 外掛載入時以 AddScoped 覆蓋；未安裝時沒有假日例外（純週一至週五）
+            builder.Services.TryAddScoped<SGSFramework.Core.Calendars.IWorkCalendarProvider, SGSFramework.Core.Calendars.NullWorkCalendarProvider>();
+
             // 日誌儲存：SGS.Modules.LOG 外掛載入時以 AddSingleton 覆蓋；未安裝時落檔緩衝（Log_Buffer），恢復後回補
             builder.Services.TryAddSingleton<SGSFramework.Core.Logging.ISystemLogStore, SGSFramework.Core.Logging.NullSystemLogStore>();
             builder.Services.TryAddSingleton<SGSFramework.Core.Logging.ISecurityLogStore, SGSFramework.Core.Logging.NullSecurityLogStore>();

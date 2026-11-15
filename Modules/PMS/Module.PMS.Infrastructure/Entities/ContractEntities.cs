@@ -164,7 +164,10 @@ public enum ContractEventType
     ReviewRound = 18,
     Acceptance = 19,
     Amendment = 20,
-    Payment = 21
+    Payment = 21,
+    Support = 22,
+    Compliance = 23,
+    Warranty = 24
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -271,6 +274,33 @@ public class Contract : IAuditable
 
     [Comment("甲方協力遲延後，乙方須發出書面通知的工作日數（預設 3；各協力事項可個別覆寫）")]
     public int CoopNoticeWorkdays { get; set; } = 3;
+
+    [Comment("非服務時間支援須提前申請的工作日數（預設 5）")]
+    public int SupportAdvanceWorkdays { get; set; } = 5;
+
+    [Comment("非服務時間支援是否須乙方高階主管內部核准（預設是；否則申請即視為已核准）")]
+    public bool SupportRequiresApproval { get; set; } = true;
+
+    [Comment("最近一次調整非服務時間支援參數的原因")]
+    public string? SupportSettingsReason { get; set; }
+
+    [Comment("最近一次調整非服務時間支援參數的人")]
+    public string? SupportSettingsUpdatedBy { get; set; }
+
+    [Comment("最近一次調整非服務時間支援參數的時間")]
+    public DateTimeOffset? SupportSettingsUpdatedAt { get; set; }
+
+    [Comment("非服務時間支援單次窗口上限（天，預設 7）")]
+    public int SupportMaxWindowDays { get; set; } = 7;
+
+    [Comment("平日加班倍率（預設 1.5）")]
+    public decimal OvertimeWeekdayRate { get; set; } = 1.5m;
+
+    [Comment("深夜與例假日加班倍率（預設 2.0）")]
+    public decimal OvertimeNightRestRate { get; set; } = 2.0m;
+
+    [Comment("國定假日加班倍率（預設 2.5）")]
+    public decimal OvertimeHolidayRate { get; set; } = 2.5m;
 
     [Comment("標準服務時間")]
     public string ServiceHours { get; set; } = "週一至週五 09:00–18:00（不含國定假日）";
@@ -398,6 +428,21 @@ public class ContractDeliverableItem : IAuditable
     [Comment("需甲方書面簽認（第二期：文件審查計時依據）")]
     public bool RequiresCustomerSignoff { get; set; }
 
+    [Comment("指定交付日（合約約定該項目交付給甲方的日期；未約定為空）")]
+    public DateOnly? DeliveryDate { get; set; }
+
+    [Comment("實際交付日（由業務／合約 PM 記錄；空表示尚未交付）")]
+    public DateOnly? DeliveredDate { get; set; }
+
+    [Comment("交付方式（Email、系統上線、紙本面交、雲端連結等）")]
+    public string? DeliveredChannel { get; set; }
+
+    [Comment("交付備註（對象、網址、版本等）")]
+    public string? DeliveredNote { get; set; }
+
+    [Comment("最近一次到期提醒時間（每個台灣日最多一次）")]
+    public DateTimeOffset? LastReminderAt { get; set; }
+
     public string CreatedBy { get; set; } = string.Empty;
     public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
     public string? UpdatedBy { get; set; }
@@ -422,6 +467,12 @@ public class ContractSlaLevel : IAuditable
 
     [Comment("回應時間（標準服務時間內，小時）")]
     public decimal ResponseHours { get; set; }
+
+    [Comment("處理期限（時鐘小時，例：Level 1 於 4 小時內提出替代方案）；與 DueWorkdays 擇一，皆空＝不覆寫系統 SLA")]
+    public decimal? DueHours { get; set; }
+
+    [Comment("處理期限（工作日，例：Level 2 於 2 個工作日內提供修正）；與 DueHours 擇一")]
+    public int? DueWorkdays { get; set; }
 
     [Comment("處理目標說明")]
     public string Target { get; set; } = string.Empty;

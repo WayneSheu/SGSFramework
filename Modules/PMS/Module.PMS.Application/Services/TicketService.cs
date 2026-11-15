@@ -213,6 +213,34 @@ public sealed class TicketService(PMSDbContext db, HolidayService holidays, Time
         t.Priority = request.Priority;
         t.Status = next;
         t.DueAt = SlaCalculator.Due(request.Type, request.Priority, t.ReceivedAt, calendar);
+
+        // 專案綁定了履約階段的合約，且附件二該等級有設定處理期限：以合約約定的期限取代系統預設 SLA
+        string? slaNote = null;
+        if (request.Type == TicketType.Incident && request.Priority is { } priority)
+        {
+            var level = ContractSlaRules.LevelFor(priority);
+            var contractLevel = await db.ContractProjects.AsNoTracking()
+                .Where(l => l.ProjectId == t.ProjectId && (l.Contract!.Status == ContractStatus.Active || l.Contract.Status == ContractStatus.Accepted || l.Contract.Status == ContractStatus.Warranty))
+                .SelectMany(l => l.Contract!.SlaLevels.Where(s => s.Level == level).Select(s => new { s.DueHours, s.DueWorkdays, s.ResponseHours, l.Contract!.ContractNo }))
+                .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+            if (contractLevel is not null)
+            {
+                var notes = new List<string>();
+                if (ContractSlaRules.OverrideDue(t.ReceivedAt, contractLevel.DueHours, contractLevel.DueWorkdays, calendar) is { } overrideDue)
+                {
+                    t.DueAt = overrideDue;
+                    notes.Add($"處理期限 {ContractSlaRules.Describe(contractLevel.DueHours, contractLevel.DueWorkdays)}");
+                }
+
+                // 首次回應：回應時間只計標準服務時間（工作日 09:00–18:00）；分流即為首次回應，逾期於此標示
+                var responseDue = ContractSlaRules.ResponseDue(t.ReceivedAt, contractLevel.ResponseHours, calendar);
+                t.FirstResponseDueAt = responseDue;
+                var late = ContractSlaRules.IsResponseLate(responseDue, now);
+                notes.Add($"首次回應 {contractLevel.ResponseHours:0.##} 小時（標準服務時間內計）期限 {responseDue.ToOffset(SlaCalculator.Offset):yyyy-MM-dd HH:mm}，{(late ? "已逾期" : "準時")}");
+                slaNote = $"依合約 {contractLevel.ContractNo} 附件二 Level {level}（{string.Join("；", notes)}）";
+            }
+        }
+
         t.FirstResponseAt = now;
         Touch(t, actor, now);
 
@@ -230,7 +258,7 @@ public sealed class TicketService(PMSDbContext db, HolidayService holidays, Time
             crNote = $"已建立 {(request.CrKind == CrKind.Customer ? "客戶" : "內部")} CR {cr.CrNo}";
         }
 
-        AddEvent(t, TicketEventType.Triaged, Join($"分流為 {label}{due}", crNote, request.Note), userId, actor, now);
+        AddEvent(t, TicketEventType.Triaged, Join($"分流為 {label}{due}", slaNote, crNote, request.Note), userId, actor, now);
 
         return await SaveAsync(c, userId, ct).ConfigureAwait(false);
     }
@@ -471,7 +499,7 @@ public sealed class TicketService(PMSDbContext db, HolidayService holidays, Time
         // 首次回應期限於分流後才有意義（依類型／優先級）；顯示用途，以週一至週五估算（不含假日資料）
         DateTimeOffset? firstResponseDue = t.FirstResponseAt is null
             ? null
-            : SlaCalculator.FirstResponseDue(t.Type, t.Priority, t.ReceivedAt, new WorkCalendar());
+            : t.FirstResponseDueAt ?? SlaCalculator.FirstResponseDue(t.Type, t.Priority, t.ReceivedAt, new WorkCalendar());
 
         var isPm = ProjectAccessPolicy.IsPm(c.UserId, c.Members);
         var isTl = ProjectAccessPolicy.IsTechLead(c.UserId, c.Members);
@@ -506,7 +534,8 @@ public sealed class TicketService(PMSDbContext db, HolidayService holidays, Time
             internalView ? t.FixerUserId : null, internalView ? t.VerifierUserId : null,
             RcaRequired: t.Status == TicketStatus.Closed && (t.Priority == TicketPriority.P1 || sla == SlaStatus.MetLate),
             internalView ? t.ChangeRequestId : null, internalView ? changeRequestNo : null,
-            attachments, events, actions, Convert.ToBase64String(t.RowVersion));
+            attachments, events, actions, Convert.ToBase64String(t.RowVersion),
+            ContractSlaRules.IsResponseLate(t.FirstResponseDueAt, t.FirstResponseAt));
     }
 
     internal static SlaStatus ComputeSla(TicketStatus status, DateTimeOffset? due, DateTimeOffset? resolvedAt, DateTimeOffset now) =>

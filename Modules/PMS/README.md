@@ -73,15 +73,15 @@
 | 狀態機 | 受理 → 分流 → 處理中 → 待驗證 → 待複測 → 結案；可取消（受理／處理中）、客戶複測未通過可重開；諮詢／資料撈取／CR 可由 PM 於處理中直接結案（`TicketWorkflow`） |
 | 角色 | 分流、結案、重開、取消＝專案 PM；指派＝Tech Lead；回報修復＝被指派修復人；驗證＝被指派驗證人 |
 | SoD | 修復人≠驗證人（`TicketSeparationOfDuties`，服務層＋資料表 CHECK `CK_Tickets_FixerNotVerifier`）；二者須為專案 BE／FE／Tech Lead；修復須附重現測試（Bug 驅動測試） |
-| SLA | `SlaCalculator`：P1 受理＋4 小時、P2 1 工作天、P3 2 工作天、諮詢／資料撈取 1 工作天、CR 不計；工作日以台灣時間（UTC+8）判定，扣除 `pms.Holidays`（放假／補班）；燈號於讀取時動態計算（進行中／即將到期 <2h／已超時／準時達成／超時完成），不持久化 |
+| SLA | `SlaCalculator`：P1 受理＋4 小時、P2 1 工作天、P3 2 工作天、諮詢／資料撈取 1 工作天、CR 不計；工作日以台灣時間（UTC+8）判定，扣除假日（放假／補班；來源為行事曆管理模組 CAL，經 Core `IWorkCalendarProvider` 讀取）；燈號於讀取時動態計算（進行中／即將到期 <2h／已超時／準時達成／超時完成），不持久化 |
 | 資料列授權 | 非成員一律 404；Stakeholder 僅見並建立「客戶可見且自己提出」的單，且看不到事件時間軸與修復／驗證人 |
 | 附件 | FMS 分類 `pms-issue`（`AllowGenericApi=false`，20MB，Office／PDF／圖片／txt／csv）；檔名 `YYYYMMDD_[單號]_檔案說明.ext`；上傳後為「待遮罩確認」（SOP 8-4）；浮水印檢視、下載、刪除（PM／TL） |
-| 假日 | `PMS.SETTINGS.MANAGE` 維護國定假日與補班日；修改不會回頭重算已分流問題單的期限 |
+| 假日 | 已移至行事曆管理模組（CAL）：於「行事曆管理 > 假日與補班」維護（`CAL.HOLIDAY.MANAGE`）；修改不會回頭重算已分流問題單的期限；CAL 未安裝時沒有假日例外（純週一至週五） |
 
-API（`api/v1/pms`）：`tickets/search`、`tickets`（建單）、`tickets/{id}`、`/triage`、`/assign`、`/resolve`、`/verify`、`/close`、`/reopen`、`/cancel`、`/attachments`（上傳）、`/attachments/{aid}/view|content|mask-confirm`（刪除為 `DELETE`）；`holidays/search`、`PUT holidays`、`DELETE holidays/{yyyy-MM-dd}`。
+API（`api/v1/pms`）：`tickets/search`、`tickets`（建單）、`tickets/{id}`、`/triage`、`/assign`、`/resolve`、`/verify`、`/close`、`/reopen`、`/cancel`、`/attachments`（上傳）、`/attachments/{aid}/view|content|mask-confirm`（刪除為 `DELETE`）（假日 API 已移至 CAL：`api/v1/cal/holidays`）。
 權限：`PMS.TICKET.READ／CREATE／TRIAGE／RESOLVE／VERIFY`（TRIAGE 涵蓋 PM 分流與結案、Tech Lead 指派）、`PMS.SETTINGS.MANAGE`。
 
-前端：`/sgs.modules.pms/tickets`（清單：SLA 摘要與燈號、篩選）、`/tickets/{id}`（詳情：SLA、人員、附件、時間軸，依角色顯示動作按鈕）、`/holidays`（假日維護）。
+前端：`/sgs.modules.pms/tickets`（清單：SLA 摘要與燈號、篩選）、`/tickets/{id}`（詳情：SLA、人員、附件、時間軸，依角色顯示動作按鈕）（假日維護已移至 CAL 的 `/sgs.modules.cal/holidays`）。
 
 ## CR 需求變更單（2026-11-14，SOP 第 4 章 / FORM-CR-01）
 
@@ -124,7 +124,7 @@ API（`api/v1/pms`）：`tickets/search`、`tickets`（建單）、`tickets/{id}
 2. `PMS.DELIVERABLE.DOWNLOAD` 預設只給「專案管理員」；若 BE／FE 需要下載原檔，請另行加到「使用者」角色。檢視浮水印內容只需 `PMS.PROJECT.READ`。
 3. 權限碼由 API 啟動時同步到「系統權限清單」；看不到 `PMS.*` 時，請於權限清單頁按「重新同步權限元數據並更新權限樹」。
 4. 角色異動須重新登入才會生效；新建角色可能需經審核後啟用，且治理設定（Maker-Checker、職責分離）可能限制同一人可掛的角色，遇到擋下請依訊息處理。
-5. **「國定假日」選單**由 `PMS.SETTINGS.READ` 控制（僅「專案管理員」看得到）；選單頁面節點以權限碼為 Key，每個選單入口必須使用各自獨立的權限碼，開發新選單入口時請勿與其他入口共用同一個權限碼（否則兩個入口會互相覆蓋，其中一個選單會消失）。
+5. （歷史）「國定假日」選單已隨假日功能移至 CAL；PMS 選單頁面節點以權限碼為 Key，每個選單入口必須使用各自獨立的權限碼，開發新選單入口時請勿與其他入口共用同一個權限碼（否則兩個入口會互相覆蓋，其中一個選單會消失）。
 
 ## 上線檢核表（2026-11-14，SOP 附錄 A / FORM-SEC-01）
 
@@ -171,3 +171,12 @@ API（`api/v1/pms`）：`tickets/search`、`tickets`（建單）、`tickets/{id}
 dotnet test Tests/SGS.Modules.PMS.Tests -c Release
 ```
 目前 191 個單元測試（專案代號、Gate 規則、命名鐵律與自動命名、資料列授權、SLA 計算、問題單狀態機與 SoD、列舉 JSON）。`ProjectService` 的資料庫整合測試待 Testcontainers（M2）。
+
+## 專案合約第三期（2026-11-15）
+
+- 保固維運：驗收後自動轉「保固中」、到期前 60／30／7 天與到期後提醒；履約總覽顯示保固剩餘天數。
+- 附件二 SLA 覆寫：等級可設 `dueHours` 或 `dueWorkdays`，問題單分流時覆寫系統預設 SLA。
+- 非服務時間支援與加班計費：`/support-requests`（申請、核決、完成、取消、試算），倍率 1.5／2.0／2.5。
+- 產業合規清單：`PUT /{id}/compliance/{code}`；儀表 `GET /dashboard`；知識庫 `GET /playbook`；PDF 匯出 `GET /{id}/export/{kind}`。
+- 遷移 `PMSDB_ContractPhase3`（Expand-only），套用需重新啟動 API。
+- 本期未做：SLA 暫停計時、首次回應時間覆寫。

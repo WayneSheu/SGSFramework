@@ -32,6 +32,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ContractAttachmentService>();
         services.AddScoped<ContractFulfillmentService>();
         services.AddScoped<ContractWatchService>();
+        services.AddScoped<ContractSupportService>();
+        services.AddScoped<ContractDashboardService>();
+        services.AddScoped<ContractExportService>();
         services.AddScoped<UatAttachmentService>();
         services.AddScoped<PmsMailNotifier>();
         services.AddScoped<MonthlyReportService>();

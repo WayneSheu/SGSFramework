@@ -68,6 +68,9 @@ public class Ticket : IAuditable
     [Comment("首次回應時間（分流時寫入）")]
     public DateTimeOffset? FirstResponseAt { get; set; }
 
+    [Comment("首次回應期限（專案綁定履約中合約時，依附件二回應時間以標準服務時間計；否則為空，畫面以系統預設估算）")]
+    public DateTimeOffset? FirstResponseDueAt { get; set; }
+
     [Comment("應解決期限（分流時依 SLA 計算；CR 為空）")]
     public DateTimeOffset? DueAt { get; set; }
 
