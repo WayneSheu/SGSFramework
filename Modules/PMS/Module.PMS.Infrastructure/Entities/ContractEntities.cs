@@ -158,7 +158,13 @@ public enum ContractEventType
     AttachmentAdded = 12,
     AttachmentRemoved = 13,
     AppendixUpdated = 14,
-    Withdrawn = 15
+    Withdrawn = 15,
+    CoopItemAdded = 16,
+    NoticeSent = 17,
+    ReviewRound = 18,
+    Acceptance = 19,
+    Amendment = 20,
+    Payment = 21
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -262,6 +268,9 @@ public class Contract : IAuditable
 
     [Comment("稽核費用由乙方負擔")]
     public bool AuditCostOnVendor { get; set; }
+
+    [Comment("甲方協力遲延後，乙方須發出書面通知的工作日數（預設 3；各協力事項可個別覆寫）")]
+    public int CoopNoticeWorkdays { get; set; } = 3;
 
     [Comment("標準服務時間")]
     public string ServiceHours { get; set; } = "週一至週五 09:00–18:00（不含國定假日）";

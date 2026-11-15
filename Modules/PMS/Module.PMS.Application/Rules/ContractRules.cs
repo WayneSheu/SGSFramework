@@ -144,6 +144,8 @@ public static class ContractRules
         if (c.MaxReviewRounds is < 1 or > 20) return "彙整修改次數須為 1~20 次。";
         if (c.DeemedAcceptanceWorkdays is < 1 or > 180) return "擬制驗收期限須為 1~180 個工作日。";
         if (c.WarrantyMonths is < 0 or > 120) return "保固月數須為 0~120 個月。";
+        if (c.CoopNoticeWorkdays is < 1 or > ContractFulfillmentRules.MaxNoticeWorkdays)
+            return $"甲方協力遲延的通知期限須為 1~{ContractFulfillmentRules.MaxNoticeWorkdays} 個工作日。";
         if (c.IncidentNotifyHours is < 1 or > 720) return "資安事件通報時限須為 1~720 小時。";
         if (c.AuditNoticeDays is < 0 or > 365) return "稽核事前通知天數須為 0~365 天。";
         if (c.AuditPerYear is < 0 or > 52) return "每年稽核次數須為 0~52 次。";

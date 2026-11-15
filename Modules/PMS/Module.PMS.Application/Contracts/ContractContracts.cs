@@ -25,7 +25,7 @@ public sealed record ContractTermsDto(
     IpRule IpRule, ScanRule ScanRule, int? DeemedAcceptanceWorkdays, bool FinalPaymentHeldForMinorDefects,
     LiabilityCapType LiabilityCap, decimal? LiabilityCapAmount, bool ExcludesIndirectLoss,
     int WarrantyMonths, int? IncidentNotifyHours, int? AuditNoticeDays, int? AuditPerYear, bool AuditCostOnVendor,
-    string ServiceHours, string? SupportChannel, string? Notes);
+    string ServiceHours, string? SupportChannel, string? Notes, int CoopNoticeWorkdays = 3);
 
 public sealed record ContractListDto(
     Guid Id, string ContractNo, string Title, string CustomerName, ContractType Type, ContractIndustry Industry, ContractStatus Status,

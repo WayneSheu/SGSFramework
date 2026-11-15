@@ -81,6 +81,12 @@ public class DynamicControllerRepository<T>(
                 int addedCount = 0;
                 int updatedCount = 0;
 
+                // 本次掃描到的所有「控制器|動作」；用來判斷資料庫舊列是否仍存在於程式碼中
+                var incomingKeys = controllerList
+                    .Select(c => $"{c.ControllerName?.Trim()}|{c.ActionName?.Trim()}")
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var claimedByKey = new HashSet<T>();
+
                 // 3. 執行 Upsert 比對
                 foreach (var controller in controllerList)
                 {
@@ -94,8 +100,15 @@ public class DynamicControllerRepository<T>(
                     }
                     else if (!string.IsNullOrWhiteSpace(controller.PermissionKey))
                     {
+                        // 以權限鍵認領既有列僅用於「動作改名」：同一控制器、同權限鍵，且舊列的「控制器|動作」已不存在於程式碼，且尚未被認領。
+                        // 多個動作共用同一把權限鍵很常見（例如選單入口 Search 與詳情 Get、下載共用 READ）；若新增動作就認領任一同鍵舊列，
+                        // 會把「選單入口那一列」改名成新動作，造成選單入口消失、選單節點被隱藏。
                         targetEntity = existingEntities.FirstOrDefault(e =>
-                            string.Equals(e.PermissionKey?.Trim(), controller.PermissionKey.Trim(), StringComparison.OrdinalIgnoreCase));
+                            string.Equals(e.PermissionKey?.Trim(), controller.PermissionKey.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                            string.Equals(e.ControllerName?.Trim(), controller.ControllerName?.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                            !incomingKeys.Contains($"{e.ControllerName?.Trim()}|{e.ActionName?.Trim()}") &&
+                            !claimedByKey.Contains(e));
+                        if (targetEntity != null) claimedByKey.Add(targetEntity);
                     }
 
                     if (targetEntity != null)

@@ -83,6 +83,8 @@ public static class ServiceCollectionExtensions
         if (configuration.GetValue<bool>("ProjectManagement:Enabled"))
         {
             services.AddRecurringJob<PmsCrEvalWatchJob>(PmsCrEvalWatchJob.JobId, "PMS CR 評估逾期提醒", "0 9 * * 1-5");
+            // 合約履約每日監看（協力遲延提醒、審查擬制通過、擬制驗收、付款放行與提醒）：平日 09:00，PMS 端再依國定假日判斷工作日
+            services.AddRecurringJob<PmsContractWatchJob>(PmsContractWatchJob.JobId, "PMS 合約履約每日監看", "0 9 * * 1-5");
             // 每天 18:00（台灣時間）執行；是否為月底最後工作日／月初補產日由 PMS 端依國定假日判斷，故不必在假日調整 cron
             services.AddRecurringJob<PmsMonthlyReportJob>(PmsMonthlyReportJob.JobId, "PMS 月度維運報告自動產生", "0 18 * * *");
         }

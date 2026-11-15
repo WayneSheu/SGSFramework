@@ -17,8 +17,9 @@ public sealed class ContractService(PMSDbContext db, TimeProvider clock)
     private const int MaxEvents = 200;
     private const int NumberRetries = 3;
 
+    // 「已驗收」不開放手動切換：由履約管理的驗收（雙方簽認或擬制驗收）自動進入，才會同時放行尾款與保固起算
     private static readonly ContractStatus[] ManualStatusTargets =
-        [ContractStatus.Quoting, ContractStatus.Reviewing, ContractStatus.Negotiating, ContractStatus.Accepted, ContractStatus.Warranty,
+        [ContractStatus.Quoting, ContractStatus.Reviewing, ContractStatus.Negotiating, ContractStatus.Warranty,
          ContractStatus.Closed, ContractStatus.Lost, ContractStatus.Cancelled, ContractStatus.Terminated];
 
     // ---------- 查詢 ----------
@@ -635,6 +636,7 @@ public sealed class ContractService(PMSDbContext db, TimeProvider clock)
         c.AuditNoticeDays = t.AuditNoticeDays;
         c.AuditPerYear = t.AuditPerYear;
         c.AuditCostOnVendor = t.AuditCostOnVendor;
+        c.CoopNoticeWorkdays = t.CoopNoticeWorkdays;
         c.ServiceHours = (t.ServiceHours ?? string.Empty).Trim();
         c.SupportChannel = string.IsNullOrWhiteSpace(t.SupportChannel) ? null : t.SupportChannel.Trim();
         c.Notes = string.IsNullOrWhiteSpace(t.Notes) ? null : t.Notes.Trim();
@@ -710,7 +712,7 @@ public sealed class ContractService(PMSDbContext db, TimeProvider clock)
             c.Title, c.CustomerName, c.CustomerContactName, c.CustomerContactEmail, c.Type, c.Industry, c.TotalAmount, c.QuoteDate, c.StartDate, c.DeliveryDate,
             c.OpenEndedScope, c.ReviewDeadlineWorkdays, c.MaxReviewRounds, c.DeemedPassOnTimeout, c.IpRule, c.ScanRule, c.DeemedAcceptanceWorkdays,
             c.FinalPaymentHeldForMinorDefects, c.LiabilityCap, c.LiabilityCapAmount, c.ExcludesIndirectLoss, c.WarrantyMonths, c.IncidentNotifyHours,
-            c.AuditNoticeDays, c.AuditPerYear, c.AuditCostOnVendor, c.ServiceHours, c.SupportChannel, c.Notes);
+            c.AuditNoticeDays, c.AuditPerYear, c.AuditCostOnVendor, c.ServiceHours, c.SupportChannel, c.Notes, c.CoopNoticeWorkdays);
 
         var reviewItems = ContractRules.ReviewCatalog.Select(spec =>
         {

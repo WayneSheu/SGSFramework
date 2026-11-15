@@ -390,6 +390,9 @@ public sealed class ChangeRequestService(PMSDbContext db, HolidayService holiday
         {
             cr.Status = CrStatus.Approved;
             db.CrEvents.Add(NewEvent(cr.Id, CrEventType.Approved, "簽核齊備，CR 已核准；請依決策調整排程並更新 SRS／API 規格", c.UserId, actor, now));
+
+            // 專案綁定了履約中的合約時，自動把追加金額與順延上線日掛帳為合約變更（同一交易、冪等）
+            await ContractCrHook.TryRecordAsync(db, cr, actor, now, ct).ConfigureAwait(false);
         }
 
         try

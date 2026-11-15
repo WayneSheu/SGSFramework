@@ -25,6 +25,7 @@ public sealed class ContractConfiguration : IEntityTypeConfiguration<Contract>
         builder.Property(x => x.LiabilityCap).HasConversion<byte>();
         builder.Property(x => x.TotalAmount).HasPrecision(18, 2);
         builder.Property(x => x.LiabilityCapAmount).HasPrecision(18, 2);
+        builder.Property(x => x.CoopNoticeWorkdays).HasDefaultValue(3);
         builder.Property(x => x.ServiceHours).HasMaxLength(200).IsRequired();
         builder.Property(x => x.SupportChannel).HasMaxLength(200);
         builder.Property(x => x.Notes).HasMaxLength(2000);

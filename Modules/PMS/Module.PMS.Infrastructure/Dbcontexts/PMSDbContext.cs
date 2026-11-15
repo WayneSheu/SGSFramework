@@ -73,6 +73,12 @@ public class PMSDbContext : BaseDbContext<PMSDbContext>
     public DbSet<ContractProject> ContractProjects { get; set; } = null!;
     public DbSet<ContractEvent> ContractEvents { get; set; } = null!;
     public DbSet<ContractAttachment> ContractAttachments { get; set; } = null!;
+    public DbSet<ContractCoopItem> ContractCoopItems { get; set; } = null!;
+    public DbSet<ContractExtensionNotice> ContractExtensionNotices { get; set; } = null!;
+    public DbSet<ContractReviewRound> ContractReviewRounds { get; set; } = null!;
+    public DbSet<ContractAcceptance> ContractAcceptances { get; set; } = null!;
+    public DbSet<ContractAmendment> ContractAmendments { get; set; } = null!;
+    public DbSet<ContractPaymentTerm> ContractPaymentTerms { get; set; } = null!;
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {

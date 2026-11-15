@@ -40,6 +40,18 @@ public class ContractRulesTests
         ContractRules.ValidateTerms(c).Should().Contain("合約名稱");
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(31)]
+    public void CoopNoticeWorkdays_MustBeInRange(int days)
+    {
+        var c = Standard(); c.CoopNoticeWorkdays = days;
+        ContractRules.ValidateTerms(c).Should().Contain("通知期限");
+    }
+
+    [Fact]
+    public void CoopNoticeWorkdays_DefaultIsThree() => Standard().CoopNoticeWorkdays.Should().Be(3);
+
     [Fact]
     public void FixedAmountCap_RequiresAmount()
     {
