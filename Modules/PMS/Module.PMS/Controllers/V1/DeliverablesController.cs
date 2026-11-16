@@ -121,7 +121,7 @@ public sealed class DeliverablesController(
     [RequiresPermission("PMS.PROJECT.READ", "檢視專案")]
     [ProducesResponseType(typeof(PagedResult<DeliverableDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<PagedResult<DeliverableDto>>> Search(Guid id, [FromBody] DeliverableSearchRequest request, CancellationToken ct = default) =>
-        FromResult(await deliverables.SearchAsync(CurrentUserId, id, request ?? new DeliverableSearchRequest(), ct).ConfigureAwait(false));
+        FromResult(await deliverables.SearchAsync(CurrentUserId, id, request ?? new DeliverableSearchRequest(), ct, await HasPermissionAsync(ProjectAdminPermission, ct).ConfigureAwait(false)).ConfigureAwait(false));
 
     /// <summary>浮水印檢視（PDF／圖片）：浮水印為「使用者 | UTC 時間 | IP」，繪入像素；回應禁止快取</summary>
     [HttpGet("projects/{id:guid}/deliverables/{deliverableId:guid}/view")]

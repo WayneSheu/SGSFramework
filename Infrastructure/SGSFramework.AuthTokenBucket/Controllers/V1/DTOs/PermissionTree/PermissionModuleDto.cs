@@ -27,6 +27,12 @@ public sealed class PermissionModuleDto
     public string? Description { get; set; }
 
     /// <summary>
+    /// 模組是否啟用 (於「模組管理」停用時為 false，其下權限視同停用；讀取時計算，不寫入快取)
+    /// </summary>
+    [JsonPropertyName("isModuleActive")]
+    public bool IsModuleActive { get; set; } = true;
+
+    /// <summary>
     /// 模組下屬之功能/控制器清單
     /// </summary>
     [JsonPropertyName("functions")]

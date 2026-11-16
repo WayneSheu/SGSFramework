@@ -344,6 +344,17 @@ public static class ModuleLoaderExtensions
             ? moduleAttr.Title
             : (!string.IsNullOrWhiteSpace(assemblyTitleAttr?.Title) ? assemblyTitleAttr.Title : moduleName);
 
+        // 保留管理者於「模組管理」停用的決策：既有模組沿用資料庫狀態，新模組預設啟用；核心模組一律啟用
+        var existingModule = await moduleRepo.GetModuleByNameAsync(moduleName);
+        bool isActive = existingModule is null
+            || existingModule.IsActive
+            || FunctionStatusRules.IsProtectedModule(moduleName);
+
+        if (!isActive)
+        {
+            Log.Information(">>> 模組 [{ModuleName}] 已由管理者停用，維持停用狀態 (其 API 與選單將被攔截)。", moduleName);
+        }
+
         // 寫入/更新當前模組的中繼資料 (包含 ModuleTitle)
         var moduleMeta = new ModuleMetadata
         {
@@ -351,7 +362,8 @@ public static class ModuleLoaderExtensions
             ModuleTitle = moduleTitle,
             Version = primaryAssembly.GetName().Version?.ToString() ?? "1.0.0",
             AssemblyPath = string.IsNullOrEmpty(targetPath) ? primaryAssembly.Location : targetPath,
-            IsActive = true,
+            IsActive = isActive,
+            LastLoadedAt = DateTime.UtcNow,
             Checksum = checksum
         };
         await moduleRepo.UpsertAsync(moduleMeta);

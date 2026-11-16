@@ -97,6 +97,15 @@ public static class ServiceCollectionExtensions
             services.AddRecurringJob<CalEventReminderJob>(CalEventReminderJob.JobId, "CAL 活動提醒派送", "*/5 * * * *");
         }
 
+        // QTN 排程作業（端點由 SGS.Modules.QTN 外掛提供）：僅於 Quotation:Enabled 時註冊。
+        // 報價到期每日 07:30；CR 評估逾期與結案復盤逾期平日早上提醒（工作日由 QTN 端依國定假日計算期限）
+        if (configuration.GetValue<bool>("Quotation:Enabled"))
+        {
+            services.AddRecurringJob<QtnQuoteExpiryJob>(QtnQuoteExpiryJob.JobId, "QTN 報價到期掃描", "30 7 * * *");
+            services.AddRecurringJob<QtnCrOverdueJob>(QtnCrOverdueJob.JobId, "QTN CR 評估逾期提醒", "0 9 * * 1-5");
+            services.AddRecurringJob<QtnVarianceDueJob>(QtnVarianceDueJob.JobId, "QTN 結案復盤逾期提醒", "30 9 * * 1-5");
+        }
+
         // Hangfire 只序列化 Core 的 IScheduledJobDispatcher（Default ALC），再由此實作依作業 ID 執行外掛內的作業類別
         services.TryAddSingleton<ScheduledJobCatalog>();
         services.TryAddScoped<IScheduledJobDispatcher, ScheduledJobDispatcher>();

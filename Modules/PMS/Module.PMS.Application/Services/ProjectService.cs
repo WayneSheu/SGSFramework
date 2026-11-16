@@ -48,7 +48,8 @@ public sealed class ProjectService(PMSDbContext db, TimeProvider clock)
 
     // ---------- 專案 ----------
 
-    public async Task<PagedResult<ProjectListDto>> SearchAsync(Guid userId, ProjectSearchRequest request, CancellationToken ct)
+    /// <param name="viewAll">具 PMS.PROJECT.ADMIN（檢視並管理所有專案）者為 true：清單不受成員限制（由控制器依授予的權限判定）。</param>
+    public async Task<PagedResult<ProjectListDto>> SearchAsync(Guid userId, ProjectSearchRequest request, CancellationToken ct, bool viewAll = false)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -56,8 +57,9 @@ public sealed class ProjectService(PMSDbContext db, TimeProvider clock)
         var pageSize = Math.Clamp(request.PageSize, 1, MaxPageSize);
         var filter = request.Filter ?? new ProjectSearchFilter();
 
-        // 資料列授權：僅「我是成員」的專案（MineOnly 在此語意上相同，保留欄位供 Stakeholder／管理視角擴充）
-        var query = db.Projects.AsNoTracking().Where(p => p.Members.Any(m => m.UserId == userId));
+        // 資料列授權：僅「我是成員」的專案；具 PMS.PROJECT.ADMIN 者可見全部專案，勾選 MineOnly 時仍只看我參與的
+        var query = db.Projects.AsNoTracking().AsQueryable();
+        if (!viewAll || filter.MineOnly) query = query.Where(p => p.Members.Any(m => m.UserId == userId));
 
         if (filter.Status is { } status) query = query.Where(p => p.Status == status);
         if (filter.Stage is { } stage) query = query.Where(p => p.Stage == stage);
@@ -146,16 +148,18 @@ public sealed class ProjectService(PMSDbContext db, TimeProvider clock)
         return await GetCoreAsync(project.Id, ct).ConfigureAwait(false) is { } dto ? PmsResult<ProjectDetailDto>.Success(dto) : PmsError.NotFound();
     }
 
-    public async Task<PmsResult<ProjectDetailDto>> GetAsync(Guid userId, Guid id, CancellationToken ct)
+    /// <param name="adminAccess">具 PMS.PROJECT.ADMIN 者為 true：非成員也可檢視專案詳情（以內部成員視角，但不含合約資訊；放行與核准仍須是專案成員）。</param>
+    public async Task<PmsResult<ProjectDetailDto>> GetAsync(Guid userId, Guid id, CancellationToken ct, bool adminAccess = false)
     {
-        var access = await AccessAsync(userId, id, ct).ConfigureAwait(false);
+        var memberAccess = await AccessAsync(userId, id, ct).ConfigureAwait(false);
+        var access = memberAccess == ProjectAccessLevel.None && adminAccess ? ProjectAccessLevel.Internal : memberAccess;
         if (access == ProjectAccessLevel.None) return PmsError.NotFound();
 
         var dto = await GetCoreAsync(id, ct).ConfigureAwait(false);
         if (dto is null) return PmsError.NotFound();
 
-        // 所屬合約編號僅對內部成員顯示（客戶 Stakeholder 看不到合約資訊）
-        if (access == ProjectAccessLevel.Internal)
+        // 所屬合約編號僅對內部成員顯示（客戶 Stakeholder 與只具檢視全部專案權限者看不到合約資訊）
+        if (memberAccess == ProjectAccessLevel.Internal)
         {
             var link = await db.ContractProjects.AsNoTracking().Where(l => l.ProjectId == id)
                 .Select(l => new { l.ContractId, l.Contract!.ContractNo }).FirstOrDefaultAsync(ct).ConfigureAwait(false);
@@ -218,11 +222,11 @@ public sealed class ProjectService(PMSDbContext db, TimeProvider clock)
 
     // ---------- 成員 ----------
 
-    public async Task<PmsResult<ProjectMemberDto>> AddMemberAsync(Guid userId, string actor, Guid id, AddMemberRequest request, CancellationToken ct)
+    public async Task<PmsResult<ProjectMemberDto>> AddMemberAsync(Guid userId, string actor, Guid id, AddMemberRequest request, CancellationToken ct, bool adminAccess = false)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var project = await LoadForWriteAsync(userId, id, ct).ConfigureAwait(false);
+        var project = await LoadForWriteAsync(userId, id, ct, adminAccess).ConfigureAwait(false);
         if (project.Error is { } error) return error;
         var p = project.Value!;
 
@@ -244,9 +248,9 @@ public sealed class ProjectService(PMSDbContext db, TimeProvider clock)
         return PmsResult<ProjectMemberDto>.Success(new ProjectMemberDto(member.Id, member.UserId, member.RaciRole));
     }
 
-    public async Task<PmsResult<bool>> RemoveMemberAsync(Guid userId, Guid id, Guid memberId, CancellationToken ct)
+    public async Task<PmsResult<bool>> RemoveMemberAsync(Guid userId, Guid id, Guid memberId, CancellationToken ct, bool adminAccess = false)
     {
-        var project = await LoadForWriteAsync(userId, id, ct).ConfigureAwait(false);
+        var project = await LoadForWriteAsync(userId, id, ct, adminAccess).ConfigureAwait(false);
         if (project.Error is { } error) return error;
         var p = project.Value!;
 
@@ -342,14 +346,15 @@ public sealed class ProjectService(PMSDbContext db, TimeProvider clock)
     }
 
     /// <summary>載入含成員／Gate／模組的專案供寫入；非內部成員一律 404（Stakeholder 不可管理專案）。</summary>
-    private async Task<PmsResult<Project>> LoadForWriteAsync(Guid userId, Guid id, CancellationToken ct)
+    /// <param name="adminAccess">具 PMS.PROJECT.ADMIN 者可管理專案成員（建立後補齊或調整成員）；其他寫入（放行卡控節點、核准）仍須是專案成員。</param>
+    private async Task<PmsResult<Project>> LoadForWriteAsync(Guid userId, Guid id, CancellationToken ct, bool adminAccess = false)
     {
         var project = await db.Projects.Include(p => p.Members).Include(p => p.Gates).Include(p => p.Modules)
             .FirstOrDefaultAsync(p => p.Id == id, ct).ConfigureAwait(false);
         if (project is null) return PmsError.NotFound();
 
         var access = ProjectAccessPolicy.Evaluate(userId, project.Members.Select(m => (m.UserId, m.RaciRole)));
-        return access == ProjectAccessLevel.Internal ? PmsResult<Project>.Success(project) : PmsError.NotFound();
+        return access == ProjectAccessLevel.Internal || adminAccess ? PmsResult<Project>.Success(project) : PmsError.NotFound();
     }
 
     private async Task<ProjectDetailDto?> GetCoreAsync(Guid id, CancellationToken ct)

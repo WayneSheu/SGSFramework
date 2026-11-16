@@ -46,6 +46,11 @@
     <Project Path="Modules/CAL/Module.CAL.Infrastructure/SGS.Modules.CAL.Infrastructure.csproj" />
     <Project Path="Modules/CAL/Module.CAL/SGS.Modules.CAL.csproj" />
   </Folder>
+  <Folder Name="/Modules/QTN/">
+    <Project Path="Modules/QTN/Module.QTN.Application/SGS.Modules.QTN.Application.csproj" />
+    <Project Path="Modules/QTN/Module.QTN.Infrastructure/SGS.Modules.QTN.Infrastructure.csproj" />
+    <Project Path="Modules/QTN/Module.QTN/SGS.Modules.QTN.csproj" />
+  </Folder>
   <Folder Name="/Modules/SCH/">
     <Project Path="Modules/SCH/Module.SCH.Application/SGS.Modules.SCH.Application.csproj" />
     <Project Path="Modules/SCH/Module.SCH.Infrastructure/SGS.Modules.SCH.Infrastructure.csproj" />
@@ -61,15 +66,16 @@
     <Project Path="Modules/RPT/Module.RPT.Infrastructure/SGS.Modules.RPT.Infrastructure.csproj" />
     <Project Path="Modules/RPT/Module.RPT/SGS.Modules.RPT.csproj" />
   </Folder>
-  <Folder Name="/Shared/">
+  <Folder Name="/Modules/Shared/">
     <Project Path="Shared/SGSFramework.Core/SGSFramework.Core.csproj" />
   </Folder>
   <Folder Name="/Tests/">
-    <Project Path="Tests/SGS.Modules.RPT.Tests/SGS.Modules.RPT.Tests.csproj" />
-    <Project Path="Tests/SGSFramework.Core.Tests/SGSFramework.Core.Tests.csproj" />
-    <Project Path="Tests/SGS.Modules.FMS.Tests/SGS.Modules.FMS.Tests.csproj" />
     <Project Path="Tests/SGS.Modules.CAL.Tests/SGS.Modules.CAL.Tests.csproj" />
+    <Project Path="Tests/SGS.Modules.FMS.Tests/SGS.Modules.FMS.Tests.csproj" />
     <Project Path="Tests/SGS.Modules.PMS.Tests/SGS.Modules.PMS.Tests.csproj" />
+    <Project Path="Tests/SGS.Modules.QTN.Tests/SGS.Modules.QTN.Tests.csproj" />
+    <Project Path="Tests/SGS.Modules.RPT.Tests/SGS.Modules.RPT.Tests.csproj" />
     <Project Path="Tests/SGS.Modules.SCH.Tests/SGS.Modules.SCH.Tests.csproj" />
+    <Project Path="Tests/SGSFramework.Core.Tests/SGSFramework.Core.Tests.csproj" />
   </Folder>
 </Solution>

@@ -3,6 +3,8 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using SGSFramework.AuthTokenBucket.Services;
+using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Menus;
 using SGSFramework.Core.Errors;
@@ -24,12 +26,15 @@ public record GetFullMenuTreeQuery() : IRequest<Result<List<MenuItemDto>>>;
 public class GetFullMenuTreeQueryHandler : IRequestHandler<GetFullMenuTreeQuery, Result<List<MenuItemDto>>>
 {
     private readonly ITokenDbContext _dbContext;
+    private readonly IModuleStatusReader _moduleStatusReader;
     private readonly ILogger<GetFullMenuTreeQueryHandler> _logger;
 
     public GetFullMenuTreeQueryHandler(
         ITokenDbContext dbContext,
+        IModuleStatusReader moduleStatusReader,
         ILogger<GetFullMenuTreeQueryHandler> logger)
     {
+        _moduleStatusReader = moduleStatusReader ?? throw new ArgumentNullException(nameof(moduleStatusReader));
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -52,6 +57,20 @@ public class GetFullMenuTreeQueryHandler : IRequestHandler<GetFullMenuTreeQuery,
                 return Result.Success(new List<MenuItemDto>());
             }
 
+            // 1.1 所屬模組已停用的節點：以節點模組名稱或頁面對應功能所屬模組判斷 (與使用者選單裁切一致)
+            var inactiveModules = await _moduleStatusReader.GetInactiveModuleNamesAsync(cancellationToken).ConfigureAwait(false);
+            var inactiveModuleControllerIds = new HashSet<Guid>();
+            if (inactiveModules.Count > 0)
+            {
+                var moduleNames = inactiveModules.ToList();
+                inactiveModuleControllerIds = (await _dbContext.Set<ControllerMetadata>()
+                    .AsNoTracking()
+                    .Where(c => moduleNames.Contains(c.ModuleName))
+                    .Select(c => c.Id)
+                    .ToListAsync(cancellationToken)
+                    .ConfigureAwait(false)).ToHashSet();
+            }
+
             // 2. 對應為最新 MenuItemDto 屬性欄位之字典 (O(1) 節點索引)
             var menuDtoDict = allMenuItems.ToDictionary(
                 m => m.Id,
@@ -70,6 +89,8 @@ public class GetFullMenuTreeQueryHandler : IRequestHandler<GetFullMenuTreeQuery,
                     PermissionKey = m.PermissionKey,
                     IsActive = m.IsActive,
                     IsVisible = m.IsVisible,
+                    IsModuleActive = !inactiveModules.Contains(m.ModuleName)
+                        && !(m.ControllerId.HasValue && inactiveModuleControllerIds.Contains(m.ControllerId.Value)),
                     Children = []
                 });
 

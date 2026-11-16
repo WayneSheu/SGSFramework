@@ -121,6 +121,17 @@ public class ModuleManagementController(
                 Instance = HttpContext.Request.Path
             });
         }
+        catch (NotSupportedException ex)
+        {
+            _logger.LogWarning(ex, "拒絕停用受保護的核心模組 [{ModuleName}]。", moduleName);
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "不允許的操作",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
+            });
+        }
         catch (FileNotFoundException ex)
         {
             _logger.LogWarning(ex, "切換模組狀態失敗，找不到對應 DLL 檔案。");

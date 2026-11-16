@@ -1,6 +1,7 @@
 ﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using SGSFramework.AuthTokenBucket.Services;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Errors;
@@ -50,12 +51,15 @@ namespace SGSFramework.AuthTokenBucket.Commands.MenuItems
     public class UpdateMenuItemCommandHandler : IRequestHandler<UpdateMenuItemCommand, Result<bool>>
     {
         private readonly ITokenDbContext _dbContext;
+        private readonly IModuleStatusReader _moduleStatusReader;
         private readonly ILogger<UpdateMenuItemCommandHandler> _logger;
 
         public UpdateMenuItemCommandHandler(
             ITokenDbContext dbContext,
+            IModuleStatusReader moduleStatusReader,
             ILogger<UpdateMenuItemCommandHandler> logger)
         {
+            _moduleStatusReader = moduleStatusReader ?? throw new ArgumentNullException(nameof(moduleStatusReader));
             _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
@@ -76,6 +80,15 @@ namespace SGSFramework.AuthTokenBucket.Commands.MenuItems
                     _logger.LogWarning("更新選單失敗，找不到識別碼為 {MenuItemId} 的選單項目。", request.Id);
                     return Result.Failure<bool>(
                         Error.NotFound("MENU_ITEM_NOT_FOUND", $"找不到識別碼為 '{request.Id}' 的選單項目。"));
+                }
+
+                // 1.1 所屬模組已於「模組管理」停用時，鎖定節點狀態 (啟用 / 顯示)，避免繞過前端直接變更
+                if ((menuItem.IsActive != request.IsActive || menuItem.IsVisible != request.IsVisible) &&
+                    await IsModuleDisabledAsync(menuItem, cancellationToken).ConfigureAwait(false))
+                {
+                    _logger.LogWarning("拒絕變更選單 {MenuItemId} 狀態：所屬模組 {ModuleName} 已停用。", request.Id, menuItem.ModuleName);
+                    return Result.Failure<bool>(
+                        Error.Validation("MENU_MODULE_DISABLED", $"所屬模組 [{menuItem.ModuleName}] 已停用，無法變更此選單的狀態；請先至「模組管理」啟用模組。"));
                 }
 
                 // 2. 防範自引用與循環節點參照 (ParentId 不能指向自己)
@@ -144,6 +157,26 @@ namespace SGSFramework.AuthTokenBucket.Commands.MenuItems
                 return Result.Failure<bool>(
                     Error.Failure("UPDATE_MENU_ITEM_ERROR", "更新選單項目時發生內部系統錯誤。"));
             }
+        }
+    
+        /// <summary>
+        /// 節點所屬模組是否停用：依節點模組名稱或頁面對應功能所屬模組判斷 (與選單樹顯示一致)
+        /// </summary>
+        private async Task<bool> IsModuleDisabledAsync(MenuItem menuItem, CancellationToken cancellationToken)
+        {
+            var inactiveModules = await _moduleStatusReader.GetInactiveModuleNamesAsync(cancellationToken).ConfigureAwait(false);
+            if (inactiveModules.Count == 0) return false;
+            if (inactiveModules.Contains(menuItem.ModuleName)) return true;
+            if (!menuItem.ControllerId.HasValue) return false;
+
+            var controllerModule = await _dbContext.Set<ControllerMetadata>()
+                .AsNoTracking()
+                .Where(c => c.Id == menuItem.ControllerId.Value)
+                .Select(c => c.ModuleName)
+                .FirstOrDefaultAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return controllerModule is not null && inactiveModules.Contains(controllerModule);
         }
     }
 }

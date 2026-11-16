@@ -7,6 +7,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.Controller;
+using SGSFramework.Core.Abstractions.Entities.Modules;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -63,6 +64,32 @@ namespace SGSFramework.AuthTokenBucket.Filters
                     {
                         map.TryAdd(FunctionStatusRules.BuildKey(r.ControllerName, r.ActionName), BuildDetail(r.DisabledNotice, r.ExpectedRestoreAt));
                     }
+
+                    // 已停用模組：模組仍載入於記憶體中 (停用僅更新資料庫狀態)，故於此攔截其所有 API
+                    var inactiveModules = await _dbContext.Set<ModuleMetadata>()
+                        .AsNoTracking()
+                        .Where(m => !m.IsActive)
+                        .Select(m => new { m.ModuleName, m.ModuleTitle })
+                        .ToListAsync(httpContext.RequestAborted);
+
+                    if (inactiveModules.Count > 0)
+                    {
+                        var titles = inactiveModules.ToDictionary(m => m.ModuleName, m => m.ModuleTitle, StringComparer.OrdinalIgnoreCase);
+                        var moduleNames = titles.Keys.ToList();
+
+                        var moduleRows = await _dbContext.Set<ControllerMetadata>()
+                            .AsNoTracking()
+                            .Where(c => moduleNames.Contains(c.ModuleName))
+                            .Select(c => new { c.ModuleName, c.ControllerName, c.ActionName })
+                            .ToListAsync(httpContext.RequestAborted);
+
+                        foreach (var r in moduleRows.Where(r => !FunctionStatusRules.IsProtected(r.ControllerName)))
+                        {
+                            var title = titles.TryGetValue(r.ModuleName, out var t) && !string.IsNullOrWhiteSpace(t) ? t : r.ModuleName;
+                            map.TryAdd(FunctionStatusRules.BuildKey(r.ControllerName, r.ActionName), $"「{title}」模組已由系統管理員停用，暫時無法使用。");
+                        }
+                    }
+
                     return map;
                 });
 

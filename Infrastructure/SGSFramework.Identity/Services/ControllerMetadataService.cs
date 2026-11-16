@@ -21,6 +21,7 @@ namespace SGSFramework.Identity.Services
         IMemoryCache cache,
         ICurrentUserService currentUserService,
         IPermissionChangeNotifier permissionChangeNotifier,
+        IModuleStatusReader moduleStatusReader,
         TimeProvider timeProvider,
         IMenuSeedService menuSeedService,
         ILogger<ControllerMetadataService> logger) : IControllerMetadataService
@@ -32,6 +33,7 @@ namespace SGSFramework.Identity.Services
         private readonly IMemoryCache _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         private readonly ICurrentUserService _currentUserService = currentUserService ?? throw new ArgumentNullException(nameof(currentUserService));
         private readonly IPermissionChangeNotifier _permissionChangeNotifier = permissionChangeNotifier ?? throw new ArgumentNullException(nameof(permissionChangeNotifier));
+        private readonly IModuleStatusReader _moduleStatusReader = moduleStatusReader ?? throw new ArgumentNullException(nameof(moduleStatusReader));
         private readonly TimeProvider _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         private readonly IMenuSeedService _menuSeedService = menuSeedService ?? throw new ArgumentNullException(nameof(menuSeedService));
         private readonly ILogger<ControllerMetadataService> _logger =logger ?? throw new ArgumentNullException(nameof(logger));
@@ -40,7 +42,9 @@ namespace SGSFramework.Identity.Services
         {
             try
             {
-                return await _dbContext.Set<ControllerMetadata>() //[cite: 10]
+                var inactiveModules = await _moduleStatusReader.GetInactiveModuleNamesAsync(cancellationToken);
+
+                var list = await _dbContext.Set<ControllerMetadata>() //[cite: 10]
                     .AsNoTracking()
                     .Where(m => includeInactive || m.IsActive) //[cite: 10]
                     .OrderBy(m => m.DisplayOrder) //[cite: 10]
@@ -70,6 +74,14 @@ namespace SGSFramework.Identity.Services
                         ExpectedRestoreAt = m.ExpectedRestoreAt
                     })
                     .ToListAsync(cancellationToken);
+
+                // 模組停用僅記錄於 ModuleMetadata，於此標示所屬功能視同停用
+                foreach (var item in list.Where(i => inactiveModules.Contains(i.ModuleName)))
+                {
+                    item.IsModuleActive = false;
+                }
+
+                return list;
             }
             catch (Exception ex)
             {

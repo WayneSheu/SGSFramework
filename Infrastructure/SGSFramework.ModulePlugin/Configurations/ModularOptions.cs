@@ -23,7 +23,7 @@ public sealed class ModularOptions
     public string TrustedThumbprint { get; set; } = string.Empty;
 
     /// <summary>
-    /// 上傳模組後是否自動重新啟動 API。外掛的 DI 註冊與資料庫遷移（含獨立資料庫建置）只在啟動時執行，
+    /// 上傳模組或重新啟用已停用模組後是否自動重新啟動 API。外掛的 DI 註冊與資料庫遷移（含獨立資料庫建置）只在啟動時執行，
     /// 不重啟則新模組不會生效。IIS 會於下一個請求（或 AlwaysRunning 時立即）重新啟動應用程式；
     /// 本機 dotnet run / Visual Studio 偵錯沒有重啟機制，停止後須手動啟動，開發環境建議關閉。
     /// </summary>

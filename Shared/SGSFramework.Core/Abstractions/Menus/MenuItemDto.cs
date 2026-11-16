@@ -75,6 +75,11 @@ public record MenuItemDto
     public bool IsVisible { get; init; }
 
     /// <summary>
+    /// 所屬模組是否啟用 (模組於「模組管理」停用時為 false，節點視同停用)
+    /// </summary>
+    public bool IsModuleActive { get; init; } = true;
+
+    /// <summary>
     /// 子選單節點集合 (僅 Type 為 Section 或 Group 時包含子節點)
     /// </summary>
     public List<MenuItemDto> Children { get; set; } = [];

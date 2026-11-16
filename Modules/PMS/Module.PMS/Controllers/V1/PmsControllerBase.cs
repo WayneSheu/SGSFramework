@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using SGS.Modules.PMS.Application.Contracts;
 
 namespace SGS.Modules.PMS.Controllers.V1;
@@ -9,6 +10,13 @@ public abstract class PmsControllerBase : ControllerBase
 {
     protected Guid CurrentUserId =>
         Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var id) ? id : Guid.Empty;
+
+    /// <summary>檢視並管理所有專案（PMS.PROJECT.ADMIN）：依角色管理授予的權限判定，不是只看「系統管理員」旗標。</summary>
+    public const string ProjectAdminPermission = "PMS.PROJECT.ADMIN";
+
+    protected async Task<bool> HasPermissionAsync(string code, CancellationToken ct) =>
+        await HttpContext.RequestServices.GetRequiredService<SGSFramework.AuthTokenBucket.Abstractions.IPermissionAuthorizationService>()
+            .HasPermissionAsync(User, code, ct).ConfigureAwait(false);
 
     protected string Actor =>
         User.Identity?.Name ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "未知使用者";

@@ -592,8 +592,34 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
             }
 
             // 4. 解析全域有效權限
+            // 管理員（SuperAdmin / SystemAdmin 角色、IsSuperAdmin Claim 或內建 sysadmin / admin 帳號）於執行期
+            // 由 DefaultPermissionResolver 授與全部權限且不受實驗室範圍限制，不依賴資料表權限列；
+            // 稽核檢視須與之一致，改列出所有已註冊權限，否則會誤顯示為 0。
+            bool isAdmin =
+                claims.Any(c => string.Equals(c.Type, "IsSuperAdmin", StringComparison.OrdinalIgnoreCase) &&
+                                string.Equals(c.Value, "true", StringComparison.OrdinalIgnoreCase)) ||
+                roleNames.Any(r => string.Equals(r, "SuperAdmin", StringComparison.OrdinalIgnoreCase) ||
+                                   string.Equals(r, "SystemAdmin", StringComparison.OrdinalIgnoreCase)) ||
+                string.Equals(user.UserName, "sysadmin", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(user.UserName, "admin", StringComparison.OrdinalIgnoreCase);
+
+            List<string> allRegisteredKeys = [];
+            if (isAdmin)
+            {
+                allRegisteredKeys = (await _dbContext.Set<PermissionMetadata>()
+                        .AsNoTracking()
+                        .Where(m => m.PermissionKey != null && m.PermissionKey != string.Empty)
+                        .Select(m => m.PermissionKey!)
+                        .ToListAsync(cancellationToken)
+                        .ConfigureAwait(false))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(p => p)
+                    .ToList();
+            }
+
             var globalEffectiveKeys = globalDirectKeys
                 .Union(globalRoleKeys, StringComparer.OrdinalIgnoreCase)
+                .Union(allRegisteredKeys, StringComparer.OrdinalIgnoreCase)
                 .Distinct()
                 .OrderBy(p => p)
                 .ToList();
@@ -637,8 +663,10 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                         .OrderBy(p => p)
                         .ToList();
 
-                    // 區域實驗室功能開放範圍：有效權限不得超出實驗室開放的功能
-                    labEffectiveKeys = (await _labFunctionScopeService.FilterAsync(labTenantId, labEffectiveKeys, cancellationToken).ConfigureAwait(false)).ToList();
+                    // 區域實驗室功能開放範圍：有效權限不得超出實驗室開放的功能（管理員於執行期不受此限）
+                    labEffectiveKeys = isAdmin
+                        ? labEffectiveKeys.Union(allRegisteredKeys, StringComparer.OrdinalIgnoreCase).OrderBy(p => p).ToList()
+                        : (await _labFunctionScopeService.FilterAsync(labTenantId, labEffectiveKeys, cancellationToken).ConfigureAwait(false)).ToList();
 
                     return new UserLabPermissionAuditDto
                     {

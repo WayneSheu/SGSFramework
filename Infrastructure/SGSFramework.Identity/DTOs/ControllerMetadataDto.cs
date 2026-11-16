@@ -29,6 +29,9 @@ namespace SGSFramework.Identity.DTOs
         public string PermissionKey { get; init; } = string.Empty;
         public bool IsActive { get; init; }
 
+        /// <summary>所屬模組是否啟用（模組於「模組管理」停用時為 false，功能視同停用）</summary>
+        public bool IsModuleActive { get; set; } = true;
+
         /// <summary>是否由管理者手動停用（停用後 API 會被拒絕、選單隱藏）</summary>
         public bool IsManuallyDisabled { get; init; }
 

@@ -11,10 +11,13 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SGSFramework.AuthTokenBucket.Services;
+using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.ModulePlugin.Configurations;
 using SGSFramework.ModulePlugin.Abstractions;
 using SGSFramework.ModulePlugin.DTOs;
@@ -30,6 +33,8 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
     private readonly ILogger<ModuleManagementApplicationService> _logger;
     private readonly IHostApplicationLifetime _lifetime;
     private readonly IOptions<ModularOptions> _options;
+    private readonly IMemoryCache _cache;
+    private readonly IPermissionChangeNotifier _permissionChangeNotifier;
 
     public ModuleManagementApplicationService(
         IModuleRegistry moduleRegistry,
@@ -37,8 +42,12 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
         IServiceProvider serviceProvider,
         IHostApplicationLifetime lifetime,
         IOptions<ModularOptions> options,
+        IMemoryCache cache,
+        IPermissionChangeNotifier permissionChangeNotifier,
         ILogger<ModuleManagementApplicationService> logger)
     {
+        _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+        _permissionChangeNotifier = permissionChangeNotifier ?? throw new ArgumentNullException(nameof(permissionChangeNotifier));
         _lifetime = lifetime ?? throw new ArgumentNullException(nameof(lifetime));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _moduleRegistry = moduleRegistry ?? throw new ArgumentNullException(nameof(moduleRegistry));
@@ -57,6 +66,7 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
             .Select(m => new ModuleDetailResponse
             {
                 ModuleName = m.ModuleName,
+                ModuleTitle = m.ModuleTitle,
                 Version = m.Version,
                 AssemblyPath = m.AssemblyPath,
                 IsActive = m.IsActive,
@@ -157,7 +167,7 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
             var delay = _options.Value.RestartDelaySeconds;
             if (restart)
             {
-                ScheduleRestart(detectedModuleName, TimeSpan.FromSeconds(delay));
+                ScheduleRestart(detectedModuleName, "上傳部署", TimeSpan.FromSeconds(delay));
             }
 
             return new ModuleUploadResponseDto
@@ -192,9 +202,9 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
     /// <summary>
     /// 延遲後停止應用程式（讓上傳回應先送達）。IIS 會重新啟動應用程式，啟動時載入新模組並執行其資料庫遷移。
     /// </summary>
-    private void ScheduleRestart(string moduleName, TimeSpan delay)
+    private void ScheduleRestart(string moduleName, string reason, TimeSpan delay)
     {
-        _logger.LogWarning("[模組部署] 模組 {ModuleName} 已上傳，API 將於 {Delay} 秒後重新啟動以套用模組。", moduleName, delay.TotalSeconds);
+        _logger.LogWarning("[模組部署] 模組 {ModuleName} 已{Reason}，API 將於 {Delay} 秒後重新啟動以套用模組。", moduleName, reason, delay.TotalSeconds);
         _ = Task.Run(async () =>
         {
             try
@@ -213,7 +223,13 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(moduleName);
 
+        if (!isActive && FunctionStatusRules.IsProtectedModule(moduleName))
+        {
+            throw new NotSupportedException($"核心模組 [{moduleName}] 涵蓋模組管理與系統管理功能，不可停用。");
+        }
+
         var module = await _moduleRepo.GetModuleByNameAsync(moduleName, cancellationToken).ConfigureAwait(false);
+        var wasActive = module?.IsActive ?? false;
         if (module == null)
         {
             throw new KeyNotFoundException($"無法啟用模組 [{moduleName}]：資料庫中找不到對應的模組元資料紀錄。");
@@ -238,11 +254,31 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
 
         await _moduleRepo.ToggleModuleStatusAsync(moduleName, isActive, cancellationToken).ConfigureAwait(false);
 
+        // 停用模組僅更新資料庫狀態 (組件仍載入於記憶體)：清除 API 攔截快取使其立即生效，並通知所有線上使用者重新載入選單
+        _cache.Remove(FunctionStatusRules.DisabledFunctionsCacheKey);
+        await _permissionChangeNotifier.BroadcastAsync("module-status-changed", cancellationToken).ConfigureAwait(false);
+        _logger.LogWarning("模組 [{ModuleName}] 狀態已變更為 {IsActive}，已廣播通知線上使用者。", moduleName, isActive);
+
+        // 重新啟用：停用期間模組的背景工作、排程與快取可能已過時，重新啟動 API 以完整重新初始化模組 (DI、遷移、HostedService)
+        var restart = isActive && !wasActive && _options.Value.RestartAfterUpload;
+        var delay = _options.Value.RestartDelaySeconds;
+        if (restart)
+        {
+            ScheduleRestart(moduleName, "重新啟用", TimeSpan.FromSeconds(delay));
+        }
+
         return new ToggleStatusResponseDto
         {
             Success = true,
             ModuleName = moduleName,
-            IsActive = isActive
+            IsActive = isActive,
+            Message = restart
+                ? $"模組 [{moduleName}] 已啟用，API 將於 {delay} 秒後自動重新啟動以重新初始化模組。"
+                : isActive && !wasActive
+                    ? $"模組 [{moduleName}] 已啟用；未設定自動重新啟動，請手動重新啟動 API 以完整重新初始化模組。"
+                    : $"模組 [{moduleName}] 已{(isActive ? "啟用" : "停用")}。",
+            RestartScheduled = restart,
+            RestartDelaySeconds = restart ? delay : 0
         };
     }
 

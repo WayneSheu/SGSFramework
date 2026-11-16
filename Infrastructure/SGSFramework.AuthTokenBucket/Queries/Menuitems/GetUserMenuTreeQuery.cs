@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Identities;
 using SGSFramework.Core.Abstractions.Entities.Controller;
+using SGSFramework.Core.Abstractions.Entities.Modules;
 using SGSFramework.Core.Abstractions.Menus;
 using SGSFramework.Core.Errors;
 using SGSFramework.Core.Results;
@@ -78,6 +79,28 @@ public class GetUserMenuTreeQueryHandler : IRequestHandler<GetUserMenuTreeQuery,
                 .Select(c => c.Id)
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
+
+            // 2.2 排除已停用模組的所有節點 (停用模組仍載入於記憶體，其 API 由 FunctionStatusAuthorizationFilter 拒絕)
+            var inactiveModuleNames = await _dbContext.Set<ModuleMetadata>()
+                .AsNoTracking()
+                .Where(m => !m.IsActive)
+                .Select(m => m.ModuleName)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (inactiveModuleNames.Count > 0)
+            {
+                var moduleControllerIds = await _dbContext.Set<ControllerMetadata>()
+                    .AsNoTracking()
+                    .Where(c => inactiveModuleNames.Contains(c.ModuleName))
+                    .Select(c => c.Id)
+                    .ToListAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                disabledControllerIds.AddRange(moduleControllerIds);
+
+                var inactiveSet = inactiveModuleNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+                allMenuItems.RemoveAll(m => inactiveSet.Contains(m.ModuleName));
+            }
 
             if (disabledControllerIds.Count > 0)
             {

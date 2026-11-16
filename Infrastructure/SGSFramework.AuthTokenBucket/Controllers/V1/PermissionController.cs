@@ -54,6 +54,8 @@ public sealed class PermissionController : ApiControllerBase
     private readonly IUserLabPermissionAssignmentService _labPermissionAssignmentService;
     private readonly ILogger<PermissionController> _logger;
 
+    private readonly IModuleStatusReader _moduleStatusReader;
+
     public PermissionController(
         IMemoryCache memoryCache,
         IPermissionManagementService permissionService,
@@ -62,8 +64,10 @@ public sealed class PermissionController : ApiControllerBase
         UserManager<ApplicationUser> userManager,
         IUserPermissionRepository userPermissionRepository,
         IUserLabPermissionAssignmentService labPermissionAssignmentService,
+        IModuleStatusReader moduleStatusReader,
         ILogger<PermissionController> logger)
     {
+        _moduleStatusReader = moduleStatusReader ?? throw new ArgumentNullException(nameof(moduleStatusReader));
         _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
         _permissionService = permissionService ?? throw new ArgumentNullException(nameof(permissionService));
         _bitmaskService = bitmaskService ?? throw new ArgumentNullException(nameof(bitmaskService));
@@ -156,10 +160,23 @@ public sealed class PermissionController : ApiControllerBase
                 return data ?? new List<PermissionModuleDto>();
             }).ConfigureAwait(false);
 
+            // 模組啟用狀態於讀取時套用 (快取內容不含此狀態)，模組停用 / 啟用後立即反映；以淺複製避免改動共用快取物件
+            var inactiveModules = await _moduleStatusReader.GetInactiveModuleNamesAsync(cancellationToken).ConfigureAwait(false);
+            var response = (tree ?? new List<PermissionModuleDto>())
+                .Select(m => new PermissionModuleDto
+                {
+                    ModuleName = m.ModuleName,
+                    ModuleTitle = m.ModuleTitle,
+                    Description = m.Description,
+                    IsModuleActive = !inactiveModules.Contains(m.ModuleName),
+                    Functions = m.Functions
+                })
+                .ToList();
+
             stopwatch.Stop();
             _logger.LogDebug("[PermissionController] 取得權限樹狀結構耗時: {ElapsedMilliseconds} ms", stopwatch.ElapsedMilliseconds);
 
-            return Ok(tree ?? new List<PermissionModuleDto>());
+            return Ok(response);
         }
         catch (OperationCanceledException)
         {

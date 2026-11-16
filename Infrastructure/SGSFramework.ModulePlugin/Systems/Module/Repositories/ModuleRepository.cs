@@ -76,6 +76,11 @@ namespace SGSFramework.ModulePlugin.Systems.Module.Repositories
                 }
                 else
                 {
+                    // 標題以程式碼 [Module] 設定為準，讓既有模組也能反映標題異動
+                    if (!string.IsNullOrWhiteSpace(moduleInfo.ModuleTitle))
+                    {
+                        existing.ModuleTitle = moduleInfo.ModuleTitle;
+                    }
                     existing.Version = moduleInfo.Version;
                     existing.AssemblyPath = moduleInfo.AssemblyPath;
                     existing.IsActive = moduleInfo.IsActive;

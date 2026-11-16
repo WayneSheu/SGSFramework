@@ -130,11 +130,12 @@ public sealed class DeliverableFileService(
 
     // ---------- 查詢 ----------
 
-    public async Task<PmsResult<PagedResult<DeliverableDto>>> SearchAsync(Guid userId, Guid projectId, DeliverableSearchRequest request, CancellationToken ct)
+    /// <param name="adminAccess">具 PMS.PROJECT.ADMIN 者為 true：非成員可檢視交付物清單（只含檔名等中繼資料；檢視與下載檔案內容仍須是專案成員）。</param>
+    public async Task<PmsResult<PagedResult<DeliverableDto>>> SearchAsync(Guid userId, Guid projectId, DeliverableSearchRequest request, CancellationToken ct, bool adminAccess = false)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (await AccessAsync(userId, projectId, ct).ConfigureAwait(false) != ProjectAccessLevel.Internal)
+        if (!adminAccess && await AccessAsync(userId, projectId, ct).ConfigureAwait(false) != ProjectAccessLevel.Internal)
             return PmsError.NotFound();
 
         var pageIndex = Math.Max(1, request.PageIndex);

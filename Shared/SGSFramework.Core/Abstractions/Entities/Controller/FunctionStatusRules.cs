@@ -18,6 +18,14 @@ public static class FunctionStatusRules
     public const string ProtectedControllerName = "FunctionManagementController";
 
     /// <summary>
+    /// 主機核心模組不可停用：其涵蓋模組管理、功能管理等所有系統管理功能，停用後將無法再恢復
+    /// </summary>
+    public const string ProtectedModuleName = "SGSFramework.System";
+
+    public static bool IsProtectedModule(string moduleName) =>
+        string.Equals(moduleName, ProtectedModuleName, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// 以 Controller 類別名稱 + Action 方法名稱組成比對鍵 (與 ControllerMetadata.ControllerName / ActionName 一致)
     /// </summary>
     public static string BuildKey(string controllerName, string actionName) => $"{controllerName}|{actionName}";

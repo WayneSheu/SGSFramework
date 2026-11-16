@@ -10,6 +10,9 @@ namespace SGSFramework.ModulePlugin.DTOs
     public sealed class ModuleDetailResponse
     {
         public string ModuleName { get; set; } = string.Empty;
+
+        /// <summary>模組顯示標題 (取自資料庫 ModuleMetadata.ModuleTitle)</summary>
+        public string ModuleTitle { get; set; } = string.Empty;
         public string Version { get; set; } = string.Empty;
         public string AssemblyPath { get; set; } = string.Empty;
         public bool IsActive { get; set; }

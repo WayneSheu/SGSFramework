@@ -204,6 +204,7 @@ public static class AuthTokenBucketServiceCollectionExtensions
                 .RequireClaim(SystemAccountClaims.AccountType, SystemAccountClaims.SystemAccountType));
 
         // 5. 註冊核心服務（解決 ITokenManager 抽象介面無法被 TokenBucketEngine 解析之問題）
+        services.AddScoped<IModuleStatusReader, ModuleStatusReader>();
         services.AddScoped<ITokenManager, TokenManager>();
         services.AddScoped<TokenManager>(sp => (TokenManager)sp.GetRequiredService<ITokenManager>());
 

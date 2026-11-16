@@ -29,7 +29,7 @@ public sealed class ProjectsController(ProjectService projects) : PmsControllerB
     [RequiresPermission("PMS.PROJECT.READ", "檢視專案")]
     [ProducesResponseType(typeof(PagedResult<ProjectListDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<PagedResult<ProjectListDto>>> Search([FromBody] ProjectSearchRequest request, CancellationToken ct = default) =>
-        Ok(await projects.SearchAsync(CurrentUserId, request ?? new ProjectSearchRequest(), ct).ConfigureAwait(false));
+        Ok(await projects.SearchAsync(CurrentUserId, request ?? new ProjectSearchRequest(), ct, await HasPermissionAsync(ProjectAdminPermission, ct).ConfigureAwait(false)).ConfigureAwait(false));
 
     /// <summary>建立專案並核發專案代號</summary>
     [HttpPost]
@@ -48,7 +48,7 @@ public sealed class ProjectsController(ProjectService projects) : PmsControllerB
     [RequiresPermission("PMS.PROJECT.READ", "檢視專案")]
     [ProducesResponseType(typeof(ProjectDetailDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<ProjectDetailDto>> Get(Guid id, CancellationToken ct = default) =>
-        FromResult(await projects.GetAsync(CurrentUserId, id, ct).ConfigureAwait(false));
+        FromResult(await projects.GetAsync(CurrentUserId, id, ct, await HasPermissionAsync(ProjectAdminPermission, ct).ConfigureAwait(false)).ConfigureAwait(false));
 
     /// <summary>更新專案（專案代號不可修改）</summary>
     [HttpPut("{id:guid}")]
@@ -88,7 +88,7 @@ public sealed class ProjectsController(ProjectService projects) : PmsControllerB
     [RequiresPermission("PMS.PROJECT.MANAGE", "管理專案", ActionCategory.Operational)]
     [ProducesResponseType(typeof(ProjectMemberDto), StatusCodes.Status201Created)]
     public async Task<ActionResult<ProjectMemberDto>> AddMember(Guid id, [FromBody] AddMemberRequest request, CancellationToken ct = default) =>
-        FromResult(await projects.AddMemberAsync(CurrentUserId, Actor, id, request, ct).ConfigureAwait(false),
+        FromResult(await projects.AddMemberAsync(CurrentUserId, Actor, id, request, ct, await HasPermissionAsync(ProjectAdminPermission, ct).ConfigureAwait(false)).ConfigureAwait(false),
             dto => Created($"/api/v1/pms/projects/{id}", dto));
 
     /// <summary>移除專案成員</summary>
@@ -97,7 +97,17 @@ public sealed class ProjectsController(ProjectService projects) : PmsControllerB
     [RequiresPermission("PMS.PROJECT.MANAGE", "管理專案", ActionCategory.Critical)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<ActionResult> RemoveMember(Guid id, Guid memberId, CancellationToken ct = default) =>
-        NoContentFrom(await projects.RemoveMemberAsync(CurrentUserId, id, memberId, ct).ConfigureAwait(false));
+        NoContentFrom(await projects.RemoveMemberAsync(CurrentUserId, id, memberId, ct, await HasPermissionAsync(ProjectAdminPermission, ct).ConfigureAwait(false)).ConfigureAwait(false));
+
+    /// <summary>
+    /// 權限探測：具 PMS.PROJECT.ADMIN 者可檢視所有專案（清單與詳情）並管理專案成員，不再受「必須是專案成員」限制；
+    /// 但放行卡控節點、核准 CR 等仍須是專案成員（職責分離不變），也看不到合約資訊。登錄此權限碼供角色管理授權（例如給系統管理角色）。
+    /// </summary>
+    [HttpPost("access/admin")]
+    [Function("ProjectAdminAccess", "檢視並管理所有專案", Order = 12, Description = "可檢視所有專案並管理專案成員（建立專案後補齊成員；不含放行與核准）")]
+    [RequiresPermission(ProjectAdminPermission, "檢視並管理所有專案", ActionCategory.Critical)]
+    [ProducesResponseType(typeof(bool), StatusCodes.Status200OK)]
+    public ActionResult<bool> AdminAccess() => Ok(true);
 
     /// <summary>新增模組目錄（Mxx）</summary>
     [HttpPost("{id:guid}/modules")]

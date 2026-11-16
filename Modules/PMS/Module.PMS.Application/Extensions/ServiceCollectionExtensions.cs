@@ -38,6 +38,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<UatAttachmentService>();
         services.AddScoped<PmsMailNotifier>();
         services.AddScoped<MonthlyReportService>();
+
+        // 報價管理（QTN）只依賴 Core 的 IQuoteContractIntegration；PMS 載入時以此實作覆蓋 Core 預設的 Null（503）
+        services.AddScoped<SGSFramework.Core.ProjectContracts.IQuoteContractIntegration, QuoteContractIntegration>();
         return services;
     }
 }
