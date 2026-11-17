@@ -68,6 +68,7 @@ public sealed class RoleGovernanceService(
     IPermissionRegistry permissionRegistry,
     IRoleAuditService roleAuditService,
     IPermissionChangeNotifier permissionChangeNotifier,
+    IModuleStatusReader moduleStatusReader,
     IHttpContextAccessor httpContextAccessor,
     IConfiguration configuration,
     ILogger<RoleGovernanceService> logger) : IRoleGovernanceService
@@ -75,6 +76,13 @@ public sealed class RoleGovernanceService(
     public bool RequireApproval => configuration.GetValue("RoleGovernance:RequireApproval", true);
 
     // ===== Maker：送出申請 =====
+
+    /// <summary>找出新增權限中已停用 (所屬模組或系統功能停用) 而不可指派者</summary>
+    private async Task<List<string>> FindDisabledAsync(IEnumerable<string> addedKeys, CancellationToken cancellationToken)
+    {
+        var unassignable = await moduleStatusReader.GetUnassignablePermissionKeysAsync(cancellationToken).ConfigureAwait(false);
+        return addedKeys.Where(unassignable.ContainsKey).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
 
     public async Task<RoleChangeSubmitResult> SubmitRolePermissionChangeAsync(
         UpdateRoleGlobalPermissionsRequest request, string? reason, CancellationToken cancellationToken = default)
@@ -103,6 +111,10 @@ public sealed class RoleGovernanceService(
         var added = target.Except(current, StringComparer.OrdinalIgnoreCase).OrderBy(k => k).ToList();
         var removed = current.Except(target, StringComparer.OrdinalIgnoreCase).OrderBy(k => k).ToList();
         if (added.Count == 0 && removed.Count == 0) return new(false, "權限設定沒有任何變更。");
+
+        // 停用權限不可新增指派 (既有綁定保留)
+        var addedDisabled = await FindDisabledAsync(added, cancellationToken).ConfigureAwait(false);
+        if (addedDisabled.Count > 0) return new(false, DisabledPermissionMessages.NewlyGranted(addedDisabled));
 
         if (!RequireApproval)
         {
@@ -182,6 +194,14 @@ public sealed class RoleGovernanceService(
         }
 
         var target = JsonSerializer.Deserialize<List<string>>(entity.TargetPermissionKeys) ?? [];
+
+        // 核准時再次檢查：送出後權限可能已因功能 / 模組停用而不可指派
+        var requestedAdded = JsonSerializer.Deserialize<List<string>>(entity.AddedPermissionKeys) ?? [];
+        var addedDisabled = await FindDisabledAsync(requestedAdded, cancellationToken).ConfigureAwait(false);
+        if (addedDisabled.Count > 0)
+        {
+            return new(false, DisabledPermissionMessages.NewlyGranted(addedDisabled) + "請駁回此申請，或待功能恢復啟用後再核准。");
+        }
 
         // 核准時再次檢查：規則可能在送出後新增
         var violations = await CheckSodAsync(target, cancellationToken).ConfigureAwait(false);

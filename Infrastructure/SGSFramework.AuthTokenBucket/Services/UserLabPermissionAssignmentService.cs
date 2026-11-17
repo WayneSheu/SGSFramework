@@ -25,13 +25,16 @@ namespace SGSFramework.AuthTokenBucket.Services
     {
         private readonly ITokenDbContext _dbContext;
         private readonly IEnumerable<ILabPermissionStrategy> _permissionStrategies;
+        private readonly IModuleStatusReader _moduleStatusReader;
         private readonly ILogger<UserLabPermissionAssignmentService> _logger;
 
         public UserLabPermissionAssignmentService(
             ITokenDbContext dbContext,
             IEnumerable<ILabPermissionStrategy> permissionStrategies,
+            IModuleStatusReader moduleStatusReader,
             ILogger<UserLabPermissionAssignmentService> logger)
         {
+            _moduleStatusReader = moduleStatusReader ?? throw new ArgumentNullException(nameof(moduleStatusReader));
             _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
             _permissionStrategies = permissionStrategies ?? throw new ArgumentNullException(nameof(permissionStrategies));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -90,6 +93,18 @@ namespace SGSFramework.AuthTokenBucket.Services
                 .FirstOrDefaultAsync(x => x.UserId == userId && x.LabId == labId && x.ControllerOrModuleKey == normalizedKey, cancellationToken)
                 .ConfigureAwait(false);
 
+            // 停用權限不可新增指派 (既有綁定保留)：僅檢查本次新增的位元
+            long addedBits = filteredBitmask & ~(existingPermission?.Bitmask ?? 0L);
+            if (addedBits != 0)
+            {
+                var disabled = await FindDisabledBitsAsync(normalizedKey, addedBits, cancellationToken).ConfigureAwait(false);
+                if (disabled.Count > 0)
+                {
+                    _logger.LogWarning("拒絕指派使用者 [{UserId}] 在實驗室 [{LabId}] 已停用的權限: {Keys}", userId, labId, string.Join(",", disabled));
+                    throw new InvalidOperationException(DisabledPermissionMessages.NewlyGranted(disabled));
+                }
+            }
+
             if (existingPermission != null)
             {
                 existingPermission.UpdateBitmask(filteredBitmask, operatorId);
@@ -110,6 +125,30 @@ namespace SGSFramework.AuthTokenBucket.Services
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// 找出新增位元中「對應權限全部停用」者 (同模組不同群組可能共用位元，僅在該位元所有權限皆停用時拒絕，避免誤擋)
+        /// </summary>
+        private async Task<List<string>> FindDisabledBitsAsync(string normalizedKey, long addedBits, CancellationToken cancellationToken)
+        {
+            var unassignable = await _moduleStatusReader.GetUnassignablePermissionKeysAsync(cancellationToken).ConfigureAwait(false);
+            if (unassignable.Count == 0) return [];
+
+            var metadata = await _dbContext.Set<PermissionMetadata>()
+                .AsNoTracking()
+                .Where(p => p.ControllerName.ToUpper() == normalizedKey || p.ModuleName.ToUpper() == normalizedKey)
+                .Select(p => new { p.PermissionKey, p.BitPosition })
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return metadata
+                .Where(m => m.BitPosition is >= 0 and <= 63 && (addedBits & (1L << m.BitPosition)) != 0)
+                .GroupBy(m => m.BitPosition)
+                .Where(g => g.All(m => unassignable.ContainsKey(m.PermissionKey)))
+                .SelectMany(g => g.Select(m => m.PermissionKey))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
 
         public async Task<List<UserLabPermissionDto>> GetLabPermissionsAsync(

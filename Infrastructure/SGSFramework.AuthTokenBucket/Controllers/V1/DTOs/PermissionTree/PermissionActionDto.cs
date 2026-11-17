@@ -48,4 +48,16 @@ public sealed class PermissionActionDto
     /// </summary>
     [JsonPropertyName("isCustomized")]
     public bool IsCustomized { get; set; }
+
+    /// <summary>
+    /// 是否停用 (所屬模組停用，或使用此權限鍵值的系統功能全部停用)；停用的權限不可再指派，但不影響既有綁定
+    /// </summary>
+    [JsonPropertyName("isDisabled")]
+    public bool IsDisabled { get; set; }
+
+    /// <summary>
+    /// 停用原因說明 (例如：所屬模組已停用、系統功能已停用)
+    /// </summary>
+    [JsonPropertyName("disabledReason")]
+    public string? DisabledReason { get; set; }
 }

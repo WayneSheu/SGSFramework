@@ -39,6 +39,7 @@ public sealed class LabFunctionScopeService(
     IFusionCache cache,
     IPermissionRegistry permissionRegistry,
     IPermissionChangeNotifier permissionChangeNotifier,
+    IModuleStatusReader moduleStatusReader,
     IHttpContextAccessor httpContextAccessor,
     ILogger<LabFunctionScopeService> logger) : ILabFunctionScopeService
 {
@@ -84,6 +85,25 @@ public sealed class LabFunctionScopeService(
         if (isRestricted && requested.Count == 0)
         {
             return (false, "啟用功能限制時至少須開放一項功能；若要全部開放請關閉限制。");
+        }
+
+        // 停用權限不可新增開放 (既有開放保留)；未啟用限制時清單不生效，不需檢查
+        if (isRestricted)
+        {
+            var currentKeys = await dbContext.Set<LabFunctionScope>().AsNoTracking()
+                .Where(s => s.TenantLabId == tenantLabId)
+                .Select(s => s.PermissionKey)
+                .ToListAsync(cancellationToken).ConfigureAwait(false);
+            var unassignable = await moduleStatusReader.GetUnassignablePermissionKeysAsync(cancellationToken).ConfigureAwait(false);
+            var addedDisabled = requested
+                .Except(currentKeys, StringComparer.OrdinalIgnoreCase)
+                .Where(unassignable.ContainsKey)
+                .ToList();
+            if (addedDisabled.Count > 0)
+            {
+                logger.LogWarning("拒絕於實驗室 {TenantLabId} 新增開放已停用的權限: {Keys}", tenantLabId, string.Join(",", addedDisabled));
+                return (false, DisabledPermissionMessages.NewlyGranted(addedDisabled));
+            }
         }
 
         var (actorId, actorName) = CurrentActor();

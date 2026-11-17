@@ -160,16 +160,28 @@ public sealed class PermissionController : ApiControllerBase
                 return data ?? new List<PermissionModuleDto>();
             }).ConfigureAwait(false);
 
-            // 模組啟用狀態於讀取時套用 (快取內容不含此狀態)，模組停用 / 啟用後立即反映；以淺複製避免改動共用快取物件
+            // 模組 / 功能停用狀態於讀取時套用 (快取內容不含此狀態)，停用 / 啟用後立即反映；以複製避免改動共用快取物件
             var inactiveModules = await _moduleStatusReader.GetInactiveModuleNamesAsync(cancellationToken).ConfigureAwait(false);
+            var disabledKeys = await _moduleStatusReader.GetDisabledPermissionKeysAsync(inactiveModules, cancellationToken).ConfigureAwait(false);
             var response = (tree ?? new List<PermissionModuleDto>())
-                .Select(m => new PermissionModuleDto
+                .Select(m =>
                 {
-                    ModuleName = m.ModuleName,
-                    ModuleTitle = m.ModuleTitle,
-                    Description = m.Description,
-                    IsModuleActive = !inactiveModules.Contains(m.ModuleName),
-                    Functions = m.Functions
+                    var moduleActive = !inactiveModules.Contains(m.ModuleName);
+                    return new PermissionModuleDto
+                    {
+                        ModuleName = m.ModuleName,
+                        ModuleTitle = m.ModuleTitle,
+                        Description = m.Description,
+                        IsModuleActive = moduleActive,
+                        Functions = m.Functions.Select(f => new PermissionFunctionDto
+                        {
+                            FunctionName = f.FunctionName,
+                            FunctionTitle = f.FunctionTitle,
+                            Description = f.Description,
+                            ReadPermission = f.ReadPermission is null ? null : WithStatus(f.ReadPermission, moduleActive, disabledKeys),
+                            ActionPermissions = f.ActionPermissions.Select(a => WithStatus(a, moduleActive, disabledKeys)).ToList()
+                        }).ToList()
+                    };
                 })
                 .ToList();
 
@@ -198,6 +210,29 @@ public sealed class PermissionController : ApiControllerBase
         }
     }
 
+
+    /// <summary>
+    /// 複製權限項並標示停用狀態：所屬模組停用，或使用此鍵值的系統功能全部停用
+    /// </summary>
+    private static PermissionActionDto WithStatus(PermissionActionDto source, bool moduleActive, IReadOnlyDictionary<string, string> disabledKeys)
+    {
+        string? reason = !moduleActive
+            ? "所屬模組已停用"
+            : disabledKeys.TryGetValue(source.PermissionKey, out var r) ? r : null;
+
+        return new PermissionActionDto
+        {
+            PermissionKey = source.PermissionKey,
+            PermissionTitle = source.PermissionTitle,
+            ActionName = source.ActionName,
+            ActionTitle = source.ActionTitle,
+            Description = source.Description,
+            BitPosition = source.BitPosition,
+            IsCustomized = source.IsCustomized,
+            IsDisabled = reason is not null,
+            DisabledReason = reason
+        };
+    }
 
     /// <summary>
     /// 編輯單一權限項的顯示名稱與說明 (重啟後保留)

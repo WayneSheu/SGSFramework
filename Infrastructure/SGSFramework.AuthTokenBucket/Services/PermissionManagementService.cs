@@ -42,6 +42,7 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
     private readonly IRoleAuditService _roleAuditService;
     private readonly ILabFunctionScopeService _labFunctionScopeService;
     private readonly ILabAuditService _labAuditService;
+    private readonly IModuleStatusReader _moduleStatusReader;
     private readonly ILogger<PermissionManagementService<TDbContext>> _logger;
 
     public PermissionManagementService(
@@ -58,8 +59,10 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
         IRoleAuditService roleAuditService,
         ILabFunctionScopeService labFunctionScopeService,
         ILabAuditService labAuditService,
+        IModuleStatusReader moduleStatusReader,
         ILogger<PermissionManagementService<TDbContext>> logger)
     {
+        _moduleStatusReader = moduleStatusReader ?? throw new ArgumentNullException(nameof(moduleStatusReader));
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _roleManager = roleManager ?? throw new ArgumentNullException(nameof(roleManager));
         _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
@@ -847,6 +850,17 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                 .CalculateModuleBitmasksAsync(targetPermissions, cancellationToken)
                 .ConfigureAwait(false);
 
+            // 停用權限不可新增指派 (既有綁定保留)：以相同遮罩編碼比對「新增的位元」是否落在停用權限上
+            var existingMasks = tenantLabId.HasValue && tenantLabId.Value != Guid.Empty
+                ? await _userPermissionRepository.GetPermissionsByLabAsync(userId, tenantLabId.Value, cancellationToken).ConfigureAwait(false)
+                : await _userPermissionRepository.GetGlobalPermissionsAsync(userId, cancellationToken).ConfigureAwait(false);
+            var newlyGrantedDisabled = await FindNewlyGrantedDisabledAsync(moduleBitmaskDict, existingMasks, cancellationToken).ConfigureAwait(false);
+            if (newlyGrantedDisabled.Count > 0)
+            {
+                _logger.LogWarning("[PermissionManagementService] 拒絕指派使用者 [{UserId}] 已停用的權限: {Keys}", userId, string.Join(",", newlyGrantedDisabled));
+                return (false, DisabledPermissionMessages.NewlyGranted(newlyGrantedDisabled));
+            }
+
             bool success;
             if (tenantLabId.HasValue && tenantLabId.Value != Guid.Empty)
             {
@@ -889,6 +903,34 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
             _logger.LogError(ex, "[PermissionManagementService] 更新使用者直接權限時發生未預期異常。UserId: {UserId}", userId);
             throw;
         }
+    }
+
+    /// <summary>
+    /// 找出「本次新增」且已停用的權限：目標遮罩中原本未設定、且屬於停用權限的位元，再解碼為權限鍵值
+    /// </summary>
+    private async Task<List<string>> FindNewlyGrantedDisabledAsync(
+        Dictionary<string, long> targetMasks,
+        Dictionary<string, long>? existingMasks,
+        CancellationToken cancellationToken)
+    {
+        var unassignable = await _moduleStatusReader.GetUnassignablePermissionKeysAsync(cancellationToken).ConfigureAwait(false);
+        if (unassignable.Count == 0) return [];
+
+        var disabledMasks = await _bitmaskService.CalculateModuleBitmasksAsync(unassignable.Keys, cancellationToken).ConfigureAwait(false);
+
+        var offending = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (prefix, mask) in targetMasks)
+        {
+            long existing = existingMasks is not null && existingMasks.TryGetValue(prefix, out var e) ? e : 0L;
+            long disabled = disabledMasks.TryGetValue(prefix, out var d) ? d : 0L;
+            long added = mask & ~existing & disabled;
+            if (added != 0) offending[prefix] = added;
+        }
+
+        if (offending.Count == 0) return [];
+
+        var keys = await _bitmaskService.DecodeBitmaskToPermissionsAsync(offending, cancellationToken).ConfigureAwait(false);
+        return keys.Where(unassignable.ContainsKey).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     /// <inheritdoc />

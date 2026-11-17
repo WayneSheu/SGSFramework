@@ -85,6 +85,43 @@ public sealed class RoleManagementController(
     }
 
     /// <summary>
+    /// 分頁條件查詢角色列表（POST + Request Body；範圍、代碼、名稱篩選與排序皆於後端執行）
+    /// </summary>
+    [HttpPost("search")]
+    [Function("GetPagedRoles", "分頁查詢角色", Icon = "fa-solid fa-list", Order = 1, Description = "分頁取得系統角色清單，支援關鍵字、範圍（全域/實驗室專屬）、角色代碼、角色名稱過濾與排序")]
+    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.READ")]
+    [EndpointSummary("分頁查詢角色")]
+    [EndpointDescription("分頁取得系統角色清單，支援關鍵字、範圍（全域/實驗室專屬）、角色代碼、角色名稱過濾與排序。")]
+    [ProducesResponseType(typeof(PagedResult<RoleDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetPagedRoles([FromBody] RoleQueryParameters queryParameters, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(queryParameters);
+
+        try
+        {
+            var result = await _roleManagementService.GetPagedRolesAsync(queryParameters, cancellationToken).ConfigureAwait(false);
+            return Ok(result);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("[RoleManagementController] 分頁查詢角色作業已被用戶端取消。");
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[RoleManagementController] 分頁查詢角色時發生系統異常。");
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = "分頁查詢角色時發生系統異常，請聯繫系統管理員。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
+    /// <summary>
     /// 權限變更審核（選單入口）：置於「角色管理」群組下；審核動作由 role-governance API 處理
     /// </summary>
     [HttpGet("change-requests")]

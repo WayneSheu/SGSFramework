@@ -21,6 +21,11 @@ namespace SGSFramework.Identity.Abstractions
         where TKey : IEquatable<TKey>
     {
         Task<List<RoleDto>> GetAllRolesAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// 後端分頁查詢角色（關鍵字、範圍、代碼、名稱、狀態篩選與排序於資料庫端執行）
+        /// </summary>
+        Task<SGSFramework.Core.Paginations.PagedResult<RoleDto>> GetPagedRolesAsync(RoleQueryParameters queryParameters, CancellationToken cancellationToken = default);
         Task<RoleDto?> GetRoleByIdAsync(string roleId, CancellationToken cancellationToken = default);
         Task<(bool Succeeded, IEnumerable<string> Errors)> CreateRoleAsync(CreateRoleRequest request, CancellationToken cancellationToken = default);
         Task<(bool Succeeded, IEnumerable<string> Errors)> UpdateRoleAsync(UpdateRoleRequest request, CancellationToken cancellationToken = default);

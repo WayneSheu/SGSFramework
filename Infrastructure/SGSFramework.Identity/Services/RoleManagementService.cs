@@ -18,6 +18,7 @@ namespace SGSFramework.Identity.Services
     using SGSFramework.Core.Abstractions.Permissions;
     using SGSFramework.Core.Abstractions.Permissions.Entities;
     using SGSFramework.Core.Extensions;
+    using SGSFramework.Core.Paginations;
     using SGSFramework.Identity.Abstractions;
     using SGSFramework.Identity.DTOs;
     using SGSFramework.Identity.DTOs.Roles;
@@ -282,17 +283,98 @@ namespace SGSFramework.Identity.Services
 
         public async Task<List<RoleDto>> GetAllRolesAsync(CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var roles = await _roleManager.Roles
+                .AsNoTracking()
+                .Where(r => EF.Property<bool>(r, "IsDeleted") == false)
+                .OrderBy(r => r.Name)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return await BuildRoleDtosAsync(roles, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <inheritdoc />
+        public async Task<PagedResult<RoleDto>> GetPagedRolesAsync(RoleQueryParameters queryParameters, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(queryParameters);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var pageIndex = Math.Max(1, queryParameters.PageIndex);
+            var pageSize = Math.Clamp(queryParameters.PageSize, 1, 200);
+
+            var query = _roleManager.Roles
+                .AsNoTracking()
+                .Where(r => EF.Property<bool>(r, "IsDeleted") == false);
+
+            // 1. 全域關鍵字（角色名稱 / 代碼 / 描述）
+            if (!string.IsNullOrWhiteSpace(queryParameters.SearchTerm))
+            {
+                var term = queryParameters.SearchTerm.Trim();
+                query = query.Where(r => (r.Name != null && r.Name.Contains(term)) ||
+                                         (EF.Property<string?>(r, "Code") != null && EF.Property<string?>(r, "Code")!.Contains(term)) ||
+                                         (EF.Property<string?>(r, "Description") != null && EF.Property<string?>(r, "Description")!.Contains(term)));
+            }
+
+            // 2. 進階篩選：範圍（全域 / 實驗室專屬）、角色代碼、角色名稱、狀態
+            if (queryParameters.Filter is { } criteria)
+            {
+                if (criteria.ScopeType is { } scope)
+                {
+                    query = query.Where(r => EF.Property<RoleScopeType>(r, "ScopeType") == scope);
+                }
+
+                if (!string.IsNullOrWhiteSpace(criteria.Code))
+                {
+                    var code = criteria.Code.Trim();
+                    query = query.Where(r => EF.Property<string?>(r, "Code") != null && EF.Property<string?>(r, "Code")!.Contains(code));
+                }
+
+                if (!string.IsNullOrWhiteSpace(criteria.Name))
+                {
+                    var name = criteria.Name.Trim();
+                    query = query.Where(r => r.Name != null && r.Name.Contains(name));
+                }
+
+                if (criteria.Status is { } status)
+                {
+                    query = query.Where(r => EF.Property<RoleStatus>(r, "Status") == status);
+                }
+            }
+
+            var totalCount = await query.CountAsync(cancellationToken).ConfigureAwait(false);
+
+            // 3. 排序（白名單欄位；一律以名稱、Id 作次要排序確保分頁穩定）
+            var sort = queryParameters.Sorts.FirstOrDefault(s => !string.IsNullOrWhiteSpace(s.SortBy));
+            var descending = sort?.Direction == SGSFramework.Core.Paginations.SortDirection.Descending;
+            IOrderedQueryable<TRole> ordered = sort?.SortBy.ToLowerInvariant() switch
+            {
+                "code" => descending ? query.OrderByDescending(r => EF.Property<string?>(r, "Code")) : query.OrderBy(r => EF.Property<string?>(r, "Code")),
+                "hierarchylevel" => descending ? query.OrderByDescending(r => EF.Property<int>(r, "HierarchyLevel")) : query.OrderBy(r => EF.Property<int>(r, "HierarchyLevel")),
+                "statusvalue" or "status" => descending ? query.OrderByDescending(r => EF.Property<RoleStatus>(r, "Status")) : query.OrderBy(r => EF.Property<RoleStatus>(r, "Status")),
+                "name" => descending ? query.OrderByDescending(r => r.Name) : query.OrderBy(r => r.Name),
+                _ => query.OrderBy(r => r.Name)
+            };
+
+            var pageRoles = await ordered
+                .ThenBy(r => r.Name)
+                .ThenBy(r => r.Id)
+                .Skip((pageIndex - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            // 僅針對本頁角色組裝成員 / 權限 / AD 群組等重量級資料
+            var items = await BuildRoleDtosAsync(pageRoles, cancellationToken).ConfigureAwait(false);
+            return new PagedResult<RoleDto>(items, totalCount, pageIndex, pageSize);
+        }
+
+        /// <summary>將角色實體組裝為包含成員、權限、AD 群組、實驗室範圍的 DTO</summary>
+        private async Task<List<RoleDto>> BuildRoleDtosAsync(IReadOnlyList<TRole> roles, CancellationToken cancellationToken)
+        {
             try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var roles = await _roleManager.Roles
-                    .AsNoTracking()
-                    .Where(r => EF.Property<bool>(r, "IsDeleted") == false)
-                    .OrderBy(r => r.Name)
-                    .ToListAsync(cancellationToken)
-                    .ConfigureAwait(false);
-
                 var permLookup = await BuildPermissionMetadataLookupAsync(cancellationToken).ConfigureAwait(false);
                 var roleLabIds = await LoadAllRoleLabIdsAsync(cancellationToken).ConfigureAwait(false);
                 var roleDtos = new List<RoleDto>(roles.Count);
