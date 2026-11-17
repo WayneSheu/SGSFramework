@@ -1,4 +1,4 @@
-using SGSFramework.Core.Abstractions.Entities.ReportCategories;
+﻿using SGSFramework.Core.Abstractions.Entities.ReportCategories;
 using SGSFramework.Core.Abstractions.Permissions.Entities;
 
 namespace SGSFramework.AuthTokenBucket.Services;
@@ -83,6 +83,46 @@ public sealed record ReportCategoryGrantDto(
     DateTimeOffset? RevokedAt,
     string? RevokedByName,
     string? RevokeReason);
+
+/// <summary>使用者報告類別有效權限總覽（依所屬實驗室分組）</summary>
+public sealed record UserReportAccessDto(Guid UserId, IReadOnlyList<UserReportAccessLabDto> Labs);
+
+/// <summary>使用者於單一實驗室的報告類別權限</summary>
+public sealed record UserReportAccessLabDto(
+    Guid TenantLabId,
+    string LabName,
+    bool IsPrimary,
+    IReadOnlyList<UserReportAccessCategoryDto> Categories);
+
+/// <summary>
+/// 單一類別的有效權限：EffectiveActions 為「生效中授權」聯集，且僅於類別啟用、實驗室承作此類別時有效；
+/// Sources 列出所有來源（直接 / 角色 / 實驗室），含尚未生效者供管理者對照。
+/// </summary>
+public sealed record UserReportAccessCategoryDto(
+    string CategoryCode,
+    string CategoryName,
+    bool CategoryActive,
+    bool LabHandlesCategory,
+    ReportActions EffectiveActions,
+    ReportDataScope? EffectiveScope,
+    ConfidentialityLevel? EffectiveMaxConfidentiality,
+    bool IsSigner,
+    string? SignerCertificateNo,
+    DateTimeOffset? SignerValidTo,
+    IReadOnlyList<UserReportAccessSourceDto> Sources);
+
+/// <summary>授權來源</summary>
+public sealed record UserReportAccessSourceDto(
+    Guid GrantId,
+    GrantPrincipalType SourceType,
+    string SourceName,
+    ReportActions Actions,
+    ReportDataScope DataScope,
+    ConfidentialityLevel MaxConfidentiality,
+    Guid? TenantLabId,
+    DateTimeOffset EffectiveFrom,
+    DateTimeOffset? EffectiveTo,
+    string Status);
 
 public sealed record CreateReportCategoryGrantRequest(
     GrantPrincipalType PrincipalType,

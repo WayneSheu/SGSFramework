@@ -1,4 +1,5 @@
-using System.Net.Mime;
+﻿using System.Net.Mime;
+using SGSFramework.Core.Abstractions.Entities.ReportCategories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -25,12 +26,23 @@ public sealed class ReportAuthorizationController(IReportCategoryManagementServi
     public sealed record ReasonRequest(string? Reason);
     public sealed record ReviewRequest(string? Comment);
 
-    /// <summary>搜尋授權對象（使用者與角色）</summary>
+    /// <summary>搜尋授權對象（使用者 / 角色；type 未指定時兩者皆回傳）</summary>
     [HttpGet("principals")]
     [RequiresPermission("RPT.REPORTAUTHORIZATION.READ", "檢視報告授權")]
     [ProducesResponseType(typeof(IReadOnlyList<ReportPrincipalOptionDto>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> Principals([FromQuery] string? keyword, CancellationToken cancellationToken = default) =>
-        Ok(await _service.SearchPrincipalsAsync(keyword, cancellationToken).ConfigureAwait(false));
+    public async Task<IActionResult> Principals([FromQuery] string? keyword, [FromQuery] GrantPrincipalType? type = null, CancellationToken cancellationToken = default) =>
+        Ok(await _service.SearchPrincipalsAsync(keyword, type, cancellationToken).ConfigureAwait(false));
+
+    /// <summary>使用者於各所屬實驗室的報告類別有效權限（含授權來源與簽署資格）</summary>
+    [HttpGet("users/{userId:guid}/access")]
+    [RequiresPermission("RPT.REPORTAUTHORIZATION.READ", "檢視報告授權")]
+    [ProducesResponseType(typeof(UserReportAccessDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UserAccess(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var result = await _service.GetUserReportAccessAsync(userId, cancellationToken).ConfigureAwait(false);
+        return result is null ? NotFound() : Ok(result);
+    }
 
     // ===== 類別授權 =====
 

@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
@@ -39,9 +39,12 @@ public interface IReportCategoryManagementService
 
     Task<IReadOnlyList<ReportLabOptionDto>> GetLabOptionsAsync(CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<ReportPrincipalOptionDto>> SearchPrincipalsAsync(string? keyword, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ReportPrincipalOptionDto>> SearchPrincipalsAsync(string? keyword, GrantPrincipalType? type = null, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<ReportCategoryGrantDto>> ListGrantsAsync(string? categoryCode, Guid? principalId, bool includeInactive, CancellationToken cancellationToken = default);
+
+    /// <summary>使用者於各所屬實驗室的報告類別有效權限（含來源：直接 / 角色 / 實驗室授權與簽署資格）</summary>
+    Task<UserReportAccessDto?> GetUserReportAccessAsync(Guid userId, CancellationToken cancellationToken = default);
 
     Task<ReportGrantSubmitResult> SubmitGrantAsync(CreateReportCategoryGrantRequest request, CancellationToken cancellationToken = default);
 
@@ -68,6 +71,7 @@ public sealed partial class ReportCategoryManagementService(
     IPermissionChangeNotifier permissionChangeNotifier,
     IPermissionAuthorizationService permissionAuthorizationService,
     IUserLabRepository userLabRepository,
+    IRoleEffectivePermissionProvider roleEffectivePermissionProvider,
     IFileManagementService fileManagement,
     IFusionCache cache,
     IHttpContextAccessor httpContextAccessor,
@@ -377,33 +381,42 @@ public sealed partial class ReportCategoryManagementService(
             .ToList();
     }
 
-    public async Task<IReadOnlyList<ReportPrincipalOptionDto>> SearchPrincipalsAsync(string? keyword, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<ReportPrincipalOptionDto>> SearchPrincipalsAsync(
+        string? keyword, GrantPrincipalType? type = null, CancellationToken cancellationToken = default)
     {
         var term = keyword?.Trim() ?? string.Empty;
+        var result = new List<ReportPrincipalOptionDto>();
 
-        var usersQuery = dbContext.Set<ApplicationUser>().AsNoTracking().Where(u => !u.IsDeleted);
-        var rolesQuery = dbContext.Set<ApplicationRole>().AsNoTracking().Where(r => !r.IsDeleted && r.Name != null);
-        if (term.Length > 0)
+        if (type is null or GrantPrincipalType.Role)
         {
-            usersQuery = usersQuery.Where(u => (u.UserName != null && u.UserName.Contains(term)) || u.FullName.Contains(term) ||
-                                               (u.EmployeeNo != null && u.EmployeeNo.Contains(term)));
-            rolesQuery = rolesQuery.Where(r => r.Name!.Contains(term));
+            var rolesQuery = dbContext.Set<ApplicationRole>().AsNoTracking().Where(r => !r.IsDeleted && r.Name != null);
+            if (term.Length > 0) rolesQuery = rolesQuery.Where(r => r.Name!.Contains(term) || (r.Description != null && r.Description.Contains(term)));
+
+            result.AddRange(await rolesQuery.OrderBy(r => r.Name).Take(type is null ? 30 : 100)
+                .Select(r => new ReportPrincipalOptionDto(GrantPrincipalType.Role, r.Id, r.Name!, r.Description))
+                .ToListAsync(cancellationToken).ConfigureAwait(false));
         }
 
-        var roles = await rolesQuery.OrderBy(r => r.Name).Take(30)
-            .Select(r => new ReportPrincipalOptionDto(GrantPrincipalType.Role, r.Id, r.Name!, r.Description))
-            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        if (type is null or GrantPrincipalType.User)
+        {
+            var usersQuery = dbContext.Set<ApplicationUser>().AsNoTracking().Where(u => !u.IsDeleted);
+            if (term.Length > 0)
+            {
+                usersQuery = usersQuery.Where(u => (u.UserName != null && u.UserName.Contains(term)) || u.FullName.Contains(term) ||
+                                                   (u.EmployeeNo != null && u.EmployeeNo.Contains(term)));
+            }
 
-        var users = await usersQuery.OrderBy(u => u.UserName).Take(50)
-            .Select(u => new { u.Id, u.UserName, u.FullName, u.EmployeeNo })
-            .ToListAsync(cancellationToken).ConfigureAwait(false);
+            var users = await usersQuery.OrderBy(u => u.UserName).Take(50)
+                .Select(u => new { u.Id, u.UserName, u.FullName, u.EmployeeNo })
+                .ToListAsync(cancellationToken).ConfigureAwait(false);
 
-        return roles
-            .Concat(users.Select(u => new ReportPrincipalOptionDto(
+            result.AddRange(users.Select(u => new ReportPrincipalOptionDto(
                 GrantPrincipalType.User, u.Id,
                 string.IsNullOrWhiteSpace(u.FullName) ? u.UserName ?? u.Id.ToString() : u.FullName,
-                string.IsNullOrWhiteSpace(u.EmployeeNo) ? u.UserName : $"{u.UserName}（{u.EmployeeNo}）")))
-            .ToList();
+                string.IsNullOrWhiteSpace(u.EmployeeNo) ? u.UserName : $"{u.UserName}（{u.EmployeeNo}）")));
+        }
+
+        return result;
     }
 
     // ===== 類別授權 =====
@@ -432,9 +445,121 @@ public sealed partial class ReportCategoryManagementService(
             g.CreatedBy, g.CreatedAtUtc, g.RevokedAt, g.RevokedByName, g.RevokeReason)).ToList();
     }
 
+    public async Task<UserReportAccessDto?> GetUserReportAccessAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var user = await dbContext.Set<ApplicationUser>().AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted, cancellationToken).ConfigureAwait(false);
+        if (user is null) return null;
+
+        var now = timeProvider.GetUtcNow();
+        var mappings = (await userLabRepository.GetAccessibleLabsAsync(userId, cancellationToken).ConfigureAwait(false))
+            .Where(m => m.IsValidAt(now))
+            .GroupBy(m => m.TenantLabId)
+            .Select(g => new { TenantLabId = g.Key, IsPrimary = g.Any(m => m.IsPrimary) })
+            .ToList();
+        if (mappings.Count == 0) return new UserReportAccessDto(userId, []);
+
+        var labIds = mappings.Select(m => m.TenantLabId).ToList();
+        var labNames = await ResolveLabNamesAsync(labIds, cancellationToken).ConfigureAwait(false);
+
+        var categories = await dbContext.Set<ReportCategory>().AsNoTracking()
+            .OrderBy(c => c.DisplayOrder).ThenBy(c => c.Code)
+            .Select(c => new { c.Code, c.Name, c.IsActive })
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        var categoryByCode = categories.ToDictionary(c => c.Code, StringComparer.OrdinalIgnoreCase);
+        var categoryOrder = categories.Select((c, i) => (c.Code, i)).ToDictionary(x => x.Code, x => x.i, StringComparer.OrdinalIgnoreCase);
+
+        var assignments = await dbContext.Set<ReportCategoryLabAssignment>().AsNoTracking()
+            .Where(a => labIds.Contains(a.TenantLabId))
+            .Select(a => new { a.CategoryCode, a.TenantLabId })
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        // 各實驗室有效角色（套用實驗室專屬角色範圍、稽核指派與角色狀態規則，與授權判斷一致）
+        var rolesByLab = new Dictionary<Guid, IReadOnlyList<Guid>>();
+        foreach (var labId in labIds)
+        {
+            rolesByLab[labId] = await roleEffectivePermissionProvider.GetEffectiveRoleIdsAsync(user, labId, cancellationToken).ConfigureAwait(false);
+        }
+
+        var allRoleIds = rolesByLab.Values.SelectMany(r => r).Distinct().ToList();
+        var grants = await dbContext.Set<ReportCategoryGrant>().AsNoTracking()
+            .Where(g => g.RevokedAt == null && (g.EffectiveTo == null || g.EffectiveTo >= now) &&
+                        ((g.PrincipalType == GrantPrincipalType.User && g.PrincipalId == userId) ||
+                         (g.PrincipalType == GrantPrincipalType.Role && allRoleIds.Contains(g.PrincipalId)) ||
+                         (g.PrincipalType == GrantPrincipalType.Lab && labIds.Contains(g.PrincipalId))))
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        var qualifications = await dbContext.Set<SignerQualification>().AsNoTracking()
+            .Where(q => q.UserId == userId && q.RevokedAt == null && q.ValidTo >= now && labIds.Contains(q.TenantLabId))
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        var principalNames = await ResolvePrincipalNamesAsync(grants.Select(g => (g.PrincipalType, g.PrincipalId)), cancellationToken).ConfigureAwait(false);
+
+        var labs = new List<UserReportAccessLabDto>();
+        foreach (var mapping in mappings.OrderByDescending(m => m.IsPrimary)
+                     .ThenBy(m => labNames.GetValueOrDefault(m.TenantLabId), StringComparer.CurrentCulture))
+        {
+            var labId = mapping.TenantLabId;
+            var roleIds = rolesByLab[labId];
+            var handled = assignments.Where(a => a.TenantLabId == labId).Select(a => a.CategoryCode).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            // 與授權判斷相同：限定實驗室為空或等於此實驗室；實驗室授權僅限該實驗室
+            var labGrants = grants.Where(g =>
+                (g.TenantLabId == null || g.TenantLabId == labId) &&
+                (g.PrincipalType switch
+                {
+                    GrantPrincipalType.User => true,
+                    GrantPrincipalType.Role => roleIds.Contains(g.PrincipalId),
+                    GrantPrincipalType.Lab => g.PrincipalId == labId,
+                    _ => false
+                })).ToList();
+            var labQualifications = qualifications.Where(q => q.TenantLabId == labId && q.ValidFrom <= now).ToList();
+
+            var codes = labGrants.Select(g => g.CategoryCode).Concat(labQualifications.Select(q => q.CategoryCode))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(c => categoryOrder.GetValueOrDefault(c, int.MaxValue)).ThenBy(c => c, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var items = new List<UserReportAccessCategoryDto>();
+            foreach (var code in codes)
+            {
+                categoryByCode.TryGetValue(code, out var category);
+                bool active = category?.IsActive ?? false;
+                bool labHandles = handled.Contains(code);
+
+                var sources = labGrants.Where(g => string.Equals(g.CategoryCode, code, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(g => g.PrincipalType).ThenBy(g => g.EffectiveFrom)
+                    .Select(g => new UserReportAccessSourceDto(
+                        g.Id, g.PrincipalType,
+                        principalNames.GetValueOrDefault((g.PrincipalType, g.PrincipalId)) ?? g.PrincipalId.ToString(),
+                        g.Actions, g.DataScope, g.MaxConfidentiality, g.TenantLabId, g.EffectiveFrom, g.EffectiveTo,
+                        StatusOf(g.RevokedAt, g.EffectiveFrom, g.EffectiveTo, now)))
+                    .ToList();
+
+                var live = active && labHandles ? sources.Where(s => s.Status == "active").ToList() : [];
+                var effective = live.Aggregate(ReportActions.None, (acc, s) => acc | s.Actions);
+                var qualification = labQualifications
+                    .Where(q => string.Equals(q.CategoryCode, code, StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(q => q.ValidTo).FirstOrDefault();
+
+                items.Add(new UserReportAccessCategoryDto(
+                    category?.Code ?? code, category?.Name ?? code, active, labHandles, effective,
+                    live.Count > 0 ? live.Max(s => s.DataScope) : null,
+                    live.Count > 0 ? live.Max(s => s.MaxConfidentiality) : null,
+                    qualification is not null && active && labHandles,
+                    qualification?.CertificateNo, qualification?.ValidTo, sources));
+            }
+
+            labs.Add(new UserReportAccessLabDto(labId, labNames.GetValueOrDefault(labId) ?? labId.ToString(), mapping.IsPrimary, items));
+        }
+
+        return new UserReportAccessDto(userId, labs);
+    }
+
     public async Task<ReportGrantSubmitResult> SubmitGrantAsync(CreateReportCategoryGrantRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        request = NormalizeGrantRequest(request);
 
         var (error, summary, subjectUserId) = await ValidateGrantAsync(request, cancellationToken).ConfigureAwait(false);
         if (error is not null) return ReportGrantSubmitResult.Fail(error);
@@ -643,6 +768,11 @@ public sealed partial class ReportCategoryManagementService(
         if (request.Actions == ReportActions.None) return ("請至少選擇一項授權動作。", string.Empty, null);
         if (request.PrincipalId == Guid.Empty) return ("請選擇授權對象。", string.Empty, null);
 
+        if (request.PrincipalType == GrantPrincipalType.Lab && request.DataScope == ReportDataScope.Global)
+        {
+            return ("實驗室授權僅於該實驗室生效，資料範圍不可設為「全域」。", string.Empty, null);
+        }
+
         var effectiveFrom = request.EffectiveFrom ?? timeProvider.GetUtcNow();
         if (request.EffectiveTo.HasValue && request.EffectiveTo.Value <= effectiveFrom) return ("迄日必須晚於起日。", string.Empty, null);
         if (request.EffectiveTo.HasValue && request.EffectiveTo.Value < timeProvider.GetUtcNow()) return ("迄日已過，無法建立已失效的授權。", string.Empty, null);
@@ -682,6 +812,14 @@ public sealed partial class ReportCategoryManagementService(
             principalText = $"使用者「{(string.IsNullOrWhiteSpace(user.FullName) ? user.UserName : user.FullName)}」";
             subjectUserId = request.PrincipalId;
         }
+        else if (request.PrincipalType == GrantPrincipalType.Lab)
+        {
+            // 實驗室授權：PrincipalId 即 TenantLabId（已於 NormalizeGrantRequest 對齊），須為承作此類別的實驗室
+            bool labHandlesCategory = await dbContext.Set<ReportCategoryLabAssignment>().AsNoTracking()
+                .AnyAsync(a => a.CategoryCode == category.Code && a.TenantLabId == request.PrincipalId, cancellationToken).ConfigureAwait(false);
+            if (!labHandlesCategory) return ($"實驗室「{labText}」未承作「{category.Name}」，請先於報告類別設定承作實驗室。", string.Empty, null);
+            principalText = $"實驗室「{labText}」全體成員";
+        }
         else
         {
             var roleName = await dbContext.Set<ApplicationRole>().AsNoTracking()
@@ -700,6 +838,7 @@ public sealed partial class ReportCategoryManagementService(
     {
         var category = await FindCategoryAsync(request.CategoryCode, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("報告類別不存在。");
+        request = NormalizeGrantRequest(request);
 
         var entity = new ReportCategoryGrant
         {
@@ -817,11 +956,31 @@ public sealed partial class ReportCategoryManagementService(
         return null;
     }
 
+    /// <summary>實驗室授權的 PrincipalId 即 TenantLabId：授權範圍固定限定於該實驗室</summary>
+    private static CreateReportCategoryGrantRequest NormalizeGrantRequest(CreateReportCategoryGrantRequest request) =>
+        request.PrincipalType == GrantPrincipalType.Lab ? request with { TenantLabId = request.PrincipalId } : request;
+
     private async Task NotifyPrincipalAsync(GrantPrincipalType type, Guid principalId, string reason, CancellationToken cancellationToken)
     {
         if (type == GrantPrincipalType.User)
         {
             await permissionChangeNotifier.NotifyUsersAsync([principalId.ToString()], reason, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (type == GrantPrincipalType.Lab)
+        {
+            // 實驗室授權影響該實驗室全體成員：清除其授權快照並推播
+            var userIds = await dbContext.Set<UserLabMapping>().AsNoTracking()
+                .Where(m => m.TenantLabId == principalId && m.IsActive)
+                .Select(m => m.UserId.ToString())
+                .Distinct()
+                .ToListAsync(cancellationToken).ConfigureAwait(false);
+            await cache.RemoveByTagAsync(ReportAccessCacheTags.All, token: cancellationToken).ConfigureAwait(false);
+            if (userIds.Count > 0)
+            {
+                await permissionChangeNotifier.NotifyUsersAsync(userIds, reason, cancellationToken).ConfigureAwait(false);
+            }
             return;
         }
 
@@ -869,6 +1028,16 @@ public sealed partial class ReportCategoryManagementService(
             foreach (var r in roles)
             {
                 result[(GrantPrincipalType.Role, r.Id)] = r.Name ?? r.Id.ToString();
+            }
+        }
+
+        var labIds = list.Where(p => p.Type == GrantPrincipalType.Lab).Select(p => p.Id).ToList();
+        if (labIds.Count > 0)
+        {
+            var labNames = await ResolveLabNamesAsync(labIds, cancellationToken).ConfigureAwait(false);
+            foreach (var (id, name) in labNames)
+            {
+                result[(GrantPrincipalType.Lab, id)] = name;
             }
         }
 

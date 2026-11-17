@@ -154,7 +154,8 @@ public sealed class ReportAccessAuthorizationService(
             .Where(activeCategories.Contains)
             .ToList();
 
-        // 3. 類別授權：使用者直接授權 + 於此實驗室有效之角色授權（未撤銷、尚未過期，含未來生效者以計算快取期限）
+        // 3. 類別授權：使用者直接授權 + 於此實驗室有效之角色授權 + 實驗室全體成員授權（僅限此實驗室有效成員）
+        //    （未撤銷、尚未過期，含未來生效者以計算快取期限）
         var roleIds = await roleEffectivePermissionProvider.GetEffectiveRoleIdsAsync(appUser, tenantLabId, cancellationToken).ConfigureAwait(false);
 
         var grantRows = await dbContext.Set<ReportCategoryGrant>().AsNoTracking()
@@ -162,7 +163,8 @@ public sealed class ReportAccessAuthorizationService(
                         (g.EffectiveTo == null || g.EffectiveTo >= now) &&
                         (g.TenantLabId == null || g.TenantLabId == tenantLabId) &&
                         ((g.PrincipalType == GrantPrincipalType.User && g.PrincipalId == userId) ||
-                         (g.PrincipalType == GrantPrincipalType.Role && roleIds.Contains(g.PrincipalId))))
+                         (g.PrincipalType == GrantPrincipalType.Role && roleIds.Contains(g.PrincipalId)) ||
+                         (isLabMember && g.PrincipalType == GrantPrincipalType.Lab && g.PrincipalId == tenantLabId)))
             .ToListAsync(cancellationToken).ConfigureAwait(false);
 
         var grants = new List<EffectiveReportGrant>();

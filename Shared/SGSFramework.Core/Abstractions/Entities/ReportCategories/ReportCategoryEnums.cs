@@ -73,7 +73,10 @@ namespace SGSFramework.Core.Abstractions.Entities.ReportCategories
     public enum GrantPrincipalType
     {
         User = 0,
-        Role = 1
+        Role = 1,
+
+        /// <summary>區域實驗室：PrincipalId 為 TenantLabId，授予該實驗室全體有效成員，且僅於該實驗室生效</summary>
+        Lab = 2
     }
 
     /// <summary>
