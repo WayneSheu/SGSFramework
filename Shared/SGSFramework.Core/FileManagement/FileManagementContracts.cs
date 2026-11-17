@@ -73,6 +73,9 @@ public interface IFileManagementService
 
     /// <summary>清除保留期滿的已刪除檔案實體（供排程以系統帳號呼叫）</summary>
     Task<FilePurgeResult> PurgeDeletedAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>已設定的儲存分類（供業務模組設定檔案落點，例如報告類別選擇儲存位置）</summary>
+    IReadOnlyList<FileStorageCategoryInfo> GetStorageCategories();
 }
 
 /// <summary>上傳請求（與 ASP.NET 無關，業務模組可直接呼叫服務）</summary>
@@ -88,7 +91,26 @@ public sealed record FileUploadRequest(
     string? Category = null,
     string? ReferenceType = null,
     string? ReferenceId = null,
-    string? ExpectedSha256 = null);
+    string? ExpectedSha256 = null)
+{
+    /// <summary>
+    /// 儲存資料夾（儲存鍵前綴，例如 reports/FOOD）；僅業務模組（Internal）可指定，
+    /// 允許英數、底線、連字號並以 / 分隔，最多 200 字元。
+    /// </summary>
+    public string? Folder { get; init; }
+
+    /// <summary>強制加密：分類未設定加密時仍以 AES-256-GCM 加密（只能加強，不能關閉分類的加密政策）</summary>
+    public bool ForceEncryption { get; init; }
+}
+
+/// <summary>儲存分類摘要（不含容器等實體儲存屬性）</summary>
+/// <param name="Code">分類代碼</param>
+/// <param name="Target">儲存目標（地端機密 / 雲端公開）</param>
+/// <param name="Encrypt">分類預設是否加密</param>
+/// <param name="ViewOnly">通用端點是否僅供檢視</param>
+/// <param name="AllowGenericApi">是否開放通用端點存取</param>
+/// <param name="IsDefault">是否為預設分類</param>
+public sealed record FileStorageCategoryInfo(string Code, StorageTarget Target, bool Encrypt, bool ViewOnly, bool AllowGenericApi, bool IsDefault);
 
 /// <summary>檔案中繼資料（不含實體儲存屬性：容器、儲存鍵不對外揭露）</summary>
 public sealed record FileMetadataDto(

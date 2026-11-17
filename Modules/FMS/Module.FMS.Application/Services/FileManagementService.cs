@@ -69,9 +69,13 @@ public sealed class FileManagementService(
             if (scope == FileAccessScope.GenericApi && !category.AllowGenericApi)
                 throw new FileRejectedException($"檔案分類「{category.Code}」僅限業務模組上傳。", 403);
 
+            // 業務模組可強制加密（只能加強分類政策，不能關閉）；資料夾僅限 Internal 指定
+            if (request.ForceEncryption && !category.Encrypt) category = category with { Encrypt = true };
+            var folder = scope == FileAccessScope.Internal ? NormalizeFolder(request.Folder) : null;
+
             var expectedSha256 = NormalizeSha256(request.ExpectedSha256);
             var originalFileName = SanitizeFileName(request.FileName);
-            var result = await UploadCoreAsync(request, category, originalFileName, expectedSha256, cancellationToken).ConfigureAwait(false);
+            var result = await UploadCoreAsync(request, category, folder, originalFileName, expectedSha256, cancellationToken).ConfigureAwait(false);
 
             await auditor.RecordAsync(FileAccessActions.Upload, true, result.Id, result.Category,
                 $"{result.OriginalFileName}（{result.FileSize:N0} 位元組{(result.IsEncrypted ? "，已加密" : string.Empty)}）", cancellationToken).ConfigureAwait(false);
@@ -85,7 +89,7 @@ public sealed class FileManagementService(
         }
     }
 
-    private async Task<FileMetadataDto> UploadCoreAsync(FileUploadRequest request, ResolvedCategory category, string originalFileName, string? expectedSha256, CancellationToken cancellationToken)
+    private async Task<FileMetadataDto> UploadCoreAsync(FileUploadRequest request, ResolvedCategory category, string? folder, string originalFileName, string? expectedSha256, CancellationToken cancellationToken)
     {
         var settings = Settings;
 
@@ -185,7 +189,7 @@ public sealed class FileManagementService(
                 CreatedBy = CurrentActor(),
                 CreatedAtUtc = now
             };
-            entity.StoredKey = $"{now:yyyy}/{now:MM}/{entity.Id:N}{(category.Encrypt ? ".sgse" : format.Extension)}";
+            entity.StoredKey = $"{(folder is null ? string.Empty : folder + "/")}{now:yyyy}/{now:MM}/{entity.Id:N}{(category.Encrypt ? ".sgse" : format.Extension)}";
 
             // 6. 串流計量（SHA-256 / 長度 / 上限）→ AES-256-GCM 分塊加密 → 儲存體 SDK（記憶體內，不落地）
             var provider = storageFactory.GetProvider(category.Target);
@@ -636,6 +640,41 @@ public sealed class FileManagementService(
 
     internal sealed record ResolvedCategory(string Code, StorageTarget Target, string Container, string[] AllowedExtensions,
         long MaxFileSizeBytes, int CacheMaxAgeSeconds, bool AllowGenericApi, bool Encrypt);
+
+    public IReadOnlyList<FileStorageCategoryInfo> GetStorageCategories()
+    {
+        var settings = Settings;
+        var categories = settings.Categories.Count == 0
+            ? new Dictionary<string, FileCategoryOptions>(StringComparer.OrdinalIgnoreCase) { [FileCategoryOptions.GeneralCategory] = new() }
+            : settings.Categories;
+
+        return categories
+            .OrderBy(c => c.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(c => new FileStorageCategoryInfo(
+                c.Key, c.Value.Target, c.Value.Encrypt, c.Value.ViewOnly, c.Value.AllowGenericApi,
+                c.Key.Equals(settings.DefaultCategory, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+    }
+
+    /// <summary>
+    /// 驗證業務模組指定的儲存資料夾：僅允許英數、底線、連字號並以 / 分隔（防止路徑穿越），回傳不含首尾斜線的前綴；空白回傳 null
+    /// </summary>
+    public static string? NormalizeFolder(string? folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder)) return null;
+
+        var trimmed = folder.Trim().Replace('\\', '/').Trim('/');
+        if (trimmed.Length == 0) return null;
+        if (trimmed.Length > 200) throw new FileRejectedException("儲存資料夾長度不可超過 200 字元。");
+
+        var segments = trimmed.Split('/');
+        if (segments.Any(s => s.Length == 0 || !s.All(ch => char.IsAsciiLetterOrDigit(ch) || ch is '_' or '-')))
+        {
+            throw new FileRejectedException("儲存資料夾僅允許英數、底線、連字號並以 / 分隔。");
+        }
+
+        return trimmed;
+    }
 
     /// <summary>通用端點不可見的分類（視同不存在，避免洩漏業務檔案存在性）</summary>
     private bool IsHidden(string category, FileAccessScope scope) =>

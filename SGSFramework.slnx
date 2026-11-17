@@ -66,7 +66,7 @@
     <Project Path="Modules/RPT/Module.RPT.Infrastructure/SGS.Modules.RPT.Infrastructure.csproj" />
     <Project Path="Modules/RPT/Module.RPT/SGS.Modules.RPT.csproj" />
   </Folder>
-  <Folder Name="/Modules/Shared/">
+  <Folder Name="/Shared/">
     <Project Path="Shared/SGSFramework.Core/SGSFramework.Core.csproj" />
   </Folder>
   <Folder Name="/Tests/">

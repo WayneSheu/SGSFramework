@@ -22,6 +22,9 @@ public interface IReportAccessGuard
     /// <summary>目前請求的區域實驗室（標頭優先，其次 Token 宣告）</summary>
     Guid? CurrentLabId { get; }
 
+    /// <summary>目前請求的來源 IP（用於下載浮水印）</summary>
+    string? CurrentRemoteIp { get; }
+
     Task<ReportAccessDecision> AuthorizeAsync(Report report, ReportActions action, CancellationToken cancellationToken = default);
 
     /// <summary>逐一評估多個動作（同一份快照），供前端顯示可用操作</summary>
@@ -43,6 +46,8 @@ public sealed class ReportAccessGuard(
     public string CurrentUserName => User.Identity?.Name ?? User.FindFirst(ClaimTypes.Name)?.Value ?? "未知使用者";
 
     public Guid? CurrentLabId => AuthorizationClaimHelper.ResolveTenantLabId(User, httpContextAccessor.HttpContext);
+
+    public string? CurrentRemoteIp => httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString();
 
     public Task<ReportAccessDecision> AuthorizeAsync(Report report, ReportActions action, CancellationToken cancellationToken = default) =>
         authorizationService.AuthorizeAsync(User, ToContext(report), action, cancellationToken);

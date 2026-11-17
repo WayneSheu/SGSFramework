@@ -56,6 +56,18 @@ namespace SGSFramework.Core.Abstractions.Entities.ReportCategories
     }
 
     /// <summary>
+    /// 報告類別適用範圍
+    /// </summary>
+    public enum ReportCategoryScope
+    {
+        /// <summary>全域：由系統管理者維護，可指派多個區域實驗室承作</summary>
+        Global = 0,
+
+        /// <summary>實驗室專屬：屬於單一區域實驗室，僅該實驗室承作，可由該實驗室管理者維護</summary>
+        Lab = 1
+    }
+
+    /// <summary>
     /// 授權對象類型
     /// </summary>
     public enum GrantPrincipalType

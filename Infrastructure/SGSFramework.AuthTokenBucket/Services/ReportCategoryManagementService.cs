@@ -8,7 +8,9 @@ using SGSFramework.Core.Abstractions.Adapters;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Abstractions.Entities.ReportCategories;
 using SGSFramework.Core.Abstractions.Permissions.Entities;
+using SGSFramework.AuthTokenBucket.Abstractions;
 using SGSFramework.Core.Abstractions.ReportAccess;
+using SGSFramework.Core.FileManagement;
 using ZiggyCreatures.Caching.Fusion;
 
 namespace SGSFramework.AuthTokenBucket.Services;
@@ -21,7 +23,17 @@ public interface IReportCategoryManagementService
 {
     Task<IReadOnlyList<ReportCategoryDto>> ListCategoriesAsync(CancellationToken cancellationToken = default);
 
-    Task<(bool Succeeded, string Message, ReportCategoryDto? Category)> SaveCategoryAsync(SaveReportCategoryRequest request, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// 新增或更新報告類別。<paramref name="labScoped"/> 為 true 時代表呼叫者僅具實驗室層級維護權限：
+    /// 只能維護目前實驗室的實驗室專屬類別。
+    /// </summary>
+    Task<(bool Succeeded, string Message, ReportCategoryDto? Category)> SaveCategoryAsync(SaveReportCategoryRequest request, bool labScoped = false, CancellationToken cancellationToken = default);
+
+    /// <summary>檔案管理已設定的儲存分類（供報告類別選擇儲存位置）</summary>
+    IReadOnlyList<FileStorageCategoryInfo> GetStorageCategories();
+
+    /// <summary>目前使用者的報告類別維護範圍（全部 / 僅目前實驗室的專屬類別 / 無）</summary>
+    Task<ReportCategoryManageScopeDto> GetManageScopeDtoAsync(CancellationToken cancellationToken = default);
 
     Task<(bool Succeeded, string Message)> SetCategoryLabsAsync(string categoryCode, IReadOnlyCollection<Guid> tenantLabIds, CancellationToken cancellationToken = default);
 
@@ -54,6 +66,9 @@ public sealed partial class ReportCategoryManagementService(
     DbContext dbContext,
     IOrganizationIntegrationService orgIntegrationService,
     IPermissionChangeNotifier permissionChangeNotifier,
+    IPermissionAuthorizationService permissionAuthorizationService,
+    IUserLabRepository userLabRepository,
+    IFileManagementService fileManagement,
     IFusionCache cache,
     IHttpContextAccessor httpContextAccessor,
     TimeProvider timeProvider,
@@ -64,8 +79,18 @@ public sealed partial class ReportCategoryManagementService(
 
     private static readonly JsonSerializerOptions PayloadJsonOptions = new(JsonSerializerDefaults.Web);
 
+    /// <summary>維護全部報告類別（全域與各實驗室專屬）</summary>
+    public const string ManagePermission = "RPT.REPORTCATEGORY.MANAGE";
+
+    /// <summary>維護目前實驗室的實驗室專屬報告類別</summary>
+    public const string ManageLabPermission = "RPT.REPORTCATEGORY.MANAGE_LAB";
+
     [GeneratedRegex("^[A-Z0-9_]{2,32}$")]
     private static partial Regex CategoryCodePattern();
+
+    /// <summary>儲存資料夾規則與檔案管理一致：英數、底線、連字號並以 / 分隔</summary>
+    [GeneratedRegex("^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$")]
+    private static partial Regex StorageFolderPattern();
 
     // ===== 類別主檔 =====
 
@@ -83,16 +108,51 @@ public sealed partial class ReportCategoryManagementService(
             .GroupBy(a => a.CategoryCode, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<Guid>)g.Select(a => a.TenantLabId).ToList(), StringComparer.OrdinalIgnoreCase);
 
-        return categories.Select(c => ToDto(c, labsByCategory.GetValueOrDefault(c.Code) ?? [])).ToList();
+        var (canManageAll, manageableLabId) = await GetManageScopeAsync(cancellationToken).ConfigureAwait(false);
+        return categories.Select(c => ToDto(c, labsByCategory.GetValueOrDefault(c.Code) ?? [],
+            canManageAll || (c.Scope == ReportCategoryScope.Lab && c.OwnerTenantLabId is { } owner && owner == manageableLabId))).ToList();
+    }
+
+    public IReadOnlyList<FileStorageCategoryInfo> GetStorageCategories() => fileManagement.GetStorageCategories();
+
+    public async Task<ReportCategoryManageScopeDto> GetManageScopeDtoAsync(CancellationToken cancellationToken = default)
+    {
+        var (canManageAll, labId) = await GetManageScopeAsync(cancellationToken).ConfigureAwait(false);
+        return new ReportCategoryManageScopeDto(canManageAll, labId);
     }
 
     public async Task<(bool Succeeded, string Message, ReportCategoryDto? Category)> SaveCategoryAsync(
-        SaveReportCategoryRequest request, CancellationToken cancellationToken = default)
+        SaveReportCategoryRequest request, bool labScoped = false, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
 
         var name = request.Name?.Trim() ?? string.Empty;
         if (name.Length == 0) return (false, "請填寫類別名稱。", null);
+
+        // 1. 適用範圍：實驗室專屬須指定所屬實驗室；實驗室層級維護者只能維護目前實驗室的專屬類別
+        Guid? ownerLabId = request.Scope == ReportCategoryScope.Lab ? request.OwnerTenantLabId : null;
+        if (request.Scope == ReportCategoryScope.Lab)
+        {
+            if (ownerLabId is not { } owner || owner == Guid.Empty) return (false, "實驗室專屬類別須指定所屬實驗室。", null);
+            if (await orgIntegrationService.GetOrganizationByIdAsync(owner, cancellationToken).ConfigureAwait(false) is null)
+            {
+                return (false, "找不到指定的所屬實驗室。", null);
+            }
+        }
+
+        var (canManageAll, manageableLabId) = await GetManageScopeAsync(cancellationToken).ConfigureAwait(false);
+        if (!canManageAll)
+        {
+            if (!labScoped || manageableLabId is null) return (false, "您不具維護報告類別的權限。", null);
+            if (request.Scope != ReportCategoryScope.Lab || ownerLabId != manageableLabId)
+            {
+                return (false, "實驗室層級維護者僅能維護目前實驗室的實驗室專屬類別；全域類別須由系統管理者維護。", null);
+            }
+        }
+
+        // 2. 儲存位置與資安設定
+        var settingsError = ValidateStorageAndSecurity(request);
+        if (settingsError is not null) return (false, settingsError, null);
 
         ReportCategory entity;
         if (request.Id is null)
@@ -101,7 +161,7 @@ public sealed partial class ReportCategoryManagementService(
             if (!CategoryCodePattern().IsMatch(code)) return (false, "類別代碼須為 2～32 碼大寫英數字或底線。", null);
 
             bool exists = await dbContext.Set<ReportCategory>().AnyAsync(c => c.Code == code, cancellationToken).ConfigureAwait(false);
-            if (exists) return (false, $"類別代碼「{code}」已存在。", null);
+            if (exists) return (false, $"類別代碼「{code}」已存在（類別代碼於全系統唯一，實驗室專屬類別建議加上實驗室代碼前綴）。", null);
 
             entity = new ReportCategory { Code = code, CreatedBy = CurrentActor().Name };
             dbContext.Set<ReportCategory>().Add(entity);
@@ -114,6 +174,12 @@ public sealed partial class ReportCategoryManagementService(
             if (!string.Equals(found.Code, request.Code?.Trim(), StringComparison.OrdinalIgnoreCase))
             {
                 return (false, "類別代碼建立後不可變更（授權與報告皆以代碼參照）。", null);
+            }
+
+            // 實驗室層級維護者不可接管其他實驗室或全域類別
+            if (!canManageAll && (found.Scope != ReportCategoryScope.Lab || found.OwnerTenantLabId != manageableLabId))
+            {
+                return (false, "您僅能維護目前實驗室的實驗室專屬類別。", null);
             }
 
             // 樂觀鎖：以前端讀取時的版本比對，避免覆蓋他人同時間的修改
@@ -131,6 +197,19 @@ public sealed partial class ReportCategoryManagementService(
         entity.RegulationTags = string.IsNullOrWhiteSpace(request.RegulationTags) ? null : request.RegulationTags.Trim();
         entity.DisplayOrder = request.DisplayOrder;
         entity.IsActive = request.IsActive;
+        entity.Scope = request.Scope;
+        entity.OwnerTenantLabId = ownerLabId;
+        entity.StorageCategory = TrimToNull(request.StorageCategory);
+        entity.StorageFolder = TrimToNull(request.StorageFolder)?.Replace('\\', '/').Trim('/');
+        entity.EncryptAtRest = request.EncryptAtRest;
+        entity.WatermarkOnDownload = request.WatermarkOnDownload;
+        entity.TamperVerification = request.TamperVerification;
+
+        // 實驗室專屬類別：承作實驗室固定為所屬實驗室（同一交易內同步）
+        if (entity.Scope == ReportCategoryScope.Lab)
+        {
+            await SyncLabAssignmentsAsync(entity.Code, [entity.OwnerTenantLabId!.Value], cancellationToken).ConfigureAwait(false);
+        }
 
         try
         {
@@ -141,15 +220,117 @@ public sealed partial class ReportCategoryManagementService(
             return (false, "此類別已被其他人修改，請重新整理後再編輯。", null);
         }
 
-        // 類別啟用狀態影響全體使用者的授權快照
+        // 類別啟用狀態與承作實驗室影響全體使用者的授權快照
         await cache.RemoveByTagAsync(ReportAccessCacheTags.All, token: cancellationToken).ConfigureAwait(false);
-        logger.LogInformation("[ReportCategory] {Actor} 儲存報告類別 {Code}（啟用：{IsActive}）", CurrentActor().Name, entity.Code, entity.IsActive);
+        logger.LogInformation("[ReportCategory] {Actor} 儲存報告類別 {Code}（範圍 {Scope}，啟用 {IsActive}，儲存 {Storage}/{Folder}，加密 {Encrypt}，浮水印 {Watermark}，防竄改 {Tamper}）",
+            CurrentActor().Name, entity.Code, entity.Scope, entity.IsActive, entity.StorageCategory, entity.StorageFolder,
+            entity.EncryptAtRest, entity.WatermarkOnDownload, entity.TamperVerification);
 
         var labs = await dbContext.Set<ReportCategoryLabAssignment>().AsNoTracking()
             .Where(a => a.CategoryCode == entity.Code).Select(a => a.TenantLabId)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
-        return (true, $"已儲存報告類別「{entity.Name}」。", ToDto(entity, labs));
+        return (true, $"已儲存報告類別「{entity.Name}」。", ToDto(entity, labs, canManage: true));
     }
+
+    /// <summary>
+    /// 驗證儲存位置與資安設定：儲存分類須存在且不開放通用檔案 API（避免繞過報告授權）；
+    /// 資料夾須符合檔案管理規則；預設密級為特檢時必須落地加密。
+    /// </summary>
+    private string? ValidateStorageAndSecurity(SaveReportCategoryRequest request)
+    {
+        var storageCategory = TrimToNull(request.StorageCategory);
+        var available = fileManagement.GetStorageCategories();
+        bool categoryEncrypts = false;
+
+        if (storageCategory is not null || available.Count > 0)
+        {
+            var code = storageCategory ?? ReportCategoryStorageDefaults.StorageCategory;
+            var info = available.FirstOrDefault(c => c.Code.Equals(code, StringComparison.OrdinalIgnoreCase));
+            if (info is null)
+            {
+                // 未指定時沿用預設分類；預設分類未設定則維持既有行為，由簽署時回報
+                if (storageCategory is not null)
+                {
+                    return available.Count == 0
+                        ? "檔案管理模組未安裝，無法指定儲存分類。"
+                        : $"檔案管理未定義儲存分類「{storageCategory}」。";
+                }
+            }
+            else
+            {
+                if (info.AllowGenericApi)
+                {
+                    return $"儲存分類「{info.Code}」開放通用檔案 API 存取；正式報告須存放於僅限業務模組存取的分類，避免繞過報告授權。";
+                }
+
+                categoryEncrypts = info.Encrypt;
+            }
+        }
+
+        var folder = TrimToNull(request.StorageFolder)?.Replace('\\', '/').Trim('/');
+        if (!string.IsNullOrEmpty(folder) && (folder.Length > 200 || !StorageFolderPattern().IsMatch(folder)))
+        {
+            return "儲存資料夾僅允許英數、底線、連字號並以 / 分隔，最多 200 字元。";
+        }
+
+        if (request.DefaultConfidentiality == ConfidentialityLevel.Restricted && !request.EncryptAtRest && !categoryEncrypts)
+        {
+            return "預設密級為特檢的類別必須啟用落地加密。";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 目前使用者的維護範圍：具 MANAGE（或最高管理者）可維護全部；僅具 MANAGE_LAB 者只能維護目前實驗室（須為有效成員）的專屬類別
+    /// </summary>
+    private async Task<(bool CanManageAll, Guid? ManageableLabId)> GetManageScopeAsync(CancellationToken cancellationToken)
+    {
+        var httpContext = httpContextAccessor.HttpContext;
+        var principal = httpContext?.User;
+        if (principal?.Identity is not { IsAuthenticated: true }) return (false, null);
+
+        if (AuthorizationClaimHelper.IsSuperAdmin(principal) ||
+            await permissionAuthorizationService.HasPermissionAsync(principal, ManagePermission, cancellationToken).ConfigureAwait(false))
+        {
+            return (true, null);
+        }
+
+        if (AuthorizationClaimHelper.ResolveTenantLabId(principal, httpContext) is not { } labId ||
+            AuthorizationClaimHelper.ResolveUserId(principal) is not { } userId ||
+            !await permissionAuthorizationService.HasPermissionAsync(principal, ManageLabPermission, cancellationToken).ConfigureAwait(false))
+        {
+            return (false, null);
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var mappings = await userLabRepository.GetAccessibleLabsAsync(userId, cancellationToken).ConfigureAwait(false);
+        return (false, mappings.Any(m => m.TenantLabId == labId && m.IsValidAt(now)) ? labId : null);
+    }
+
+    /// <summary>以指定實驗室取代類別的承作實驗室（不儲存，由呼叫端 SaveChanges）</summary>
+    private async Task SyncLabAssignmentsAsync(string categoryCode, IReadOnlyCollection<Guid> targetIds, CancellationToken cancellationToken)
+    {
+        var existing = await dbContext.Set<ReportCategoryLabAssignment>()
+            .Where(a => a.CategoryCode == categoryCode)
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        var actorName = CurrentActor().Name;
+        var now = timeProvider.GetUtcNow();
+        dbContext.Set<ReportCategoryLabAssignment>().RemoveRange(existing.Where(a => !targetIds.Contains(a.TenantLabId)));
+        foreach (var labId in targetIds.Where(id => existing.All(a => a.TenantLabId != id)))
+        {
+            dbContext.Set<ReportCategoryLabAssignment>().Add(new ReportCategoryLabAssignment
+            {
+                CategoryCode = categoryCode,
+                TenantLabId = labId,
+                CreatedAt = now,
+                CreatedByName = actorName
+            });
+        }
+    }
+
+    private static string? TrimToNull(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     public async Task<(bool Succeeded, string Message)> SetCategoryLabsAsync(
         string categoryCode, IReadOnlyCollection<Guid> tenantLabIds, CancellationToken cancellationToken = default)
@@ -160,30 +341,21 @@ public sealed partial class ReportCategoryManagementService(
         if (category is null) return (false, "找不到指定的報告類別。");
 
         var targetIds = tenantLabIds.Where(id => id != Guid.Empty).Distinct().ToList();
+
+        // 實驗室專屬類別的承作實驗室固定為所屬實驗室
+        if (category.Scope == ReportCategoryScope.Lab && (targetIds.Count != 1 || targetIds[0] != category.OwnerTenantLabId))
+        {
+            return (false, $"「{category.Name}」為實驗室專屬類別，僅能由所屬實驗室承作；如需多個實驗室承作請改為全域類別。");
+        }
+
         foreach (var labId in targetIds)
         {
             var lab = await orgIntegrationService.GetOrganizationByIdAsync(labId, cancellationToken).ConfigureAwait(false);
             if (lab is null) return (false, $"找不到區域實驗室（{labId}）。");
         }
 
-        var existing = await dbContext.Set<ReportCategoryLabAssignment>()
-            .Where(a => a.CategoryCode == category.Code)
-            .ToListAsync(cancellationToken).ConfigureAwait(false);
-
         var actorName = CurrentActor().Name;
-        var now = timeProvider.GetUtcNow();
-        dbContext.Set<ReportCategoryLabAssignment>().RemoveRange(existing.Where(a => !targetIds.Contains(a.TenantLabId)));
-        foreach (var labId in targetIds.Where(id => existing.All(a => a.TenantLabId != id)))
-        {
-            dbContext.Set<ReportCategoryLabAssignment>().Add(new ReportCategoryLabAssignment
-            {
-                CategoryCode = category.Code,
-                TenantLabId = labId,
-                CreatedAt = now,
-                CreatedByName = actorName
-            });
-        }
-
+        await SyncLabAssignmentsAsync(category.Code, targetIds, cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await cache.RemoveByTagAsync(ReportAccessCacheTags.All, token: cancellationToken).ConfigureAwait(false);
 
@@ -479,6 +651,12 @@ public sealed partial class ReportCategoryManagementService(
         if (category is null) return ("找不到指定的報告類別。", string.Empty, null);
         if (!category.IsActive) return ($"報告類別「{category.Name}」已停用。", string.Empty, null);
 
+        // 實驗室專屬類別的授權只能限定於所屬實驗室（不限實驗室時亦僅在所屬實驗室生效）
+        if (category.Scope == ReportCategoryScope.Lab && request.TenantLabId.HasValue && request.TenantLabId != category.OwnerTenantLabId)
+        {
+            return ($"「{category.Name}」為實驗室專屬類別，授權只能限定於所屬實驗室。", string.Empty, null);
+        }
+
         string labText = "不限實驗室";
         if (request.TenantLabId.HasValue)
         {
@@ -714,9 +892,13 @@ public sealed partial class ReportCategoryManagementService(
         : from > now ? LabAuditStatuses.Upcoming
         : LabAuditStatuses.Active;
 
-    private static ReportCategoryDto ToDto(ReportCategory c, IReadOnlyList<Guid> labIds) => new(
+    private static ReportCategoryDto ToDto(ReportCategory c, IReadOnlyList<Guid> labIds, bool canManage) => new(
         c.Id, c.Code, c.Name, c.Description, c.DefaultConfidentiality, c.RegulationTags, c.DisplayOrder, c.IsActive,
-        labIds, Convert.ToBase64String(c.RowVersion ?? []));
+        labIds, Convert.ToBase64String(c.RowVersion ?? []),
+        c.Scope, c.OwnerTenantLabId, c.StorageCategory, c.StorageFolder,
+        c.StorageCategory ?? ReportCategoryStorageDefaults.StorageCategory,
+        c.StorageFolder ?? ReportCategoryStorageDefaults.FolderFor(c.Code),
+        c.EncryptAtRest, c.WatermarkOnDownload, c.TamperVerification, canManage);
 
     private bool IsCurrentSuperAdmin()
     {

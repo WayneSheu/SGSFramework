@@ -1617,6 +1617,12 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("int")
                         .HasComment("排序");
 
+                    b.Property<bool>("EncryptAtRest")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasComment("正式報告落地加密（AES-256-GCM 信封加密）；啟用時即使儲存分類未設定加密亦強制加密");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit")
                         .HasComment("是否啟用");
@@ -1626,6 +1632,10 @@ namespace PhysLIMS.API.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
                         .HasComment("類別名稱");
+
+                    b.Property<Guid?>("OwnerTenantLabId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("實驗室專屬類別之所屬區域實驗室（ORG Organization.TenantLabId）；全域類別為 null");
 
                     b.Property<string>("RegulationTags")
                         .HasMaxLength(200)
@@ -1639,6 +1649,30 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("rowversion")
                         .HasComment("並行版本（樂觀鎖）");
 
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasDefaultValue("Global")
+                        .HasComment("適用範圍（Global=全域, Lab=實驗室專屬）");
+
+                    b.Property<string>("StorageCategory")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasComment("正式報告存放的檔案管理儲存分類（FileManagement:Categories，決定地端 / 雲端與容器）；null 使用預設 Report 分類");
+
+                    b.Property<string>("StorageFolder")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasComment("儲存資料夾（儲存鍵前綴，英數 / 底線 / 連字號以 / 分隔）；null 使用 reports/{類別代碼}");
+
+                    b.Property<bool>("TamperVerification")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasComment("防竄改驗證：簽署時產生公開查驗碼、下載時比對 SHA-256 並開放公開真偽查驗");
+
                     b.Property<DateTimeOffset?>("UpdatedAtUtc")
                         .HasColumnType("datetimeoffset")
                         .HasComment("最後更新時間");
@@ -1648,10 +1682,16 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("nvarchar(256)")
                         .HasComment("最後更新人員");
 
+                    b.Property<bool>("WatermarkOnDownload")
+                        .HasColumnType("bit")
+                        .HasComment("下載正式報告時提供點陣化浮水印版本（下載者 / 時間 / IP），原檔不外流");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Code")
                         .IsUnique();
+
+                    b.HasIndex("OwnerTenantLabId");
 
                     b.ToTable("ReportCategories", "core", t =>
                         {

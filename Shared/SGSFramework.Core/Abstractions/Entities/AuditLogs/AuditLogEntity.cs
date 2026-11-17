@@ -39,11 +39,11 @@ namespace SGSFramework.Core.Abstractions.Entities.AuditLogs
         public string? RemoteIp { get; set; }
 
         [DisplayName("建立時間")]
-        [Comment("建立時間")]
+        [Comment("建立時間;這筆日誌列寫入資料庫的時間")]
         public DateTimeOffset CreatedAt { get; set; } = GetTaiwanTime();
 
         [DisplayName("時間戳記")]
-        [Comment("時間戳記")]
+        [Comment("時間戳記;業務異動實際發生的時間，即資料被新增、修改或刪除的時刻")]
         public DateTimeOffset Timestamp { get; set; } = GetTaiwanTime();
 
         [DisplayName("資料表綱要")]

@@ -13,9 +13,22 @@ public sealed record ReportCategoryDto(
     int DisplayOrder,
     bool IsActive,
     IReadOnlyList<Guid> TenantLabIds,
-    string RowVersion);
+    string RowVersion,
+    ReportCategoryScope Scope,
+    Guid? OwnerTenantLabId,
+    string? StorageCategory,
+    string? StorageFolder,
+    string EffectiveStorageCategory,
+    string EffectiveStorageFolder,
+    bool EncryptAtRest,
+    bool WatermarkOnDownload,
+    bool TamperVerification,
+    bool CanManage);
 
-/// <summary>新增（Id 為 null）或更新報告類別；類別代碼建立後不可變更</summary>
+/// <summary>
+/// 新增（Id 為 null）或更新報告類別；類別代碼建立後不可變更。
+/// 實驗室專屬類別須指定 OwnerTenantLabId，承作實驗室固定為所屬實驗室。
+/// </summary>
 public sealed record SaveReportCategoryRequest(
     Guid? Id,
     string Code,
@@ -25,7 +38,24 @@ public sealed record SaveReportCategoryRequest(
     string? RegulationTags,
     int DisplayOrder,
     bool IsActive,
-    string? RowVersion);
+    string? RowVersion,
+    ReportCategoryScope Scope = ReportCategoryScope.Global,
+    Guid? OwnerTenantLabId = null,
+    string? StorageCategory = null,
+    string? StorageFolder = null,
+    bool EncryptAtRest = true,
+    bool WatermarkOnDownload = false,
+    bool TamperVerification = true);
+
+/// <summary>報告類別儲存與資安設定的預設值（RPT 模組與管理介面共用）</summary>
+public static class ReportCategoryStorageDefaults
+{
+    /// <summary>未指定儲存分類時使用的檔案管理分類</summary>
+    public const string StorageCategory = "Report";
+
+    /// <summary>未指定資料夾時的儲存鍵前綴</summary>
+    public static string FolderFor(string categoryCode) => $"reports/{categoryCode}";
+}
 
 public sealed record SetCategoryLabsRequest(List<Guid> TenantLabIds);
 
@@ -114,3 +144,6 @@ public sealed record ReportGrantSubmitResult(bool Succeeded, string Message, boo
 {
     public static ReportGrantSubmitResult Fail(string message) => new(false, message);
 }
+
+/// <summary>報告類別維護範圍：CanManageAll 可維護全部；否則僅能維護 ManageableLabId 的實驗室專屬類別（null 表示不可維護）</summary>
+public sealed record ReportCategoryManageScopeDto(bool CanManageAll, Guid? ManageableLabId);

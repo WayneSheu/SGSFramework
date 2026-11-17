@@ -37,6 +37,9 @@ namespace SGSFramework.SystemLog.DTOs
         /// <summary>變更欄位名稱（包含比對，例如 Status）</summary>
         public string? ChangedColumn { get; init; }
 
+        /// <summary>
+        /// TimeStamp 
+        /// </summary>
         public DateTimeOffset? StartTimestamp { get; init; }
         public DateTimeOffset? EndTimestamp { get; init; }
     }

@@ -80,8 +80,8 @@ public sealed class ReportService(
 {
     private const int ListLimit = 500;
 
-    /// <summary>檔案管理分類（FileManagement:Categories:Report，須設 AllowGenericApi = false）</summary>
-    internal const string ReportFileCategory = "Report";
+    /// <summary>報告類別未指定儲存分類時使用的檔案管理分類（FileManagement:Categories:Report，須設 AllowGenericApi = false）</summary>
+    internal const string ReportFileCategory = ReportCategoryStorageDefaults.StorageCategory;
 
     private static readonly ReportActions[] DetailActions =
     [
@@ -482,8 +482,8 @@ public sealed class ReportService(
     }
 
     /// <summary>
-    /// 簽署：快照簽署人資格證號，產生正式 PDF 並保存，計算 SHA-256 與公開查驗碼。正式檔案自此不再重新產生。
-    /// PDF 存於檔案管理的 Report 分類（地端機密、禁止經通用 api/v1/files 存取），下載一律經本服務授權。
+    /// 簽署：快照簽署人資格證號，產生正式 PDF 並保存，計算 SHA-256（類別啟用防竄改驗證時另產生公開查驗碼）。正式檔案自此不再重新產生。
+    /// PDF 依報告類別設定存於檔案管理的儲存分類與資料夾（須為禁止經通用 api/v1/files 存取的分類），下載一律經本服務授權。
     /// </summary>
     private async Task<string?> SignAsync(Report report, Guid userId, DateTimeOffset now, CancellationToken cancellationToken)
     {
@@ -491,11 +491,13 @@ public sealed class ReportService(
         var qualification = qualifications.FirstOrDefault(q => q.TenantLabId == report.TenantLabId && q.Status == LabAuditStatuses.Active);
         if (qualification is null) return "不具此類別於本實驗室之有效簽署人資格。";
 
+        var category = await FindCategoryAsync(report.CategoryCode, cancellationToken).ConfigureAwait(false);
+
         report.SignerId = userId;
         report.SignerName = guard.CurrentUserName;
         report.SignerCertificateNo = qualification.CertificateNo;
         report.SignedAt = now;
-        report.VerificationToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+        report.VerificationToken = category?.TamperVerification == false ? null : Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
 
         var pdf = ReportPdfGenerator.Generate(await BuildPdfDataAsync(report, preview: false, watermark: null, cancellationToken).ConfigureAwait(false));
 
@@ -505,7 +507,11 @@ public sealed class ReportService(
         {
             await using var stream = new MemoryStream(pdf, writable: false);
             var file = await fileManagement.UploadAsync(
-                new FileUploadRequest(stream, $"{report.ReportNo}.pdf", ReportFileCategory, nameof(Report), report.Id.ToString()),
+                new FileUploadRequest(stream, $"{report.ReportNo}.pdf", category?.EffectiveStorageCategory ?? ReportFileCategory, nameof(Report), report.Id.ToString())
+                {
+                    Folder = category?.EffectiveStorageFolder ?? ReportCategoryStorageDefaults.FolderFor(report.CategoryCode),
+                    ForceEncryption = category?.EncryptAtRest ?? true
+                },
                 cancellationToken: cancellationToken).ConfigureAwait(false);
 
             // 檔案管理以實際落地內容計算雜湊，須與簽署時的 PDF 一致（PDF 不經重新編碼）
@@ -753,17 +759,47 @@ public sealed class ReportService(
 
         if (content is null) return (ReportOpResult.Fail("正式報告檔案不存在，請聯絡系統管理員。"), null);
 
-        // 完整性檢核：檔案雜湊須與簽署時保存者一致，否則拒絕提供並記錄（串流計算，不整檔讀入記憶體）
-        var actualHash = Convert.ToHexStringLower(await SHA256.HashDataAsync(content, cancellationToken).ConfigureAwait(false));
-        if (!string.Equals(actualHash, report.PdfSha256, StringComparison.OrdinalIgnoreCase))
+        // 類別不存在時採安全預設：驗證雜湊、不加浮水印（維持既有行為）
+        var category = await FindCategoryAsync(report.CategoryCode, cancellationToken).ConfigureAwait(false);
+
+        // 完整性檢核（防竄改驗證）：檔案雜湊須與簽署時保存者一致，否則拒絕提供並記錄（串流計算，不整檔讀入記憶體）
+        if (category?.TamperVerification != false)
         {
-            await content.DisposeAsync().ConfigureAwait(false);
-            logger.LogCritical("[Report] 報告 {ReportNo} 正式檔案雜湊不符，疑遭竄改：檔案 {FileId} / 舊版連結 {Link}",
-                report.ReportNo, report.PdfFileId, report.PdfFileLink);
-            return (ReportOpResult.Fail("正式報告檔案完整性檢核失敗，已通報系統管理員。"), null);
+            var actualHash = Convert.ToHexStringLower(await SHA256.HashDataAsync(content, cancellationToken).ConfigureAwait(false));
+            if (!string.Equals(actualHash, report.PdfSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                await content.DisposeAsync().ConfigureAwait(false);
+                logger.LogCritical("[Report] 報告 {ReportNo} 正式檔案雜湊不符，疑遭竄改：檔案 {FileId} / 舊版連結 {Link}",
+                    report.ReportNo, report.PdfFileId, report.PdfFileLink);
+                return (ReportOpResult.Fail("正式報告檔案完整性檢核失敗，已通報系統管理員。"), null);
+            }
+
+            content.Position = 0;
         }
 
-        content.Position = 0;
+        // 下載浮水印：原檔不外流，改提供逐頁點陣化並繪入下載者 / 時間 / IP 的版本（舊版連結檔案無檔案管理紀錄，仍提供原檔）
+        if (category?.WatermarkOnDownload == true && report.PdfFileId is { } fileId)
+        {
+            await content.DisposeAsync().ConfigureAwait(false);
+
+            var watermark = $"{guard.CurrentUserName} | {timeProvider.GetUtcNow():yyyy-MM-dd HH:mm} UTC | {guard.CurrentRemoteIp ?? "-"}";
+            FileViewContent? view;
+            try
+            {
+                view = await fileManagement.OpenWatermarkedViewAsync(fileId, watermark, cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+            catch (FileRejectedException ex)
+            {
+                logger.LogError(ex, "[Report] 報告 {ReportNo} 浮水印版本產生失敗（{Status}）。", report.ReportNo, ex.StatusCode);
+                return (ReportOpResult.Fail("浮水印版本產生失敗，請聯絡系統管理員。"), null);
+            }
+
+            if (view is null) return (ReportOpResult.Fail("正式報告檔案不存在，請聯絡系統管理員。"), null);
+
+            await accessLogger.LogReportAsync(report, ReportAccessAction.Download, "watermarked", cancellationToken).ConfigureAwait(false);
+            return (ReportOpResult.Ok("OK"), new ReportFileResult(new MemoryStream(view.Content, writable: false), $"{report.ReportNo}.pdf"));
+        }
+
         await accessLogger.LogReportAsync(report, ReportAccessAction.Download, cancellationToken: cancellationToken).ConfigureAwait(false);
         return (ReportOpResult.Ok("OK"), new ReportFileResult(content, $"{report.ReportNo}.pdf"));
     }
@@ -1035,10 +1071,14 @@ public sealed class ReportService(
             supersedesNo, preview, watermark);
     }
 
-    private async Task<string?> CategoryNameAsync(string code, CancellationToken cancellationToken)
+    private async Task<string?> CategoryNameAsync(string code, CancellationToken cancellationToken) =>
+        (await FindCategoryAsync(code, cancellationToken).ConfigureAwait(false))?.Name;
+
+    /// <summary>報告類別設定（儲存位置與資安管控）；類別不存在時回傳 null，呼叫端採安全預設（加密 + 防竄改）</summary>
+    private async Task<ReportCategoryDto?> FindCategoryAsync(string code, CancellationToken cancellationToken)
     {
         var categories = await categoryService.ListCategoriesAsync(cancellationToken).ConfigureAwait(false);
-        return categories.FirstOrDefault(c => string.Equals(c.Code, code, StringComparison.OrdinalIgnoreCase))?.Name;
+        return categories.FirstOrDefault(c => string.Equals(c.Code, code, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task<string?> LabNameAsync(Guid tenantLabId, CancellationToken cancellationToken) =>

@@ -39,6 +39,12 @@ public sealed class NullFileManagementService(ILogger<NullFileManagementService>
     public Task<FilePurgeResult> PurgeDeletedAsync(CancellationToken cancellationToken = default) =>
         throw Unavailable(nameof(PurgeDeletedAsync));
 
+    public IReadOnlyList<FileStorageCategoryInfo> GetStorageCategories()
+    {
+        LogWarning(nameof(GetStorageCategories));
+        return [];
+    }
+
     private FileRejectedException Unavailable(string method)
     {
         LogWarning(method);
