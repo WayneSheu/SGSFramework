@@ -23,6 +23,7 @@ namespace SGSFramework.Identity.Services
         ICurrentUserService currentUserService,
         IPermissionChangeNotifier permissionChangeNotifier,
         IdentityPolicyRuntime identityPolicyRuntime,
+        IRoleGovernanceService roleGovernanceService,
         TimeProvider timeProvider,
         ILogger<SystemSettingsService> logger) : ISystemSettingsService
     {
@@ -40,6 +41,7 @@ namespace SGSFramework.Identity.Services
         private readonly ICurrentUserService _currentUserService = currentUserService ?? throw new ArgumentNullException(nameof(currentUserService));
         private readonly IPermissionChangeNotifier _permissionChangeNotifier = permissionChangeNotifier ?? throw new ArgumentNullException(nameof(permissionChangeNotifier));
         private readonly IdentityPolicyRuntime _identityPolicyRuntime = identityPolicyRuntime ?? throw new ArgumentNullException(nameof(identityPolicyRuntime));
+        private readonly IRoleGovernanceService _roleGovernanceService = roleGovernanceService ?? throw new ArgumentNullException(nameof(roleGovernanceService));
         private readonly TimeProvider _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         private readonly ILogger<SystemSettingsService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -55,11 +57,93 @@ namespace SGSFramework.Identity.Services
             identityPolicy.UpdatedAt = identityRow?.UpdatedAt;
             identityPolicy.UpdatedBy = identityRow?.UpdatedByName;
 
+            var governanceRow = await FindAsync(SystemSettingKeys.RoleGovernance, tracking: false, cancellationToken);
+
             return new SystemSettingsDto
             {
                 Branding = branding,
                 IdentityPolicy = identityPolicy,
-                IdentityPolicyDefaults = _identityPolicyRuntime.Defaults
+                IdentityPolicyDefaults = _identityPolicyRuntime.Defaults,
+                RoleGovernance = new RoleGovernanceSettingsDto
+                {
+                    RequireApproval = await _roleGovernanceService.IsApprovalRequiredAsync(cancellationToken),
+                    UpdatedAt = governanceRow?.UpdatedAt,
+                    UpdatedBy = governanceRow?.UpdatedByName
+                },
+                RoleGovernanceDefaults = new RoleGovernanceSettingsDto { RequireApproval = _roleGovernanceService.DefaultRequireApproval }
+            };
+        }
+
+        public async Task<RoleGovernanceSettingsDto> UpdateRoleGovernanceAsync(RoleGovernanceSettingsDto settings, string? clientIp, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(settings);
+
+            var previous = await _roleGovernanceService.IsApprovalRequiredAsync(cancellationToken);
+            var defaultValue = _roleGovernanceService.DefaultRequireApproval;
+            var changes = new List<string>();
+            RoleGovernanceReleaseResult? release = null;
+
+            if (previous != settings.RequireApproval)
+            {
+                changes.Add($"角色權限變更須經審核：{Format(previous)} → {Format(settings.RequireApproval)}");
+                if (!settings.RequireApproval)
+                {
+                    changes.Add("已停用審核：權限變更與新建角色將直接生效（仍檢查職能分立 SoD）");
+                }
+            }
+
+            // 與 appsettings 預設相同時不保留自訂設定，讓 appsettings 持續作為預設來源
+            var isDefault = settings.RequireApproval == defaultValue;
+            var hasRow = await FindAsync(SystemSettingKeys.RoleGovernance, tracking: false, cancellationToken) is not null;
+
+            if (changes.Count == 0)
+            {
+                if (isDefault && hasRow)
+                {
+                    await SaveAsync<RoleGovernanceSettingValue>(SystemSettingKeys.RoleGovernance, null, changes, clientIp, cancellationToken);
+                }
+            }
+            else
+            {
+                if (isDefault) changes.Add("已恢復為 appsettings 預設值");
+
+                // 由啟用改為停用：先自動放行既有待審項目（權限變更申請、待審核的新角色），明細一併記入異動紀錄
+                if (previous && !settings.RequireApproval)
+                {
+                    release = await _roleGovernanceService.ReleasePendingAsync(cancellationToken);
+                    _logger.LogInformation("停用角色權限審核，自動放行 {Requests} 筆權限變更申請、啟用 {Roles} 個新角色，{Skipped} 項未能放行。",
+                        release.ApprovedRequests, release.ActivatedRoles, release.Skipped.Count);
+
+                    changes.Add(release.ApprovedRequests == 0
+                        ? "自動放行權限變更申請：無"
+                        : $"自動放行權限變更申請 {release.ApprovedRequests} 筆：{string.Join("、", release.ApprovedItems)}");
+                    changes.Add(release.ActivatedRoles == 0
+                        ? "自動啟用待審核新角色：無"
+                        : $"自動啟用待審核新角色 {release.ActivatedRoles} 個：{string.Join("、", release.ActivatedItems)}");
+                    if (release.Skipped.Count > 0)
+                    {
+                        changes.Add($"未能放行 {release.Skipped.Count} 項（維持待審核）：{string.Join("、", release.Skipped.Select(s => s.TrimEnd('。')))}");
+                    }
+                }
+
+                await SaveAsync(SystemSettingKeys.RoleGovernance,
+                    isDefault ? null : new RoleGovernanceSettingValue(settings.RequireApproval),
+                    changes, clientIp, cancellationToken);
+
+                _logger.LogInformation("角色權限審核設定已更新並立即生效：{Changes}", string.Join("；", changes));
+
+                await BroadcastAsync(cancellationToken);
+            }
+
+            var row = await FindAsync(SystemSettingKeys.RoleGovernance, tracking: false, cancellationToken);
+            return new RoleGovernanceSettingsDto
+            {
+                RequireApproval = settings.RequireApproval,
+                UpdatedAt = row?.UpdatedAt,
+                UpdatedBy = row?.UpdatedByName,
+                ReleasedRequests = release?.ApprovedRequests ?? 0,
+                ActivatedRoles = release?.ActivatedRoles ?? 0,
+                ReleaseSkipped = release?.Skipped.ToList() ?? []
             };
         }
 

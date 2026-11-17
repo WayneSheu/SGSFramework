@@ -122,6 +122,22 @@ public sealed class RoleManagementController(
     }
 
     /// <summary>
+    /// 取得目前是否啟用角色權限審核（系統配置 → 角色權限審核），供前端決定是否顯示「送出審核」流程
+    /// </summary>
+    [HttpGet("approval-setting")]
+    [Function("GetRoleApprovalSetting", "查詢權限審核設定", Icon = "fa-solid fa-clipboard-check", Order = 4, Description = "查詢角色權限變更是否須經審核")]
+    [RequiresPermission("SYSTEM.ROLEMANAGEMENT.READ")]
+    [EndpointSummary("查詢權限審核設定")]
+    [EndpointDescription("回傳角色權限變更是否須經審核（雙重審批）。")]
+    public async Task<IActionResult> GetApprovalSetting(
+        [FromServices] SGSFramework.AuthTokenBucket.Services.IRoleGovernanceService governanceService,
+        CancellationToken cancellationToken = default)
+    {
+        var required = await governanceService.IsApprovalRequiredAsync(cancellationToken).ConfigureAwait(false);
+        return Ok(new { requireApproval = required });
+    }
+
+    /// <summary>
     /// 權限變更審核（選單入口）：置於「角色管理」群組下；審核動作由 role-governance API 處理
     /// </summary>
     [HttpGet("change-requests")]

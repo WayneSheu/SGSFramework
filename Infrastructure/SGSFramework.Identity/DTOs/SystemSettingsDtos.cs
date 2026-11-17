@@ -16,6 +16,34 @@ namespace SGSFramework.Identity.DTOs
 
         /// <summary>appsettings / 程式啟動時的 Identity 預設規則，供「還原預設」使用</summary>
         public IdentityPolicySettingsDto IdentityPolicyDefaults { get; init; } = new();
+
+        /// <summary>目前生效的角色權限審核設定</summary>
+        public RoleGovernanceSettingsDto RoleGovernance { get; init; } = new();
+
+        /// <summary>appsettings 中的角色權限審核預設值</summary>
+        public RoleGovernanceSettingsDto RoleGovernanceDefaults { get; init; } = new();
+    }
+
+    /// <summary>
+    /// 角色權限審核設定。停用時，角色權限變更與新建角色不需經雙重審批，儲存後直接生效（仍檢查職能分立 SoD）。
+    /// </summary>
+    public sealed class RoleGovernanceSettingsDto
+    {
+        /// <summary>權限變更是否須經審核（雙重審批 Maker-Checker）</summary>
+        public bool RequireApproval { get; set; } = true;
+
+        public DateTimeOffset? UpdatedAt { get; set; }
+
+        public string? UpdatedBy { get; set; }
+
+        /// <summary>（僅回應）停用審核時自動放行並套用的權限變更申請數</summary>
+        public int ReleasedRequests { get; set; }
+
+        /// <summary>（僅回應）停用審核時自動啟用的待審核新角色數</summary>
+        public int ActivatedRoles { get; set; }
+
+        /// <summary>（僅回應）無法自動放行的項目與原因（維持待審核）</summary>
+        public List<string> ReleaseSkipped { get; set; } = [];
     }
 
     /// <summary>

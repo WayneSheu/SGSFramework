@@ -135,6 +135,26 @@ public sealed class SystemSettingsController : ApiControllerBase
     }
 
     /// <summary>
+    /// 更新角色權限審核設定（停用後權限變更不需審核）
+    /// </summary>
+    [HttpPut("role-governance")]
+    [Function("UpdateRoleGovernance", "更新角色權限審核設定", Icon = "fa-solid fa-clipboard-check", Order = 6, Description = "啟用或停用角色權限變更的雙重審批；停用後權限變更直接生效")]
+    [RequiresPermission("SYSTEM.SYSTEMSETTINGS.UPDATE")]
+    [EndpointSummary("更新角色權限審核設定")]
+    [EndpointDescription("啟用或停用角色權限變更的雙重審批；停用後權限變更與新建角色直接生效（仍檢查職能分立 SoD），儲存後立即生效。")]
+    [ProducesResponseType(typeof(RoleGovernanceSettingsDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> UpdateRoleGovernance(
+        [FromBody] RoleGovernanceSettingsDto request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var updated = await _systemSettingsService.UpdateRoleGovernanceAsync(request, ClientIp, cancellationToken);
+        return Ok(updated);
+    }
+
+    /// <summary>
     /// 取得系統配置異動歷程
     /// </summary>
     [HttpGet("change-logs")]

@@ -165,6 +165,7 @@ namespace SGSFramework.Identity.Services
     {
         public const string Branding = "Branding";
         public const string IdentityPolicy = "IdentityPolicy";
+        public const string RoleGovernance = SGSFramework.AuthTokenBucket.Services.RoleGovernanceSettingKeys.Key;
 
         /// <summary>SignalR 廣播原因代碼，前端據此重新載入外觀識別</summary>
         public const string ChangedReason = "system-settings-changed";

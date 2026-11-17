@@ -14,6 +14,19 @@ using SGSFramework.Core.Extensions;
 
 namespace SGSFramework.AuthTokenBucket.Services;
 
+/// <summary>系統配置中「角色權限審核」設定的分類鍵（儲存於 core.SystemSettings）</summary>
+public static class RoleGovernanceSettingKeys
+{
+    public const string Key = "RoleGovernance";
+}
+
+/// <summary>core.SystemSettings 中 RoleGovernance 設定的 JSON 內容</summary>
+public sealed record RoleGovernanceSettingValue(bool RequireApproval);
+
+/// <summary>停用審核時自動放行的結果</summary>
+public sealed record RoleGovernanceReleaseResult(int ApprovedRequests, int ActivatedRoles, IReadOnlyList<string> Skipped,
+    IReadOnlyList<string> ApprovedItems, IReadOnlyList<string> ActivatedItems);
+
 /// <summary>SoD 規則違反項目</summary>
 public sealed record SodViolation(Guid RuleId, string RuleName, string PermissionKeyA, string PermissionKeyB);
 
@@ -53,8 +66,20 @@ public interface IRoleGovernanceService
 
     Task<(bool Succeeded, string Message)> DeleteSodRuleAsync(Guid ruleId, CancellationToken cancellationToken = default);
 
-    /// <summary>是否啟用雙重審批（組態 RoleGovernance:RequireApproval，預設 true）</summary>
-    bool RequireApproval { get; }
+    /// <summary>
+    /// 是否啟用雙重審批：優先採用「系統配置 → 角色權限審核」設定（core.SystemSettings），
+    /// 未設定時回到組態 RoleGovernance:RequireApproval（預設 true）。停用時權限變更與新角色直接生效。
+    /// </summary>
+    Task<bool> IsApprovalRequiredAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>appsettings 的預設值（供系統配置頁顯示「預設」）</summary>
+    bool DefaultRequireApproval { get; }
+
+    /// <summary>
+    /// 停用審核時放行既有待審項目：套用所有待審核的權限變更申請，並啟用「待審核」的新建角色。
+    /// 仍檢查 SoD 與停用功能，無法套用者維持待審核並回報原因。
+    /// </summary>
+    Task<RoleGovernanceReleaseResult> ReleasePendingAsync(CancellationToken cancellationToken = default);
 
     /// <summary>提出者可自行核准的例外：持有啟用中的系統內建角色，且最高管理階層大於目標角色</summary>
     Task<bool> CanSelfApproveAsync(Guid actorId, Guid targetRoleId, CancellationToken cancellationToken = default);
@@ -73,7 +98,31 @@ public sealed class RoleGovernanceService(
     IConfiguration configuration,
     ILogger<RoleGovernanceService> logger) : IRoleGovernanceService
 {
-    public bool RequireApproval => configuration.GetValue("RoleGovernance:RequireApproval", true);
+    public bool DefaultRequireApproval => configuration.GetValue("RoleGovernance:RequireApproval", true);
+
+    public async Task<bool> IsApprovalRequiredAsync(CancellationToken cancellationToken = default)
+    {
+        // 單筆主鍵查詢，成本極低；不快取以確保系統配置儲存後立即生效（含多節點部署）
+        var json = await dbContext.Set<Core.Abstractions.Entities.SystemSettings.SystemSetting>().AsNoTracking()
+            .Where(s => s.Key == RoleGovernanceSettingKeys.Key)
+            .Select(s => s.Value)
+            .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+
+        if (!string.IsNullOrWhiteSpace(json))
+        {
+            try
+            {
+                var stored = JsonSerializer.Deserialize<RoleGovernanceSettingValue>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                if (stored is not null) return stored.RequireApproval;
+            }
+            catch (JsonException ex)
+            {
+                logger.LogWarning(ex, "角色權限審核設定格式異常，改用預設值。");
+            }
+        }
+
+        return DefaultRequireApproval;
+    }
 
     // ===== Maker：送出申請 =====
 
@@ -116,7 +165,7 @@ public sealed class RoleGovernanceService(
         var addedDisabled = await FindDisabledAsync(added, cancellationToken).ConfigureAwait(false);
         if (addedDisabled.Count > 0) return new(false, DisabledPermissionMessages.NewlyGranted(addedDisabled));
 
-        if (!RequireApproval)
+        if (!await IsApprovalRequiredAsync(cancellationToken).ConfigureAwait(false))
         {
             var (ok, msg) = await permissionService.UpdateRolePermissionsAsync(request with { PermissionKeys = target }, cancellationToken).ConfigureAwait(false);
             return new(ok, ok ? "權限已更新（未啟用雙重審批）。" : msg, AppliedImmediately: ok);
@@ -230,6 +279,112 @@ public sealed class RoleGovernanceService(
         return new(true, "已核准並套用權限變更。" + statusNote, entity.Id, AppliedImmediately: true);
     }
 
+    public async Task<RoleGovernanceReleaseResult> ReleasePendingAsync(CancellationToken cancellationToken = default)
+    {
+        const string AutoComment = "已停用權限變更審核，系統自動放行";
+        var (actorId, actorName) = CurrentActor();
+        var skipped = new List<string>();
+        var approvedItems = new List<string>();
+        var activatedItems = new List<string>();
+        int approved = 0, activated = 0;
+
+        // 1. 待審核的權限變更申請：依序套用
+        var pending = await dbContext.Set<RoleChangeRequest>()
+            .Where(x => x.Status == RoleChangeRequestStatus.Pending)
+            .OrderBy(x => x.RequestedAt)
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        foreach (var entity in pending)
+        {
+            var role = await roleManager.FindByIdAsync(entity.RoleId.ToString()).ConfigureAwait(false);
+            if (role?.Name is null || role.IsDeleted || role.Status is not (RoleStatus.Active or RoleStatus.PendingApproval))
+            {
+                skipped.Add($"角色 [{entity.RoleName}]：角色已不存在或狀態不可套用，申請維持待審核，請手動駁回。");
+                continue;
+            }
+
+            var target = JsonSerializer.Deserialize<List<string>>(entity.TargetPermissionKeys) ?? [];
+            var requestedAdded = JsonSerializer.Deserialize<List<string>>(entity.AddedPermissionKeys) ?? [];
+
+            var addedDisabled = await FindDisabledAsync(requestedAdded, cancellationToken).ConfigureAwait(false);
+            if (addedDisabled.Count > 0)
+            {
+                skipped.Add($"角色 [{entity.RoleName}]：{DisabledPermissionMessages.NewlyGranted(addedDisabled)}申請維持待審核。");
+                continue;
+            }
+
+            var violations = await CheckSodAsync(target, cancellationToken).ConfigureAwait(false);
+            if (violations.Count > 0)
+            {
+                skipped.Add($"角色 [{entity.RoleName}]：違反職能分立 (SoD) 規則（{string.Join("、", violations.Select(v => v.RuleName))}），申請維持待審核。");
+                continue;
+            }
+
+            var (ok, msg) = await permissionService.UpdateRolePermissionsAsync(
+                new UpdateRoleGlobalPermissionsRequest { RoleId = entity.RoleId.ToString(), PermissionKeys = target },
+                cancellationToken).ConfigureAwait(false);
+            if (!ok)
+            {
+                skipped.Add($"角色 [{entity.RoleName}]：套用權限變更失敗（{msg}），申請維持待審核。");
+                continue;
+            }
+
+            entity.Status = RoleChangeRequestStatus.Approved;
+            entity.ReviewedBy = actorId;
+            entity.ReviewedByName = actorName;
+            entity.ReviewedAt = DateTimeOffset.UtcNow;
+            entity.ReviewComment = AutoComment;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+            await roleAuditService.RecordAsync(entity.RoleId, entity.RoleName, RoleAuditActions.ChangeApproved,
+                $"{AutoComment}：套用 {entity.RequestedByName} 提出的權限變更申請",
+                entity.AffectedUserCount, new { RequestId = entity.Id, AutoReleased = true }, cancellationToken).ConfigureAwait(false);
+
+            await SettleRoleStatusAsync(entity, approved: true, actorId, cancellationToken, bypassCreatorCheck: true).ConfigureAwait(false);
+            approved++;
+            approvedItems.Add($"[{entity.RoleName}]（{entity.RequestedByName} 申請：新增 {requestedAdded.Count} 項、移除 {(JsonSerializer.Deserialize<List<string>>(entity.RemovedPermissionKeys) ?? []).Count} 項）");
+        }
+
+        // 2. 仍為「待審核」的新建角色（不含仍有未放行申請、或曾被駁回者）：直接啟用
+        var stillPending = (await dbContext.Set<RoleChangeRequest>().AsNoTracking()
+                .Where(x => x.Status == RoleChangeRequestStatus.Pending)
+                .Select(x => x.RoleId).ToListAsync(cancellationToken).ConfigureAwait(false)).ToHashSet();
+
+        var rejectedRoleIds = (await dbContext.Set<RoleChangeRequest>().AsNoTracking()
+                .Where(x => x.Status != RoleChangeRequestStatus.Pending)
+                .Select(x => new { x.RoleId, x.Status, x.RequestedAt }).ToListAsync(cancellationToken).ConfigureAwait(false))
+            .GroupBy(x => x.RoleId)
+            .Where(g => g.OrderByDescending(x => x.RequestedAt).First().Status == RoleChangeRequestStatus.Rejected)
+            .Select(g => g.Key).ToHashSet();
+
+        var pendingRoles = await roleManager.Roles
+            .Where(r => !r.IsDeleted && r.Status == RoleStatus.PendingApproval)
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        foreach (var role in pendingRoles)
+        {
+            if (role.Name is null || stillPending.Contains(role.Id) || rejectedRoleIds.Contains(role.Id)) continue;
+
+            role.Status = RoleStatus.Active;
+            var result = await roleManager.UpdateAsync(role).ConfigureAwait(false);
+            if (!result.Succeeded)
+            {
+                skipped.Add($"角色 [{role.Name}]：啟用失敗（{string.Join("; ", result.Errors.Select(e => e.Description))}）。");
+                continue;
+            }
+
+            await permissionChangeNotifier.NotifyRoleMembersAsync(role.Name, "role-status-changed", cancellationToken).ConfigureAwait(false);
+            await roleAuditService.RecordAsync(role.Id, role.Name, RoleAuditActions.StatusChanged,
+                "已停用角色審核，新角色自動啟用", 0,
+                new { OldStatus = RoleStatus.PendingApproval.ToString(), NewStatus = RoleStatus.Active.ToString(), AutoReleased = true },
+                cancellationToken).ConfigureAwait(false);
+            activated++;
+            activatedItems.Add($"[{role.Name}]");
+        }
+
+        return new RoleGovernanceReleaseResult(approved, activated, skipped, approvedItems, activatedItems);
+    }
+
     public async Task<(bool Succeeded, string Message)> RejectAsync(Guid requestId, string? comment, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(comment)) return (false, "駁回時請填寫原因。");
@@ -299,7 +454,7 @@ public sealed class RoleGovernanceService(
     /// - 送審前為「待審核」（新建角色）：核准時一併啟用（建立者不得自行核准，高階系統角色例外）；駁回 / 撤回則維持待審核
     /// </summary>
     /// <returns>附加於結果訊息的狀態說明</returns>
-    private async Task<string> SettleRoleStatusAsync(RoleChangeRequest entity, bool approved, Guid? actorId, CancellationToken cancellationToken)
+    private async Task<string> SettleRoleStatusAsync(RoleChangeRequest entity, bool approved, Guid? actorId, CancellationToken cancellationToken, bool bypassCreatorCheck = false)
     {
         var role = await roleManager.FindByIdAsync(entity.RoleId.ToString()).ConfigureAwait(false);
         if (role?.Name is null || role.IsDeleted || role.Status != RoleStatus.PendingApproval) return string.Empty;
@@ -315,7 +470,7 @@ public sealed class RoleGovernanceService(
                 .Select(l => l.ActorUserId)
                 .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
 
-            if (creatorId.HasValue && creatorId == actorId &&
+            if (!bypassCreatorCheck && creatorId.HasValue && creatorId == actorId &&
                 !await CanSelfApproveAsync(actorId!.Value, entity.RoleId, cancellationToken).ConfigureAwait(false))
             {
                 return "角色建立者不得核准新角色，角色維持「待審核」，請由其他審核者啟用。";

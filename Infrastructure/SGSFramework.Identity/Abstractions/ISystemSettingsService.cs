@@ -28,6 +28,11 @@ namespace SGSFramework.Identity.Abstractions
         /// <exception cref="System.ArgumentException">規則組合無效</exception>
         Task<IdentityPolicySettingsDto> UpdateIdentityPolicyAsync(IdentityPolicySettingsDto policy, string? clientIp, CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// 更新角色權限審核設定（停用後權限變更不需審核），儲存後立即生效
+        /// </summary>
+        Task<RoleGovernanceSettingsDto> UpdateRoleGovernanceAsync(RoleGovernanceSettingsDto settings, string? clientIp, CancellationToken cancellationToken = default);
+
         /// <summary>取得系統配置異動歷程（新到舊）</summary>
         Task<IReadOnlyList<SystemSettingChangeLogDto>> GetChangeLogsAsync(int take, CancellationToken cancellationToken = default);
     }

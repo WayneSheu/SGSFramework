@@ -706,7 +706,7 @@ namespace SGSFramework.Identity.Services
                 entry.Property("RequiresAuditAssignment").CurrentValue = request.RequiresAuditAssignment;
                 entry.Property("IsDeleted").CurrentValue = false;
                 // 新建角色預設「待審核」：須經他人核准後才啟用（未啟用雙重審批時直接啟用）
-                var initialStatus = _roleGovernanceService.RequireApproval ? RoleStatus.PendingApproval : RoleStatus.Active;
+                var initialStatus = await _roleGovernanceService.IsApprovalRequiredAsync(cancellationToken).ConfigureAwait(false) ? RoleStatus.PendingApproval : RoleStatus.Active;
                 entry.Property("Status").CurrentValue = initialStatus;
 
                 var result = await _roleManager.CreateAsync(role).ConfigureAwait(false);
