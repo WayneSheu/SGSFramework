@@ -22,6 +22,28 @@ namespace SGSFramework.Identity.DTOs
 
         /// <summary>appsettings 中的角色權限審核預設值</summary>
         public RoleGovernanceSettingsDto RoleGovernanceDefaults { get; init; } = new();
+
+        /// <summary>目前生效的專案管理 / 合約管理審批設定</summary>
+        public WorkflowGovernanceSettingsDto WorkflowGovernance { get; init; } = new();
+
+        /// <summary>appsettings 中的專案管理 / 合約管理審批預設值</summary>
+        public WorkflowGovernanceSettingsDto WorkflowGovernanceDefaults { get; init; } = new();
+    }
+
+    /// <summary>
+    /// 專案管理（CR 變更單）與合約管理的審批設定。停用後採較寬鬆流程，並記錄於異動紀錄與稽核軌跡。
+    /// </summary>
+    public sealed class WorkflowGovernanceSettingsDto
+    {
+        /// <summary>合約核決是否落實職責分離（送審者不得核決自己送審的合約、同一人不得決定同週期兩個步驟）</summary>
+        public bool ContractSeparationRequired { get; set; } = true;
+
+        /// <summary>CR 變更單是否須 PM 與 Tech Lead 雙簽（停用時任一人簽核即完成內部簽核）</summary>
+        public bool CrDualSignoffRequired { get; set; } = true;
+
+        public DateTimeOffset? UpdatedAt { get; set; }
+
+        public string? UpdatedBy { get; set; }
     }
 
     /// <summary>

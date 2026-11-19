@@ -42,6 +42,21 @@ namespace SGSFramework.Identity.Abstractions
         /// </summary>
         Task<IReadOnlyList<FunctionNoticeDto>> GetActiveNoticesAsync(CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// 編輯模組層級的顯示名稱與排序（僅影響顯示，不改變權限歸屬）
+        /// </summary>
+        Task UpdateModuleGroupAsync(string moduleName, ModuleGroupChange change, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// 編輯 Controller 層級的顯示名稱、圖示、排序與顯示用父模組（僅影響顯示，不改變權限歸屬）
+        /// </summary>
+        Task UpdateControllerGroupAsync(string moduleName, string controllerName, ControllerGroupChange change, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// 將功能改掛顯示於其他 Controller 之下（僅影響顯示，不改變權限歸屬）
+        /// </summary>
+        Task UpdateFunctionGroupAsync(Guid id, FunctionGroupChange change, CancellationToken cancellationToken = default);
+
 
     }
 

@@ -79,7 +79,7 @@ public sealed class PermissionController : ApiControllerBase
     }
 
 
-    private const string PermissionTreeCacheKey = "Cache_System_Permission_Tree";
+    private const string PermissionTreeCacheKey = SGSFramework.Core.Abstractions.Entities.Controller.FunctionStatusRules.PermissionTreeCacheKey;
 
     /// <summary>
     /// 定期權限覆核（選單入口）：置於「權限管理」群組下；覆核活動的實際作業由 access-reviews API 處理。

@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using SGS.Modules.PMS.Infrastructure.Entities;
@@ -70,13 +70,25 @@ public static class CrSignoffRules
             ? [CrSignRole.Pm, CrSignRole.TechLead, CrSignRole.Customer]
             : [CrSignRole.Pm, CrSignRole.TechLead];
 
-    public static IReadOnlyList<CrSignRole> Pending(CrKind kind, IEnumerable<CrSignRole> signed)
+    /// <param name="dualSignoff">
+    /// 是否須 PM 與 Tech Lead 雙簽（系統配置「CR 雙簽」）；false 時內部簽核只需 PM 或 Tech Lead 任一人，
+    /// 尚無人簽核時兩者皆列為可簽（任一即可）。客戶 CR 仍須客戶簽核。
+    /// </param>
+    public static IReadOnlyList<CrSignRole> Pending(CrKind kind, IEnumerable<CrSignRole> signed, bool dualSignoff = true)
     {
         var done = signed.ToHashSet();
+        if (!dualSignoff && (done.Contains(CrSignRole.Pm) || done.Contains(CrSignRole.TechLead)))
+        {
+            done.Add(CrSignRole.Pm);
+            done.Add(CrSignRole.TechLead);
+        }
+
         return Required(kind).Where(r => !done.Contains(r)).ToList();
     }
 
-    public static bool IsComplete(CrKind kind, IEnumerable<CrSignRole> signed) => Pending(kind, signed).Count == 0;
+    public static bool IsComplete(CrKind kind, IEnumerable<CrSignRole> signed, bool dualSignoff = true) =>
+        Pending(kind, signed, dualSignoff).Count == 0 &&
+        (dualSignoff || signed.Any(r => r is CrSignRole.Pm or CrSignRole.TechLead));
 
     /// <summary>
     /// 判斷簽核者可簽的角色：專案 PM 簽 PM、Tech Lead 簽 Tech Lead；其他人不可簽。
@@ -90,25 +102,33 @@ public static class CrSignoffRules
         return null;
     }
 
-    public static RuleResult ValidateSign(CrKind kind, CrSignRole role, IEnumerable<CrSignRole> alreadySigned)
+    public static RuleResult ValidateSign(CrKind kind, CrSignRole role, IEnumerable<CrSignRole> alreadySigned, bool dualSignoff = true)
     {
         var signed = alreadySigned.ToList();
+        var internalDone = dualSignoff
+            ? signed.Contains(CrSignRole.Pm) && signed.Contains(CrSignRole.TechLead)
+            : signed.Contains(CrSignRole.Pm) || signed.Contains(CrSignRole.TechLead);
 
         if (!Required(kind).Contains(role))
             return RuleResult.Fail(RuleOutcome.RoleNotAllowed, $"此 CR 不需要 {role} 簽核。");
         if (signed.Contains(role))
             return RuleResult.Fail(RuleOutcome.InvalidTransition, $"{role} 已簽核，不可重複簽核。");
 
-        // 客戶最後簽：須 PM 與 Tech Lead 先簽
-        if (role == CrSignRole.Customer && (!signed.Contains(CrSignRole.Pm) || !signed.Contains(CrSignRole.TechLead)))
-            return RuleResult.Fail(RuleOutcome.InvalidTransition, "客戶簽核須在 PM 與 Tech Lead 都簽核之後。");
+        // 停用雙簽：任一內部簽核人簽過即完成內部簽核，另一位無需再簽
+        if (!dualSignoff && role is CrSignRole.Pm or CrSignRole.TechLead && internalDone)
+            return RuleResult.Fail(RuleOutcome.InvalidTransition, "已停用雙簽，內部簽核已完成，無需再簽核。");
+
+        // 客戶最後簽：須內部簽核完成（雙簽時為 PM 與 Tech Lead 都已簽）
+        if (role == CrSignRole.Customer && !internalDone)
+            return RuleResult.Fail(RuleOutcome.InvalidTransition, dualSignoff ? "客戶簽核須在 PM 與 Tech Lead 都簽核之後。" : "客戶簽核須在 PM 或 Tech Lead 簽核之後。");
 
         return RuleResult.Ok();
     }
 
     /// <summary>PM 代錄客戶簽核（例外路徑）：僅限客戶 CR、須 PM 本人、須填原因，且 PM 與 Tech Lead 已簽。</summary>
     public static RuleResult ValidateCustomerProxy(
-        CrKind kind, Guid actor, IEnumerable<(Guid UserId, RaciRole Role)> members, IEnumerable<CrSignRole> alreadySigned, string? reason)
+        CrKind kind, Guid actor, IEnumerable<(Guid UserId, RaciRole Role)> members, IEnumerable<CrSignRole> alreadySigned, string? reason,
+        bool dualSignoff = true)
     {
         if (kind != CrKind.Customer)
             return RuleResult.Fail(RuleOutcome.InvalidTransition, "內部 CR 不需要客戶簽核。");
@@ -117,7 +137,7 @@ public static class CrSignoffRules
         if (string.IsNullOrWhiteSpace(reason))
             return RuleResult.Fail(RuleOutcome.InvalidTransition, "代錄客戶簽核須填寫原因（並保留客戶簽核證明）。");
 
-        return ValidateSign(kind, CrSignRole.Customer, alreadySigned);
+        return ValidateSign(kind, CrSignRole.Customer, alreadySigned, dualSignoff);
     }
 }
 

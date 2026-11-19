@@ -122,6 +122,35 @@ public class CrSignoffRulesTests
     private static readonly (Guid, RaciRole)[] Members = [(Pm, RaciRole.Pm), (Tl, RaciRole.TechLead), (Be, RaciRole.Be)];
 
     [Fact]
+    public void DualSignoffDisabled_OneInternalSignerCompletesInternalCr()
+    {
+        CrSignoffRules.Pending(CrKind.Internal, [], dualSignoff: false).Should().Equal(CrSignRole.Pm, CrSignRole.TechLead);
+        CrSignoffRules.IsComplete(CrKind.Internal, [CrSignRole.Pm], dualSignoff: false).Should().BeTrue();
+        CrSignoffRules.IsComplete(CrKind.Internal, [CrSignRole.TechLead], dualSignoff: false).Should().BeTrue();
+        CrSignoffRules.IsComplete(CrKind.Internal, [], dualSignoff: false).Should().BeFalse();
+    }
+
+    [Fact]
+    public void DualSignoffDisabled_CustomerCrStillNeedsCustomer()
+    {
+        CrSignoffRules.Pending(CrKind.Customer, [CrSignRole.Pm], dualSignoff: false).Should().Equal(CrSignRole.Customer);
+        CrSignoffRules.IsComplete(CrKind.Customer, [CrSignRole.Pm], dualSignoff: false).Should().BeFalse();
+        CrSignoffRules.IsComplete(CrKind.Customer, [CrSignRole.TechLead, CrSignRole.Customer], dualSignoff: false).Should().BeTrue();
+    }
+
+    [Fact]
+    public void DualSignoffDisabled_SecondInternalSignerIsRejected() =>
+        CrSignoffRules.ValidateSign(CrKind.Internal, CrSignRole.TechLead, [CrSignRole.Pm], dualSignoff: false).IsOk.Should().BeFalse();
+
+    [Fact]
+    public void DualSignoffDisabled_CustomerMaySignAfterOneInternalSigner()
+    {
+        CrSignoffRules.ValidateSign(CrKind.Customer, CrSignRole.Customer, [CrSignRole.Pm], dualSignoff: false).IsOk.Should().BeTrue();
+        CrSignoffRules.ValidateSign(CrKind.Customer, CrSignRole.Customer, [], dualSignoff: false).IsOk.Should().BeFalse();
+        CrSignoffRules.ValidateSign(CrKind.Customer, CrSignRole.Customer, [CrSignRole.Pm], dualSignoff: true).IsOk.Should().BeFalse();
+    }
+
+    [Fact]
     public void CustomerCr_NeedsThreeRoles() =>
         CrSignoffRules.Required(CrKind.Customer).Should().Equal(CrSignRole.Pm, CrSignRole.TechLead, CrSignRole.Customer);
 

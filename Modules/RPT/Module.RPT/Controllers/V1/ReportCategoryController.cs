@@ -73,6 +73,7 @@ public sealed class ReportCategoryController(IReportCategoryManagementService ma
 
     /// <summary>目前使用者的報告類別維護範圍</summary>
     [HttpGet("manage-scope")]
+    [Function("GetReportCategoryManageScope", "查詢類別維護範圍", Icon = "fa-solid fa-user-gear", Order = 10, Description = "查詢目前使用者可維護的報告類別範圍")]
     [RequiresPermission("RPT.REPORTCATEGORY.READ", "檢視報告類別權限")]
     [ProducesResponseType(typeof(ReportCategoryManageScopeDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> ManageScope(CancellationToken cancellationToken = default) =>
@@ -80,12 +81,14 @@ public sealed class ReportCategoryController(IReportCategoryManagementService ma
 
     /// <summary>可選用的儲存分類（檔案管理設定）</summary>
     [HttpGet("storage-categories")]
+    [Function("GetReportStorageCategories", "查詢儲存分類", Icon = "fa-solid fa-hard-drive", Order = 11, Description = "查詢報告類別可選用的儲存分類（檔案管理設定）")]
     [RequiresPermission("RPT.REPORTCATEGORY.READ", "檢視報告類別權限")]
     [ProducesResponseType(typeof(IReadOnlyList<FileStorageCategoryInfo>), StatusCodes.Status200OK)]
     public IActionResult StorageCategories() => Ok(_service.GetStorageCategories());
 
     /// <summary>區域實驗室選項</summary>
     [HttpGet("lab-options")]
+    [Function("GetReportLabOptions", "查詢區域實驗室選項", Icon = "fa-solid fa-building", Order = 12, Description = "查詢報告類別可指定的區域實驗室選項")]
     [RequiresPermission("RPT.REPORTCATEGORY.READ", "檢視報告類別權限")]
     [ProducesResponseType(typeof(IReadOnlyList<ReportLabOptionDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> LabOptions(CancellationToken cancellationToken = default) =>

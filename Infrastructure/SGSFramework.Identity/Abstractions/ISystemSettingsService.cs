@@ -33,6 +33,11 @@ namespace SGSFramework.Identity.Abstractions
         /// </summary>
         Task<RoleGovernanceSettingsDto> UpdateRoleGovernanceAsync(RoleGovernanceSettingsDto settings, string? clientIp, CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// 更新專案管理（CR 雙簽）與合約管理（核決職責分離）的審批設定，儲存後立即生效
+        /// </summary>
+        Task<WorkflowGovernanceSettingsDto> UpdateWorkflowGovernanceAsync(WorkflowGovernanceSettingsDto settings, string? clientIp, CancellationToken cancellationToken = default);
+
         /// <summary>取得系統配置異動歷程（新到舊）</summary>
         Task<IReadOnlyList<SystemSettingChangeLogDto>> GetChangeLogsAsync(int take, CancellationToken cancellationToken = default);
     }

@@ -44,36 +44,21 @@ namespace SGSFramework.Identity.Services
             {
                 var inactiveModules = await _moduleStatusReader.GetInactiveModuleNamesAsync(cancellationToken);
 
-                var list = await _dbContext.Set<ControllerMetadata>() //[cite: 10]
+                // 分組覆寫的預設標題需參照全部中繼資料（含停用），再依 includeInactive 篩選輸出
+                var entities = await _dbContext.Set<ControllerMetadata>()
                     .AsNoTracking()
-                    .Where(m => includeInactive || m.IsActive) //[cite: 10]
-                    .OrderBy(m => m.DisplayOrder) //[cite: 10]
-                    .Select(m => new ControllerMetadataDto
-                    {
-                        Id = m.Id, //[cite: 10]
-                        Version = m.Version, //[cite: 10]
-                        ModuleName = m.ModuleName, //[cite: 10]
-                        ModuleTitle = m.ModuleTitle, //[cite: 10]
-                        ControllerTitle = m.ControllerTitle, //[cite: 10]
-                        ControllerName = m.ControllerName, //[cite: 10]
-                        ControllerTypeName = m.ControllerTypeName, //[cite: 10]
-                        ActionName = m.ActionName, //[cite: 10]
-                        RouteTemplate = m.RouteTemplate, //[cite: 10]
-                        Description = m.Description, //[cite: 10]
-                        DisplayName = m.DisplayName, //[cite: 10]
-                        Icon = m.Icon, //[cite: 10]
-                        DisplayOrder = m.DisplayOrder, //[cite: 10]
-                        ParentMenuName = m.ParentMenuName, //[cite: 10]
-                        IsMenu = m.IsMenu,
-                        PermissionKey = m.PermissionKey, //[cite: 10]
-                        IsActive = m.IsActive, //[cite: 10]
-                        IsManuallyDisabled = m.IsManuallyDisabled,
-                        IsCustomized = m.IsCustomized,
-                        DisabledNotice = m.DisabledNotice,
-                        DisabledAt = m.DisabledAt,
-                        ExpectedRestoreAt = m.ExpectedRestoreAt
-                    })
+                    .OrderBy(m => m.DisplayOrder)
                     .ToListAsync(cancellationToken);
+
+                var overrides = await _dbContext.Set<FunctionGroupOverride>()
+                    .AsNoTracking()
+                    .ToListAsync(cancellationToken);
+
+                var resolver = new FunctionGroupResolver(entities, overrides);
+                var list = entities
+                    .Where(m => includeInactive || m.IsActive)
+                    .Select(m => ApplyGroup(ToDto(m), m, resolver))
+                    .ToList();
 
                 // 模組停用僅記錄於 ModuleMetadata，於此標示所屬功能視同停用
                 foreach (var item in list.Where(i => inactiveModules.Contains(i.ModuleName)))
@@ -245,6 +230,7 @@ namespace SGSFramework.Identity.Services
             entity.IsCustomized = true;
 
             await _dbContext.SaveChangesAsync(cancellationToken);
+            InvalidatePermissionTree();
 
             // IsMenu 有變動：立即建立（或恢復）/ 隱藏該功能的選單頁面節點，必須在中繼資料存檔之後執行
             // IsMenu 開啟時每次儲存都同步（冪等）：可補建先前漏建的節點
@@ -304,11 +290,208 @@ namespace SGSFramework.Identity.Services
                 .ToListAsync(cancellationToken);
         }
 
+        public async Task UpdateModuleGroupAsync(string moduleName, ModuleGroupChange change, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(change);
+
+            var module = Normalize(moduleName) ?? throw new ArgumentException("模組名稱不可為空白。", nameof(moduleName));
+            var title = Normalize(change.Title);
+            if (title is { Length: > 100 })
+            {
+                throw new ArgumentException("模組名稱長度不可超過 100 字。", nameof(change));
+            }
+
+            if (!await _dbContext.Set<ControllerMetadata>().AnyAsync(m => m.ModuleName == module, cancellationToken))
+            {
+                throw new KeyNotFoundException($"找不到模組 '{module}'。");
+            }
+
+            var entity = await UpsertGroupOverrideAsync(FunctionGroupLevel.Module, module, string.Empty, cancellationToken);
+            var before = DescribeOverride(entity);
+
+            entity.Title = title;
+            entity.DisplayOrder = change.DisplayOrder;
+
+            await SaveGroupOverrideAsync(entity, cancellationToken);
+
+            _logger.LogWarning("功能管理模組顯示欄位已編輯。模組: {Module}, 變更前: {Before}, 變更後: {After}, 操作者: {Actor}, 來源 IP: {ClientIp}",
+                module, before, DescribeOverride(entity), _currentUserService.UserName ?? "Unknown", change.ClientIp);
+        }
+
+        public async Task UpdateControllerGroupAsync(string moduleName, string controllerName, ControllerGroupChange change, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(change);
+
+            var module = Normalize(moduleName) ?? throw new ArgumentException("模組名稱不可為空白。", nameof(moduleName));
+            var controller = Normalize(controllerName) ?? throw new ArgumentException("Controller 名稱不可為空白。", nameof(controllerName));
+            var title = Normalize(change.Title);
+            var icon = Normalize(change.Icon);
+            if (title is { Length: > 100 })
+            {
+                throw new ArgumentException("Controller 名稱長度不可超過 100 字。", nameof(change));
+            }
+            if (icon is { Length: > 100 })
+            {
+                throw new ArgumentException("圖示長度不可超過 100 字。", nameof(change));
+            }
+
+            if (!await _dbContext.Set<ControllerMetadata>().AnyAsync(m => m.ModuleName == module && m.ControllerName == controller, cancellationToken))
+            {
+                throw new KeyNotFoundException($"找不到 Controller '{module} / {controller}'。");
+            }
+
+            // 改掛回原模組視同還原
+            var targetModule = Normalize(change.TargetModuleName);
+            if (targetModule is not null && string.Equals(targetModule, module, StringComparison.OrdinalIgnoreCase))
+            {
+                targetModule = null;
+            }
+            if (targetModule is not null && !await _dbContext.Set<ControllerMetadata>().AnyAsync(m => m.ModuleName == targetModule, cancellationToken))
+            {
+                throw new ArgumentException($"找不到目標模組 '{targetModule}'。", nameof(change));
+            }
+
+            var entity = await UpsertGroupOverrideAsync(FunctionGroupLevel.Controller, module, controller, cancellationToken);
+            var before = DescribeOverride(entity);
+
+            entity.Title = title;
+            entity.Icon = icon;
+            entity.DisplayOrder = change.DisplayOrder;
+            entity.TargetModuleName = targetModule;
+
+            await SaveGroupOverrideAsync(entity, cancellationToken);
+
+            _logger.LogWarning("功能管理 Controller 顯示欄位已編輯。Controller: {Controller}, 變更前: {Before}, 變更後: {After}, 操作者: {Actor}, 來源 IP: {ClientIp}",
+                $"{module}/{controller}", before, DescribeOverride(entity), _currentUserService.UserName ?? "Unknown", change.ClientIp);
+        }
+
+        public async Task UpdateFunctionGroupAsync(Guid id, FunctionGroupChange change, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(change);
+
+            if (id == Guid.Empty)
+            {
+                throw new ArgumentException("識別碼不可為空 Guid。", nameof(id));
+            }
+
+            var entity = await _dbContext.Set<ControllerMetadata>().FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
+                ?? throw new KeyNotFoundException($"找不到識別碼為 '{id}' 的功能中繼資料。");
+
+            var targetModule = Normalize(change.TargetModuleName);
+            var targetController = Normalize(change.TargetControllerName);
+
+            if (targetController is not null)
+            {
+                if (targetModule is null)
+                {
+                    throw new ArgumentException("改掛時必須指定目標 Controller 所屬的模組。", nameof(change));
+                }
+
+                if (!await _dbContext.Set<ControllerMetadata>().AnyAsync(m => m.ModuleName == targetModule && m.ControllerName == targetController, cancellationToken))
+                {
+                    throw new ArgumentException($"找不到目標 Controller '{targetModule} / {targetController}'。", nameof(change));
+                }
+
+                // 改掛回原 Controller 視同還原
+                if (string.Equals(targetModule, entity.ModuleName, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(targetController, entity.ControllerName, StringComparison.OrdinalIgnoreCase))
+                {
+                    targetModule = null;
+                    targetController = null;
+                }
+            }
+            else
+            {
+                targetModule = null;
+            }
+
+            var before = entity.GroupControllerName is null ? "原 Controller" : $"{entity.GroupModuleName}/{entity.GroupControllerName}";
+
+            entity.GroupModuleName = targetModule;
+            entity.GroupControllerName = targetController;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            _logger.LogWarning("功能顯示用改掛已變更。功能: {Function}, 變更前: {Before}, 變更後: {After}, 操作者: {Actor}, 來源 IP: {ClientIp}",
+                $"{entity.ControllerName}.{entity.ActionName}", before,
+                targetController is null ? "原 Controller" : $"{targetModule}/{targetController}",
+                _currentUserService.UserName ?? "Unknown", change.ClientIp);
+        }
+
+        private async Task<FunctionGroupOverride> UpsertGroupOverrideAsync(FunctionGroupLevel level, string moduleName, string controllerName, CancellationToken cancellationToken)
+        {
+            var entity = await _dbContext.Set<FunctionGroupOverride>()
+                .FirstOrDefaultAsync(o => o.Level == level && o.ModuleName == moduleName && o.ControllerName == controllerName, cancellationToken);
+
+            if (entity is null)
+            {
+                entity = new FunctionGroupOverride { Level = level, ModuleName = moduleName, ControllerName = controllerName };
+                _dbContext.Set<FunctionGroupOverride>().Add(entity);
+            }
+
+            return entity;
+        }
+
+        /// <summary>全部欄位皆還原為預設時刪除覆寫列，避免殘留空白紀錄</summary>
+        private async Task SaveGroupOverrideAsync(FunctionGroupOverride entity, CancellationToken cancellationToken)
+        {
+            if (entity is { Title: null, Icon: null, DisplayOrder: null, TargetModuleName: null })
+            {
+                if (_dbContext.Entry(entity).State == EntityState.Added)
+                {
+                    _dbContext.Entry(entity).State = EntityState.Detached;
+                }
+                else
+                {
+                    _dbContext.Set<FunctionGroupOverride>().Remove(entity);
+                }
+            }
+            else
+            {
+                entity.UpdatedAt = _timeProvider.GetUtcNow();
+                entity.UpdatedBy = _currentUserService.UserName;
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            InvalidatePermissionTree();
+        }
+
+        private static string DescribeOverride(FunctionGroupOverride entity) =>
+            $"名稱={entity.Title ?? "(預設)"}; 圖示={entity.Icon ?? "(預設)"}; 排序={entity.DisplayOrder?.ToString() ?? "(預設)"}; 父模組={entity.TargetModuleName ?? "(原模組)"}";
+
+        /// <summary>
+        /// 將模組 / Controller 覆寫與功能改掛套用到 DTO 的標題與顯示分組欄位
+        /// </summary>
+        private static ControllerMetadataDto ApplyGroup(ControllerMetadataDto dto, ControllerMetadata entity, FunctionGroupResolver resolver)
+        {
+            dto.ModuleTitle = resolver.ModuleTitle(entity.ModuleName);
+            dto.ControllerTitle = resolver.ControllerTitle(entity.ModuleName, entity.ControllerName);
+
+            var placement = resolver.Resolve(entity);
+            dto.GroupControllerModuleName = placement.ControllerModuleName;
+            dto.GroupControllerName = placement.ControllerName;
+            dto.GroupControllerTitle = resolver.ControllerTitle(placement.ControllerModuleName, placement.ControllerName);
+            dto.GroupControllerIcon = resolver.ControllerIcon(placement.ControllerModuleName, placement.ControllerName);
+            dto.GroupControllerOrder = resolver.ControllerOrder(placement.ControllerModuleName, placement.ControllerName);
+
+            dto.GroupModuleName = placement.ModuleName;
+            dto.GroupModuleTitle = resolver.ModuleTitle(placement.ModuleName);
+            dto.GroupModuleOrder = resolver.ModuleOrder(placement.ModuleName);
+
+            dto.IsRelocated = placement.IsRelocated;
+            dto.IsControllerRelocated = placement.IsControllerRelocated;
+            return dto;
+        }
+
+        /// <summary>系統權限清單的名稱取自 ControllerMetadata：改名 / 編輯功能後清除其快取，使變更立即反映</summary>
+        private void InvalidatePermissionTree() => _cache.Remove(FunctionStatusRules.PermissionTreeCacheKey);
+
         private static string? Normalize(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
         private static ControllerMetadataDto ToDto(ControllerMetadata entity) => new()
         {
             Id = entity.Id,
+            Version = entity.Version,
+            ControllerTypeName = entity.ControllerTypeName,
             ModuleName = entity.ModuleName,
             ModuleTitle = entity.ModuleTitle,
             ControllerTitle = entity.ControllerTitle,

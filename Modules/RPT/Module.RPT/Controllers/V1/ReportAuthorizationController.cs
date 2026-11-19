@@ -28,6 +28,7 @@ public sealed class ReportAuthorizationController(IReportCategoryManagementServi
 
     /// <summary>搜尋授權對象（使用者 / 角色；type 未指定時兩者皆回傳）</summary>
     [HttpGet("principals")]
+    [Function("SearchReportPrincipals", "搜尋授權對象", Icon = "fa-solid fa-magnifying-glass", Order = 20, Description = "搜尋可授權的使用者與角色")]
     [RequiresPermission("RPT.REPORTAUTHORIZATION.READ", "檢視報告授權")]
     [ProducesResponseType(typeof(IReadOnlyList<ReportPrincipalOptionDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Principals([FromQuery] string? keyword, [FromQuery] GrantPrincipalType? type = null, CancellationToken cancellationToken = default) =>
@@ -35,6 +36,7 @@ public sealed class ReportAuthorizationController(IReportCategoryManagementServi
 
     /// <summary>使用者於各所屬實驗室的報告類別有效權限（含授權來源與簽署資格）</summary>
     [HttpGet("users/{userId:guid}/access")]
+    [Function("GetUserReportAccess", "查詢使用者報告權限", Icon = "fa-solid fa-user-shield", Order = 21, Description = "查詢使用者於各所屬實驗室的報告類別有效權限、授權來源與簽署資格")]
     [RequiresPermission("RPT.REPORTAUTHORIZATION.READ", "檢視報告授權")]
     [ProducesResponseType(typeof(UserReportAccessDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

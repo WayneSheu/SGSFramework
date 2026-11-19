@@ -35,6 +35,21 @@ namespace SGSFramework.Identity.DTOs
         string? ClientIp);
 
     /// <summary>
+    /// 編輯模組層級顯示欄位（名稱 / 排序）；欄位為 null 時還原為程式碼預設
+    /// </summary>
+    public sealed record ModuleGroupChange(string? Title, int? DisplayOrder, string? ClientIp);
+
+    /// <summary>
+    /// 編輯 Controller 層級顯示欄位（名稱 / 圖示 / 排序 / 顯示用父模組）；欄位為 null 時還原為程式碼預設
+    /// </summary>
+    public sealed record ControllerGroupChange(string? Title, string? Icon, int? DisplayOrder, string? TargetModuleName, string? ClientIp);
+
+    /// <summary>
+    /// 功能顯示用改掛：TargetControllerName 為 null 時還原顯示於原 Controller
+    /// </summary>
+    public sealed record FunctionGroupChange(string? TargetModuleName, string? TargetControllerName, string? ClientIp);
+
+    /// <summary>
     /// 系統功能狀態異動歷程
     /// </summary>
     public sealed class FunctionStatusLogDto

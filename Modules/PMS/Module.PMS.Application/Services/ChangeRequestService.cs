@@ -14,7 +14,7 @@ namespace SGS.Modules.PMS.Application.Services;
 /// 決策時固化內容雜湊，簽核者須對該雜湊簽核，簽核後內容鎖定。客戶簽核目前由 PM 代錄（附原因）；
 /// 外部 Stakeholder 自行簽核待外部帳號機制完成後啟用。專案資料列授權：非成員一律 404。
 /// </summary>
-public sealed class ChangeRequestService(PMSDbContext db, HolidayService holidays, TimeProvider clock)
+public sealed class ChangeRequestService(PMSDbContext db, HolidayService holidays, TimeProvider clock, SGSFramework.Core.Abstractions.Governance.IWorkflowGovernanceSettings governance)
 {
     private const int MaxPageSize = 200;
     private const int NumberRetries = 5;
@@ -166,6 +166,7 @@ public sealed class ChangeRequestService(PMSDbContext db, HolidayService holiday
             _ => desc ? query.OrderByDescending(c => c.ReceivedAt) : query.OrderBy(c => c.ReceivedAt)
         };
 
+        var dualSignoff = await governance.IsCrDualSignoffRequiredAsync(ct).ConfigureAwait(false);
         var total = await query.CountAsync(ct).ConfigureAwait(false);
         var rows = await query.Skip((pageIndex - 1) * pageSize).Take(pageSize)
             .Select(c => new
@@ -181,7 +182,7 @@ public sealed class ChangeRequestService(PMSDbContext db, HolidayService holiday
         var items = rows.Select(r => new CrListDto(
             r.Id, r.CrNo, r.ProjectId, r.ProjectCode, r.ProjectName, r.Kind, r.Status, r.Title, r.ReceivedAt, r.EvalDueAt,
             CrSla.EvalStatus(r.EvalDueAt, r.EvaluatedAt, now, r.Status), r.Decision, r.RequesterUserId, r.SourceTicketNo,
-            r.Status == CrStatus.PendingSign ? CrSignoffRules.Pending(r.Kind, r.SignedRoles) : [])).ToList();
+            r.Status == CrStatus.PendingSign ? CrSignoffRules.Pending(r.Kind, r.SignedRoles, dualSignoff) : [])).ToList();
 
         return new PagedResult<CrListDto>(items, total, pageIndex, pageSize);
     }
@@ -196,7 +197,7 @@ public sealed class ChangeRequestService(PMSDbContext db, HolidayService holiday
         if (c.Cr.SourceTicketId is { } tid)
             sourceNo = await db.Tickets.AsNoTracking().Where(t => t.Id == tid).Select(t => t.TicketNo).FirstOrDefaultAsync(ct).ConfigureAwait(false);
 
-        return PmsResult<CrDetailDto>.Success(ToDetail(c, sourceNo, clock.GetUtcNow()));
+        return PmsResult<CrDetailDto>.Success(ToDetail(c, sourceNo, clock.GetUtcNow(), await governance.IsCrDualSignoffRequiredAsync(ct).ConfigureAwait(false)));
     }
 
     // ---------- 影響評估（Tech Lead） ----------
@@ -335,7 +336,8 @@ public sealed class ChangeRequestService(PMSDbContext db, HolidayService holiday
         var hashError = CheckHash(cr, request.ContentHash);
         if (hashError is not null) return hashError;
 
-        var signRule = CrSignoffRules.ValidateSign(cr.Kind, role.Value, cr.Signoffs.Select(s => s.Role));
+        var dualSign = await governance.IsCrDualSignoffRequiredAsync(ct).ConfigureAwait(false);
+        var signRule = CrSignoffRules.ValidateSign(cr.Kind, role.Value, cr.Signoffs.Select(s => s.Role), dualSign);
         if (!signRule.IsOk) return ToError(signRule);
 
         return await AddSignoffAsync(c, actor, role.Value, isProxy: false, request.Comment, ct).ConfigureAwait(false);
@@ -354,7 +356,8 @@ public sealed class ChangeRequestService(PMSDbContext db, HolidayService holiday
         var stateVerdict = CrWorkflow.Next(cr.Status, CrAction.Sign, null, false, out _);
         if (!stateVerdict.IsOk) return ToError(stateVerdict);
 
-        var proxyRule = CrSignoffRules.ValidateCustomerProxy(cr.Kind, userId, c.Members, cr.Signoffs.Select(s => s.Role), request.Reason);
+        var dualSign = await governance.IsCrDualSignoffRequiredAsync(ct).ConfigureAwait(false);
+        var proxyRule = CrSignoffRules.ValidateCustomerProxy(cr.Kind, userId, c.Members, cr.Signoffs.Select(s => s.Role), request.Reason, dualSign);
         if (!proxyRule.IsOk) return ToError(proxyRule);
 
         var hashError = CheckHash(cr, request.ContentHash);
@@ -386,7 +389,7 @@ public sealed class ChangeRequestService(PMSDbContext db, HolidayService holiday
         db.CrEvents.Add(NewEvent(cr.Id, CrEventType.Signed,
             Join($"{RoleLabel(role)}簽核{(isProxy ? "（PM 代錄客戶簽核）" : string.Empty)}", comment), c.UserId, actor, now));
 
-        if (CrSignoffRules.IsComplete(cr.Kind, signedRoles))
+        if (CrSignoffRules.IsComplete(cr.Kind, signedRoles, await governance.IsCrDualSignoffRequiredAsync(ct).ConfigureAwait(false)))
         {
             cr.Status = CrStatus.Approved;
             db.CrEvents.Add(NewEvent(cr.Id, CrEventType.Approved, "簽核齊備，CR 已核准；請依決策調整排程並更新 SRS／API 規格", c.UserId, actor, now));
@@ -545,7 +548,7 @@ public sealed class ChangeRequestService(PMSDbContext db, HolidayService holiday
         return null;
     }
 
-    private CrDetailDto ToDetail(CrContext c, string? sourceTicketNo, DateTimeOffset now)
+    private CrDetailDto ToDetail(CrContext c, string? sourceTicketNo, DateTimeOffset now, bool dualSignoff)
     {
         var cr = c.Cr;
         var internalView = c.Access == ProjectAccessLevel.Internal;
@@ -562,8 +565,8 @@ public sealed class ChangeRequestService(PMSDbContext db, HolidayService holiday
             : new CrActionsDto(
                 CanEvaluate: isTl && cr.Status is CrStatus.Received or CrStatus.PendingDecision,
                 CanDecide: isPm && cr.Status == CrStatus.PendingDecision,
-                CanSign: pendingSign && myRole is { } r && CrSignoffRules.ValidateSign(cr.Kind, r, signedRoles).IsOk,
-                CanProxyCustomerSign: pendingSign && CrSignoffRules.ValidateCustomerProxy(cr.Kind, c.UserId, c.Members, signedRoles, "x").IsOk,
+                CanSign: pendingSign && myRole is { } r && CrSignoffRules.ValidateSign(cr.Kind, r, signedRoles, dualSignoff).IsOk,
+                CanProxyCustomerSign: pendingSign && CrSignoffRules.ValidateCustomerProxy(cr.Kind, c.UserId, c.Members, signedRoles, "x", dualSignoff).IsOk,
                 CanCancel: isPm && cr.Status is CrStatus.Received or CrStatus.PendingDecision,
                 CanReopen: isPm && cr.Status == CrStatus.Deferred);
 
@@ -588,7 +591,7 @@ public sealed class ChangeRequestService(PMSDbContext db, HolidayService holiday
             assessmentDto, DesignGateReviewRequired: internalView && assessment is { SecurityImpact: true },
             cr.Decision, cr.DecisionRationale, cr.NewReleaseDate, cr.SwappedOutItems, cr.QuoteAmount,
             cr.DecidedBy, cr.DecidedAt, cr.ContentHash,
-            CrSignoffRules.Required(cr.Kind), CrSignoffRules.Pending(cr.Kind, signedRoles),
+            CrSignoffRules.Required(cr.Kind), CrSignoffRules.Pending(cr.Kind, signedRoles, dualSignoff),
             cr.Signoffs.OrderBy(s => s.SignedAt).Select(s => new CrSignoffDto(s.Role, s.SignerName, s.SignedAt, s.IsProxy, s.Comment, s.ContentHash)).ToList(),
             internalView ? cr.Events.OrderBy(e => e.At).Select(e => new CrEventDto(e.Id, e.EventType, e.Detail, e.ActorName, e.At)).ToList() : [],
             actions, Convert.ToBase64String(cr.RowVersion));

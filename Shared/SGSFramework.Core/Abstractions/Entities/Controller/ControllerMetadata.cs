@@ -172,6 +172,19 @@ public class ControllerMetadata : IControllerMetadata
     [Comment("是否由管理者自訂過功能名稱、說明、排序、圖示；啟動同步不會覆蓋這些欄位。")]
     public bool IsCustomized { get; set; } = false;
 
+    /// <summary>
+    /// 顯示用改掛：此功能於「系統功能管理」顯示在哪個 Controller 之下所屬的模組（與 GroupControllerName 成對）。
+    /// 僅影響畫面分組，權限鍵與位元遮罩仍以 ModuleName / ControllerName 為準；啟動同步不會覆蓋。
+    /// </summary>
+    [DisplayName("顯示用父模組")]
+    [Comment("顯示用改掛：功能顯示於哪個 Controller 之下所屬的模組；僅影響畫面分組")]
+    public string? GroupModuleName { get; set; }
+
+    /// <summary>顯示用改掛：此功能顯示於哪個 Controller 之下（為 null 時顯示於原 Controller）</summary>
+    [DisplayName("顯示用父控制器")]
+    [Comment("顯示用改掛：功能顯示於哪個 Controller 之下；為 null 時顯示於原 Controller")]
+    public string? GroupControllerName { get; set; }
+
     [DisplayName("建立日期")]
     [Comment("建立日期")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -196,6 +209,8 @@ public class ControllerMetadataConfig : IEntityTypeConfiguration<ControllerMetad
         builder.Property(x => x.Path).HasMaxLength(200);
         builder.Property(x => x.DisabledNotice).HasMaxLength(500);
         builder.Property(x => x.PermissionKey).IsRequired().HasMaxLength(100);
+        builder.Property(x => x.GroupModuleName).HasMaxLength(50);
+        builder.Property(x => x.GroupControllerName).HasMaxLength(100);
         builder.Property(x => x.AttributesJson).HasColumnType("nvarchar(max)");
 
         builder.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");

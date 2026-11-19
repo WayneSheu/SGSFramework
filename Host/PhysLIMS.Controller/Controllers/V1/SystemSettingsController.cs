@@ -155,6 +155,26 @@ public sealed class SystemSettingsController : ApiControllerBase
     }
 
     /// <summary>
+    /// 更新專案管理 / 合約管理的審批設定
+    /// </summary>
+    [HttpPut("workflow-governance")]
+    [Function("UpdateWorkflowGovernance", "更新專案與合約審批設定", Icon = "fa-solid fa-file-signature", Order = 7, Description = "設定合約核決職責分離與 CR 變更單雙簽是否啟用")]
+    [RequiresPermission("SYSTEM.SYSTEMSETTINGS.UPDATE")]
+    [EndpointSummary("更新專案與合約審批設定")]
+    [EndpointDescription("設定合約核決是否落實職責分離、CR 變更單是否須 PM 與 Tech Lead 雙簽；儲存後立即生效。")]
+    [ProducesResponseType(typeof(WorkflowGovernanceSettingsDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> UpdateWorkflowGovernance(
+        [FromBody] WorkflowGovernanceSettingsDto request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var updated = await _systemSettingsService.UpdateWorkflowGovernanceAsync(request, ClientIp, cancellationToken);
+        return Ok(updated);
+    }
+
+    /// <summary>
     /// 取得系統配置異動歷程
     /// </summary>
     [HttpGet("change-logs")]

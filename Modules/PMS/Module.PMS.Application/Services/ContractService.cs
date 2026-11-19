@@ -11,7 +11,7 @@ namespace SGS.Modules.PMS.Application.Services;
 /// 專案合約管理（乙方標準版）第一期：合約主檔與條款、審約檢核表（自動比對乙方底線）、PM→法務→高階主管核決（職責分離、送審快照鎖定）、
 /// 簽約登錄、附件一／二、與 PMS 專案綁定。僅合約成員可見，非成員一律 404；客戶 Stakeholder 不在合約成員之列，看不到任何合約。
 /// </summary>
-public sealed class ContractService(PMSDbContext db, HolidayService holidays, TimeProvider clock)
+public sealed class ContractService(PMSDbContext db, HolidayService holidays, TimeProvider clock, SGSFramework.Core.Abstractions.Governance.IWorkflowGovernanceSettings governance)
 {
     private const int MaxPageSize = 200;
     private const int MaxEvents = 200;
@@ -55,7 +55,8 @@ public sealed class ContractService(PMSDbContext db, HolidayService holidays, Ti
             // 「待我核決」需逐筆計算步驟與職責分離，筆數有限（僅待核決者），在記憶體中處理
             var all = await ordered.Include(c => c.Members).Include(c => c.ReviewItems).Include(c => c.Approvals).Include(c => c.Projects)
                 .AsSplitQuery().ToListAsync(ct).ConfigureAwait(false);
-            var mine = all.Select(c => ToListDto(c, userId)).Where(d => d.PendingMyDecision).ToList();
+            var enforceMine = await governance.IsContractSeparationRequiredAsync(ct).ConfigureAwait(false);
+            var mine = all.Select(c => ToListDto(c, userId, enforceMine)).Where(d => d.PendingMyDecision).ToList();
             return new PagedResult<ContractListDto>(
                 mine.Skip((pageIndex - 1) * pageSize).Take(pageSize).ToList(), mine.Count, pageIndex, pageSize);
         }
@@ -65,7 +66,8 @@ public sealed class ContractService(PMSDbContext db, HolidayService holidays, Ti
             .Include(c => c.Members).Include(c => c.ReviewItems).Include(c => c.Approvals).Include(c => c.Projects)
             .AsSplitQuery().ToListAsync(ct).ConfigureAwait(false);
 
-        return new PagedResult<ContractListDto>(rows.Select(c => ToListDto(c, userId)).ToList(), total, pageIndex, pageSize);
+        var enforce = await governance.IsContractSeparationRequiredAsync(ct).ConfigureAwait(false);
+        return new PagedResult<ContractListDto>(rows.Select(c => ToListDto(c, userId, enforce)).ToList(), total, pageIndex, pageSize);
     }
 
     public async Task<PmsResult<ContractDto>> GetAsync(Guid userId, Guid id, CancellationToken ct)
@@ -370,7 +372,8 @@ public sealed class ContractService(PMSDbContext db, HolidayService holidays, Ti
         var required = ContractRules.RequiredSteps(c.ReviewItems, ContractRules.AutoFlags(c));
         var cycle = c.Approvals.Where(a => a.Cycle == c.ApprovalCycle).ToList();
         var next = ContractRules.NextStep(required, cycle);
-        var invalid = ContractRules.ValidateDecision(step, decision, comment, userId, c.SubmittedBy, next, Members(c), cycle);
+        var enforceSeparation = await governance.IsContractSeparationRequiredAsync(ct).ConfigureAwait(false);
+        var invalid = ContractRules.ValidateDecision(step, decision, comment, userId, c.SubmittedBy, next, Members(c), cycle, enforceSeparation);
         if (invalid is not null) return PmsError.Conflict("PMS.INVALID_TRANSITION", invalid);
 
         var now = clock.GetUtcNow();
@@ -859,7 +862,7 @@ public sealed class ContractService(PMSDbContext db, HolidayService holidays, Ti
     }
 
     /// <summary>目前待決步驟與我可否決定（含職責分離）；擁有該步驟角色卻被擋下時回傳原因，讓畫面說明為何沒有核決按鈕。</summary>
-    private static (ContractApprovalStep? Next, bool CanDecide, IReadOnlyList<ContractApprovalStep> Required, string? BlockedReason) Decision(Contract c, Guid userId)
+    private static (ContractApprovalStep? Next, bool CanDecide, IReadOnlyList<ContractApprovalStep> Required, string? BlockedReason) Decision(Contract c, Guid userId, bool enforceSeparation)
     {
         var required = ContractRules.RequiredSteps(c.ReviewItems, ContractRules.AutoFlags(c));
         if (c.Status != ContractStatus.PendingApproval) return (null, false, required, null);
@@ -868,15 +871,15 @@ public sealed class ContractService(PMSDbContext db, HolidayService holidays, Ti
         var next = ContractRules.NextStep(required, cycle);
         if (next is not { } step) return (next, false, required, null);
 
-        var problem = ContractRules.ValidateDecision(step, ApprovalDecision.Approved, null, userId, c.SubmittedBy, next, Members(c), cycle);
+        var problem = ContractRules.ValidateDecision(step, ApprovalDecision.Approved, null, userId, c.SubmittedBy, next, Members(c), cycle, enforceSeparation);
         // 只有「擁有該步驟角色」的人才需要看到被擋下的原因；非該角色成員不顯示
         var reason = problem is not null && ContractRules.HasRole(userId, ContractRules.RoleOfStep(step), Members(c)) ? problem : null;
         return (next, problem is null, required, reason);
     }
 
-    private static ContractListDto ToListDto(Contract c, Guid userId)
+    private static ContractListDto ToListDto(Contract c, Guid userId, bool enforceSeparation)
     {
-        var (next, can, _, _) = Decision(c, userId);
+        var (next, can, _, _) = Decision(c, userId, enforceSeparation);
         var flags = ContractRules.AutoFlags(c);
         return new ContractListDto(
             c.Id, c.ContractNo, c.Title, c.CustomerName, c.Type, c.Industry, c.Status, c.TotalAmount, c.DeliveryDate, c.SignedDate, c.Projects.Count,
@@ -903,7 +906,7 @@ public sealed class ContractService(PMSDbContext db, HolidayService holidays, Ti
 
         var members = Members(c);
         var flags = ContractRules.AutoFlags(c);
-        var (next, canDecide, required, blockedReason) = Decision(c, userId);
+        var (next, canDecide, required, blockedReason) = Decision(c, userId, await governance.IsContractSeparationRequiredAsync(ct).ConfigureAwait(false));
         var manage = ContractRules.CanManage(userId, members);
         var editable = ContractRules.CanEditTerms(c.Status);
         var allowed = ManualStatusTargets.Where(t => ContractRules.CanTransition(c.Status, t)).ToList();

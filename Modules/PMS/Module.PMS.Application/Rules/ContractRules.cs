@@ -288,17 +288,24 @@ public static class ContractRules
         return null;
     }
 
-    /// <summary>核決檢查：步驟輪到、身分符合、職責分離（不得核決自己送審的案，且同一人不得決定同週期的兩個步驟）。</summary>
+    /// <summary>
+    /// 核決檢查：步驟輪到、身分符合、職責分離（不得核決自己送審的案，且同一人不得決定同週期的兩個步驟）。
+    /// <paramref name="enforceSeparation"/> 為 false（系統配置停用雙重審批）時略過兩項職責分離檢查，仍須依序核決。
+    /// </summary>
     public static string? ValidateDecision(
         ContractApprovalStep step, ApprovalDecision decision, string? comment, Guid userId, Guid? submittedBy,
-        ContractApprovalStep? next, IReadOnlyList<(Guid UserId, ContractMemberRole Role)> members, IEnumerable<ContractApproval> currentCycle)
+        ContractApprovalStep? next, IReadOnlyList<(Guid UserId, ContractMemberRole Role)> members, IEnumerable<ContractApproval> currentCycle,
+        bool enforceSeparation = true)
     {
         if (next is null) return "所有核決步驟已完成。";
         if (next != step) return $"目前輪到「{StepName(next.Value)}」，尚不能進行「{StepName(step)}」。";
         if (!HasRole(userId, RoleOfStep(step), members)) return $"僅合約的{RoleName(RoleOfStep(step))}可進行此核決。";
-        if (submittedBy == userId) return "不得核決自己送審的合約（職責分離）。";
-        if (currentCycle.Any(a => a.DecidedBy == userId && a.Decision == ApprovalDecision.Approved))
-            return "同一人不得核決同一送審週期的兩個步驟（職責分離）。";
+        if (enforceSeparation)
+        {
+            if (submittedBy == userId) return "不得核決自己送審的合約（職責分離）。";
+            if (currentCycle.Any(a => a.DecidedBy == userId && a.Decision == ApprovalDecision.Approved))
+                return "同一人不得核決同一送審週期的兩個步驟（職責分離）。";
+        }
         if (decision != ApprovalDecision.Approved && string.IsNullOrWhiteSpace(comment)) return "退回或否決時請填寫意見。";
         if (comment is { Length: > 1000 }) return "意見不得超過 1000 字。";
         return null;

@@ -232,6 +232,33 @@ public class ContractRulesTests
         ContractRules.ValidateDecision(ContractApprovalStep.Pm, ApprovalDecision.Approved, null, Pm, Sales, ContractApprovalStep.Pm, Members, []).Should().BeNull();
 
     [Fact]
+    public void Decision_SeparationDisabled_SubmitterMayDecide()
+    {
+        var members = new List<(Guid, ContractMemberRole)> { (Pm, ContractMemberRole.Pm), (Pm, ContractMemberRole.Sales) };
+        ContractRules.ValidateDecision(ContractApprovalStep.Pm, ApprovalDecision.Approved, null, Pm, Pm,
+            ContractApprovalStep.Pm, members, [], enforceSeparation: false).Should().BeNull();
+    }
+
+    [Fact]
+    public void Decision_SeparationDisabled_SamePersonMayApproveTwoSteps()
+    {
+        var both = Guid.NewGuid();
+        var members = new List<(Guid, ContractMemberRole)> { (both, ContractMemberRole.Legal), (both, ContractMemberRole.Executive), (Sales, ContractMemberRole.Sales) };
+        var cycle = new[] { Approval(ContractApprovalStep.Legal, both) };
+        ContractRules.ValidateDecision(ContractApprovalStep.Executive, ApprovalDecision.Approved, null, both, Sales,
+            ContractApprovalStep.Executive, members, cycle, enforceSeparation: false).Should().BeNull();
+    }
+
+    [Fact]
+    public void Decision_SeparationDisabled_StillRequiresOrderAndRole()
+    {
+        ContractRules.ValidateDecision(ContractApprovalStep.Executive, ApprovalDecision.Approved, null, Exec, Sales,
+            ContractApprovalStep.Pm, Members, [], enforceSeparation: false).Should().Contain("目前輪到");
+        ContractRules.ValidateDecision(ContractApprovalStep.Pm, ApprovalDecision.Approved, null, Sales, Sales,
+            ContractApprovalStep.Pm, Members, [], enforceSeparation: false).Should().Contain("合約 PM");
+    }
+
+    [Fact]
     public void Decision_WhenAllDone_IsRejected() =>
         ContractRules.ValidateDecision(ContractApprovalStep.Pm, ApprovalDecision.Approved, null, Pm, Sales, null, Members, []).Should().Contain("已完成");
 

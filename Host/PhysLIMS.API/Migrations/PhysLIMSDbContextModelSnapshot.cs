@@ -346,6 +346,16 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("datetimeoffset")
                         .HasComment("手動停用時公告的預計恢復時間 (UTC)，僅供公告不會自動恢復。");
 
+                    b.Property<string>("GroupControllerName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("顯示用改掛：功能顯示於哪個 Controller 之下；為 null 時顯示於原 Controller");
+
+                    b.Property<string>("GroupModuleName")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasComment("顯示用改掛：功能顯示於哪個 Controller 之下所屬的模組；僅影響畫面分組");
+
                     b.Property<string>("Icon")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
@@ -434,6 +444,69 @@ namespace PhysLIMS.API.Migrations
                     b.ToTable("ControllerMetadatas", "core", t =>
                         {
                             t.HasComment("API 控制器與 Action 中繼資料實體");
+                        });
+                });
+
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Controller.FunctionGroupOverride", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
+
+                    b.Property<string>("ControllerName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("來源 Controller 名稱；模組層級為空字串");
+
+                    b.Property<int?>("DisplayOrder")
+                        .HasColumnType("int")
+                        .HasComment("自訂排序；為 null 時沿用預設排序");
+
+                    b.Property<string>("Icon")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("自訂圖示 (Font Awesome class)；僅 Controller 層級使用");
+
+                    b.Property<int>("Level")
+                        .HasColumnType("int")
+                        .HasComment("分組層級：1 = 模組、2 = Controller");
+
+                    b.Property<string>("ModuleName")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasComment("來源模組名稱（ControllerMetadata.ModuleName）");
+
+                    b.Property<string>("TargetModuleName")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasComment("Controller 層級：改掛顯示於哪個模組之下；為 null 時顯示於原模組");
+
+                    b.Property<string>("Title")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("自訂顯示名稱；為 null 時沿用程式碼標題");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("最後異動時間 (UTC)");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("最後異動者");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Level", "ModuleName", "ControllerName")
+                        .IsUnique()
+                        .HasDatabaseName("UX_FunctionGroupOverride_Level_Module_Controller");
+
+                    b.ToTable("FunctionGroupOverrides", "core", t =>
+                        {
+                            t.HasComment("系統功能管理：模組 / Controller 層級的顯示覆寫（名稱、圖示、排序、顯示用父層）");
                         });
                 });
 

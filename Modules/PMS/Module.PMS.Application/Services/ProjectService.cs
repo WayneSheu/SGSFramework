@@ -296,7 +296,14 @@ public sealed class ProjectService(PMSDbContext db, TimeProvider clock)
         ArgumentNullException.ThrowIfNull(request);
 
         var project = await LoadForWriteAsync(userId, id, ct).ConfigureAwait(false);
-        if (project.Error is { } error) return error;
+        if (project.Error is { } error)
+        {
+            // 專案存在但呼叫者不是內部成員：明確告知原因，避免被誤認為資料不存在（專案不存在仍回 404）
+            if (error.Status == 404 && await db.Projects.AsNoTracking().AnyAsync(x => x.Id == id, ct).ConfigureAwait(false))
+                return PmsError.Forbidden("您不是此專案成員，無法決議。");
+
+            return error;
+        }
         var p = project.Value!;
 
         if (!Enum.IsDefined(gate)) return PmsError.Validation("gate 不正確。");

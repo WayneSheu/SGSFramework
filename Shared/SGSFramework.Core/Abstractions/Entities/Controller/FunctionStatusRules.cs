@@ -13,6 +13,11 @@ public static class FunctionStatusRules
     public const string DisabledFunctionsCacheKey = "SGS_ManuallyDisabledFunctions";
 
     /// <summary>
+    /// 系統權限清單 (權限樹) 的 IMemoryCache 快取鍵；其名稱取自 ControllerMetadata，於「系統功能管理」改名後須移除此快取
+    /// </summary>
+    public const string PermissionTreeCacheKey = "Cache_System_Permission_Tree";
+
+    /// <summary>
     /// 系統功能管理控制器本身不可停用，避免管理者將自己鎖在外面而無法再恢復
     /// </summary>
     public const string ProtectedControllerName = "FunctionManagementController";

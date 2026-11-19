@@ -135,11 +135,11 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
     {
         try
         {
+            // 權限鍵值、位元與權限標題的自訂仍以 PermissionMetadata 為準；
+            // 模組 / 功能 / 動作名稱與說明改取自 ControllerMetadata（含「系統功能管理」的自訂名稱），各畫面顯示一致
             var metadataList = await _dbContext.Set<PermissionMetadata>()
                 .AsNoTracking()
-                .OrderBy(m => m.ModuleTitle)
-                .ThenBy(m => m.ControllerTitle)
-                .ThenBy(m => m.PermissionKey)
+                .OrderBy(m => m.PermissionKey)
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
 
@@ -148,8 +148,52 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                 return new List<PermissionModuleDto>();
             }
 
+            var controllerMetadatas = await _dbContext.Set<ControllerMetadata>()
+                .AsNoTracking()
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            var overrides = await _dbContext.Set<FunctionGroupOverride>()
+                .AsNoTracking()
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            var resolver = new FunctionGroupResolver(controllerMetadatas, overrides);
+            var actionLookup = controllerMetadatas
+                .GroupBy(c => FunctionStatusRules.BuildKey(c.ControllerName, c.ActionName), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+            string ModuleTitleOf(PermissionMetadata p) =>
+                resolver.FindModuleTitle(p.ModuleName) ?? p.ModuleTitle ?? p.ModuleName;
+
+            string ControllerTitleOf(PermissionMetadata p) =>
+                resolver.FindControllerTitle(p.ModuleName, p.ControllerName) ?? p.ControllerTitle ?? p.ControllerName;
+
+            PermissionActionDto ToAction(PermissionMetadata p, bool isRead, string controllerTitle)
+            {
+                actionLookup.TryGetValue(FunctionStatusRules.BuildKey(p.ControllerName, p.ActionName), out var action);
+                var actionTitle = !string.IsNullOrWhiteSpace(action?.DisplayName) ? action.DisplayName
+                    : !string.IsNullOrWhiteSpace(p.ActionTitle) ? p.ActionTitle
+                    : p.PermissionTitle;
+
+                return new PermissionActionDto
+                {
+                    PermissionKey = p.PermissionKey ?? string.Empty,
+                    // 未於權限清單自訂的「讀取」權限，名稱跟隨功能 (Controller) 名稱
+                    PermissionTitle = !p.IsCustomized && isRead ? controllerTitle : p.PermissionTitle,
+                    ActionName = p.ActionName,
+                    ActionTitle = actionTitle,
+                    Description = p.IsCustomized || string.IsNullOrWhiteSpace(action?.Description) ? p.Description : action.Description,
+                    BitPosition = p.BitPosition,
+                    IsCustomized = p.IsCustomized
+                };
+            }
+
             var result = new List<PermissionModuleDto>();
-            var moduleGroups = metadataList.GroupBy(m => new { m.ModuleName, m.ModuleTitle });
+            var moduleGroups = metadataList
+                .GroupBy(m => m.ModuleName ?? string.Empty)
+                .OrderBy(g => resolver.ModuleOrder(g.Key) ?? int.MaxValue)
+                .ThenBy(g => ModuleTitleOf(g.First()), StringComparer.CurrentCulture);
 
             foreach (var moduleGroup in moduleGroups)
             {
@@ -157,61 +201,47 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
 
                 var moduleDto = new PermissionModuleDto
                 {
-                    ModuleName = moduleGroup.Key.ModuleName ?? string.Empty,
-                    ModuleTitle = moduleGroup.Key.ModuleTitle ?? string.Empty,
+                    ModuleName = moduleGroup.Key,
+                    ModuleTitle = ModuleTitleOf(moduleGroup.First()),
                     Description = moduleGroup.FirstOrDefault()?.Description,
                     Functions = new List<PermissionFunctionDto>()
                 };
 
-                var controllerGroups = moduleGroup.GroupBy(c => new { c.ControllerName, c.ControllerTitle });
+                var controllerGroups = moduleGroup
+                    .GroupBy(c => c.ControllerName ?? string.Empty)
+                    .OrderBy(g => resolver.EffectiveControllerOrder(moduleGroup.Key, g.Key))
+                    .ThenBy(g => ControllerTitleOf(g.First()), StringComparer.CurrentCulture);
 
                 foreach (var controllerGroup in controllerGroups)
                 {
+                    var first = controllerGroup.First();
+                    var controllerTitle = ControllerTitleOf(first);
                     var functionDto = new PermissionFunctionDto
                     {
-                        FunctionName = controllerGroup.Key.ControllerName ?? string.Empty,
-                        FunctionTitle = controllerGroup.Key.ControllerTitle ?? string.Empty,
-                        Description = controllerGroup.FirstOrDefault()?.Description,
+                        FunctionName = controllerGroup.Key,
+                        FunctionTitle = controllerTitle,
+                        Description = first.Description,
                         ActionPermissions = new List<PermissionActionDto>()
                     };
 
+                    // 讀取權限判斷沿用 PermissionMetadata 原始標題（程式碼預設讀取權限標題與 Controller 標題相同）
                     var readEntity = controllerGroup.FirstOrDefault(a =>
                         (!string.IsNullOrEmpty(a.PermissionKey) && a.PermissionKey.EndsWith(".READ", StringComparison.OrdinalIgnoreCase)) ||
-                        string.Equals(a.PermissionTitle, controllerGroup.Key.ControllerTitle, StringComparison.OrdinalIgnoreCase));
+                        string.Equals(a.PermissionTitle, first.ControllerTitle, StringComparison.OrdinalIgnoreCase));
 
                     if (readEntity != null)
                     {
-                        functionDto.ReadPermission = new PermissionActionDto
-                        {
-                            PermissionKey = readEntity.PermissionKey ?? string.Empty,
-                            PermissionTitle = readEntity.PermissionTitle,
-                            ActionName = readEntity.ActionName,
-                            ActionTitle = readEntity.ActionTitle,
-                            Description = readEntity.Description,
-                            BitPosition = readEntity.BitPosition,
-                            IsCustomized = readEntity.IsCustomized
-                        };
+                        functionDto.ReadPermission = ToAction(readEntity, isRead: true, controllerTitle);
                     }
-                    var actions = controllerGroup.DistinctBy(x => x.PermissionKey).ToList();
-                    foreach (var actionEntity in actions)
+
+                    foreach (var actionEntity in controllerGroup.DistinctBy(x => x.PermissionKey))
                     {
                         if (readEntity != null && actionEntity.PermissionKey == readEntity.PermissionKey)
                         {
                             continue;
                         }
 
-                        functionDto.ActionPermissions.Add(new PermissionActionDto
-                        {
-                            PermissionKey = actionEntity.PermissionKey ?? string.Empty,
-                            PermissionTitle = actionEntity.PermissionTitle,
-                            ActionName = actionEntity.ActionName,
-                            ActionTitle = !string.IsNullOrWhiteSpace(actionEntity.ActionTitle)
-                                ? actionEntity.ActionTitle
-                                : actionEntity.PermissionTitle,
-                            Description = actionEntity.Description,
-                            BitPosition = actionEntity.BitPosition,
-                            IsCustomized = actionEntity.IsCustomized
-                        });
+                        functionDto.ActionPermissions.Add(ToAction(actionEntity, isRead: false, controllerTitle));
                     }
 
                     moduleDto.Functions.Add(functionDto);

@@ -281,6 +281,132 @@ public sealed class FunctionManagementController : ApiControllerBase
     }
 
     /// <summary>
+    /// 編輯模組層級顯示欄位 (名稱 / 排序)；僅影響顯示，不改變權限歸屬
+    /// </summary>
+    [HttpPut("modules/{moduleName}")]
+    [Function("UpdateModuleGroup", "編輯模組顯示", Icon = "fa-solid fa-cubes", Order = 6, Description = "編輯功能管理中模組的顯示名稱與排序；不改變權限歸屬。")]
+    [RequiresPermission("SYSTEM.FUNCTIONMANAGEMENT.UPDATE", "編輯功能資訊")]
+    [EndpointSummary("編輯模組顯示")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public Task<IActionResult> UpdateModuleGroup(
+        [FromRoute] string moduleName,
+        [FromBody] UpdateModuleGroupRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        return ExecuteGroupChangeAsync("編輯模組顯示", moduleName, () =>
+            _controllerMetadataService.UpdateModuleGroupAsync(
+                moduleName,
+                new ModuleGroupChange(request.Title, request.DisplayOrder, HttpContext.Connection.RemoteIpAddress?.ToString()),
+                cancellationToken));
+    }
+
+    /// <summary>
+    /// 編輯 Controller 層級顯示欄位 (名稱 / 圖示 / 排序 / 顯示用父模組)；僅影響顯示，不改變權限歸屬
+    /// </summary>
+    [HttpPut("modules/{moduleName}/controllers/{controllerName}")]
+    [Function("UpdateControllerGroup", "編輯 Controller 顯示", Icon = "fa-solid fa-puzzle-piece", Order = 7, Description = "編輯功能管理中 Controller 的顯示名稱、圖示、排序與顯示用父模組；不改變權限歸屬。")]
+    [RequiresPermission("SYSTEM.FUNCTIONMANAGEMENT.UPDATE", "編輯功能資訊")]
+    [EndpointSummary("編輯 Controller 顯示")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public Task<IActionResult> UpdateControllerGroup(
+        [FromRoute] string moduleName,
+        [FromRoute] string controllerName,
+        [FromBody] UpdateControllerGroupRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        return ExecuteGroupChangeAsync("編輯 Controller 顯示", $"{moduleName}/{controllerName}", () =>
+            _controllerMetadataService.UpdateControllerGroupAsync(
+                moduleName,
+                controllerName,
+                new ControllerGroupChange(request.Title, request.Icon, request.DisplayOrder, request.TargetModuleName, HttpContext.Connection.RemoteIpAddress?.ToString()),
+                cancellationToken));
+    }
+
+    /// <summary>
+    /// 將功能改掛顯示於其他 Controller 之下；僅影響顯示，不改變權限歸屬
+    /// </summary>
+    [HttpPut("functions/{id:guid}/group")]
+    [Function("UpdateFunctionGroup", "改掛功能", Icon = "fa-solid fa-arrow-right-arrow-left", Order = 8, Description = "將功能改掛顯示於其他 Controller 之下；不改變權限歸屬。")]
+    [RequiresPermission("SYSTEM.FUNCTIONMANAGEMENT.UPDATE", "編輯功能資訊")]
+    [EndpointSummary("改掛功能")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public Task<IActionResult> UpdateFunctionGroup(
+        [FromRoute] Guid id,
+        [FromBody] UpdateFunctionGroupRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        return ExecuteGroupChangeAsync("改掛功能", id.ToString(), () =>
+            _controllerMetadataService.UpdateFunctionGroupAsync(
+                id,
+                new FunctionGroupChange(request.TargetModuleName, request.TargetControllerName, HttpContext.Connection.RemoteIpAddress?.ToString()),
+                cancellationToken));
+    }
+
+    /// <summary>
+    /// 分組顯示編輯共用的例外對應 (400 / 404 / 499 / 500)
+    /// </summary>
+    private async Task<IActionResult> ExecuteGroupChangeAsync(string operation, string target, Func<Task> action)
+    {
+        try
+        {
+            await action();
+            return NoContent();
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "{Operation}之請求內容無效。目標: {Target}", operation, target);
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "無效的請求參數",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
+            });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            _logger.LogWarning(ex, "{Operation}的目標不存在。目標: {Target}", operation, target);
+            return NotFound(new ProblemDetails
+            {
+                Status = StatusCodes.Status404NotFound,
+                Title = "資源不存在",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "{Operation}時發生非預期錯誤。目標: {Target}", operation, target);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "伺服器內部錯誤",
+                Detail = $"{operation}時發生系統異常，請聯繫系統管理員。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+    }
+
+    /// <summary>
     /// 取得指定功能之狀態異動歷程 (稽核用)
     /// </summary>
     /// <param name="id">功能識別碼 (Guid)</param>

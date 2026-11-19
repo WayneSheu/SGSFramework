@@ -24,6 +24,7 @@ namespace SGSFramework.Identity.Services
         IPermissionChangeNotifier permissionChangeNotifier,
         IdentityPolicyRuntime identityPolicyRuntime,
         IRoleGovernanceService roleGovernanceService,
+        SGSFramework.Core.Abstractions.Governance.IWorkflowGovernanceSettings workflowGovernanceSettings,
         TimeProvider timeProvider,
         ILogger<SystemSettingsService> logger) : ISystemSettingsService
     {
@@ -42,6 +43,7 @@ namespace SGSFramework.Identity.Services
         private readonly IPermissionChangeNotifier _permissionChangeNotifier = permissionChangeNotifier ?? throw new ArgumentNullException(nameof(permissionChangeNotifier));
         private readonly IdentityPolicyRuntime _identityPolicyRuntime = identityPolicyRuntime ?? throw new ArgumentNullException(nameof(identityPolicyRuntime));
         private readonly IRoleGovernanceService _roleGovernanceService = roleGovernanceService ?? throw new ArgumentNullException(nameof(roleGovernanceService));
+        private readonly SGSFramework.Core.Abstractions.Governance.IWorkflowGovernanceSettings _workflowGovernance = workflowGovernanceSettings ?? throw new ArgumentNullException(nameof(workflowGovernanceSettings));
         private readonly TimeProvider _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         private readonly ILogger<SystemSettingsService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -58,6 +60,7 @@ namespace SGSFramework.Identity.Services
             identityPolicy.UpdatedBy = identityRow?.UpdatedByName;
 
             var governanceRow = await FindAsync(SystemSettingKeys.RoleGovernance, tracking: false, cancellationToken);
+            var workflowRow = await FindAsync(SystemSettingKeys.WorkflowGovernance, tracking: false, cancellationToken);
 
             return new SystemSettingsDto
             {
@@ -70,7 +73,19 @@ namespace SGSFramework.Identity.Services
                     UpdatedAt = governanceRow?.UpdatedAt,
                     UpdatedBy = governanceRow?.UpdatedByName
                 },
-                RoleGovernanceDefaults = new RoleGovernanceSettingsDto { RequireApproval = _roleGovernanceService.DefaultRequireApproval }
+                RoleGovernanceDefaults = new RoleGovernanceSettingsDto { RequireApproval = _roleGovernanceService.DefaultRequireApproval },
+                WorkflowGovernance = new WorkflowGovernanceSettingsDto
+                {
+                    ContractSeparationRequired = await _workflowGovernance.IsContractSeparationRequiredAsync(cancellationToken),
+                    CrDualSignoffRequired = await _workflowGovernance.IsCrDualSignoffRequiredAsync(cancellationToken),
+                    UpdatedAt = workflowRow?.UpdatedAt,
+                    UpdatedBy = workflowRow?.UpdatedByName
+                },
+                WorkflowGovernanceDefaults = new WorkflowGovernanceSettingsDto
+                {
+                    ContractSeparationRequired = _workflowGovernance.DefaultContractSeparationRequired,
+                    CrDualSignoffRequired = _workflowGovernance.DefaultCrDualSignoffRequired
+                }
             };
         }
 
@@ -144,6 +159,67 @@ namespace SGSFramework.Identity.Services
                 ReleasedRequests = release?.ApprovedRequests ?? 0,
                 ActivatedRoles = release?.ActivatedRoles ?? 0,
                 ReleaseSkipped = release?.Skipped.ToList() ?? []
+            };
+        }
+
+        public async Task<WorkflowGovernanceSettingsDto> UpdateWorkflowGovernanceAsync(WorkflowGovernanceSettingsDto settings, string? clientIp, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(settings);
+
+            var previousSeparation = await _workflowGovernance.IsContractSeparationRequiredAsync(cancellationToken);
+            var previousDual = await _workflowGovernance.IsCrDualSignoffRequiredAsync(cancellationToken);
+            var changes = new List<string>();
+
+            if (previousSeparation != settings.ContractSeparationRequired)
+            {
+                changes.Add($"合約核決職責分離：{Format(previousSeparation)} → {Format(settings.ContractSeparationRequired)}");
+                if (!settings.ContractSeparationRequired)
+                {
+                    changes.Add("已停用合約職責分離：送審者可核決自己送審的合約、同一人可決定同週期多個步驟（仍須依序完成核決步驟）");
+                }
+            }
+
+            if (previousDual != settings.CrDualSignoffRequired)
+            {
+                changes.Add($"CR 須 PM 與 Tech Lead 雙簽：{Format(previousDual)} → {Format(settings.CrDualSignoffRequired)}");
+                if (!settings.CrDualSignoffRequired)
+                {
+                    changes.Add("已停用 CR 雙簽：內部簽核只需 PM 或 Tech Lead 任一人簽核（客戶 CR 仍須客戶簽核）");
+                }
+            }
+
+            // 與 appsettings 預設相同時不保留自訂設定，讓 appsettings 持續作為預設來源
+            var isDefault = settings.ContractSeparationRequired == _workflowGovernance.DefaultContractSeparationRequired &&
+                            settings.CrDualSignoffRequired == _workflowGovernance.DefaultCrDualSignoffRequired;
+            var hasRow = await FindAsync(SystemSettingKeys.WorkflowGovernance, tracking: false, cancellationToken) is not null;
+
+            if (changes.Count == 0)
+            {
+                if (isDefault && hasRow)
+                {
+                    await SaveAsync<SGSFramework.Core.Abstractions.Governance.WorkflowGovernanceSettingValue>(
+                        SystemSettingKeys.WorkflowGovernance, null, changes, clientIp, cancellationToken);
+                }
+            }
+            else
+            {
+                if (isDefault) changes.Add("已恢復為 appsettings 預設值");
+
+                await SaveAsync(SystemSettingKeys.WorkflowGovernance,
+                    isDefault ? null : new SGSFramework.Core.Abstractions.Governance.WorkflowGovernanceSettingValue(settings.ContractSeparationRequired, settings.CrDualSignoffRequired),
+                    changes, clientIp, cancellationToken);
+
+                _logger.LogInformation("專案 / 合約審批設定已更新並立即生效：{Changes}", string.Join("；", changes));
+                await BroadcastAsync(cancellationToken);
+            }
+
+            var row = await FindAsync(SystemSettingKeys.WorkflowGovernance, tracking: false, cancellationToken);
+            return new WorkflowGovernanceSettingsDto
+            {
+                ContractSeparationRequired = settings.ContractSeparationRequired,
+                CrDualSignoffRequired = settings.CrDualSignoffRequired,
+                UpdatedAt = row?.UpdatedAt,
+                UpdatedBy = row?.UpdatedByName
             };
         }
 

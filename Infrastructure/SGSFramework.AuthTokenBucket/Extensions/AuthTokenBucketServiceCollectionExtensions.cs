@@ -278,6 +278,7 @@ public static class AuthTokenBucketServiceCollectionExtensions
         services.AddScoped<IPermissionChangeNotifier, PermissionChangeNotifier>();
         services.AddScoped<IRoleAuditService, RoleAuditService>();
         services.AddScoped<IRoleGovernanceService, RoleGovernanceService>();
+        services.AddScoped<SGSFramework.Core.Abstractions.Governance.IWorkflowGovernanceSettings, WorkflowGovernanceSettings>();
         // 註冊執行期作用域服務
         services.AddScoped<ILabFunctionScopeService, LabFunctionScopeService>();
         services.TryAddSingleton(TimeProvider.System);

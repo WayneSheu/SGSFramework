@@ -3761,3 +3761,667 @@ VALUES (N'20261030021801_systemlog_add_controllerName', N'10.0.12');
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+ALTER TABLE [core].[AccessReviewItems] ADD [ItemType] nvarchar(30) NOT NULL DEFAULT N'RoleMembership';
+DECLARE @description484 AS sql_variant;
+SET @description484 = N'覆核項目類型（RoleMembership=角色指派, ReportCategoryGrant=報告類別授權, SignerQualification=簽署人資格）';
+EXEC sp_addextendedproperty 'MS_Description', @description484, 'SCHEMA', N'core', 'TABLE', N'AccessReviewItems', 'COLUMN', N'ItemType';
+
+ALTER TABLE [core].[AccessReviewItems] ADD [SubjectId] uniqueidentifier NULL;
+DECLARE @description485 AS sql_variant;
+SET @description485 = N'非角色指派項目所對應之報告類別授權或簽署人資格識別鍵（回收時據以撤銷）';
+EXEC sp_addextendedproperty 'MS_Description', @description485, 'SCHEMA', N'core', 'TABLE', N'AccessReviewItems', 'COLUMN', N'SubjectId';
+
+CREATE TABLE [core].[ReportCategories] (
+    [Id] uniqueidentifier NOT NULL,
+    [Code] nvarchar(32) NOT NULL,
+    [Name] nvarchar(100) NOT NULL,
+    [Description] nvarchar(500) NULL,
+    [DefaultConfidentiality] nvarchar(20) NOT NULL,
+    [RegulationTags] nvarchar(200) NULL,
+    [DisplayOrder] int NOT NULL,
+    [IsActive] bit NOT NULL,
+    [CreatedAtUtc] datetimeoffset NOT NULL,
+    [CreatedBy] nvarchar(256) NOT NULL,
+    [UpdatedAtUtc] datetimeoffset NULL,
+    [UpdatedBy] nvarchar(256) NULL,
+    [RowVersion] rowversion NOT NULL,
+    CONSTRAINT [PK_ReportCategories] PRIMARY KEY ([Id])
+);
+DECLARE @description486 AS sql_variant;
+SET @description486 = N'報告類別主檔（檢驗領域，例：食品 FOOD、電子 RoHS、材料 MAT、環境 ENV），為報告權限隔離的核心維度';
+EXEC sp_addextendedproperty 'MS_Description', @description486, 'SCHEMA', N'core', 'TABLE', N'ReportCategories';
+SET @description486 = N'識別主鍵';
+EXEC sp_addextendedproperty 'MS_Description', @description486, 'SCHEMA', N'core', 'TABLE', N'ReportCategories', 'COLUMN', N'Id';
+SET @description486 = N'類別代碼（大寫英數，唯一）';
+EXEC sp_addextendedproperty 'MS_Description', @description486, 'SCHEMA', N'core', 'TABLE', N'ReportCategories', 'COLUMN', N'Code';
+SET @description486 = N'類別名稱';
+EXEC sp_addextendedproperty 'MS_Description', @description486, 'SCHEMA', N'core', 'TABLE', N'ReportCategories', 'COLUMN', N'Name';
+SET @description486 = N'說明';
+EXEC sp_addextendedproperty 'MS_Description', @description486, 'SCHEMA', N'core', 'TABLE', N'ReportCategories', 'COLUMN', N'Description';
+SET @description486 = N'新建報告預設密級（Normal=常規, Confidential=機密, Restricted=特檢）';
+EXEC sp_addextendedproperty 'MS_Description', @description486, 'SCHEMA', N'core', 'TABLE', N'ReportCategories', 'COLUMN', N'DefaultConfidentiality';
+SET @description486 = N'適用法規 / 認證標籤（逗號分隔，例：TFDA,ISO17025）';
+EXEC sp_addextendedproperty 'MS_Description', @description486, 'SCHEMA', N'core', 'TABLE', N'ReportCategories', 'COLUMN', N'RegulationTags';
+SET @description486 = N'排序';
+EXEC sp_addextendedproperty 'MS_Description', @description486, 'SCHEMA', N'core', 'TABLE', N'ReportCategories', 'COLUMN', N'DisplayOrder';
+SET @description486 = N'是否啟用';
+EXEC sp_addextendedproperty 'MS_Description', @description486, 'SCHEMA', N'core', 'TABLE', N'ReportCategories', 'COLUMN', N'IsActive';
+SET @description486 = N'建立時間';
+EXEC sp_addextendedproperty 'MS_Description', @description486, 'SCHEMA', N'core', 'TABLE', N'ReportCategories', 'COLUMN', N'CreatedAtUtc';
+SET @description486 = N'建立人員';
+EXEC sp_addextendedproperty 'MS_Description', @description486, 'SCHEMA', N'core', 'TABLE', N'ReportCategories', 'COLUMN', N'CreatedBy';
+SET @description486 = N'最後更新時間';
+EXEC sp_addextendedproperty 'MS_Description', @description486, 'SCHEMA', N'core', 'TABLE', N'ReportCategories', 'COLUMN', N'UpdatedAtUtc';
+SET @description486 = N'最後更新人員';
+EXEC sp_addextendedproperty 'MS_Description', @description486, 'SCHEMA', N'core', 'TABLE', N'ReportCategories', 'COLUMN', N'UpdatedBy';
+SET @description486 = N'並行版本（樂觀鎖）';
+EXEC sp_addextendedproperty 'MS_Description', @description486, 'SCHEMA', N'core', 'TABLE', N'ReportCategories', 'COLUMN', N'RowVersion';
+
+CREATE TABLE [core].[ReportCategoryGrants] (
+    [Id] uniqueidentifier NOT NULL,
+    [PrincipalType] nvarchar(10) NOT NULL,
+    [PrincipalId] uniqueidentifier NOT NULL,
+    [CategoryCode] nvarchar(32) NOT NULL,
+    [TenantLabId] uniqueidentifier NULL,
+    [Actions] int NOT NULL,
+    [DataScope] nvarchar(20) NOT NULL,
+    [MaxConfidentiality] nvarchar(20) NOT NULL,
+    [EffectiveFrom] datetimeoffset NOT NULL,
+    [EffectiveTo] datetimeoffset NULL,
+    [Reason] nvarchar(500) NULL,
+    [RevokedAt] datetimeoffset NULL,
+    [RevokedByName] nvarchar(256) NULL,
+    [RevokeReason] nvarchar(500) NULL,
+    [CreatedAtUtc] datetimeoffset NOT NULL,
+    [CreatedBy] nvarchar(256) NOT NULL,
+    [UpdatedAtUtc] datetimeoffset NULL,
+    [UpdatedBy] nvarchar(256) NULL,
+    CONSTRAINT [PK_ReportCategoryGrants] PRIMARY KEY ([Id])
+);
+DECLARE @description487 AS sql_variant;
+SET @description487 = N'報告類別授權：授予使用者或角色於「類別 × 區域實驗室」下可執行的動作、資料範圍與可存取的最高密級。紀錄不刪除，以撤銷保留稽核軌跡';
+EXEC sp_addextendedproperty 'MS_Description', @description487, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryGrants';
+SET @description487 = N'識別主鍵';
+EXEC sp_addextendedproperty 'MS_Description', @description487, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryGrants', 'COLUMN', N'Id';
+SET @description487 = N'授權對象類型（User=使用者, Role=角色）';
+EXEC sp_addextendedproperty 'MS_Description', @description487, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryGrants', 'COLUMN', N'PrincipalType';
+SET @description487 = N'授權對象識別鍵（使用者或角色 Id）';
+EXEC sp_addextendedproperty 'MS_Description', @description487, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryGrants', 'COLUMN', N'PrincipalId';
+SET @description487 = N'類別代碼（ReportCategory.Code）';
+EXEC sp_addextendedproperty 'MS_Description', @description487, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryGrants', 'COLUMN', N'CategoryCode';
+SET @description487 = N'限定區域實驗室；null 表示不限實驗室';
+EXEC sp_addextendedproperty 'MS_Description', @description487, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryGrants', 'COLUMN', N'TenantLabId';
+SET @description487 = N'授權動作位元旗標（View=1, Edit=2, Review=4, Sign=8, Void=16, Download=32, ViewAudit=64, ViewBlindIdentity=128）';
+EXEC sp_addextendedproperty 'MS_Description', @description487, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryGrants', 'COLUMN', N'Actions';
+SET @description487 = N'資料範圍（Assigned=僅指派, Lab=所屬實驗室, Global=全域）';
+EXEC sp_addextendedproperty 'MS_Description', @description487, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryGrants', 'COLUMN', N'DataScope';
+SET @description487 = N'可存取的最高密級（Normal=常規, Confidential=機密, Restricted=特檢）';
+EXEC sp_addextendedproperty 'MS_Description', @description487, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryGrants', 'COLUMN', N'MaxConfidentiality';
+SET @description487 = N'生效起始（含）';
+EXEC sp_addextendedproperty 'MS_Description', @description487, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryGrants', 'COLUMN', N'EffectiveFrom';
+SET @description487 = N'生效迄止（含）；null 表示無期限';
+EXEC sp_addextendedproperty 'MS_Description', @description487, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryGrants', 'COLUMN', N'EffectiveTo';
+SET @description487 = N'授權原因';
+EXEC sp_addextendedproperty 'MS_Description', @description487, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryGrants', 'COLUMN', N'Reason';
+SET @description487 = N'撤銷時間';
+EXEC sp_addextendedproperty 'MS_Description', @description487, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryGrants', 'COLUMN', N'RevokedAt';
+SET @description487 = N'撤銷人員';
+EXEC sp_addextendedproperty 'MS_Description', @description487, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryGrants', 'COLUMN', N'RevokedByName';
+SET @description487 = N'撤銷原因';
+EXEC sp_addextendedproperty 'MS_Description', @description487, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryGrants', 'COLUMN', N'RevokeReason';
+SET @description487 = N'建立時間';
+EXEC sp_addextendedproperty 'MS_Description', @description487, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryGrants', 'COLUMN', N'CreatedAtUtc';
+SET @description487 = N'建立人員';
+EXEC sp_addextendedproperty 'MS_Description', @description487, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryGrants', 'COLUMN', N'CreatedBy';
+SET @description487 = N'最後更新時間';
+EXEC sp_addextendedproperty 'MS_Description', @description487, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryGrants', 'COLUMN', N'UpdatedAtUtc';
+SET @description487 = N'最後更新人員';
+EXEC sp_addextendedproperty 'MS_Description', @description487, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryGrants', 'COLUMN', N'UpdatedBy';
+
+CREATE TABLE [core].[ReportCategoryLabAssignments] (
+    [Id] uniqueidentifier NOT NULL,
+    [CategoryCode] nvarchar(32) NOT NULL,
+    [TenantLabId] uniqueidentifier NOT NULL,
+    [CreatedAt] datetimeoffset NOT NULL,
+    [CreatedByName] nvarchar(256) NULL,
+    CONSTRAINT [PK_ReportCategoryLabAssignments] PRIMARY KEY ([Id])
+);
+DECLARE @description488 AS sql_variant;
+SET @description488 = N'報告類別承作實驗室：指定哪些區域實驗室（分公司）可承作此類別報告';
+EXEC sp_addextendedproperty 'MS_Description', @description488, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryLabAssignments';
+SET @description488 = N'識別主鍵';
+EXEC sp_addextendedproperty 'MS_Description', @description488, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryLabAssignments', 'COLUMN', N'Id';
+SET @description488 = N'類別代碼（ReportCategory.Code）';
+EXEC sp_addextendedproperty 'MS_Description', @description488, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryLabAssignments', 'COLUMN', N'CategoryCode';
+SET @description488 = N'區域實驗室（ORG Organization.TenantLabId）';
+EXEC sp_addextendedproperty 'MS_Description', @description488, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryLabAssignments', 'COLUMN', N'TenantLabId';
+SET @description488 = N'建立時間';
+EXEC sp_addextendedproperty 'MS_Description', @description488, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryLabAssignments', 'COLUMN', N'CreatedAt';
+SET @description488 = N'建立人員';
+EXEC sp_addextendedproperty 'MS_Description', @description488, 'SCHEMA', N'core', 'TABLE', N'ReportCategoryLabAssignments', 'COLUMN', N'CreatedByName';
+
+CREATE TABLE [core].[ReportGrantChangeRequests] (
+    [Id] uniqueidentifier NOT NULL,
+    [RequestType] nvarchar(30) NOT NULL,
+    [PayloadJson] nvarchar(max) NOT NULL,
+    [Summary] nvarchar(500) NOT NULL,
+    [SubjectUserId] uniqueidentifier NULL,
+    [RequestReason] nvarchar(1000) NULL,
+    [Status] nvarchar(20) NOT NULL,
+    [RequestedBy] uniqueidentifier NOT NULL,
+    [RequestedByName] nvarchar(256) NOT NULL,
+    [RequestedAt] datetimeoffset NOT NULL,
+    [ReviewedBy] uniqueidentifier NULL,
+    [ReviewedByName] nvarchar(256) NULL,
+    [ReviewedAt] datetimeoffset NULL,
+    [ReviewComment] nvarchar(1000) NULL,
+    [AppliedEntityId] uniqueidentifier NULL,
+    [CreatedAtUtc] datetimeoffset NOT NULL,
+    [CreatedBy] nvarchar(256) NOT NULL,
+    [UpdatedAtUtc] datetimeoffset NULL,
+    [UpdatedBy] nvarchar(256) NULL,
+    CONSTRAINT [PK_ReportGrantChangeRequests] PRIMARY KEY ([Id])
+);
+DECLARE @description489 AS sql_variant;
+SET @description489 = N'報告授權變更申請（Maker-Checker）：敏感的類別授權與所有簽署人資格須經第二人核准方生效';
+EXEC sp_addextendedproperty 'MS_Description', @description489, 'SCHEMA', N'core', 'TABLE', N'ReportGrantChangeRequests';
+SET @description489 = N'識別主鍵';
+EXEC sp_addextendedproperty 'MS_Description', @description489, 'SCHEMA', N'core', 'TABLE', N'ReportGrantChangeRequests', 'COLUMN', N'Id';
+SET @description489 = N'申請類型（CreateGrant=新增類別授權, CreateQualification=新增簽署人資格）';
+EXEC sp_addextendedproperty 'MS_Description', @description489, 'SCHEMA', N'core', 'TABLE', N'ReportGrantChangeRequests', 'COLUMN', N'RequestType';
+SET @description489 = N'申請內容（新增授權或資格之完整請求 JSON），核准時據以套用';
+EXEC sp_addextendedproperty 'MS_Description', @description489, 'SCHEMA', N'core', 'TABLE', N'ReportGrantChangeRequests', 'COLUMN', N'PayloadJson';
+SET @description489 = N'申請摘要（顯示用）';
+EXEC sp_addextendedproperty 'MS_Description', @description489, 'SCHEMA', N'core', 'TABLE', N'ReportGrantChangeRequests', 'COLUMN', N'Summary';
+SET @description489 = N'受授權之使用者（授權對象為使用者或簽署人資格時），核准者不得為此人';
+EXEC sp_addextendedproperty 'MS_Description', @description489, 'SCHEMA', N'core', 'TABLE', N'ReportGrantChangeRequests', 'COLUMN', N'SubjectUserId';
+SET @description489 = N'申請原因';
+EXEC sp_addextendedproperty 'MS_Description', @description489, 'SCHEMA', N'core', 'TABLE', N'ReportGrantChangeRequests', 'COLUMN', N'RequestReason';
+SET @description489 = N'申請狀態（Pending=待審核, Approved=核准, Rejected=駁回, Cancelled=撤回）';
+EXEC sp_addextendedproperty 'MS_Description', @description489, 'SCHEMA', N'core', 'TABLE', N'ReportGrantChangeRequests', 'COLUMN', N'Status';
+SET @description489 = N'申請人識別鍵';
+EXEC sp_addextendedproperty 'MS_Description', @description489, 'SCHEMA', N'core', 'TABLE', N'ReportGrantChangeRequests', 'COLUMN', N'RequestedBy';
+SET @description489 = N'申請人名稱';
+EXEC sp_addextendedproperty 'MS_Description', @description489, 'SCHEMA', N'core', 'TABLE', N'ReportGrantChangeRequests', 'COLUMN', N'RequestedByName';
+SET @description489 = N'申請時間';
+EXEC sp_addextendedproperty 'MS_Description', @description489, 'SCHEMA', N'core', 'TABLE', N'ReportGrantChangeRequests', 'COLUMN', N'RequestedAt';
+SET @description489 = N'審核人識別鍵';
+EXEC sp_addextendedproperty 'MS_Description', @description489, 'SCHEMA', N'core', 'TABLE', N'ReportGrantChangeRequests', 'COLUMN', N'ReviewedBy';
+SET @description489 = N'審核人名稱';
+EXEC sp_addextendedproperty 'MS_Description', @description489, 'SCHEMA', N'core', 'TABLE', N'ReportGrantChangeRequests', 'COLUMN', N'ReviewedByName';
+SET @description489 = N'審核時間';
+EXEC sp_addextendedproperty 'MS_Description', @description489, 'SCHEMA', N'core', 'TABLE', N'ReportGrantChangeRequests', 'COLUMN', N'ReviewedAt';
+SET @description489 = N'審核意見';
+EXEC sp_addextendedproperty 'MS_Description', @description489, 'SCHEMA', N'core', 'TABLE', N'ReportGrantChangeRequests', 'COLUMN', N'ReviewComment';
+SET @description489 = N'核准後建立之授權或資格識別鍵';
+EXEC sp_addextendedproperty 'MS_Description', @description489, 'SCHEMA', N'core', 'TABLE', N'ReportGrantChangeRequests', 'COLUMN', N'AppliedEntityId';
+SET @description489 = N'建立時間';
+EXEC sp_addextendedproperty 'MS_Description', @description489, 'SCHEMA', N'core', 'TABLE', N'ReportGrantChangeRequests', 'COLUMN', N'CreatedAtUtc';
+SET @description489 = N'建立人員';
+EXEC sp_addextendedproperty 'MS_Description', @description489, 'SCHEMA', N'core', 'TABLE', N'ReportGrantChangeRequests', 'COLUMN', N'CreatedBy';
+SET @description489 = N'最後更新時間';
+EXEC sp_addextendedproperty 'MS_Description', @description489, 'SCHEMA', N'core', 'TABLE', N'ReportGrantChangeRequests', 'COLUMN', N'UpdatedAtUtc';
+SET @description489 = N'最後更新人員';
+EXEC sp_addextendedproperty 'MS_Description', @description489, 'SCHEMA', N'core', 'TABLE', N'ReportGrantChangeRequests', 'COLUMN', N'UpdatedBy';
+
+CREATE TABLE [core].[SignerQualifications] (
+    [Id] uniqueidentifier NOT NULL,
+    [UserId] uniqueidentifier NOT NULL,
+    [CategoryCode] nvarchar(32) NOT NULL,
+    [TenantLabId] uniqueidentifier NOT NULL,
+    [CertificateNo] nvarchar(64) NOT NULL,
+    [ValidFrom] datetimeoffset NOT NULL,
+    [ValidTo] datetimeoffset NOT NULL,
+    [Remark] nvarchar(500) NULL,
+    [RevokedAt] datetimeoffset NULL,
+    [RevokedByName] nvarchar(256) NULL,
+    [RevokeReason] nvarchar(500) NULL,
+    [CreatedAtUtc] datetimeoffset NOT NULL,
+    [CreatedBy] nvarchar(256) NOT NULL,
+    [UpdatedAtUtc] datetimeoffset NULL,
+    [UpdatedBy] nvarchar(256) NULL,
+    CONSTRAINT [PK_SignerQualifications] PRIMARY KEY ([Id])
+);
+DECLARE @description490 AS sql_variant;
+SET @description490 = N'報告簽署人資格：使用者於「類別 × 區域實驗室」之認可簽署資格與有效期間。紀錄不刪除，以撤銷保留稽核軌跡';
+EXEC sp_addextendedproperty 'MS_Description', @description490, 'SCHEMA', N'core', 'TABLE', N'SignerQualifications';
+SET @description490 = N'識別主鍵';
+EXEC sp_addextendedproperty 'MS_Description', @description490, 'SCHEMA', N'core', 'TABLE', N'SignerQualifications', 'COLUMN', N'Id';
+SET @description490 = N'使用者識別鍵';
+EXEC sp_addextendedproperty 'MS_Description', @description490, 'SCHEMA', N'core', 'TABLE', N'SignerQualifications', 'COLUMN', N'UserId';
+SET @description490 = N'類別代碼（ReportCategory.Code）';
+EXEC sp_addextendedproperty 'MS_Description', @description490, 'SCHEMA', N'core', 'TABLE', N'SignerQualifications', 'COLUMN', N'CategoryCode';
+SET @description490 = N'區域實驗室（ORG Organization.TenantLabId）';
+EXEC sp_addextendedproperty 'MS_Description', @description490, 'SCHEMA', N'core', 'TABLE', N'SignerQualifications', 'COLUMN', N'TenantLabId';
+SET @description490 = N'認證機構核發之簽署人編號（例：TAF 報告簽署人編號）';
+EXEC sp_addextendedproperty 'MS_Description', @description490, 'SCHEMA', N'core', 'TABLE', N'SignerQualifications', 'COLUMN', N'CertificateNo';
+SET @description490 = N'資格生效起始（含）';
+EXEC sp_addextendedproperty 'MS_Description', @description490, 'SCHEMA', N'core', 'TABLE', N'SignerQualifications', 'COLUMN', N'ValidFrom';
+SET @description490 = N'資格生效迄止（含）';
+EXEC sp_addextendedproperty 'MS_Description', @description490, 'SCHEMA', N'core', 'TABLE', N'SignerQualifications', 'COLUMN', N'ValidTo';
+SET @description490 = N'備註';
+EXEC sp_addextendedproperty 'MS_Description', @description490, 'SCHEMA', N'core', 'TABLE', N'SignerQualifications', 'COLUMN', N'Remark';
+SET @description490 = N'撤銷時間';
+EXEC sp_addextendedproperty 'MS_Description', @description490, 'SCHEMA', N'core', 'TABLE', N'SignerQualifications', 'COLUMN', N'RevokedAt';
+SET @description490 = N'撤銷人員';
+EXEC sp_addextendedproperty 'MS_Description', @description490, 'SCHEMA', N'core', 'TABLE', N'SignerQualifications', 'COLUMN', N'RevokedByName';
+SET @description490 = N'撤銷原因';
+EXEC sp_addextendedproperty 'MS_Description', @description490, 'SCHEMA', N'core', 'TABLE', N'SignerQualifications', 'COLUMN', N'RevokeReason';
+SET @description490 = N'建立時間';
+EXEC sp_addextendedproperty 'MS_Description', @description490, 'SCHEMA', N'core', 'TABLE', N'SignerQualifications', 'COLUMN', N'CreatedAtUtc';
+SET @description490 = N'建立人員';
+EXEC sp_addextendedproperty 'MS_Description', @description490, 'SCHEMA', N'core', 'TABLE', N'SignerQualifications', 'COLUMN', N'CreatedBy';
+SET @description490 = N'最後更新時間';
+EXEC sp_addextendedproperty 'MS_Description', @description490, 'SCHEMA', N'core', 'TABLE', N'SignerQualifications', 'COLUMN', N'UpdatedAtUtc';
+SET @description490 = N'最後更新人員';
+EXEC sp_addextendedproperty 'MS_Description', @description490, 'SCHEMA', N'core', 'TABLE', N'SignerQualifications', 'COLUMN', N'UpdatedBy';
+
+CREATE UNIQUE INDEX [IX_ReportCategories_Code] ON [core].[ReportCategories] ([Code]);
+
+CREATE INDEX [IX_ReportCategoryGrants_CategoryCode_TenantLabId] ON [core].[ReportCategoryGrants] ([CategoryCode], [TenantLabId]);
+
+CREATE INDEX [IX_ReportCategoryGrants_PrincipalType_PrincipalId] ON [core].[ReportCategoryGrants] ([PrincipalType], [PrincipalId]);
+
+CREATE UNIQUE INDEX [IX_ReportCategoryLabAssignments_CategoryCode_TenantLabId] ON [core].[ReportCategoryLabAssignments] ([CategoryCode], [TenantLabId]);
+
+CREATE INDEX [IX_ReportCategoryLabAssignments_TenantLabId] ON [core].[ReportCategoryLabAssignments] ([TenantLabId]);
+
+CREATE INDEX [IX_ReportGrantChangeRequests_Status_RequestedAt] ON [core].[ReportGrantChangeRequests] ([Status], [RequestedAt]);
+
+CREATE INDEX [IX_SignerQualifications_UserId_CategoryCode_TenantLabId] ON [core].[SignerQualifications] ([UserId], [CategoryCode], [TenantLabId]);
+
+INSERT INTO [core].[__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+VALUES (N'20261102040225_report_category_permissions', N'10.0.12');
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+DECLARE @description491 AS sql_variant;
+EXEC sp_dropextendedproperty 'MS_Description', 'SCHEMA', N'core', 'TABLE', N'AuditLogs';
+SET @description491 = N'資料稽核日誌實體 (對應 MSSQL 2025 Ledger 防篡改唯讀資料表)';
+EXEC sp_addextendedproperty 'MS_Description', @description491, 'SCHEMA', N'core', 'TABLE', N'AuditLogs';
+
+DECLARE @var492 nvarchar(max);
+SELECT @var492 = QUOTENAME([d].[name])
+FROM [sys].[default_constraints] [d]
+INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+WHERE ([d].[parent_object_id] = OBJECT_ID(N'[core].[AuditLogs]') AND [c].[name] = N'Timestamp');
+IF @var492 IS NOT NULL EXEC(N'ALTER TABLE [core].[AuditLogs] DROP CONSTRAINT ' + @var492 + ';');
+ALTER TABLE [core].[AuditLogs] ALTER COLUMN [Timestamp] DATETIMEOFFSET(7) NOT NULL;
+ALTER TABLE [core].[AuditLogs] ADD DEFAULT (SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time') FOR [Timestamp];
+
+DROP INDEX [IX_AuditLog_TraceId_Covering] ON [core].[AuditLogs];
+DECLARE @var493 nvarchar(max);
+SELECT @var493 = QUOTENAME([d].[name])
+FROM [sys].[default_constraints] [d]
+INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+WHERE ([d].[parent_object_id] = OBJECT_ID(N'[core].[AuditLogs]') AND [c].[name] = N'CreatedAt');
+IF @var493 IS NOT NULL EXEC(N'ALTER TABLE [core].[AuditLogs] DROP CONSTRAINT ' + @var493 + ';');
+ALTER TABLE [core].[AuditLogs] ALTER COLUMN [CreatedAt] DATETIMEOFFSET(7) NOT NULL;
+ALTER TABLE [core].[AuditLogs] ADD DEFAULT (SYSDATETIMEOFFSET() AT TIME ZONE 'Taipei Standard Time') FOR [CreatedAt];
+CREATE INDEX [IX_AuditLog_TraceId_Covering] ON [core].[AuditLogs] ([TraceId]) INCLUDE ([Action], [CreatedAt], [TableName]);
+
+INSERT INTO [core].[__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+VALUES (N'20261103033428_update_auditlog_time', N'10.0.12');
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+DECLARE @var494 nvarchar(max);
+SELECT @var494 = QUOTENAME([d].[name])
+FROM [sys].[default_constraints] [d]
+INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+WHERE ([d].[parent_object_id] = OBJECT_ID(N'[core].[AuditLogs]') AND [c].[name] = N'Timestamp');
+IF @var494 IS NOT NULL EXEC(N'ALTER TABLE [core].[AuditLogs] DROP CONSTRAINT ' + @var494 + ';');
+ALTER TABLE [core].[AuditLogs] ADD DEFAULT (TODATETIMEOFFSET(SYSUTCDATETIME(), '+08:00')) FOR [Timestamp];
+
+DECLARE @var495 nvarchar(max);
+SELECT @var495 = QUOTENAME([d].[name])
+FROM [sys].[default_constraints] [d]
+INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+WHERE ([d].[parent_object_id] = OBJECT_ID(N'[core].[AuditLogs]') AND [c].[name] = N'CreatedAt');
+IF @var495 IS NOT NULL EXEC(N'ALTER TABLE [core].[AuditLogs] DROP CONSTRAINT ' + @var495 + ';');
+ALTER TABLE [core].[AuditLogs] ADD DEFAULT (TODATETIMEOFFSET(SYSUTCDATETIME(), '+08:00')) FOR [CreatedAt];
+
+INSERT INTO [core].[__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+VALUES (N'20261103035827_update_auditlog_time_taiwan', N'10.0.12');
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+DECLARE @var496 nvarchar(max);
+SELECT @var496 = QUOTENAME([d].[name])
+FROM [sys].[default_constraints] [d]
+INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+WHERE ([d].[parent_object_id] = OBJECT_ID(N'[core].[SystemLogs]') AND [c].[name] = N'TimeStamp');
+IF @var496 IS NOT NULL EXEC(N'ALTER TABLE [core].[SystemLogs] DROP CONSTRAINT ' + @var496 + ';');
+ALTER TABLE [core].[SystemLogs] ADD DEFAULT (TODATETIMEOFFSET(SYSUTCDATETIME(), '+08:00')) FOR [TimeStamp];
+
+DECLARE @var497 nvarchar(max);
+SELECT @var497 = QUOTENAME([d].[name])
+FROM [sys].[default_constraints] [d]
+INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+WHERE ([d].[parent_object_id] = OBJECT_ID(N'[core].[SystemLogs]') AND [c].[name] = N'CreatedAt');
+IF @var497 IS NOT NULL EXEC(N'ALTER TABLE [core].[SystemLogs] DROP CONSTRAINT ' + @var497 + ';');
+ALTER TABLE [core].[SystemLogs] ADD DEFAULT (TODATETIMEOFFSET(SYSUTCDATETIME(), '+08:00')) FOR [CreatedAt];
+
+DECLARE @var498 nvarchar(max);
+SELECT @var498 = QUOTENAME([d].[name])
+FROM [sys].[default_constraints] [d]
+INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+WHERE ([d].[parent_object_id] = OBJECT_ID(N'[core].[SecurityLog]') AND [c].[name] = N'Timestamp');
+IF @var498 IS NOT NULL EXEC(N'ALTER TABLE [core].[SecurityLog] DROP CONSTRAINT ' + @var498 + ';');
+ALTER TABLE [core].[SecurityLog] ADD DEFAULT (TODATETIMEOFFSET(SYSUTCDATETIME(), '+08:00')) FOR [Timestamp];
+
+INSERT INTO [core].[__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+VALUES (N'20261103153106_update_systemlog_securitylog_time_taiwan', N'10.0.12');
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+CREATE TABLE [core].[FileMetadatas] (
+    [Id] uniqueidentifier NOT NULL,
+    [OriginalFileName] nvarchar(255) NOT NULL,
+    [Extension] nvarchar(20) NOT NULL,
+    [ContentType] nvarchar(100) NOT NULL,
+    [FileSize] bigint NOT NULL,
+    [Sha256] nvarchar(64) NOT NULL,
+    [Category] nvarchar(100) NOT NULL,
+    [StorageTarget] nvarchar(50) NOT NULL,
+    [ContainerName] nvarchar(100) NOT NULL,
+    [StoredKey] nvarchar(500) NOT NULL,
+    [ReferenceType] nvarchar(100) NULL,
+    [ReferenceId] nvarchar(100) NULL,
+    [ImageWidth] int NULL,
+    [ImageHeight] int NULL,
+    [IsDeleted] bit NOT NULL,
+    [DeletedBy] nvarchar(256) NULL,
+    [DeletedAtUtc] datetimeoffset NULL,
+    [PurgedAtUtc] datetimeoffset NULL,
+    [CreatedBy] nvarchar(256) NOT NULL,
+    [CreatedAtUtc] datetimeoffset NOT NULL,
+    [UpdatedBy] nvarchar(256) NULL,
+    [UpdatedAtUtc] datetimeoffset NULL,
+    CONSTRAINT [PK_FileMetadatas] PRIMARY KEY ([Id])
+);
+DECLARE @description499 AS sql_variant;
+SET @description499 = N'檔案中繼資料：業務屬性與實體儲存屬性分離，刪除為虛擬刪除，實體檔案由排程批次清除';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas';
+SET @description499 = N'識別主鍵（同時作為實體檔名）';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'Id';
+SET @description499 = N'使用者上傳時的原始檔名（僅供顯示與下載，不作為儲存路徑）';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'OriginalFileName';
+SET @description499 = N'經檔案簽章 (Magic Number) 驗證後的安全副檔名（小寫，含句點）';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'Extension';
+SET @description499 = N'依檔案簽章判定的 MIME 類型（不採信用戶端 Content-Type）';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'ContentType';
+SET @description499 = N'實際儲存的檔案大小（位元組，圖片為重新編碼後大小）';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'FileSize';
+SET @description499 = N'實際儲存內容的 SHA-256（十六進位小寫），作為 ETag 與完整性查驗';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'Sha256';
+SET @description499 = N'業務分類（對應 FileManagement:Categories，決定儲存目標與允許格式）';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'Category';
+SET @description499 = N'儲存目標：LocalPrivate（地端機密）/ CloudPublic（公開資源）';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'StorageTarget';
+SET @description499 = N'儲存容器（檔案系統為子目錄，物件儲存為 Bucket / Container）';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'ContainerName';
+SET @description499 = N'容器內的實體儲存鍵（yyyy/MM/{Id}{副檔名}），由系統產生';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'StoredKey';
+SET @description499 = N'關聯的業務實體類型（例如 Report）；未關聯為 null';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'ReferenceType';
+SET @description499 = N'關聯的業務實體識別碼；未關聯為 null';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'ReferenceId';
+SET @description499 = N'圖片寬度（像素）；非圖片為 null';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'ImageWidth';
+SET @description499 = N'圖片高度（像素）；非圖片為 null';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'ImageHeight';
+SET @description499 = N'虛擬刪除旗標；實體檔案於保留期滿後由排程清除';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'IsDeleted';
+SET @description499 = N'執行刪除的人員';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'DeletedBy';
+SET @description499 = N'虛擬刪除時間';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'DeletedAtUtc';
+SET @description499 = N'實體檔案自儲存體清除的時間；null 表示實體檔案仍存在';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'PurgedAtUtc';
+SET @description499 = N'上傳人員';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'CreatedBy';
+SET @description499 = N'上傳時間';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'CreatedAtUtc';
+SET @description499 = N'最後異動人員';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'UpdatedBy';
+SET @description499 = N'最後異動時間';
+EXEC sp_addextendedproperty 'MS_Description', @description499, 'SCHEMA', N'core', 'TABLE', N'FileMetadatas', 'COLUMN', N'UpdatedAtUtc';
+
+CREATE INDEX [IX_FileMetadatas_Category_CreatedAtUtc] ON [core].[FileMetadatas] ([Category], [CreatedAtUtc]);
+
+CREATE INDEX [IX_FileMetadatas_IsDeleted_PurgedAtUtc_DeletedAtUtc] ON [core].[FileMetadatas] ([IsDeleted], [PurgedAtUtc], [DeletedAtUtc]);
+
+CREATE INDEX [IX_FileMetadatas_ReferenceType_ReferenceId] ON [core].[FileMetadatas] ([ReferenceType], [ReferenceId]);
+
+CREATE UNIQUE INDEX [IX_FileMetadatas_StorageTarget_ContainerName_StoredKey] ON [core].[FileMetadatas] ([StorageTarget], [ContainerName], [StoredKey]);
+
+INSERT INTO [core].[__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+VALUES (N'20261103153129_AddFileMetadatas', N'10.0.12');
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+DROP TABLE [core].[FileMetadatas];
+
+INSERT INTO [core].[__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+VALUES (N'20261104013242_RemoveCoreFileMetadatas', N'10.0.12');
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+IF SCHEMA_ID(N'sch') IS NULL EXEC(N'CREATE SCHEMA [sch]');
+
+IF OBJECT_ID(N'[core].[ScheduledJobRuns]', N'U') IS NOT NULL
+BEGIN
+    IF OBJECT_ID(N'[sch].[ScheduledJobRuns]', N'U') IS NULL
+        ALTER SCHEMA [sch] TRANSFER [core].[ScheduledJobRuns];
+    ELSE
+    BEGIN
+        -- 外掛已先建立空表：合併舊紀錄後移除 core 表
+        INSERT INTO [sch].[ScheduledJobRuns] ([Id], [JobId], [JobName], [HangfireJobId], [Attempt], [Trigger], [TriggeredBy], [Status], [StartedAt], [FinishedAt], [DurationMs], [Message], [ServerName])
+        SELECT c.[Id], c.[JobId], c.[JobName], c.[HangfireJobId], c.[Attempt], c.[Trigger], c.[TriggeredBy], c.[Status], c.[StartedAt], c.[FinishedAt], c.[DurationMs], c.[Message], c.[ServerName]
+        FROM [core].[ScheduledJobRuns] c
+        WHERE NOT EXISTS (SELECT 1 FROM [sch].[ScheduledJobRuns] s WHERE s.[Id] = c.[Id] OR (s.[HangfireJobId] = c.[HangfireJobId] AND s.[Attempt] = c.[Attempt]));
+        DROP TABLE [core].[ScheduledJobRuns];
+    END
+END
+
+IF OBJECT_ID(N'[core].[ScheduledJobSettings]', N'U') IS NOT NULL
+BEGIN
+    IF OBJECT_ID(N'[sch].[ScheduledJobSettings]', N'U') IS NULL
+        ALTER SCHEMA [sch] TRANSFER [core].[ScheduledJobSettings];
+    ELSE
+    BEGIN
+        INSERT INTO [sch].[ScheduledJobSettings] ([JobId], [IsPaused], [PauseReason], [Cron], [TimeZone], [CreatedBy], [CreatedAtUtc], [UpdatedBy], [UpdatedAtUtc])
+        SELECT c.[JobId], c.[IsPaused], c.[PauseReason], c.[Cron], c.[TimeZone], c.[CreatedBy], c.[CreatedAtUtc], c.[UpdatedBy], c.[UpdatedAtUtc]
+        FROM [core].[ScheduledJobSettings] c
+        WHERE NOT EXISTS (SELECT 1 FROM [sch].[ScheduledJobSettings] s WHERE s.[JobId] = c.[JobId]);
+        DROP TABLE [core].[ScheduledJobSettings];
+    END
+END
+
+UPDATE r
+SET [permission_key] = N'SCH.' + SUBSTRING(r.[permission_key], 8, 200)
+FROM [core].[Role_Global_Permissions] r
+WHERE r.[permission_key] IN (N'SYSTEM.SCHEDULER', N'SYSTEM.DATABASEMAINTENANCE')
+  AND NOT EXISTS (SELECT 1 FROM [core].[Role_Global_Permissions] n
+                  WHERE n.[role_id] = r.[role_id] AND n.[permission_key] = N'SCH.' + SUBSTRING(r.[permission_key], 8, 200));
+
+UPDATE [core].[AspNetRoleClaims]
+SET [ClaimValue] = N'SCH.' + SUBSTRING([ClaimValue], 8, 200)
+WHERE [ClaimType] = N'Permission'
+  AND ([ClaimValue] LIKE N'SYSTEM.SCHEDULER.%' OR [ClaimValue] LIKE N'SYSTEM.DATABASEMAINTENANCE.%');
+
+UPDATE [core].[PermissionMetadata]
+SET [PermissionKey] = N'SCH.' + SUBSTRING([PermissionKey], 8, 200), [ModuleName] = N'SGS.Modules.SCH', [ModuleTitle] = N'排程管理'
+WHERE [PermissionKey] LIKE N'SYSTEM.SCHEDULER.%' OR [PermissionKey] LIKE N'SYSTEM.DATABASEMAINTENANCE.%';
+
+UPDATE [core].[ControllerMetadatas]
+SET [PermissionKey] = N'SCH.' + SUBSTRING([PermissionKey], 8, 200),
+    [ModuleName] = N'SGS.Modules.SCH', [ModuleTitle] = N'排程管理',
+    [ControllerTypeName] = REPLACE([ControllerTypeName], N'SGSFramework.Scheduler.Controllers', N'SGS.Modules.SCH.Controllers'),
+    [Path] = CASE WHEN [Path] = N'/sgsframework.system/scheduler' THEN N'/sgs.modules.sch/scheduler' ELSE [Path] END
+WHERE [ControllerTypeName] LIKE N'SGSFramework.Scheduler.Controllers.%';
+
+UPDATE [core].[MenuItems]
+SET [Key] = N'SCH.' + SUBSTRING([Key], 8, 200),
+    [PermissionKey] = N'SCH.' + SUBSTRING([PermissionKey], 8, 200),
+    [ModuleName] = N'SGS.Modules.SCH',
+    [Route] = CASE WHEN [Route] = N'/sgsframework.system/scheduler' THEN N'/sgs.modules.sch/scheduler' ELSE [Route] END
+WHERE [Key] LIKE N'SYSTEM.SCHEDULER.%' OR [Key] LIKE N'SYSTEM.DATABASEMAINTENANCE.%';
+
+INSERT INTO [core].[__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+VALUES (N'20261104015534_MoveScheduledJobTablesToSch', N'10.0.12');
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+UPDATE r
+SET [permission_key] = N'LOG.' + SUBSTRING(r.[permission_key], 8, 200)
+FROM [core].[Role_Global_Permissions] r
+WHERE r.[permission_key] IN (N'SYSTEM.LOGMANAGER', N'SYSTEM.AUDITLOG', N'SYSTEM.ALERTRULE', N'SYSTEM.LEDGERVERIFICATION')
+  AND NOT EXISTS (SELECT 1 FROM [core].[Role_Global_Permissions] n
+                  WHERE n.[role_id] = r.[role_id] AND n.[permission_key] = N'LOG.' + SUBSTRING(r.[permission_key], 8, 200));
+
+UPDATE [core].[AspNetRoleClaims]
+SET [ClaimValue] = N'LOG.' + SUBSTRING([ClaimValue], 8, 200)
+WHERE [ClaimType] = N'Permission'
+  AND ([ClaimValue] LIKE N'SYSTEM.LOGMANAGER.%' OR [ClaimValue] LIKE N'SYSTEM.AUDITLOG.%'
+       OR [ClaimValue] LIKE N'SYSTEM.ALERTRULE.%' OR [ClaimValue] LIKE N'SYSTEM.LEDGERVERIFICATION.%');
+
+UPDATE [core].[PermissionMetadata]
+SET [PermissionKey] = N'LOG.' + SUBSTRING([PermissionKey], 8, 200), [ModuleName] = N'SGS.Modules.LOG', [ModuleTitle] = N'日誌管理'
+WHERE [PermissionKey] LIKE N'SYSTEM.LOGMANAGER.%' OR [PermissionKey] LIKE N'SYSTEM.AUDITLOG.%'
+   OR [PermissionKey] LIKE N'SYSTEM.ALERTRULE.%' OR [PermissionKey] LIKE N'SYSTEM.LEDGERVERIFICATION.%';
+
+UPDATE [core].[ControllerMetadatas]
+SET [PermissionKey] = N'LOG.' + SUBSTRING([PermissionKey], 8, 200),
+    [ModuleName] = N'SGS.Modules.LOG', [ModuleTitle] = N'日誌管理',
+    [ControllerTypeName] = REPLACE(REPLACE([ControllerTypeName],
+        N'SGSFramework.SystemLog.Controllers.V1.', N'SGS.Modules.LOG.Controllers.V1.'),
+        N'SGSFramework.VerifyLedger.Controllers.V1.', N'SGS.Modules.LOG.Controllers.V1.')
+WHERE [ControllerTypeName] IN (
+    N'SGSFramework.SystemLog.Controllers.V1.LogManagerController',
+    N'SGSFramework.SystemLog.Controllers.V1.AuditLogManagementController',
+    N'SGSFramework.SystemLog.Controllers.V1.AlertRuleController',
+    N'SGSFramework.VerifyLedger.Controllers.V1.LedgerVerificationController');
+
+UPDATE [core].[MenuItems]
+SET [Key] = N'LOG.' + SUBSTRING([Key], 8, 200),
+    [PermissionKey] = N'LOG.' + SUBSTRING([PermissionKey], 8, 200),
+    [ModuleName] = N'SGS.Modules.LOG'
+WHERE [Key] LIKE N'SYSTEM.LOGMANAGER.%' OR [Key] LIKE N'SYSTEM.AUDITLOG.%'
+   OR [Key] LIKE N'SYSTEM.ALERTRULE.%' OR [Key] LIKE N'SYSTEM.LEDGERVERIFICATION.%';
+
+INSERT INTO [core].[__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+VALUES (N'20261104051223_MoveLogControllersToLogModule', N'10.0.12');
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+ALTER TABLE [core].[ControllerMetadatas] ADD [IsCustomized] bit NOT NULL DEFAULT CAST(0 AS bit);
+DECLARE @description500 AS sql_variant;
+SET @description500 = N'是否由管理者自訂過功能名稱、說明、排序、圖示；啟動同步不會覆蓋這些欄位。';
+EXEC sp_addextendedproperty 'MS_Description', @description500, 'SCHEMA', N'core', 'TABLE', N'ControllerMetadatas', 'COLUMN', N'IsCustomized';
+
+INSERT INTO [core].[__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+VALUES (N'20261105025331_ControllerMetadata_IsCustomized', N'10.0.12');
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+ALTER TABLE [core].[PermissionMetadata] ADD [IsCustomized] bit NOT NULL DEFAULT CAST(0 AS bit);
+DECLARE @description501 AS sql_variant;
+SET @description501 = N'是否由管理者自訂過操作標題與說明；啟動同步不會覆蓋這些欄位。';
+EXEC sp_addextendedproperty 'MS_Description', @description501, 'SCHEMA', N'core', 'TABLE', N'PermissionMetadata', 'COLUMN', N'IsCustomized';
+
+INSERT INTO [core].[__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+VALUES (N'20261105060758_PermissionMetadata_IsCustomized', N'10.0.12');
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+ALTER TABLE [core].[AuditLogs] ADD [UserName] nvarchar(100) NULL;
+DECLARE @description502 AS sql_variant;
+SET @description502 = N'人員姓名';
+EXEC sp_addextendedproperty 'MS_Description', @description502, 'SCHEMA', N'core', 'TABLE', N'AuditLogs', 'COLUMN', N'UserName';
+
+INSERT INTO [core].[__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+VALUES (N'20261109104331_update_auditlog_username', N'10.0.12');
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+DROP TABLE [core].[AuditLogs];
+
+DROP TABLE [core].[SecurityLog];
+
+DROP TABLE [core].[SystemLogs];
+
+INSERT INTO [core].[__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+VALUES (N'20261110032246_DropMainDbLogTables', N'10.0.12');
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+ALTER TABLE [core].[ReportCategories] ADD [EncryptAtRest] bit NOT NULL DEFAULT CAST(1 AS bit);
+DECLARE @description503 AS sql_variant;
+SET @description503 = N'正式報告落地加密（AES-256-GCM 信封加密）；啟用時即使儲存分類未設定加密亦強制加密';
+EXEC sp_addextendedproperty 'MS_Description', @description503, 'SCHEMA', N'core', 'TABLE', N'ReportCategories', 'COLUMN', N'EncryptAtRest';
+
+ALTER TABLE [core].[ReportCategories] ADD [OwnerTenantLabId] uniqueidentifier NULL;
+DECLARE @description504 AS sql_variant;
+SET @description504 = N'實驗室專屬類別之所屬區域實驗室（ORG Organization.TenantLabId）；全域類別為 null';
+EXEC sp_addextendedproperty 'MS_Description', @description504, 'SCHEMA', N'core', 'TABLE', N'ReportCategories', 'COLUMN', N'OwnerTenantLabId';
+
+ALTER TABLE [core].[ReportCategories] ADD [Scope] nvarchar(10) NOT NULL DEFAULT N'Global';
+DECLARE @description505 AS sql_variant;
+SET @description505 = N'適用範圍（Global=全域, Lab=實驗室專屬）';
+EXEC sp_addextendedproperty 'MS_Description', @description505, 'SCHEMA', N'core', 'TABLE', N'ReportCategories', 'COLUMN', N'Scope';
+
+ALTER TABLE [core].[ReportCategories] ADD [StorageCategory] nvarchar(64) NULL;
+DECLARE @description506 AS sql_variant;
+SET @description506 = N'正式報告存放的檔案管理儲存分類（FileManagement:Categories，決定地端 / 雲端與容器）；null 使用預設 Report 分類';
+EXEC sp_addextendedproperty 'MS_Description', @description506, 'SCHEMA', N'core', 'TABLE', N'ReportCategories', 'COLUMN', N'StorageCategory';
+
+ALTER TABLE [core].[ReportCategories] ADD [StorageFolder] nvarchar(200) NULL;
+DECLARE @description507 AS sql_variant;
+SET @description507 = N'儲存資料夾（儲存鍵前綴，英數 / 底線 / 連字號以 / 分隔）；null 使用 reports/{類別代碼}';
+EXEC sp_addextendedproperty 'MS_Description', @description507, 'SCHEMA', N'core', 'TABLE', N'ReportCategories', 'COLUMN', N'StorageFolder';
+
+ALTER TABLE [core].[ReportCategories] ADD [TamperVerification] bit NOT NULL DEFAULT CAST(1 AS bit);
+DECLARE @description508 AS sql_variant;
+SET @description508 = N'防竄改驗證：簽署時產生公開查驗碼、下載時比對 SHA-256 並開放公開真偽查驗';
+EXEC sp_addextendedproperty 'MS_Description', @description508, 'SCHEMA', N'core', 'TABLE', N'ReportCategories', 'COLUMN', N'TamperVerification';
+
+ALTER TABLE [core].[ReportCategories] ADD [WatermarkOnDownload] bit NOT NULL DEFAULT CAST(0 AS bit);
+DECLARE @description509 AS sql_variant;
+SET @description509 = N'下載正式報告時提供點陣化浮水印版本（下載者 / 時間 / IP），原檔不外流';
+EXEC sp_addextendedproperty 'MS_Description', @description509, 'SCHEMA', N'core', 'TABLE', N'ReportCategories', 'COLUMN', N'WatermarkOnDownload';
+
+CREATE INDEX [IX_ReportCategories_OwnerTenantLabId] ON [core].[ReportCategories] ([OwnerTenantLabId]);
+
+INSERT INTO [core].[__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+VALUES (N'20261117055120_report_category_scope_storage_security', N'10.0.12');
+
+COMMIT;
+GO
+

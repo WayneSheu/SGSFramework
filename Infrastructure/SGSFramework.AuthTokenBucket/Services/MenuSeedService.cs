@@ -248,6 +248,9 @@ public class MenuSeedService<TDbContext> : IMenuSeedService
             var processedPageKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var vacatedGroupIds = new HashSet<Guid>();
 
+            // 頁面對應的功能仍為選單入口時，其父級視為管理者於「選單管理」手動調整的結果，不再自動搬回預設群組
+            var menuControllerIds = menuTargets.Select(m => m.Id).ToHashSet();
+
             // Group By 模組 (Module) 以建立第一層 Section
             var moduleGroups = menuTargets.GroupBy(m => string.IsNullOrWhiteSpace(m.ModuleName) ? "System" : m.ModuleName);
 
@@ -344,9 +347,11 @@ public class MenuSeedService<TDbContext> : IMenuSeedService
                             existingMenuItems.Add(pageNode);
                             isModified = true;
                         }
-                        else if (pageNode.ParentId != groupNode.Id && processedPageKeys.Add(pageKey))
+                        else if (pageNode.ParentId != groupNode.Id &&
+                                 !(pageNode.ControllerId.HasValue && menuControllerIds.Contains(pageNode.ControllerId.Value)) &&
+                                 processedPageKeys.Add(pageKey))
                         {
-                            // 功能改由其他 Controller 提供（選單入口搬移）：既有頁面節點改掛到新的群組
+                            // 功能改由其他 Controller 提供（原 Controller 已非選單入口）：既有頁面節點改掛到新的群組
                             if (pageNode.ParentId.HasValue) vacatedGroupIds.Add(pageNode.ParentId.Value);
                             pageNode.ParentId = groupNode.Id;
                             pageNode.ControllerId = meta.Id;
