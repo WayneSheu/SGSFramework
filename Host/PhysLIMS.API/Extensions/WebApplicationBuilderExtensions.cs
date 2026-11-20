@@ -144,6 +144,9 @@ public static class WebApplicationBuilderExtensions
         //    });
         //});
 
+        // 註冊「用戶操作手冊專用」精簡規格文件（供操作手冊管理模組的 AI 生成使用）
+        services.AddUserManualOpenApi();
+
         // 註冊 Scalar API 文件規格
         services.AddAPIDocServices();
         return services;

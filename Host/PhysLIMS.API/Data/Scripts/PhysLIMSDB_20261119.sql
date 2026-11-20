@@ -4425,3 +4425,59 @@ VALUES (N'20261117055120_report_category_scope_storage_security', N'10.0.12');
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+ALTER TABLE [core].[ControllerMetadatas] ADD [GroupControllerName] nvarchar(100) NULL;
+DECLARE @description510 AS sql_variant;
+SET @description510 = N'顯示用改掛：功能顯示於哪個 Controller 之下；為 null 時顯示於原 Controller';
+EXEC sp_addextendedproperty 'MS_Description', @description510, 'SCHEMA', N'core', 'TABLE', N'ControllerMetadatas', 'COLUMN', N'GroupControllerName';
+
+ALTER TABLE [core].[ControllerMetadatas] ADD [GroupModuleName] nvarchar(50) NULL;
+DECLARE @description511 AS sql_variant;
+SET @description511 = N'顯示用改掛：功能顯示於哪個 Controller 之下所屬的模組；僅影響畫面分組';
+EXEC sp_addextendedproperty 'MS_Description', @description511, 'SCHEMA', N'core', 'TABLE', N'ControllerMetadatas', 'COLUMN', N'GroupModuleName';
+
+CREATE TABLE [core].[FunctionGroupOverrides] (
+    [Id] uniqueidentifier NOT NULL,
+    [Level] int NOT NULL,
+    [ModuleName] nvarchar(50) NOT NULL,
+    [ControllerName] nvarchar(100) NOT NULL,
+    [Title] nvarchar(100) NULL,
+    [Icon] nvarchar(100) NULL,
+    [DisplayOrder] int NULL,
+    [TargetModuleName] nvarchar(50) NULL,
+    [UpdatedBy] nvarchar(256) NULL,
+    [UpdatedAt] datetimeoffset NOT NULL,
+    CONSTRAINT [PK_FunctionGroupOverrides] PRIMARY KEY ([Id])
+);
+DECLARE @description512 AS sql_variant;
+SET @description512 = N'系統功能管理：模組 / Controller 層級的顯示覆寫（名稱、圖示、排序、顯示用父層）';
+EXEC sp_addextendedproperty 'MS_Description', @description512, 'SCHEMA', N'core', 'TABLE', N'FunctionGroupOverrides';
+SET @description512 = N'識別主鍵';
+EXEC sp_addextendedproperty 'MS_Description', @description512, 'SCHEMA', N'core', 'TABLE', N'FunctionGroupOverrides', 'COLUMN', N'Id';
+SET @description512 = N'分組層級：1 = 模組、2 = Controller';
+EXEC sp_addextendedproperty 'MS_Description', @description512, 'SCHEMA', N'core', 'TABLE', N'FunctionGroupOverrides', 'COLUMN', N'Level';
+SET @description512 = N'來源模組名稱（ControllerMetadata.ModuleName）';
+EXEC sp_addextendedproperty 'MS_Description', @description512, 'SCHEMA', N'core', 'TABLE', N'FunctionGroupOverrides', 'COLUMN', N'ModuleName';
+SET @description512 = N'來源 Controller 名稱；模組層級為空字串';
+EXEC sp_addextendedproperty 'MS_Description', @description512, 'SCHEMA', N'core', 'TABLE', N'FunctionGroupOverrides', 'COLUMN', N'ControllerName';
+SET @description512 = N'自訂顯示名稱；為 null 時沿用程式碼標題';
+EXEC sp_addextendedproperty 'MS_Description', @description512, 'SCHEMA', N'core', 'TABLE', N'FunctionGroupOverrides', 'COLUMN', N'Title';
+SET @description512 = N'自訂圖示 (Font Awesome class)；僅 Controller 層級使用';
+EXEC sp_addextendedproperty 'MS_Description', @description512, 'SCHEMA', N'core', 'TABLE', N'FunctionGroupOverrides', 'COLUMN', N'Icon';
+SET @description512 = N'自訂排序；為 null 時沿用預設排序';
+EXEC sp_addextendedproperty 'MS_Description', @description512, 'SCHEMA', N'core', 'TABLE', N'FunctionGroupOverrides', 'COLUMN', N'DisplayOrder';
+SET @description512 = N'Controller 層級：改掛顯示於哪個模組之下；為 null 時顯示於原模組';
+EXEC sp_addextendedproperty 'MS_Description', @description512, 'SCHEMA', N'core', 'TABLE', N'FunctionGroupOverrides', 'COLUMN', N'TargetModuleName';
+SET @description512 = N'最後異動者';
+EXEC sp_addextendedproperty 'MS_Description', @description512, 'SCHEMA', N'core', 'TABLE', N'FunctionGroupOverrides', 'COLUMN', N'UpdatedBy';
+SET @description512 = N'最後異動時間 (UTC)';
+EXEC sp_addextendedproperty 'MS_Description', @description512, 'SCHEMA', N'core', 'TABLE', N'FunctionGroupOverrides', 'COLUMN', N'UpdatedAt';
+
+CREATE UNIQUE INDEX [UX_FunctionGroupOverride_Level_Module_Controller] ON [core].[FunctionGroupOverrides] ([Level], [ModuleName], [ControllerName]);
+
+INSERT INTO [core].[__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+VALUES (N'20261118094720_AddFunctionGroupOverrides', N'10.0.12');
+
+COMMIT;
+GO
+

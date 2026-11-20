@@ -18,8 +18,11 @@
 
   <ItemGroup>
     <Compile Remove="Abstractions\Entities\Permissions\**" />
+    <Compile Remove="Scripts\**" />
     <EmbeddedResource Remove="Abstractions\Entities\Permissions\**" />
+    <EmbeddedResource Remove="Scripts\**" />
     <None Remove="Abstractions\Entities\Permissions\**" />
+    <None Remove="Scripts\**" />
   </ItemGroup>
 	<ItemGroup>
 		<!-- 引用此套件以使用 WebApplicationBuilder -->
@@ -56,10 +59,6 @@
     <PackageReference Include="Serilog.Settings.Configuration" Version="10.0.1" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageReference Include="ZiggyCreatures.FusionCache" Version="2.9.0" />
-  </ItemGroup>
-	
-  <ItemGroup>
-    <Folder Include="Scripts\" />
   </ItemGroup>
 
 </Project>

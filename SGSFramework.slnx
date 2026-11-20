@@ -41,6 +41,11 @@
     <Project Path="Modules/PMS/Module.PMS.Infrastructure/SGS.Modules.PMS.Infrastructure.csproj" />
     <Project Path="Modules/PMS/Module.PMS/SGS.Modules.PMS.csproj" />
   </Folder>
+  <Folder Name="/Modules/MAN/">
+    <Project Path="Modules/MAN/Module.MAN.Application/SGS.Modules.MAN.Application.csproj" />
+    <Project Path="Modules/MAN/Module.MAN.Infrastructure/SGS.Modules.MAN.Infrastructure.csproj" />
+    <Project Path="Modules/MAN/Module.MAN/SGS.Modules.MAN.csproj" />
+  </Folder>
   <Folder Name="/Modules/CAL/">
     <Project Path="Modules/CAL/Module.CAL.Application/SGS.Modules.CAL.Application.csproj" />
     <Project Path="Modules/CAL/Module.CAL.Infrastructure/SGS.Modules.CAL.Infrastructure.csproj" />
@@ -71,6 +76,7 @@
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="Tests/SGS.Modules.CAL.Tests/SGS.Modules.CAL.Tests.csproj" />
+    <Project Path="Tests/SGS.Modules.MAN.Tests/SGS.Modules.MAN.Tests.csproj" />
     <Project Path="Tests/SGS.Modules.FMS.Tests/SGS.Modules.FMS.Tests.csproj" />
     <Project Path="Tests/SGS.Modules.PMS.Tests/SGS.Modules.PMS.Tests.csproj" />
     <Project Path="Tests/SGS.Modules.QTN.Tests/SGS.Modules.QTN.Tests.csproj" />
