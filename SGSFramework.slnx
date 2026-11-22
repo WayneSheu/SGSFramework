@@ -71,12 +71,18 @@
     <Project Path="Modules/RPT/Module.RPT.Infrastructure/SGS.Modules.RPT.Infrastructure.csproj" />
     <Project Path="Modules/RPT/Module.RPT/SGS.Modules.RPT.csproj" />
   </Folder>
+  <Folder Name="/Modules/MTG/">
+    <Project Path="Modules/MTG/Module.MTG.Application/SGS.Modules.MTG.Application.csproj" />
+    <Project Path="Modules/MTG/Module.MTG.Infrastructure/SGS.Modules.MTG.Infrastructure.csproj" />
+    <Project Path="Modules/MTG/Module.MTG/SGS.Modules.MTG.csproj" />
+  </Folder>
   <Folder Name="/Shared/">
     <Project Path="Shared/SGSFramework.Core/SGSFramework.Core.csproj" />
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="Tests/SGS.Modules.CAL.Tests/SGS.Modules.CAL.Tests.csproj" />
     <Project Path="Tests/SGS.Modules.MAN.Tests/SGS.Modules.MAN.Tests.csproj" />
+    <Project Path="Tests/SGS.Modules.MTG.Tests/SGS.Modules.MTG.Tests.csproj" />
     <Project Path="Tests/SGS.Modules.FMS.Tests/SGS.Modules.FMS.Tests.csproj" />
     <Project Path="Tests/SGS.Modules.PMS.Tests/SGS.Modules.PMS.Tests.csproj" />
     <Project Path="Tests/SGS.Modules.QTN.Tests/SGS.Modules.QTN.Tests.csproj" />
