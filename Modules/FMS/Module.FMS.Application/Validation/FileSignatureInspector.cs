@@ -30,6 +30,7 @@ public interface IFileSignatureInspector
 /// 輕量檔案簽章檢查（不引入第三方套件）：嚴禁只信任檔名副檔名或 HTTP Content-Type。
 /// <list type="bullet">
 /// <item>點陣圖 / PDF：比對檔頭簽章。</item>
+/// <item>音訊（wav / mp3 / m4a / ogg / flac / webm）：比對容器檔頭簽章；只驗證格式，不解碼內容。須由分類的 AllowedExtensions 明確開放。</item>
 /// <item>OOXML（docx / xlsx / pptx）：ZIP 簽章 + 內容結構（[Content_Types].xml 與 word/、xl/、ppt/ 目錄），並拒絕含巨集（vbaProject.bin）的檔案。</item>
 /// <item>舊版 Office（doc / xls / ppt）：OLE2 複合文件簽章（無法再細分，副檔名限三者之一）。</item>
 /// <item>純文字（txt / csv）：無簽章，改驗證為合法 UTF-8 且不含 NUL 位元組，並拒絕 HTML / Script 開頭。</item>
@@ -49,6 +50,14 @@ public sealed class FileSignatureInspector : IFileSignatureInspector
     private static readonly DetectedFileFormat Webp = new("WEBP", ".webp", "image/webp", true);
     private static readonly DetectedFileFormat Tiff = new("TIFF", ".tif", "image/tiff", true);
     private static readonly DetectedFileFormat Pdf = new("PDF", ".pdf", "application/pdf", false);
+
+    // 音訊（會議助理 MTG 的會議錄音）：只驗證檔頭容器簽章，內容由下游轉錄服務解碼；不做轉碼或重新編碼
+    private static readonly DetectedFileFormat Wav = new("WAV", ".wav", "audio/wav", false);
+    private static readonly DetectedFileFormat Mp3 = new("MP3", ".mp3", "audio/mpeg", false);
+    private static readonly DetectedFileFormat M4a = new("M4A", ".m4a", "audio/mp4", false);
+    private static readonly DetectedFileFormat Ogg = new("OGG", ".ogg", "audio/ogg", false);
+    private static readonly DetectedFileFormat Flac = new("FLAC", ".flac", "audio/flac", false);
+    private static readonly DetectedFileFormat WebM = new("WEBM", ".webm", "audio/webm", false);
     private static readonly DetectedFileFormat Docx = new("DOCX", ".docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", false);
     private static readonly DetectedFileFormat Xlsx = new("XLSX", ".xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", false);
     private static readonly DetectedFileFormat Pptx = new("PPTX", ".pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", false);
@@ -57,7 +66,8 @@ public sealed class FileSignatureInspector : IFileSignatureInspector
     private static readonly Dictionary<string, string[]> AcceptedExtensions = new(StringComparer.Ordinal)
     {
         ["JPEG"] = [".jpg", ".jpeg"],
-        ["TIFF"] = [".tif", ".tiff"]
+        ["TIFF"] = [".tif", ".tiff"],
+        ["OGG"] = [".ogg", ".oga"]
     };
 
     private static readonly Dictionary<string, DetectedFileFormat> Ole2Formats = new(StringComparer.Ordinal)
@@ -160,8 +170,25 @@ public sealed class FileSignatureInspector : IFileSignatureInspector
         if (header.StartsWith((ReadOnlySpan<byte>)[0x49, 0x49, 0x2A, 0x00]) || header.StartsWith((ReadOnlySpan<byte>)[0x4D, 0x4D, 0x00, 0x2A])) return Tiff;
         if (header.StartsWith("%PDF-"u8)) return Pdf;
         if (header.Length >= 14 && header.StartsWith("BM"u8)) return Bmp;
+
+        // 音訊容器
+        if (header.Length >= 12 && header.StartsWith("RIFF"u8) && header[8..12].SequenceEqual("WAVE"u8)) return Wav;
+        if (header.StartsWith("OggS"u8)) return Ogg;
+        if (header.StartsWith("fLaC"u8)) return Flac;
+        if (header.StartsWith((ReadOnlySpan<byte>)[0x1A, 0x45, 0xDF, 0xA3])) return WebM; // EBML（WebM／Matroska）
+        if (header.StartsWith("ID3"u8) || IsMpegAudioFrame(header)) return Mp3;
+        if (header.Length >= 12 && header[4..8].SequenceEqual("ftyp"u8) && IsMp4AudioBrand(header[8..12])) return M4a;
         return null;
     }
+
+    /// <summary>MPEG 音訊影格同步字：11 個 1 位元，且版本（非保留）與層（非保留）合法；排除 ADTS AAC（層 = 00）與 JPEG（0xFFD8 已先判定）。</summary>
+    private static bool IsMpegAudioFrame(ReadOnlySpan<byte> header) =>
+        header.Length >= 2 && header[0] == 0xFF && (header[1] & 0xE0) == 0xE0 && ((header[1] >> 3) & 0x03) != 0x01 && ((header[1] >> 1) & 0x03) != 0x00;
+
+    /// <summary>ISO 基礎媒體檔（MP4 家族）的 ftyp 品牌：僅接受常見的 M4A／MP4 音訊品牌。</summary>
+    private static bool IsMp4AudioBrand(ReadOnlySpan<byte> brand) =>
+        brand.SequenceEqual("M4A "u8) || brand.SequenceEqual("M4B "u8) || brand.SequenceEqual("mp42"u8) ||
+        brand.SequenceEqual("isom"u8) || brand.SequenceEqual("iso2"u8) || brand.SequenceEqual("mp41"u8);
 
     /// <summary>OOXML 結構檢查：須有 [Content_Types].xml，依主要目錄判定 docx / xlsx / pptx，含巨集者拒絕</summary>
     private static (DetectedFileFormat? Format, string? Error) InspectZip(Stream content)
