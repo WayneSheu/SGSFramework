@@ -22,6 +22,7 @@ public static class MtgErrors
     public static MtgError WhisperDisabled() => new(503, "MTG_WHISPER_DISABLED", "音檔轉錄未啟用", "尚未啟用語音轉錄（Meeting:Whisper:Enabled）。");
     public static MtgError TranscriptionQueueFull() => new(429, "MTG_QUEUE_FULL", "轉錄佇列已滿", "目前待轉錄的音檔過多，請稍後再試。");
     public static MtgError MailUnavailable() => new(503, "MTG_MAIL_UNAVAILABLE", "郵件服務未啟用", "尚未設定郵件（SMTP）或郵件功能已停用，無法寄送通知。");
+    public static MtgError Gone(string detail) => new(410, "MTG_GONE", "資源已不存在", detail);
     public static MtgError FileRejected(int status, string detail) => new(status, "MTG_FILE_REJECTED", "音檔被拒絕", detail);
 }
 
@@ -88,7 +89,8 @@ public sealed record MeetingAudioDto(
     bool AutoSummarize,
     string CreatedBy,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset? TranscribedAtUtc);
+    DateTimeOffset? TranscribedAtUtc,
+    DateTimeOffset? ExpiredAtUtc = null);
 
 // ---- 桌面端同步 ----
 
@@ -158,7 +160,9 @@ public sealed record ActionItemDto(
     int? MinutesVersion,
     DateTimeOffset? NotifiedAtUtc,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset? UpdatedAtUtc);
+    DateTimeOffset? UpdatedAtUtc,
+    Guid? PmsTaskId = null,
+    DateTimeOffset? PmsSyncedAtUtc = null);
 
 /// <summary>跨會議的待辦清單列（多帶會議標題）。</summary>
 public sealed record ActionItemListDto(
@@ -207,3 +211,13 @@ public sealed record ProjectOptionDto(Guid Id, string Code, string Name);
 
 /// <summary>目前使用者在 PMS 的可見範圍：只能關聯自己看得到的專案（成員，或具 PMS.PROJECT.ADMIN）。</summary>
 public sealed record ProjectScope(Guid UserId, bool ViewAll);
+
+// ---- M6：音檔過期清除與 PMS 回寫 ----
+
+/// <summary>過期音檔清除結果。<see cref="Candidates"/> 是本次符合條件的錄音數（單次最多處理 200 筆，其餘下次再清）。</summary>
+public sealed record AudioPurgeResult(int RetentionDays, int Candidates, int Expired, int Failed, string Message);
+
+/// <summary>回寫 PMS：ItemIds 為空代表所有「尚未回寫、未完成」的待辦。</summary>
+public sealed record SyncPmsRequest(IReadOnlyList<Guid>? ItemIds);
+
+public sealed record SyncPmsResult(int Created, int AlreadyLinked, int Failed, IReadOnlyList<string> Failures);

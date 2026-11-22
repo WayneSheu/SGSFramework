@@ -43,6 +43,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<SGSFramework.Core.ProjectContracts.IQuoteContractIntegration, QuoteContractIntegration>();
         // 會議助理（MTG）只依賴 Core 的 IMeetingProjectLookup；PMS 載入時覆蓋 Core 預設的 Null（沒有可關聯的專案）
         services.AddScoped<SGSFramework.Core.ProjectContracts.IMeetingProjectLookup, MeetingProjectLookup>();
+        services.AddScoped<SGSFramework.Core.ProjectContracts.IMeetingTaskWriteback, MeetingTaskWriteback>();
         return services;
     }
 }

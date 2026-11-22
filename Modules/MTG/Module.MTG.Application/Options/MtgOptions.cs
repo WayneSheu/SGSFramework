@@ -37,6 +37,12 @@ public sealed class MtgOptions
     /// <summary>紀要生成佇列容量；滿了拒絕新作業。</summary>
     public int QueueCapacity { get; set; } = 10;
 
+    /// <summary>
+    /// 會議錄音保存天數：已轉錄（或轉錄失敗）超過此天數的錄音由排程從檔案管理刪除，逐字稿與紀要保留。0 = 不自動刪除（預設）。
+    /// 設定大於 0 時排程器才會註冊「MTG 過期音檔清除」作業（mtg-audio-retention）。
+    /// </summary>
+    public int AudioRetentionDays { get; set; }
+
     /// <summary>語音轉錄服務設定（區段 "Meeting:Whisper"）。</summary>
     public WhisperOptions Whisper { get; set; } = new();
 }

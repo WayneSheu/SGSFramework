@@ -82,6 +82,14 @@ namespace SGS.Modules.MTG.Infrastructure.Migrations
                         .HasColumnType("nvarchar(500)")
                         .HasComment("負責人 Email（個資，落地加密；通知郵件的收件人）");
 
+                    b.Property<DateTimeOffset?>("PmsSyncedAtUtc")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("回寫為 PMS 任務的時間（UTC）");
+
+                    b.Property<Guid?>("PmsTaskId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("已回寫為 PMS 專案 WBS 任務時的任務識別碼；未回寫為空。回寫後此待辦視為已處理，重新抽取不會刪除");
+
                     b.Property<int>("Seq")
                         .HasColumnType("int")
                         .HasComment("會議內顯示順序（從 1 起）");
@@ -285,6 +293,10 @@ namespace SGS.Modules.MTG.Infrastructure.Migrations
                     b.Property<double?>("DurationSeconds")
                         .HasColumnType("float")
                         .HasComment("秒；轉錄服務回報時才有");
+
+                    b.Property<DateTimeOffset?>("ExpiredAtUtc")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("錄音依保存期限（Meeting:AudioRetentionDays）從 FMS 刪除的時間（UTC）；未過期為空");
 
                     b.Property<Guid>("FileId")
                         .HasColumnType("uniqueidentifier")

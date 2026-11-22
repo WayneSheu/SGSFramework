@@ -7,6 +7,7 @@ using SGS.Modules.MTG.Application.Rules;
 using SGS.Modules.MTG.Infrastructure.Dbcontexts;
 using SGS.Modules.MTG.Infrastructure.Entities;
 using SGSFramework.Core.Abstractions.Notifications;
+using SGSFramework.Core.ProjectContracts;
 
 namespace SGS.Modules.MTG.Application.Services;
 
@@ -22,6 +23,7 @@ public sealed class ActionItemService(
     TimeProvider clock,
     ITextGenerator generator,
     ILogger<ActionItemService> logger,
+    IMeetingTaskWriteback writeback,
     IMailSender? mailSender = null)
 {
     public const int MaxItemsPerMeeting = 100;
@@ -207,7 +209,7 @@ public sealed class ActionItemService(
         var existing = await db.ActionItems.Where(a => a.MeetingId == meetingId).OrderBy(a => a.Seq).ToListAsync(ct).ConfigureAwait(false);
 
         // 沒被人碰過的抽取結果可以換新；其餘一律保留
-        var replaceable = existing.Where(a => a.Source == ActionItemSource.Extracted && a.UpdatedAtUtc is null && a.NotifiedAtUtc is null && a.Status == ActionItemStatus.Open).ToList();
+        var replaceable = existing.Where(a => a.Source == ActionItemSource.Extracted && a.UpdatedAtUtc is null && a.NotifiedAtUtc is null && a.PmsTaskId is null && a.Status == ActionItemStatus.Open).ToList();
         db.ActionItems.RemoveRange(replaceable);
         var kept = existing.Except(replaceable).ToList();
 
@@ -243,6 +245,60 @@ public sealed class ActionItemService(
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
         return new ExtractActionItemsResult(added, replaceable.Count, kept.Count, kept.Count + added, method);
     }
+
+    // ---------- 回寫 PMS ----------
+
+    /// <summary>
+    /// 把待辦建立成會議所關聯專案的 WBS 任務（放在「會議待辦」群組下）。單向、只建立：回寫後在 PMS 調整任務不會回頭改這裡，反之亦然。
+    /// 權限由 PMS 判定（須為專案 PM 或 Tech Lead）；冪等由 PMS 端以待辦識別碼標記保證，重送不會產生重複任務。
+    /// 已完成、已取消的待辦不回寫；已回寫的待辦略過。
+    /// </summary>
+    public async Task<MtgResult<SyncPmsResult>> SyncToPmsAsync(string actor, Guid userId, Guid meetingId, SyncPmsRequest? request, CancellationToken ct)
+    {
+        var meeting = await db.Meetings.AsNoTracking().FirstOrDefaultAsync(m => m.Id == meetingId, ct).ConfigureAwait(false);
+        if (meeting is null) return MtgResult<SyncPmsResult>.Fail(MtgErrors.NotFound("會議"));
+        if (meeting.ProjectId is not { } projectId) return MtgResult<SyncPmsResult>.Fail(MtgErrors.Validation("這場會議尚未關聯專案，請先在會議設定中選擇專案。"));
+        if (!writeback.IsAvailable) return MtgResult<SyncPmsResult>.Fail(new MtgError(503, "MTG_PMS_UNAVAILABLE", "專案管理模組未安裝", "專案管理模組（PMS）未安裝，無法回寫待辦。"));
+
+        var ids = request?.ItemIds;
+        var query = db.ActionItems.Where(a => a.MeetingId == meetingId && a.Status != ActionItemStatus.Cancelled);
+        query = ids is { Count: > 0 } ? query.Where(a => ids.Contains(a.Id)) : query.Where(a => a.Status == ActionItemStatus.Open || a.Status == ActionItemStatus.InProgress);
+        var items = await query.OrderBy(a => a.Seq).ToListAsync(ct).ConfigureAwait(false);
+
+        var alreadyLinked = items.Count(a => a.PmsTaskId is not null);
+        var todo = items.Where(a => a.PmsTaskId is null && a.Status != ActionItemStatus.Done).ToList();
+        if (todo.Count == 0)
+            return MtgResult<SyncPmsResult>.Ok(new SyncPmsResult(0, alreadyLinked, 0, alreadyLinked > 0 ? [] : ["沒有需要回寫的待辦（未完成且尚未回寫者才會回寫）。"]));
+
+        var results = await writeback.CreateTasksAsync(new MeetingTaskRequest(projectId, meetingId, meeting.Title, ActionItemRules.ReferenceDate(meeting.MeetingTimeUtc), userId, actor,
+            todo.Select(a => new MeetingTaskItem(a.Id, a.Description, a.Owner, a.DueDate, a.Note)).ToList()), ct).ConfigureAwait(false);
+
+        var now = clock.GetUtcNow();
+        var created = 0;
+        var failures = new List<string>();
+        foreach (var (item, result) in todo.Zip(results))
+        {
+            if (result.Succeeded)
+            {
+                item.PmsTaskId = result.TaskId;
+                item.PmsSyncedAtUtc = now;
+                if (result.AlreadyExisted) alreadyLinked++;
+                else created++;
+            }
+            else failures.Add($"#{item.Seq} {Shorten(item.Description)}：{result.Error}");
+        }
+
+        if (created + (results.Count(r => r.Succeeded && r.AlreadyExisted)) > 0) await db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+        // 失敗原因多半是整個專案層級（不是 PM、專案已結案…），每筆都相同；合併顯示避免洗版
+        var distinct = failures.Select(f => f[(f.IndexOf('：') + 1)..]).Distinct().ToList();
+        List<string> shown = failures.Count > 3 && distinct.Count == 1 ? [$"{failures.Count} 項都失敗：{distinct[0]}"] : failures;
+        if (failures.Count > 0) shown.Add("回寫需要你是該專案的成員，且是 PM 或 Tech Lead；專案須為進行中。");
+        logger.LogInformation("[MTG] {Actor} 回寫會議 {MeetingId} 的待辦到 PMS 專案 {ProjectId}：建立 {Created}、已存在 {Existing}、失敗 {Failed}。", actor, meetingId, projectId, created, alreadyLinked, failures.Count);
+        return MtgResult<SyncPmsResult>.Ok(new SyncPmsResult(created, alreadyLinked, failures.Count, shown));
+    }
+
+    private static string Shorten(string text) => text.Length <= 20 ? text : text[..20] + "…";
 
     // ---------- 通知 ----------
 
@@ -376,5 +432,5 @@ public sealed class ActionItemService(
     }
 
     private static ActionItemDto ToDto(ActionItem a) => new(a.Id, a.MeetingId, a.Seq, a.Description, a.Owner, a.OwnerEmail, a.DueDate, a.DueText,
-        a.Status, a.Note, a.Source, a.MinutesVersion, a.NotifiedAtUtc, a.CreatedAtUtc, a.UpdatedAtUtc);
+        a.Status, a.Note, a.Source, a.MinutesVersion, a.NotifiedAtUtc, a.CreatedAtUtc, a.UpdatedAtUtc, a.PmsTaskId, a.PmsSyncedAtUtc);
 }

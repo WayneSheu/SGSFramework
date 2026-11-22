@@ -44,6 +44,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<MapReduceSummarizer>();
         services.AddScoped<MeetingService>();
         services.AddScoped<ActionItemService>();
+        services.AddScoped<AudioRetentionService>();
         services.AddScoped<PromptTemplateService>();
         services.AddScoped<GlossaryService>();
         services.AddScoped<MtgSeeder>();

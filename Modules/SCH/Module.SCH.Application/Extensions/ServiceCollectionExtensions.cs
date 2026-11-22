@@ -106,6 +106,14 @@ public static class ServiceCollectionExtensions
             services.AddRecurringJob<QtnVarianceDueJob>(QtnVarianceDueJob.JobId, "QTN 結案復盤逾期提醒", "30 9 * * 1-5");
         }
 
+        // MTG 排程作業（端點由 SGS.Modules.MTG 外掛提供）：僅於設定錄音保存天數（Meeting:AudioRetentionDays > 0）時註冊，
+        // 沒設定就代表錄音不自動刪除，不該每天產生一筆什麼都沒做的作業。每日 04:30（FMS 已刪除檔案清除之後），
+        // 這裡刪除的是「超過保存期限的錄音」（FMS 虛擬刪除，實體檔案由 FMS 的保留期排程再清）
+        if (configuration.GetValue<int>("Meeting:AudioRetentionDays") > 0)
+        {
+            services.AddRecurringJob<MtgAudioRetentionJob>(MtgAudioRetentionJob.JobId, "MTG 過期錄音清除", "30 4 * * *");
+        }
+
         // Hangfire 只序列化 Core 的 IScheduledJobDispatcher（Default ALC），再由此實作依作業 ID 執行外掛內的作業類別
         services.TryAddSingleton<ScheduledJobCatalog>();
         services.TryAddScoped<IScheduledJobDispatcher, ScheduledJobDispatcher>();

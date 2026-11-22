@@ -123,6 +123,7 @@ public sealed class MeetingAudioService(
 
         var audio = await db.MeetingAudios.FirstOrDefaultAsync(a => a.Id == audioId && a.MeetingId == meetingId, ct).ConfigureAwait(false);
         if (audio is null) return MtgResult<MeetingAudioDto>.Fail(MtgErrors.NotFound("音檔"));
+        if (audio.Status == AudioStatus.Expired) return MtgResult<MeetingAudioDto>.Fail(MtgErrors.Conflict("錄音已依保存期限刪除，無法重新轉錄。"));
 
         var previousMeetingStatus = meeting.Status;
         var previousMeetingMessage = meeting.StatusMessage;
@@ -191,9 +192,11 @@ public sealed class MeetingAudioService(
     /// <summary>開啟音檔下載串流（記憶體內解密）；呼叫端負責 Dispose。</summary>
     public async Task<MtgResult<FileDownload>> OpenDownloadAsync(Guid meetingId, Guid audioId, CancellationToken ct)
     {
-        var fileId = await db.MeetingAudios.AsNoTracking().Where(a => a.Id == audioId && a.MeetingId == meetingId)
-            .Select(a => (Guid?)a.FileId).FirstOrDefaultAsync(ct).ConfigureAwait(false);
-        if (fileId is null) return MtgResult<FileDownload>.Fail(MtgErrors.NotFound("音檔"));
+        var audio = await db.MeetingAudios.AsNoTracking().Where(a => a.Id == audioId && a.MeetingId == meetingId)
+            .Select(a => new { a.FileId, a.Status }).FirstOrDefaultAsync(ct).ConfigureAwait(false);
+        if (audio is null) return MtgResult<FileDownload>.Fail(MtgErrors.NotFound("音檔"));
+        if (audio.Status == AudioStatus.Expired) return MtgResult<FileDownload>.Fail(MtgErrors.Gone("錄音已依保存期限刪除；逐字稿與紀要仍保留。"));
+        var fileId = (Guid?)audio.FileId;
 
         try
         {
@@ -224,5 +227,5 @@ public sealed class MeetingAudioService(
 
     internal static MeetingAudioDto ToDto(MeetingAudio a) => new(
         a.Id, a.FileName, a.ContentType, a.FileSize, a.Status, a.StatusMessage, a.DurationSeconds, a.Language,
-        a.SegmentCount, a.AutoSummarize, a.CreatedBy, a.CreatedAtUtc, a.TranscribedAtUtc);
+        a.SegmentCount, a.AutoSummarize, a.CreatedBy, a.CreatedAtUtc, a.TranscribedAtUtc, a.ExpiredAtUtc);
 }

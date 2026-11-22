@@ -68,6 +68,14 @@ public sealed class ActionItemsController(ActionItemService actionItems) : MtgCo
     public async Task<ActionResult<ExtractActionItemsResult>> Extract(Guid meetingId, CancellationToken ct = default) =>
         FromResult(await actionItems.ExtractAsync(Actor, meetingId, ct).ConfigureAwait(false));
 
+    /// <summary>把待辦回寫為會議所關聯專案的 WBS 任務（單向、只建立、冪等；須為該專案 PM 或 Tech Lead）</summary>
+    [HttpPost("api/v{version:apiVersion}/mtg/meetings/{meetingId:guid}/action-items/sync-pms")]
+    [Function("SyncMeetingActionItemsToPms", "回寫 PMS", Order = 8, Description = "把待辦建立成 PMS 專案任務")]
+    [RequiresPermission("MTG.ACTION.SYNC_PMS", "回寫待辦到 PMS", ActionCategory.Operational)]
+    [ProducesResponseType(typeof(SyncPmsResult), StatusCodes.Status200OK)]
+    public async Task<ActionResult<SyncPmsResult>> SyncToPms(Guid meetingId, [FromBody] SyncPmsRequest? request, CancellationToken ct = default) =>
+        FromResult(await actionItems.SyncToPmsAsync(Actor, CurrentUserId, meetingId, request, ct).ConfigureAwait(false));
+
     /// <summary>郵件通知待辦：寄給有信箱的負責人，並可另寄一封完整清單給額外收件人</summary>
     [HttpPost("api/v{version:apiVersion}/mtg/meetings/{meetingId:guid}/action-items/notify")]
     [Function("NotifyMeetingActionItems", "通知待辦", Order = 7, Description = "以郵件通知待辦負責人")]

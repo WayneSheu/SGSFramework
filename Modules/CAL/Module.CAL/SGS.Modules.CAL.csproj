@@ -40,5 +40,7 @@
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
     <Exec Command="powershell -Command &quot;&amp; { Set-AuthenticodeSignature -FilePath '$(TargetPath)' -Certificate (Get-ChildItem -Path Cert:\CurrentUser\My\DB22B4CE33AE64287F9392F3025EBCB7880BE213) -TimestampServer 'http://timestamp.digicert.com' }&quot;" />
   </Target>
-
+	<Target Name="PushToBaGet" AfterTargets="Pack" Condition="'$(Configuration)' == 'Release' And '$(BaGetApiKey)' != ''">
+	<Exec Command="dotnet nuget push &quot;$(ProjectDir)bin\$(Configuration)\*.nupkg&quot; --source http://localhost:5000/v3/index.json --api-key $(BaGetApiKey) --allow-insecure-connections --skip-duplicate" />
+	</Target>
 </Project>

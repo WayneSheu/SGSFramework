@@ -139,6 +139,8 @@ public enum AudioStatus
     Transcribing = 1,
     /// <summary>已轉錄。</summary>
     Transcribed = 2,
+    /// <summary>錄音已依保存期限刪除（逐字稿保留）；無法下載或重新轉錄。</summary>
+    Expired = 3,
     /// <summary>轉錄失敗，可重新轉錄。</summary>
     Failed = 9
 }
@@ -198,6 +200,10 @@ public class MeetingAudio : IAuditable
     [DisplayName("轉錄完成時間")]
     [Comment("UTC")]
     public DateTimeOffset? TranscribedAtUtc { get; set; }
+
+    [DisplayName("過期刪除時間")]
+    [Comment("錄音依保存期限（Meeting:AudioRetentionDays）從 FMS 刪除的時間（UTC）；未過期為空")]
+    public DateTimeOffset? ExpiredAtUtc { get; set; }
 
     [DisplayName("轉錄後自動產生紀要")]
     [Comment("上傳時是否勾選；轉錄成功後由工作者接續要求產生紀要")]
@@ -425,6 +431,14 @@ public class ActionItem : IAuditable
     [DisplayName("來源紀要版本")]
     [Comment("抽取自哪一版紀要（人工新增為空）")]
     public int? MinutesVersion { get; set; }
+
+    [DisplayName("PMS 任務")]
+    [Comment("已回寫為 PMS 專案 WBS 任務時的任務識別碼；未回寫為空。回寫後此待辦視為已處理，重新抽取不會刪除")]
+    public Guid? PmsTaskId { get; set; }
+
+    [DisplayName("PMS 回寫時間")]
+    [Comment("回寫為 PMS 任務的時間（UTC）")]
+    public DateTimeOffset? PmsSyncedAtUtc { get; set; }
 
     [DisplayName("最後通知時間")]
     [Comment("最近一次寄出通知郵件的時間（UTC）；未通知為空")]

@@ -22,7 +22,7 @@
 測試：`Tests\SGS.Modules.MTG.Tests`（純單元測試）。
 
 ## 資料表（schema `mtg`）
-`Meetings`、`TranscriptSegments`（`AudioId` 記錄來源音檔、`ClientSegmentId` 供桌面端冪等）、`MeetingAudios`（FMS 檔案關聯與轉錄狀態）、`MeetingMinutes`（每次產生新增一版）、`PromptTemplates`（內建四場景，啟動時補齊、不覆蓋已調整者）、`GlossaryEntries`、`ActionItems`（待辦；`OwnerEmail` 為個資，`[Encrypted]` 落地加密）、`OutboxMessages`。
+`Meetings`、`TranscriptSegments`（`AudioId` 記錄來源音檔、`ClientSegmentId` 供桌面端冪等）、`MeetingAudios`（FMS 檔案關聯與轉錄狀態）、`MeetingMinutes`（每次產生新增一版）、`PromptTemplates`（內建四場景，啟動時補齊、不覆蓋已調整者）、`GlossaryEntries`、`ActionItems`（待辦；`OwnerEmail` 為個資，`[Encrypted]` 落地加密；`PmsTaskId` 記錄回寫的 PMS 任務）、`OutboxMessages`。`MeetingAudios` 的狀態另有 `Expired`（錄音已依保存期限刪除）。
 
 ## API 與權限
 | 端點 | 權限 |
@@ -41,6 +41,8 @@
 | `POST mtg/action-items/search`（跨會議，可篩逾期）、`GET mtg/meetings/{id}/action-items` | `MTG.ACTION.READ` |
 | `POST/PUT/DELETE mtg/meetings/{id}/action-items`、`POST .../action-items/extract` | `MTG.ACTION.MANAGE` |
 | `POST mtg/meetings/{id}/action-items/notify`（寄信） | `MTG.ACTION.NOTIFY`（Critical） |
+| `POST mtg/meetings/{id}/action-items/sync-pms`（回寫 PMS WBS 任務） | `MTG.ACTION.SYNC_PMS` |
+| `POST mtg/audio/purge-expired`（排程以系統帳號 scope `mtg.audio.purge` 呼叫，亦可手動） | `MTG.AUDIO.PURGE` |
 | `GET mtg/meetings/project-options?keyword=`（可關聯的 PMS 專案） | `MTG.MEETING.READ` |
 | `POST/PUT mtg/templates/{scenarioCode}` | `MTG.TEMPLATE.MANAGE` |
 | `POST mtg/glossary/search` | `MTG.GLOSSARY.READ` |
@@ -76,9 +78,15 @@ FMS 的簽章檢查已擴充 wav、mp3、m4a、ogg、flac、webm（只驗證容�
 - **PMS 專案關聯**：MTG 只依賴 Core 契約 `IMeetingProjectLookup`（預設 `NullMeetingProjectLookup`，PMS 載入時覆蓋，與 `IQuoteContractIntegration` 同模式）。沿用 PMS 的資料列授權：只能關聯**自己是成員的進行中專案**（具 `PMS.PROJECT.ADMIN` 者可見全部）；不存在與看不到的專案回同一則錯誤，不洩漏專案是否存在；沿用原本已關聯的專案（未變更）不重驗；看不到的專案只回識別碼，不回名稱。
 - 注意：Core 新增了型別，**修改後須重建 Host、PMS、MTG 並重啟 API**，否則 MTG 啟動時會因找不到 `IMeetingProjectLookup` 失敗。
 
+## 錄音保存期限與 PMS 回寫（M6）
+- **錄音保存期限**：`Meeting:AudioRetentionDays`（預設 0 = 不自動刪除）。大於 0 時，SCH 每日 04:30 執行 `mtg-audio-retention`，呼叫 `POST mtg/audio/purge-expired`：已轉錄或轉錄失敗、超過期限的錄音從 FMS 刪除（虛擬刪除，實體檔由 FMS 的保留期排程再清），狀態改為 `Expired`，**逐字稿與紀要保留**。先刪 FMS 再標記，FMS 失敗的下次再試；FMS 回報不存在也視為已清除；排隊中、轉錄中的不碰；單次最多 200 筆。已過期的錄音下載回 410、不能重新轉錄（409）。排程帳號須在系統帳號管理授與 scope `mtg.audio.purge`。
+- **回寫 PMS**：`POST mtg/meetings/{id}/action-items/sync-pms` 把未完成、尚未回寫的待辦建立成會議所關聯專案的 WBS 任務，放在甘特圖頂層的「會議待辦」群組下（起日＝會議日、結束日＝待辦期限，沒有期限就 7 天）。MTG 只依賴 Core 契約 `IMeetingTaskWriteback`（預設 Null，PMS 覆蓋），實作經由 `GanttService.CreateTaskAsync`，所以沿用甘特圖的全部規則：只有專案 PM／Tech Lead 可建立、專案須進行中、非成員一律當作專案不存在。**冪等**：每個任務說明帶 `[MTG:待辦識別碼]` 標記，重送會找回既有任務而不重複建立，即使 MTG 沒記到也一樣。**單向、只建立**：回寫後兩邊各自修改不會同步；已回寫的待辦重新抽取時不會被刪除。
+- **負責人不會自動指派**：PMS 專案成員只有使用者識別碼，伺服器端沒有可靠的「姓名 → 使用者」對應；紀要中的負責人姓名寫在任務說明，由 PM 在甘特圖指派。
+- **不做**：伺服器端聲紋辨識（需要聲紋模型與原生執行階段，外掛不能放原生套件）。桌面端用聲道區分我方與與會者；伺服器端音檔轉錄的片段不標講者。
+
 ## 部署
 1. DBA 執行 `docs\sql\20261121_grant_mtg_schema.sql`（或讓部署帳號自動授權）。
 2. 建置後 `SGS.Modules.MTG*.dll` 由 `CopyModuleDllToHost` 複製到 Host 的 `plugins`；模組含背景工作者，更新須重啟 API。
 
 ## 後續里程碑
-M6 伺服器端聲紋、待辦回寫 PMS（目前只做專案關聯與通知）與排程清理過期音檔（音檔保存天數目前沿用 FMS 的刪除保留期，MTG 尚無自動過期）。
+伺服器端聲紋辨識（需求不明確且需另外取得模型，暫不做）。
