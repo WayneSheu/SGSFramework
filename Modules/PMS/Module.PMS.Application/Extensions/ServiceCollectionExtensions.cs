@@ -41,6 +41,8 @@ public static class ServiceCollectionExtensions
 
         // 報價管理（QTN）只依賴 Core 的 IQuoteContractIntegration；PMS 載入時以此實作覆蓋 Core 預設的 Null（503）
         services.AddScoped<SGSFramework.Core.ProjectContracts.IQuoteContractIntegration, QuoteContractIntegration>();
+        // 會議助理（MTG）只依賴 Core 的 IMeetingProjectLookup；PMS 載入時覆蓋 Core 預設的 Null（沒有可關聯的專案）
+        services.AddScoped<SGSFramework.Core.ProjectContracts.IMeetingProjectLookup, MeetingProjectLookup>();
         return services;
     }
 }

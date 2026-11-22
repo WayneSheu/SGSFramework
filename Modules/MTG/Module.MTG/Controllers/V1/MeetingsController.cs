@@ -27,7 +27,15 @@ public sealed class MeetingsController(MeetingService meetings) : MtgControllerB
     [RequiresPermission("MTG.MEETING.READ", "檢視會議")]
     [ProducesResponseType(typeof(PagedResult<MeetingDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<PagedResult<MeetingDto>>> Search([FromBody] MeetingQueryRequest request, CancellationToken ct = default) =>
-        Ok(await meetings.SearchAsync(request, ct).ConfigureAwait(false));
+        Ok(await meetings.SearchAsync(request, ct, await ProjectScopeAsync(ct).ConfigureAwait(false)).ConfigureAwait(false));
+
+    /// <summary>搜尋可關聯的 PMS 專案（只列出你是成員的專案；具 PMS.PROJECT.ADMIN 者可見全部）。PMS 未安裝時回傳空清單。</summary>
+    [HttpGet("project-options")]
+    [Function("ListMeetingProjectOptions", "專案選項", Order = 13, Description = "取得可關聯到會議的 PMS 專案")]
+    [RequiresPermission("MTG.MEETING.READ", "檢視會議")]
+    [ProducesResponseType(typeof(IReadOnlyList<ProjectOptionDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<ProjectOptionDto>>> ProjectOptions([FromQuery] string? keyword, CancellationToken ct = default) =>
+        Ok(await meetings.SearchProjectsAsync(await ProjectScopeAsync(ct).ConfigureAwait(false), keyword, ct).ConfigureAwait(false));
 
     /// <summary>取得單一會議</summary>
     [HttpGet("{id:guid}")]
@@ -35,7 +43,7 @@ public sealed class MeetingsController(MeetingService meetings) : MtgControllerB
     [RequiresPermission("MTG.MEETING.READ", "檢視會議")]
     [ProducesResponseType(typeof(MeetingDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<MeetingDto>> Get(Guid id, CancellationToken ct = default) =>
-        FromResult(await meetings.GetAsync(id, ct).ConfigureAwait(false));
+        FromResult(await meetings.GetAsync(id, ct, await ProjectScopeAsync(ct).ConfigureAwait(false)).ConfigureAwait(false));
 
     /// <summary>建立會議</summary>
     [HttpPost]
@@ -43,7 +51,7 @@ public sealed class MeetingsController(MeetingService meetings) : MtgControllerB
     [RequiresPermission("MTG.MEETING.CREATE", "建立會議", ActionCategory.Operational)]
     [ProducesResponseType(typeof(MeetingDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<MeetingDto>> Create([FromBody] SaveMeetingRequest request, CancellationToken ct = default) =>
-        FromResult(await meetings.CreateAsync(Actor, request, ct).ConfigureAwait(false));
+        FromResult(await meetings.CreateAsync(Actor, request, ct, await ProjectScopeAsync(ct).ConfigureAwait(false)).ConfigureAwait(false));
 
     /// <summary>更新會議</summary>
     [HttpPut("{id:guid}")]
@@ -51,7 +59,7 @@ public sealed class MeetingsController(MeetingService meetings) : MtgControllerB
     [RequiresPermission("MTG.MEETING.UPDATE", "修改會議", ActionCategory.Operational)]
     [ProducesResponseType(typeof(MeetingDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<MeetingDto>> Update(Guid id, [FromBody] SaveMeetingRequest request, CancellationToken ct = default) =>
-        FromResult(await meetings.UpdateAsync(Actor, id, request, ct).ConfigureAwait(false));
+        FromResult(await meetings.UpdateAsync(Actor, id, request, ct, await ProjectScopeAsync(ct).ConfigureAwait(false)).ConfigureAwait(false));
 
     /// <summary>刪除會議（連同逐字稿與紀要）</summary>
     [HttpDelete("{id:guid}")]

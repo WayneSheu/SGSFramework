@@ -27,6 +27,7 @@ public sealed class MeetingConfiguration : IEntityTypeConfiguration<Meeting>
         builder.HasMany(x => x.Segments).WithOne(x => x.Meeting).HasForeignKey(x => x.MeetingId).OnDelete(DeleteBehavior.Cascade);
         builder.HasMany(x => x.MinutesVersions).WithOne(x => x.Meeting).HasForeignKey(x => x.MeetingId).OnDelete(DeleteBehavior.Cascade);
         builder.HasMany(x => x.Audios).WithOne(x => x.Meeting).HasForeignKey(x => x.MeetingId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasMany(x => x.ActionItems).WithOne(x => x.Meeting).HasForeignKey(x => x.MeetingId).OnDelete(DeleteBehavior.Cascade);
     }
 }
 
@@ -127,5 +128,28 @@ public sealed class MtgOutboxMessageConfiguration : IEntityTypeConfiguration<Out
     public void Configure(EntityTypeBuilder<OutboxMessage> builder)
     {
         builder.ConfigureOutboxTable("mtg");
+    }
+}
+
+public sealed class ActionItemConfiguration : IEntityTypeConfiguration<ActionItem>
+{
+    public void Configure(EntityTypeBuilder<ActionItem> builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.ToTable("ActionItems", "mtg");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Description).HasMaxLength(500).IsRequired();
+        builder.Property(x => x.Owner).HasMaxLength(100);
+        builder.Property(x => x.OwnerEmail).HasMaxLength(500); // 落地加密後的密文長度
+        builder.Property(x => x.DueText).HasMaxLength(100);
+        builder.Property(x => x.Note).HasMaxLength(500);
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
+        builder.Property(x => x.Source).HasConversion<string>().HasMaxLength(20).IsRequired();
+        builder.Property(x => x.CreatedBy).HasMaxLength(256);
+        builder.Property(x => x.UpdatedBy).HasMaxLength(256);
+        builder.HasIndex(x => new { x.MeetingId, x.Seq });
+        builder.HasIndex(x => x.Status);
+        builder.HasIndex(x => x.DueDate);
     }
 }

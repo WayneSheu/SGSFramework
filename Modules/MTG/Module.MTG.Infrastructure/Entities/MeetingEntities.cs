@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
+using SGSFramework.Core.Abstractions.Attributes;
 using SGSFramework.Core.Abstractions.Entities.AuditLogs;
 
 namespace SGS.Modules.MTG.Infrastructure.Entities;
@@ -78,6 +79,7 @@ public class Meeting : IAuditable
     public List<TranscriptSegment> Segments { get; set; } = [];
     public List<MeetingMinutes> MinutesVersions { get; set; } = [];
     public List<MeetingAudio> Audios { get; set; } = [];
+    public List<ActionItem> ActionItems { get; set; } = [];
 }
 
 [DisplayName("逐字稿片段")]
@@ -351,4 +353,98 @@ public class GlossaryEntry : IAuditable
     [DisplayName("最後異動時間")]
     [Comment("最後異動時間")]
     public DateTimeOffset? UpdatedAtUtc { get; set; }
+}
+
+/// <summary>待辦事項狀態。</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ActionItemStatus
+{
+    Open = 0,
+    InProgress = 1,
+    Done = 2,
+    Cancelled = 3
+}
+
+/// <summary>待辦事項來源：由紀要抽取，或人工新增。</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ActionItemSource
+{
+    Extracted = 0,
+    Manual = 1
+}
+
+[DisplayName("會議待辦")]
+[Comment("會議待辦事項：由紀要自動抽取或人工新增，可指派負責人與期限，並以郵件通知")]
+public class ActionItem : IAuditable
+{
+    [DisplayName("識別主鍵")]
+    [Comment("識別主鍵")]
+    public Guid Id { get; set; }
+
+    [DisplayName("會議")]
+    [Comment("所屬會議")]
+    public Guid MeetingId { get; set; }
+
+    [DisplayName("序號")]
+    [Comment("會議內顯示順序（從 1 起）")]
+    public int Seq { get; set; }
+
+    [DisplayName("待辦事項")]
+    [Comment("待辦內容")]
+    public string Description { get; set; } = string.Empty;
+
+    [DisplayName("負責人")]
+    [Comment("負責人姓名（文字；紀要未提及時為空）")]
+    public string? Owner { get; set; }
+
+    [Encrypted]
+    [DisplayName("負責人信箱")]
+    [Comment("負責人 Email（個資，落地加密；通知郵件的收件人）")]
+    public string? OwnerEmail { get; set; }
+
+    [DisplayName("期限")]
+    [Comment("期限日期（能從紀要文字解析成日期時才有）")]
+    public DateOnly? DueDate { get; set; }
+
+    [DisplayName("期限原文")]
+    [Comment("紀要中的期限描述（例如「第三周」「下週五前」），無法解析成日期時保留供人工判讀")]
+    public string? DueText { get; set; }
+
+    [DisplayName("狀態")]
+    [Comment("Open、InProgress、Done、Cancelled")]
+    public ActionItemStatus Status { get; set; } = ActionItemStatus.Open;
+
+    [DisplayName("備註")]
+    [Comment("備註")]
+    public string? Note { get; set; }
+
+    [DisplayName("來源")]
+    [Comment("Extracted（由紀要抽取）、Manual（人工新增）")]
+    public ActionItemSource Source { get; set; } = ActionItemSource.Extracted;
+
+    [DisplayName("來源紀要版本")]
+    [Comment("抽取自哪一版紀要（人工新增為空）")]
+    public int? MinutesVersion { get; set; }
+
+    [DisplayName("最後通知時間")]
+    [Comment("最近一次寄出通知郵件的時間（UTC）；未通知為空")]
+    public DateTimeOffset? NotifiedAtUtc { get; set; }
+
+    [DisplayName("建立人員")]
+    [Comment("建立人員")]
+    public string CreatedBy { get; set; } = string.Empty;
+
+    [DisplayName("建立時間")]
+    [Comment("建立時間")]
+    public DateTimeOffset CreatedAtUtc { get; set; }
+
+    [DisplayName("最後異動人員")]
+    [Comment("最後異動人員")]
+    public string? UpdatedBy { get; set; }
+
+    [DisplayName("最後異動時間")]
+    [Comment("最後異動時間；有值代表曾被人工修改（重新抽取時不會覆蓋）")]
+    public DateTimeOffset? UpdatedAtUtc { get; set; }
+
+    public Meeting? Meeting { get; set; }
 }

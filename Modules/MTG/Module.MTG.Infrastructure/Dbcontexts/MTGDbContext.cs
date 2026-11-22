@@ -28,6 +28,8 @@ public class MTGDbContext : BaseDbContext<MTGDbContext>
 
     public DbSet<MeetingMinutes> MeetingMinutes { get; set; } = null!;
 
+    public DbSet<ActionItem> ActionItems { get; set; } = null!;
+
     public DbSet<PromptTemplate> PromptTemplates { get; set; } = null!;
 
     public DbSet<GlossaryEntry> GlossaryEntries { get; set; } = null!;

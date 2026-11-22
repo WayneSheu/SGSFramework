@@ -7,6 +7,7 @@ using SGS.Modules.MTG.Application.Rules;
 using SGS.Modules.MTG.Infrastructure.Dbcontexts;
 using SGS.Modules.MTG.Infrastructure.Entities;
 using SGSFramework.Core.FileManagement;
+using SGSFramework.Core.ProjectContracts;
 
 namespace SGS.Modules.MTG.Application.Services;
 
@@ -17,6 +18,7 @@ public sealed class MeetingService(
     IOptionsMonitor<MtgOptions> options,
     MinutesQueue queue,
     IFileManagementService files,
+    IMeetingProjectLookup projects,
     ILogger<MeetingService> logger)
 {
     public const int MaxTitleLength = 200;
@@ -29,7 +31,7 @@ public sealed class MeetingService(
 
     // ---------- 會議 ----------
 
-    public async Task<PagedResult<MeetingDto>> SearchAsync(MeetingQueryRequest request, CancellationToken ct)
+    public async Task<PagedResult<MeetingDto>> SearchAsync(MeetingQueryRequest request, CancellationToken ct, ProjectScope? scope = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         var pageIndex = Math.Max(1, request.PageIndex);
@@ -53,21 +55,23 @@ public sealed class MeetingService(
                 m.Organizer, m.Segments.Count, m.MinutesVersions.Count, m.CreatedAtUtc, m.UpdatedAtUtc))
             .ToListAsync(ct).ConfigureAwait(false);
 
-        return new PagedResult<MeetingDto>(items, total, pageIndex, pageSize);
+        return new PagedResult<MeetingDto>(await WithProjectNamesAsync(items, scope, ct).ConfigureAwait(false), total, pageIndex, pageSize);
     }
 
-    public async Task<MtgResult<MeetingDto>> GetAsync(Guid id, CancellationToken ct)
+    public async Task<MtgResult<MeetingDto>> GetAsync(Guid id, CancellationToken ct, ProjectScope? scope = null)
     {
         var dto = await db.Meetings.AsNoTracking().Where(m => m.Id == id)
             .Select(m => new MeetingDto(m.Id, m.Title, m.ScenarioCode, m.MeetingTimeUtc, m.ProjectId, m.Status, m.StatusMessage,
                 m.Organizer, m.Segments.Count, m.MinutesVersions.Count, m.CreatedAtUtc, m.UpdatedAtUtc))
             .FirstOrDefaultAsync(ct).ConfigureAwait(false);
-        return dto is null ? MtgResult<MeetingDto>.Fail(MtgErrors.NotFound("會議")) : MtgResult<MeetingDto>.Ok(dto);
+        if (dto is null) return MtgResult<MeetingDto>.Fail(MtgErrors.NotFound("會議"));
+        return MtgResult<MeetingDto>.Ok((await WithProjectNamesAsync([dto], scope, ct).ConfigureAwait(false))[0]);
     }
 
-    public async Task<MtgResult<MeetingDto>> CreateAsync(string actor, SaveMeetingRequest request, CancellationToken ct)
+    public async Task<MtgResult<MeetingDto>> CreateAsync(string actor, SaveMeetingRequest request, CancellationToken ct, ProjectScope? scope = null)
     {
-        var validation = await ValidateSaveAsync(request, ct).ConfigureAwait(false);
+        var validation = await ValidateSaveAsync(request, ct).ConfigureAwait(false)
+                         ?? await ValidateProjectAsync(request.ProjectId, currentProjectId: null, scope, ct).ConfigureAwait(false);
         if (validation is not null) return MtgResult<MeetingDto>.Fail(validation);
 
         var now = clock.GetUtcNow();
@@ -85,16 +89,19 @@ public sealed class MeetingService(
         };
         db.Meetings.Add(meeting);
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
-        return await GetAsync(meeting.Id, ct).ConfigureAwait(false);
+        return await GetAsync(meeting.Id, ct, scope).ConfigureAwait(false);
     }
 
-    public async Task<MtgResult<MeetingDto>> UpdateAsync(string actor, Guid id, SaveMeetingRequest request, CancellationToken ct)
+    public async Task<MtgResult<MeetingDto>> UpdateAsync(string actor, Guid id, SaveMeetingRequest request, CancellationToken ct, ProjectScope? scope = null)
     {
         var validation = await ValidateSaveAsync(request, ct).ConfigureAwait(false);
         if (validation is not null) return MtgResult<MeetingDto>.Fail(validation);
 
         var meeting = await db.Meetings.FirstOrDefaultAsync(m => m.Id == id, ct).ConfigureAwait(false);
         if (meeting is null) return MtgResult<MeetingDto>.Fail(MtgErrors.NotFound("會議"));
+
+        validation = await ValidateProjectAsync(request.ProjectId, meeting.ProjectId, scope, ct).ConfigureAwait(false);
+        if (validation is not null) return MtgResult<MeetingDto>.Fail(validation);
         if (IsBusy(meeting.Status))
             return MtgResult<MeetingDto>.Fail(MtgErrors.Conflict(BusyMessage(meeting.Status)));
 
@@ -105,7 +112,7 @@ public sealed class MeetingService(
         meeting.UpdatedBy = actor;
         meeting.UpdatedAtUtc = clock.GetUtcNow();
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
-        return await GetAsync(id, ct).ConfigureAwait(false);
+        return await GetAsync(id, ct, scope).ConfigureAwait(false);
     }
 
     public async Task<MtgResult<bool>> DeleteAsync(Guid id, CancellationToken ct)
@@ -325,6 +332,37 @@ public sealed class MeetingService(
 
     private static string NormalizeScenario(string? code) =>
         string.IsNullOrWhiteSpace(code) ? ScenarioDefaults.General : code.Trim().ToLowerInvariant();
+
+    /// <summary>
+    /// 關聯 PMS 專案的驗證：只能關聯自己看得到的專案（不存在與看不到一律同一則訊息，避免探測專案是否存在）。
+    /// 沒有變更（沿用原本已關聯的專案）時不重驗，所以失去專案成員資格的人仍能修改會議的其他欄位。
+    /// </summary>
+    private async Task<MtgError?> ValidateProjectAsync(Guid? projectId, Guid? currentProjectId, ProjectScope? scope, CancellationToken ct)
+    {
+        if (projectId is not { } id || id == currentProjectId || scope is null) return null;
+        if (!projects.IsAvailable) return MtgErrors.Validation("專案管理模組（PMS）未安裝，無法關聯專案。");
+
+        var visible = await projects.GetManyAsync(scope.UserId, scope.ViewAll, [id], ct).ConfigureAwait(false);
+        return visible.ContainsKey(id) ? null : MtgErrors.Validation("找不到可關聯的專案（專案不存在，或你不是該專案的成員）。");
+    }
+
+    /// <summary>補上專案名稱；看不到的專案只回識別碼，不洩漏名稱。</summary>
+    private async Task<List<MeetingDto>> WithProjectNamesAsync(List<MeetingDto> items, ProjectScope? scope, CancellationToken ct)
+    {
+        var ids = items.Where(m => m.ProjectId.HasValue).Select(m => m.ProjectId!.Value).Distinct().ToList();
+        if (ids.Count == 0 || scope is null || !projects.IsAvailable) return items;
+
+        var names = await projects.GetManyAsync(scope.UserId, scope.ViewAll, ids, ct).ConfigureAwait(false);
+        return items.Select(m => m.ProjectId is { } pid && names.TryGetValue(pid, out var info) ? m with { ProjectName = $"{info.Code} {info.Name}" } : m).ToList();
+    }
+
+    /// <summary>搜尋可關聯的專案（下拉選單用）。</summary>
+    public async Task<IReadOnlyList<ProjectOptionDto>> SearchProjectsAsync(ProjectScope scope, string? keyword, CancellationToken ct)
+    {
+        if (!projects.IsAvailable) return [];
+        var found = await projects.SearchAsync(scope.UserId, scope.ViewAll, keyword, 20, ct).ConfigureAwait(false);
+        return found.Select(p => new ProjectOptionDto(p.Id, p.Code, p.Name)).ToList();
+    }
 
     private async Task<MtgError?> ValidateSaveAsync(SaveMeetingRequest request, CancellationToken ct)
     {

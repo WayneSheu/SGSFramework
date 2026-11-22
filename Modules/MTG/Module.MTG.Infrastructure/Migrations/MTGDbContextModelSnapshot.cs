@@ -23,6 +23,104 @@ namespace SGS.Modules.MTG.Infrastructure.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("SGS.Modules.MTG.Infrastructure.Entities.ActionItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("建立時間");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("建立人員");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("待辦內容");
+
+                    b.Property<DateOnly?>("DueDate")
+                        .HasColumnType("date")
+                        .HasComment("期限日期（能從紀要文字解析成日期時才有）");
+
+                    b.Property<string>("DueText")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("紀要中的期限描述（例如「第三周」「下週五前」），無法解析成日期時保留供人工判讀");
+
+                    b.Property<Guid>("MeetingId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("所屬會議");
+
+                    b.Property<int?>("MinutesVersion")
+                        .HasColumnType("int")
+                        .HasComment("抽取自哪一版紀要（人工新增為空）");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("備註");
+
+                    b.Property<DateTimeOffset?>("NotifiedAtUtc")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("最近一次寄出通知郵件的時間（UTC）；未通知為空");
+
+                    b.Property<string>("Owner")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("負責人姓名（文字；紀要未提及時為空）");
+
+                    b.Property<string>("OwnerEmail")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasComment("負責人 Email（個資，落地加密；通知郵件的收件人）");
+
+                    b.Property<int>("Seq")
+                        .HasColumnType("int")
+                        .HasComment("會議內顯示順序（從 1 起）");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasComment("Extracted（由紀要抽取）、Manual（人工新增）");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasComment("Open、InProgress、Done、Cancelled");
+
+                    b.Property<DateTimeOffset?>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("最後異動時間；有值代表曾被人工修改（重新抽取時不會覆蓋）");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("最後異動人員");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DueDate");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("MeetingId", "Seq");
+
+                    b.ToTable("ActionItems", "mtg", t =>
+                        {
+                            t.HasComment("會議待辦事項：由紀要自動抽取或人工新增，可指派負責人與期限，並以郵件通知");
+                        });
+                });
+
             modelBuilder.Entity("SGS.Modules.MTG.Infrastructure.Entities.GlossaryEntry", b =>
                 {
                     b.Property<Guid>("Id")
@@ -522,6 +620,17 @@ namespace SGS.Modules.MTG.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SGS.Modules.MTG.Infrastructure.Entities.ActionItem", b =>
+                {
+                    b.HasOne("SGS.Modules.MTG.Infrastructure.Entities.Meeting", "Meeting")
+                        .WithMany("ActionItems")
+                        .HasForeignKey("MeetingId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Meeting");
+                });
+
             modelBuilder.Entity("SGS.Modules.MTG.Infrastructure.Entities.MeetingAudio", b =>
                 {
                     b.HasOne("SGS.Modules.MTG.Infrastructure.Entities.Meeting", "Meeting")
@@ -557,6 +666,8 @@ namespace SGS.Modules.MTG.Infrastructure.Migrations
 
             modelBuilder.Entity("SGS.Modules.MTG.Infrastructure.Entities.Meeting", b =>
                 {
+                    b.Navigation("ActionItems");
+
                     b.Navigation("Audios");
 
                     b.Navigation("MinutesVersions");

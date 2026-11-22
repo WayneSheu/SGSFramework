@@ -21,6 +21,7 @@ public static class MtgErrors
     public static MtgError QueueFull() => new(429, "MTG_QUEUE_FULL", "處理佇列已滿", "目前待處理的紀要作業過多，請稍後再試。");
     public static MtgError WhisperDisabled() => new(503, "MTG_WHISPER_DISABLED", "音檔轉錄未啟用", "尚未啟用語音轉錄（Meeting:Whisper:Enabled）。");
     public static MtgError TranscriptionQueueFull() => new(429, "MTG_QUEUE_FULL", "轉錄佇列已滿", "目前待轉錄的音檔過多，請稍後再試。");
+    public static MtgError MailUnavailable() => new(503, "MTG_MAIL_UNAVAILABLE", "郵件服務未啟用", "尚未設定郵件（SMTP）或郵件功能已停用，無法寄送通知。");
     public static MtgError FileRejected(int status, string detail) => new(status, "MTG_FILE_REJECTED", "音檔被拒絕", detail);
 }
 
@@ -54,7 +55,8 @@ public sealed record MeetingDto(
     int SegmentCount,
     int MinutesVersionCount,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset? UpdatedAtUtc);
+    DateTimeOffset? UpdatedAtUtc,
+    string? ProjectName = null);
 
 // ---- 逐字稿 ----
 
@@ -138,3 +140,70 @@ public sealed record GlossaryQueryRequest(string? Keyword = null, bool? IsActive
 public sealed record SaveGlossaryEntryRequest(string Term, string? Variants, string? Category, bool IsActive);
 
 public sealed record GlossaryEntryDto(Guid Id, string Term, string? Variants, string? Category, bool IsActive);
+
+// ---- 待辦事項 ----
+
+public sealed record ActionItemDto(
+    Guid Id,
+    Guid MeetingId,
+    int Seq,
+    string Description,
+    string? Owner,
+    string? OwnerEmail,
+    DateOnly? DueDate,
+    string? DueText,
+    ActionItemStatus Status,
+    string? Note,
+    ActionItemSource Source,
+    int? MinutesVersion,
+    DateTimeOffset? NotifiedAtUtc,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset? UpdatedAtUtc);
+
+/// <summary>跨會議的待辦清單列（多帶會議標題）。</summary>
+public sealed record ActionItemListDto(
+    Guid Id,
+    Guid MeetingId,
+    string MeetingTitle,
+    int Seq,
+    string Description,
+    string? Owner,
+    DateOnly? DueDate,
+    string? DueText,
+    ActionItemStatus Status,
+    bool IsOverdue,
+    DateTimeOffset? NotifiedAtUtc);
+
+public sealed record SaveActionItemRequest(
+    string Description,
+    string? Owner,
+    string? OwnerEmail,
+    DateOnly? DueDate,
+    string? DueText,
+    ActionItemStatus? Status,
+    string? Note);
+
+/// <summary>跨會議查詢待辦（POST search）。Keyword 比對事項內容與負責人；OverdueOnly 只看逾期且未完成者。</summary>
+public sealed record ActionItemQueryRequest(
+    string? Keyword = null,
+    ActionItemStatus? Status = null,
+    bool OverdueOnly = false,
+    Guid? MeetingId = null,
+    DateOnly? DueFrom = null,
+    DateOnly? DueTo = null,
+    int PageIndex = 1,
+    int PageSize = 20);
+
+public sealed record ExtractActionItemsResult(int Added, int Replaced, int Kept, int Total, string Method);
+
+/// <summary>通知待辦：ItemIds 為空代表所有「未完成且有負責人信箱」者；ExtraRecipients 另外收到一封完整清單（例如主管或會議群組）。</summary>
+public sealed record NotifyActionItemsRequest(IReadOnlyList<Guid>? ItemIds, IReadOnlyList<string>? ExtraRecipients);
+
+public sealed record NotifyActionItemsResult(int ItemsNotified, int OwnerMails, int SummaryMails, int SkippedNoEmail, IReadOnlyList<string> Failures);
+
+// ---- PMS 專案關聯 ----
+
+public sealed record ProjectOptionDto(Guid Id, string Code, string Name);
+
+/// <summary>目前使用者在 PMS 的可見範圍：只能關聯自己看得到的專案（成員，或具 PMS.PROJECT.ADMIN）。</summary>
+public sealed record ProjectScope(Guid UserId, bool ViewAll);

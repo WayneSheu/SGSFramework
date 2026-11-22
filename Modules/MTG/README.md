@@ -22,7 +22,7 @@
 測試：`Tests\SGS.Modules.MTG.Tests`（純單元測試）。
 
 ## 資料表（schema `mtg`）
-`Meetings`、`TranscriptSegments`（`AudioId` 記錄來源音檔、`ClientSegmentId` 供桌面端冪等）、`MeetingAudios`（FMS 檔案關聯與轉錄狀態）、`MeetingMinutes`（每次產生新增一版）、`PromptTemplates`（內建四場景，啟動時補齊、不覆蓋已調整者）、`GlossaryEntries`、`OutboxMessages`。
+`Meetings`、`TranscriptSegments`（`AudioId` 記錄來源音檔、`ClientSegmentId` 供桌面端冪等）、`MeetingAudios`（FMS 檔案關聯與轉錄狀態）、`MeetingMinutes`（每次產生新增一版）、`PromptTemplates`（內建四場景，啟動時補齊、不覆蓋已調整者）、`GlossaryEntries`、`ActionItems`（待辦；`OwnerEmail` 為個資，`[Encrypted]` 落地加密）、`OutboxMessages`。
 
 ## API 與權限
 | 端點 | 權限 |
@@ -38,6 +38,10 @@
 | `DELETE .../audio/{audioId}?removeTranscript=` | `MTG.AUDIO.DELETE` |
 | `POST mtg/meetings/{id}/segments`（桌面端批次，冪等，≤500 筆）、`POST .../finalize`、`GET mtg/glossary/terms` | `MTG.CLIENT.UPLOAD` |
 | `GET mtg/meetings/{id}/minutes`、`.../minutes/latest?version=` | `MTG.MINUTES.READ` |
+| `POST mtg/action-items/search`（跨會議，可篩逾期）、`GET mtg/meetings/{id}/action-items` | `MTG.ACTION.READ` |
+| `POST/PUT/DELETE mtg/meetings/{id}/action-items`、`POST .../action-items/extract` | `MTG.ACTION.MANAGE` |
+| `POST mtg/meetings/{id}/action-items/notify`（寄信） | `MTG.ACTION.NOTIFY`（Critical） |
+| `GET mtg/meetings/project-options?keyword=`（可關聯的 PMS 專案） | `MTG.MEETING.READ` |
 | `POST/PUT mtg/templates/{scenarioCode}` | `MTG.TEMPLATE.MANAGE` |
 | `POST mtg/glossary/search` | `MTG.GLOSSARY.READ` |
 | `POST/PUT/DELETE mtg/glossary` | `MTG.GLOSSARY.MANAGE` |
@@ -65,9 +69,16 @@ whisper.cpp server（`--inference-path /v1/audio/transcriptions`）、faster-whi
 ### FMS 音訊支援
 FMS 的簽章檢查已擴充 wav、mp3、m4a、ogg、flac、webm（只驗證容器檔頭，不解碼）。須在 FMS 分類明確開放，`appsettings.json` 已加入分類 `meeting-audio`（加密、非通用 API、100 MB）。
 
+## 待辦事項與 PMS 專案（M5）
+- **抽取**：紀要產生完成後，`MinutesWorker` 自動抽取一次（失敗只記錄，不影響紀要）；也可手動重新抽取。先解析紀要中標題含「待辦」的表格（依表頭辨識欄位）；沒有表格（客戶訪談、架構評審、週會場景）才請模型輸出 JSON。「下週五」「11/30」「12月4日前」等期限會依**會議當天（台灣時間）**換算成日期，「第三周」「盡快」這類無法確定的只保留原文，不猜。
+- **重新抽取的合併規則**：只取代「沒被編輯過、未通知、狀態仍是 Open 的抽取結果」；人工新增、編輯過、已通知或已處理的一律保留；內容相同（忽略標點與大小寫）的不重複加入。
+- **通知**：有負責人信箱的待辦各寄一封給該負責人（同一人合併）；另可給最多 10 位額外收件人一封完整清單。收件人逐一驗證（拒絕換行、多地址、`名稱 <a@b>` 格式以防標頭注入）、內容一律 HTML 編碼、主旨去除換行；日誌與錯誤訊息只出現遮蔽後的信箱。只有寄成功的待辦會記錄通知時間。SMTP 沿用系統設定（`AlertSettings:Smtp`）；未設定回 503。
+- **PMS 專案關聯**：MTG 只依賴 Core 契約 `IMeetingProjectLookup`（預設 `NullMeetingProjectLookup`，PMS 載入時覆蓋，與 `IQuoteContractIntegration` 同模式）。沿用 PMS 的資料列授權：只能關聯**自己是成員的進行中專案**（具 `PMS.PROJECT.ADMIN` 者可見全部）；不存在與看不到的專案回同一則錯誤，不洩漏專案是否存在；沿用原本已關聯的專案（未變更）不重驗；看不到的專案只回識別碼，不回名稱。
+- 注意：Core 新增了型別，**修改後須重建 Host、PMS、MTG 並重啟 API**，否則 MTG 啟動時會因找不到 `IMeetingProjectLookup` 失敗。
+
 ## 部署
 1. DBA 執行 `docs\sql\20261121_grant_mtg_schema.sql`（或讓部署帳號自動授權）。
 2. 建置後 `SGS.Modules.MTG*.dll` 由 `CopyModuleDllToHost` 複製到 Host 的 `plugins`；模組含背景工作者，更新須重啟 API。
 
 ## 後續里程碑
-M3～M4 桌面端 LocalVoiceAssistant；M5 待辦抽取、IMailSender 與 PMS 專案關聯；M6 伺服器端聲紋、PMS 回寫與排程清理過期音檔（音檔保存天數目前沿用 FMS 的刪除保留期，MTG 尚無自動過期）。
+M6 伺服器端聲紋、待辦回寫 PMS（目前只做專案關聯與通知）與排程清理過期音檔（音檔保存天數目前沿用 FMS 的刪除保留期，MTG 尚無自動過期）。

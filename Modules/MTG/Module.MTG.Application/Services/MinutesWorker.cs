@@ -119,6 +119,9 @@ public sealed class MinutesWorker(
             meeting.UpdatedAtUtc = now;
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
             logger.LogInformation("[MTG] 會議 {MeetingId} 紀要 v{Version} 產生完成。", item.MeetingId, nextVersion);
+
+            // 待辦抽取是附加功能：失敗只記錄，不影響已完成的紀要
+            await TryExtractActionItemsAsync(scope, item, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -134,6 +137,27 @@ public sealed class MinutesWorker(
         {
             logger.LogError(ex, "[MTG] 會議 {MeetingId} 紀要產生發生未預期錯誤。", item.MeetingId);
             await MarkFailedAsync(db, meeting, item.Actor, "紀要產生發生未預期錯誤，請稍後重試或聯絡管理員。").ConfigureAwait(false);
+        }
+    }
+
+    private async Task TryExtractActionItemsAsync(IServiceScope scope, MinutesWorkItem item, CancellationToken ct)
+    {
+        try
+        {
+            var service = scope.ServiceProvider.GetRequiredService<ActionItemService>();
+            var result = await service.ExtractAsync(item.Actor, item.MeetingId, ct).ConfigureAwait(false);
+            if (result.IsSuccess)
+                logger.LogInformation("[MTG] 會議 {MeetingId} 抽取待辦：新增 {Added}、取代 {Replaced}、保留 {Kept}（{Method}）。", item.MeetingId, result.Value!.Added, result.Value.Replaced, result.Value.Kept, result.Value.Method);
+            else
+                logger.LogWarning("[MTG] 會議 {MeetingId} 待辦抽取未完成：{Reason}", item.MeetingId, result.Error!.Detail);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[MTG] 會議 {MeetingId} 待辦抽取發生未預期錯誤。", item.MeetingId);
         }
     }
 

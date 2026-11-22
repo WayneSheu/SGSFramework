@@ -78,6 +78,7 @@ namespace SGSFramework.Core.Extensions
 
             // 報價 → 專案合約：SGS.Modules.PMS 外掛載入時以 AddScoped 覆蓋；未安裝時報價模組無法自動建立合約（503）
             builder.Services.TryAddScoped<SGSFramework.Core.ProjectContracts.IQuoteContractIntegration, SGSFramework.Core.ProjectContracts.NullQuoteContractIntegration>();
+            builder.Services.TryAddScoped<SGSFramework.Core.ProjectContracts.IMeetingProjectLookup, SGSFramework.Core.ProjectContracts.NullMeetingProjectLookup>();
 
             // 日誌儲存：SGS.Modules.LOG 外掛載入時以 AddSingleton 覆蓋；未安裝時落檔緩衝（Log_Buffer），恢復後回補
             builder.Services.TryAddSingleton<SGSFramework.Core.Logging.ISystemLogStore, SGSFramework.Core.Logging.NullSystemLogStore>();

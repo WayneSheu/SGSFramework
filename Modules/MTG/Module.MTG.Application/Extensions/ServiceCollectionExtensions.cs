@@ -43,6 +43,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITextGenerator, OllamaClient>();
         services.AddScoped<MapReduceSummarizer>();
         services.AddScoped<MeetingService>();
+        services.AddScoped<ActionItemService>();
         services.AddScoped<PromptTemplateService>();
         services.AddScoped<GlossaryService>();
         services.AddScoped<MtgSeeder>();
