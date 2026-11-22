@@ -52,6 +52,29 @@ public class FileEncryptionTests
     }
 
     [Fact]
+    public async Task Dispose_is_idempotent_and_does_not_poison_the_array_pool()
+    {
+        var plain = Plain(Chunk * 5 + 17);
+        var cipher = await EncryptAsync(plain);
+
+        for (var i = 0; i < 20; i++)
+        {
+            var enc = new EncryptingReadStream(new NonSeekableStream(plain), Key, Chunk);
+            await enc.CopyToAsync(Stream.Null);
+            enc.Dispose();
+            await enc.DisposeAsync();
+
+            var dec = await DecryptingReadStream.OpenAsync(new MemoryStream(cipher), Key);
+            await dec.CopyToAsync(Stream.Null);
+            dec.Dispose();
+            await dec.DisposeAsync();
+        }
+
+        (await DecryptAsync(cipher, seekable: true)).Should().Equal(plain);
+        (await DecryptAsync(cipher, seekable: false)).Should().Equal(plain);
+    }
+
+    [Fact]
     public async Task Ciphertext_does_not_contain_plaintext()
     {
         var plain = System.Text.Encoding.UTF8.GetBytes(string.Concat(Enumerable.Repeat("CONFIDENTIAL-機密報告 ", 200)));

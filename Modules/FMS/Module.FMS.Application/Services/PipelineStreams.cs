@@ -88,7 +88,7 @@ internal sealed class IntegrityGuardStream(Stream inner, Func<CryptographicExcep
 
     public override async ValueTask DisposeAsync()
     {
-        await inner.DisposeAsync().ConfigureAwait(false);
+        // base.DisposeAsync 會呼叫 Dispose(true) 釋放 inner；不可先行釋放（雙重釋放會污染 ArrayPool）。
         await base.DisposeAsync().ConfigureAwait(false);
     }
 }

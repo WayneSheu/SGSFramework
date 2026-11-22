@@ -14,6 +14,7 @@ public sealed class EncryptingReadStream : Stream
     private readonly byte[] _header;
     private readonly int _chunkSize;
     private readonly bool _leaveOpen;
+    private int _disposed;
 
     private readonly byte[] _plain;      // 目前區塊明文
     private readonly byte[] _lookahead;  // 下一區塊明文（前瞻）
@@ -135,7 +136,7 @@ public sealed class EncryptingReadStream : Stream
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        if (disposing && Interlocked.Exchange(ref _disposed, 1) == 0)
         {
             _aes.Dispose();
             CryptographicOperations.ZeroMemory(_plain);

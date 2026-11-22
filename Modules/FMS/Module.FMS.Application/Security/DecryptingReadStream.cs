@@ -19,6 +19,7 @@ public sealed class DecryptingReadStream : Stream
     private readonly int _chunkSize;
     private readonly int _fullChunk;
     private readonly bool _leaveOpen;
+    private int _disposed;
     private readonly long? _plainLength;
     private readonly long _chunkCount;
 
@@ -202,7 +203,7 @@ public sealed class DecryptingReadStream : Stream
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        if (disposing && Interlocked.Exchange(ref _disposed, 1) == 0)
         {
             _aes.Dispose();
             CryptographicOperations.ZeroMemory(_plain);
