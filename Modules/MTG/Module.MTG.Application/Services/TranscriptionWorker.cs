@@ -132,8 +132,13 @@ public sealed class TranscriptionWorker(
             var prompt = GlossaryCorrector.BuildInitialPrompt(terms, traditionalChinese: GlossaryCorrector.IsChineseOrAuto(options.CurrentValue.Whisper.Language));
 
             // 3. 轉錄
-            var result = await engine.TranscribeAsync(buffer, audio.FileName, string.IsNullOrEmpty(prompt) ? null : prompt, ct).ConfigureAwait(false);
-            if (result.Segments.Count == 0) throw new InvalidOperationException("轉錄結果是空的（音檔可能是靜音，或內容無法辨識）。");
+            var raw = await engine.TranscribeAsync(buffer, audio.FileName, string.IsNullOrEmpty(prompt) ? null : prompt, ct).ConfigureAwait(false);
+            if (raw.Segments.Count == 0) throw new InvalidOperationException("轉錄結果是空的（音檔可能是靜音，或內容無法辨識）。");
+
+            // 移除 Whisper 在靜音段幻聽出的無關文字（例如結尾的簡體字幕片尾）；信心值無法判斷這類片段，只能比對已知片語
+            var (result, removed) = HallucinationFilter.Apply(raw);
+            if (result.Segments.Count == 0) throw new InvalidOperationException("轉錄結果只有疑似幻聽的無關文字（音檔可能是靜音，或沒有可辨識的語音）。");
+            if (removed > 0) logger.LogInformation("[MTG] 音檔 {AudioId} 轉錄結果移除了 {Removed} 段疑似幻聽文字。", audio.Id, removed);
 
             // 4. 同一交易：取代此音檔先前的片段、寫入新片段、更新音檔與會議狀態
             await using var tx = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
@@ -147,7 +152,7 @@ public sealed class TranscriptionWorker(
 
             var now = clock.GetUtcNow();
             audio.Status = AudioStatus.Transcribed;
-            audio.StatusMessage = null;
+            audio.StatusMessage = HallucinationFilter.DescribeRemoval(removed); // 成功但有移除時，讓使用者知道
             audio.SegmentCount = segments.Count;
             audio.DurationSeconds = result.DurationSeconds ?? result.Segments.Max(s => s.EndSeconds);
             audio.Language = result.Language;
