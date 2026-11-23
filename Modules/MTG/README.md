@@ -84,6 +84,22 @@ FMS 的簽章檢查已擴充 wav、mp3、m4a、ogg、flac、webm（只驗證容�
 - **負責人不會自動指派**：PMS 專案成員只有使用者識別碼，伺服器端沒有可靠的「姓名 → 使用者」對應；紀要中的負責人姓名寫在任務說明，由 PM 在甘特圖指派。
 - **不做**：伺服器端聲紋辨識（需要聲紋模型與原生執行階段，外掛不能放原生套件）。桌面端用聲道區分我方與與會者；伺服器端音檔轉錄的片段不標講者。
 
+## 文字模型服務：Ollama 或 LM Studio（OpenAI 相容）
+紀要產生與待辦抽取使用的文字模型可以是 **Ollama**（預設）或任何 **OpenAI 相容**的服務（LM Studio、vLLM、llama.cpp server…），由 `Meeting:Provider` 選擇（`Ollama` / `OpenAI`），每次紀要作業都重新讀取設定，改設定後不必重新部署。
+
+| 設定 | 說明 |
+|---|---|
+| `Provider` | `Ollama`（預設，不改既有部署的行為）或 `OpenAI` |
+| `OpenAiBaseUrl` | 預設 `http://localhost:1234/v1`（LM Studio）；沒寫 `/v1` 會自動補上。**只允許本機或內網**，啟動驗證與每次呼叫都會檢查，指到外部位址不會送出任何請求 |
+| `TextModel` | 兩種提供者共用；LM Studio 請填它顯示的模型識別（例：`qwen/qwen3-14b`），並已載入該模型 |
+| `OpenAiApiKey` | 選填；需要才設，**用環境變數 `Meeting__OpenAiApiKey`**，不要寫進設定檔 |
+| `DisableReasoning` | 預設 `true`：在提示尾端加 `/no_think`（Qwen3 系列支援）。實測 LM Studio 的 qwen3-14b 同一題開思考約 28 秒、關閉約 9 秒，且思考 token 會佔用 `MaxOutputTokens`；模型不支援此開關時設 `false` |
+
+- **`NumCtx` 對 OpenAI 提供者無效**（OpenAI 介面沒有這個參數）：請在 LM Studio 載入模型時把 Context Length 設到至少 8192（紀要切塊約 4,500 字元＋提示＋輸出）。
+- 思考過程（`reasoning_content` 或內嵌的 `<think>`）一律丟棄，不寫入紀要、日誌或錯誤訊息。
+- 錯誤訊息只含狀態碼對應的說明，不回傳模型服務的回應內容（可能含逐字稿片段）。
+- 實測（2026-11-22，LM Studio qwen/qwen3-14b，本機 CPU/GPU 依機器而定）：一般綜合會議紀要 70 秒、技術架構評審 82 秒，待辦自動抽取正常。**品質差異**：qwen3-14b 在「決策紀錄」會自行補上逐字稿沒說的「採納理由」，qwen2.5:14b 較守本分寫「未提及」；要嚴格不編造請優先用 qwen2.5:14b，或在場景模板的提示再加強約束。
+
 ## 部署
 1. DBA 執行 `docs\sql\20261121_grant_mtg_schema.sql`（或讓部署帳號自動授權）。
 2. 建置後 `SGS.Modules.MTG*.dll` 由 `CopyModuleDllToHost` 複製到 Host 的 `plugins`；模組含背景工作者，更新須重啟 API。

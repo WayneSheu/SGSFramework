@@ -180,10 +180,10 @@ public static partial class ActionItemRules
 
     // ---------- 期限 ----------
 
-    [GeneratedRegex(@"(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?")]
+    [GeneratedRegex(@"(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?")]
     private static partial Regex FullDate();
 
-    [GeneratedRegex(@"(?<![\d/])(\d{1,2})[/月](\d{1,2})日?(?![\d/])")]
+    [GeneratedRegex(@"(?<![\d/])(\d{1,2})\s*[/月]\s*(\d{1,2})\s*日?(?![\d/])")]
     private static partial Regex MonthDay();
 
     [GeneratedRegex(@"(下下|下|本|這|这|該)?\s*(?:週|周|星期|禮拜|礼拜)\s*([一二三四五六日天])")]

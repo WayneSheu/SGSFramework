@@ -153,6 +153,9 @@ public class ActionItemRulesTests
     [InlineData("2027年1月15日", 2027, 1, 15)]
     [InlineData("11/25", 2026, 11, 25)]
     [InlineData("11月25日前", 2026, 11, 25)]
+    [InlineData("12 月 5 日前", 2026, 12, 5)]       // 部分模型（qwen3）會在數字與「月」「日」之間加空白
+    [InlineData("2026 年 12 月 5 日", 2026, 12, 5)]
+    [InlineData("11 / 25", 2026, 11, 25)]
     [InlineData("今天", 2026, 11, 18)]
     [InlineData("明天下班前", 2026, 11, 19)]
     [InlineData("後天", 2026, 11, 20)]

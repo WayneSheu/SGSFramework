@@ -10,6 +10,30 @@ public sealed class MtgOptions
     /// <summary>是否啟用 AI 紀要生成（關閉時仍可維護會議與逐字稿）。預設關閉。</summary>
     public bool Enabled { get; set; }
 
+    /// <summary>
+    /// 文字模型服務的種類：<c>Ollama</c>（預設，使用 <see cref="OllamaBaseUrl"/>）或 <c>OpenAI</c>（OpenAI 相容的
+    /// <c>/v1/chat/completions</c>：LM Studio、vLLM、llama.cpp server…，使用 <see cref="OpenAiBaseUrl"/>）。
+    /// </summary>
+    public string Provider { get; set; } = ProviderOllama;
+
+    public const string ProviderOllama = "Ollama";
+    public const string ProviderOpenAi = "OpenAI";
+
+    public bool UsesOpenAi => string.Equals(Provider, ProviderOpenAi, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>OpenAI 相容服務位址（含 /v1；沒有會自動補上）。LM Studio 預設 http://localhost:1234/v1。僅允許本機或內網位址。</summary>
+    public string OpenAiBaseUrl { get; set; } = "http://localhost:1234/v1";
+
+    /// <summary>OpenAI 相容服務的 API 金鑰（LM Studio 本機預設不需要，留空即可）。**不要寫進設定檔**，請用環境變數 Meeting__OpenAiApiKey。</summary>
+    public string? OpenAiApiKey { get; set; }
+
+    /// <summary>
+    /// OpenAI 相容服務：是否要求模型不要輸出思考過程（在提示尾端加 /no_think，Qwen3 系列支援）。預設 true：
+    /// 實測 LM Studio 的 qwen3-14b 思考會讓同一題慢約 3 倍，而且思考 token 會佔用 MaxOutputTokens。
+    /// 使用不支援此開關的模型時請設為 false，以免 "/no_think" 被當成內容。
+    /// </summary>
+    public bool DisableReasoning { get; set; } = true;
+
     /// <summary>Ollama 服務位址；僅允許本機或內網位址。</summary>
     public string OllamaBaseUrl { get; set; } = "http://localhost:11434";
 

@@ -21,8 +21,12 @@ public static class ServiceCollectionExtensions
 
         // AI 紀要：組態啟用時才強制檢查 Ollama 位址與切塊參數（預設關閉，不影響會議與逐字稿維護）
         services.AddValidatedOptions<MtgOptions>(MtgOptions.SectionName)
-            .Validate(o => !o.Enabled || InternalUrlRules.IsAllowed(o.OllamaBaseUrl),
+            .Validate(o => !o.Enabled || string.Equals(o.Provider, MtgOptions.ProviderOllama, StringComparison.OrdinalIgnoreCase) || o.UsesOpenAi,
+                "Meeting:Provider 只能是 Ollama 或 OpenAI。")
+            .Validate(o => !o.Enabled || o.UsesOpenAi || InternalUrlRules.IsAllowed(o.OllamaBaseUrl),
                 "Meeting:OllamaBaseUrl 必須是本機或內網位址（loopback／私有網段／單一標籤主機名）。")
+            .Validate(o => !o.Enabled || !o.UsesOpenAi || InternalUrlRules.IsAllowed(o.OpenAiBaseUrl),
+                "Meeting:OpenAiBaseUrl 必須是本機或內網位址（loopback／私有網段／單一標籤主機名）。")
             .Validate(o => !o.Enabled || !string.IsNullOrWhiteSpace(o.TextModel), "Meeting:TextModel 不得為空。")
             .Validate(o => !o.Enabled || (o.ChunkChars >= 500 && o.OverlapChars >= 0 && o.OverlapChars <= o.ChunkChars / 2),
                 "Meeting:ChunkChars 至少 500，且 OverlapChars 不得超過其一半。")
@@ -34,13 +38,17 @@ public static class ServiceCollectionExtensions
             .Validate(o => !o.Whisper.Enabled || o.Whisper.MaxAudioBytes > 0, "Meeting:Whisper:MaxAudioBytes 必須大於 0。");
 
         services.AddHttpClient(OllamaClient.HttpClientName, c => c.Timeout = Timeout.InfiniteTimeSpan); // 逾時改由每次呼叫的 CancellationToken 控制
+        services.AddHttpClient(OpenAiCompatibleClient.HttpClientName, c => c.Timeout = Timeout.InfiniteTimeSpan);
         services.AddHttpClient(WhisperHttpEngine.HttpClientName, c => c.Timeout = Timeout.InfiniteTimeSpan);
         services.AddSingleton(sp => new MinutesQueue(sp.GetRequiredService<IOptions<MtgOptions>>().Value.QueueCapacity));
         services.AddSingleton(sp => new TranscriptionQueue(sp.GetRequiredService<IOptions<MtgOptions>>().Value.Whisper.QueueCapacity));
         services.AddScoped<ITranscriptionEngine, WhisperHttpEngine>();
         services.AddScoped<MeetingAudioService>();
         services.AddHostedService<TranscriptionWorker>();
-        services.AddScoped<ITextGenerator, OllamaClient>();
+        // 依 Meeting:Provider 選擇文字模型服務；每次解析時才讀設定，改設定後不必重新部署程式（紀要作業每次都會重新解析）
+        services.AddScoped<ITextGenerator>(sp => sp.GetRequiredService<IOptionsMonitor<MtgOptions>>().CurrentValue.UsesOpenAi
+            ? ActivatorUtilities.CreateInstance<OpenAiCompatibleClient>(sp)
+            : ActivatorUtilities.CreateInstance<OllamaClient>(sp));
         services.AddScoped<MapReduceSummarizer>();
         services.AddScoped<MeetingService>();
         services.AddScoped<ActionItemService>();

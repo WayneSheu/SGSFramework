@@ -218,6 +218,12 @@ public class TokenBucketEngine<TUser> where TUser : ApplicationUser, new()
                 ExpiresAt = result.ExpiresAt
             };
         }
+        catch (SecurityTokenException ex) when (ex.Message is "ACCOUNT_FROZEN_OR_INVALID_SESSION" or "TOKEN_REPLAY_ATTACK_DETECTED")
+        {
+            // 預期內的授權失敗（Controller 會回 401），僅記錄警告，不附堆疊以降低噪音
+            _logger.LogWarning("刷新 Session 權杖被拒絕：{Reason}，UserId: {UserId}, DeviceId: {DeviceId}", ex.Message, user.Id, deviceId);
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "刷新 Session 權杖時發生例外，UserId: {UserId}, DeviceId: {DeviceId}", user.Id, deviceId);
