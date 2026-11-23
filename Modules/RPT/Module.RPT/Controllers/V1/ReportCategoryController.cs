@@ -1,4 +1,4 @@
-using System.Net.Mime;
+﻿using System.Net.Mime;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -34,6 +34,13 @@ public sealed class ReportCategoryController(IReportCategoryManagementService ma
     [ProducesResponseType(typeof(IReadOnlyList<ReportCategoryDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> List(CancellationToken cancellationToken = default) =>
         Ok(await _service.ListCategoriesAsync(cancellationToken).ConfigureAwait(false));
+
+    /// <summary>報告類別分頁查詢（篩選、排序、定位指定類別所在頁）</summary>
+    [HttpPost("search")]
+    [RequiresPermission("RPT.REPORTCATEGORY.READ", "檢視報告類別權限")]
+    [ProducesResponseType(typeof(ReportCategorySearchResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> Search([FromBody] ReportCategorySearchRequest request, CancellationToken cancellationToken = default) =>
+        Ok(await _service.SearchCategoriesAsync(request ?? new ReportCategorySearchRequest(), cancellationToken).ConfigureAwait(false));
 
     /// <summary>新增或更新報告類別</summary>
     [HttpPost]

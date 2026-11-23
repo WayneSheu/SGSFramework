@@ -23,6 +23,9 @@ public interface IReportCategoryManagementService
 {
     Task<IReadOnlyList<ReportCategoryDto>> ListCategoriesAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>報告類別分頁查詢（篩選、排序、定位指定類別所在頁）</summary>
+    Task<ReportCategorySearchResult> SearchCategoriesAsync(ReportCategorySearchRequest request, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// 新增或更新報告類別。<paramref name="labScoped"/> 為 true 時代表呼叫者僅具實驗室層級維護權限：
     /// 只能維護目前實驗室的實驗室專屬類別。
@@ -114,10 +117,103 @@ public sealed partial class ReportCategoryManagementService(
 
         var (canManageAll, manageableLabId) = await GetManageScopeAsync(cancellationToken).ConfigureAwait(false);
         return categories.Select(c => ToDto(c, labsByCategory.GetValueOrDefault(c.Code) ?? [],
-            canManageAll || (c.Scope == ReportCategoryScope.Lab && c.OwnerTenantLabId is { } owner && owner == manageableLabId))).ToList();
+            canManageAll || (c.Scope == ReportCategoryScope.Lab && manageableLabId is { } labId &&
+                             (labsByCategory.GetValueOrDefault(c.Code) ?? []).Contains(labId)))).ToList();
     }
 
     public IReadOnlyList<FileStorageCategoryInfo> GetStorageCategories() => fileManagement.GetStorageCategories();
+
+    public async Task<ReportCategorySearchResult> SearchCategoriesAsync(ReportCategorySearchRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var pageSize = Math.Clamp(request.PageSize, 1, 200);
+
+        var all = dbContext.Set<ReportCategory>().AsNoTracking();
+        var allCount = await all.CountAsync(cancellationToken).ConfigureAwait(false);
+        var activeCount = await all.CountAsync(c => c.IsActive, cancellationToken).ConfigureAwait(false);
+
+        // 1. 篩選
+        var query = all;
+        if (!string.IsNullOrWhiteSpace(request.Code))
+        {
+            var code = request.Code.Trim();
+            query = query.Where(c => c.Code.Contains(code));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Name))
+        {
+            var name = request.Name.Trim();
+            query = query.Where(c => c.Name.Contains(name));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            // 儲存分類 / 資料夾未設定時比對預設值（Report、reports/{代碼}）
+            var keyword = request.Keyword.Trim();
+            var defaultCategoryMatches = ReportCategoryStorageDefaults.StorageCategory.Contains(keyword, StringComparison.OrdinalIgnoreCase);
+            query = query.Where(c =>
+                (c.Description != null && c.Description.Contains(keyword)) ||
+                (c.RegulationTags != null && c.RegulationTags.Contains(keyword)) ||
+                (c.StorageCategory != null ? c.StorageCategory.Contains(keyword) : defaultCategoryMatches) ||
+                (c.StorageFolder != null ? c.StorageFolder.Contains(keyword) : ("reports/" + c.Code).Contains(keyword)));
+        }
+
+        if (request.Scope is { } scope) query = query.Where(c => c.Scope == scope);
+        if (request.IsActive is { } isActive) query = query.Where(c => c.IsActive == isActive);
+
+        // 2. 排序（一律以代碼為次序，確保分頁穩定）
+        var desc = request.SortDescending;
+        IOrderedQueryable<ReportCategory> ordered = (request.SortBy?.Trim().ToLowerInvariant()) switch
+        {
+            "code" => desc ? query.OrderByDescending(c => c.Code) : query.OrderBy(c => c.Code),
+            "name" => (desc ? query.OrderByDescending(c => c.Name) : query.OrderBy(c => c.Name)).ThenBy(c => c.Code),
+            "scope" => (desc ? query.OrderByDescending(c => c.Scope) : query.OrderBy(c => c.Scope)).ThenBy(c => c.Code),
+            "status" => (desc ? query.OrderBy(c => c.IsActive) : query.OrderByDescending(c => c.IsActive)).ThenBy(c => c.Code),
+            _ => query.OrderBy(c => c.DisplayOrder).ThenBy(c => c.Code)
+        };
+
+        var totalCount = await query.CountAsync(cancellationToken).ConfigureAwait(false);
+
+        // 3. 定位：存檔後切換至指定類別所在頁
+        var pageIndex = Math.Max(1, request.PageIndex);
+        var focusFound = false;
+        if (!string.IsNullOrWhiteSpace(request.FocusCode))
+        {
+            var focus = request.FocusCode.Trim().ToUpperInvariant();
+            var codes = await ordered.Select(c => c.Code).ToListAsync(cancellationToken).ConfigureAwait(false);
+            var index = codes.FindIndex(c => string.Equals(c, focus, StringComparison.OrdinalIgnoreCase));
+            if (index >= 0)
+            {
+                focusFound = true;
+                pageIndex = index / pageSize + 1;
+            }
+        }
+
+        var maxPage = Math.Max(1, (int)Math.Ceiling(totalCount / (double)pageSize));
+        pageIndex = Math.Min(pageIndex, maxPage);
+
+        var items = await ordered.Skip((pageIndex - 1) * pageSize).Take(pageSize)
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        // 4. 本頁類別的承作 / 所屬實驗室與可維護判斷
+        var pageCodes = items.Select(c => c.Code).ToList();
+        var labsByCategory = (await dbContext.Set<ReportCategoryLabAssignment>().AsNoTracking()
+                .Where(a => pageCodes.Contains(a.CategoryCode))
+                .Select(a => new { a.CategoryCode, a.TenantLabId })
+                .ToListAsync(cancellationToken).ConfigureAwait(false))
+            .GroupBy(a => a.CategoryCode, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<Guid>)g.Select(a => a.TenantLabId).ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var (canManageAll, manageableLabId) = await GetManageScopeAsync(cancellationToken).ConfigureAwait(false);
+        var dtos = items.Select(c =>
+        {
+            var labs = labsByCategory.GetValueOrDefault(c.Code) ?? [];
+            var canManage = canManageAll || (c.Scope == ReportCategoryScope.Lab && manageableLabId is { } labId && labs.Contains(labId));
+            return ToDto(c, labs, canManage);
+        }).ToList();
+
+        return new ReportCategorySearchResult(dtos, totalCount, pageIndex, pageSize, allCount, activeCount, focusFound);
+    }
 
     public async Task<ReportCategoryManageScopeDto> GetManageScopeDtoAsync(CancellationToken cancellationToken = default)
     {
@@ -133,14 +229,20 @@ public sealed partial class ReportCategoryManagementService(
         var name = request.Name?.Trim() ?? string.Empty;
         if (name.Length == 0) return (false, "請填寫類別名稱。", null);
 
-        // 1. 適用範圍：實驗室專屬須指定所屬實驗室；實驗室層級維護者只能維護目前實驗室的專屬類別
-        Guid? ownerLabId = request.Scope == ReportCategoryScope.Lab ? request.OwnerTenantLabId : null;
+        // 1. 適用範圍：實驗室專屬須指定一個以上所屬實驗室（多個區域實驗室可共同隸屬）
+        var ownerLabIds = new List<Guid>();
         if (request.Scope == ReportCategoryScope.Lab)
         {
-            if (ownerLabId is not { } owner || owner == Guid.Empty) return (false, "實驗室專屬類別須指定所屬實驗室。", null);
-            if (await orgIntegrationService.GetOrganizationByIdAsync(owner, cancellationToken).ConfigureAwait(false) is null)
+            ownerLabIds = (request.OwnerTenantLabIds is { Count: > 0 } ids ? ids : request.OwnerTenantLabId is { } single ? [single] : [])
+                .Where(id => id != Guid.Empty).Distinct().ToList();
+            if (ownerLabIds.Count == 0) return (false, "實驗室專屬類別須指定至少一個所屬實驗室。", null);
+
+            foreach (var labId in ownerLabIds)
             {
-                return (false, "找不到指定的所屬實驗室。", null);
+                if (await orgIntegrationService.GetOrganizationByIdAsync(labId, cancellationToken).ConfigureAwait(false) is null)
+                {
+                    return (false, $"找不到指定的所屬實驗室（{labId}）。", null);
+                }
             }
         }
 
@@ -148,9 +250,15 @@ public sealed partial class ReportCategoryManagementService(
         if (!canManageAll)
         {
             if (!labScoped || manageableLabId is null) return (false, "您不具維護報告類別的權限。", null);
-            if (request.Scope != ReportCategoryScope.Lab || ownerLabId != manageableLabId)
+            if (request.Scope != ReportCategoryScope.Lab)
             {
-                return (false, "實驗室層級維護者僅能維護目前實驗室的實驗室專屬類別；全域類別須由系統管理者維護。", null);
+                return (false, "實驗室層級維護者僅能維護實驗室專屬類別；全域類別須由系統管理者維護。", null);
+            }
+
+            // 新增時僅能隸屬目前實驗室；跨實驗室共同隸屬須由系統管理者設定
+            if (request.Id is null && (ownerLabIds.Count != 1 || ownerLabIds[0] != manageableLabId))
+            {
+                return (false, "實驗室層級維護者僅能建立隸屬目前實驗室的類別；如需多個實驗室共同隸屬，請洽系統管理者。", null);
             }
         }
 
@@ -180,10 +288,21 @@ public sealed partial class ReportCategoryManagementService(
                 return (false, "類別代碼建立後不可變更（授權與報告皆以代碼參照）。", null);
             }
 
-            // 實驗室層級維護者不可接管其他實驗室或全域類別
-            if (!canManageAll && (found.Scope != ReportCategoryScope.Lab || found.OwnerTenantLabId != manageableLabId))
+            // 實驗室層級維護者：僅能維護所屬實驗室包含目前實驗室者，且不可變更所屬實驗室組成
+            if (!canManageAll)
             {
-                return (false, "您僅能維護目前實驗室的實驗室專屬類別。", null);
+                var currentLabs = await dbContext.Set<ReportCategoryLabAssignment>().AsNoTracking()
+                    .Where(a => a.CategoryCode == found.Code).Select(a => a.TenantLabId)
+                    .ToListAsync(cancellationToken).ConfigureAwait(false);
+                if (found.Scope != ReportCategoryScope.Lab || !currentLabs.Contains(manageableLabId!.Value))
+                {
+                    return (false, "您僅能維護隸屬目前實驗室的實驗室專屬類別。", null);
+                }
+
+                if (!currentLabs.ToHashSet().SetEquals(ownerLabIds))
+                {
+                    return (false, "所屬實驗室的增減須由系統管理者調整。", null);
+                }
             }
 
             // 樂觀鎖：以前端讀取時的版本比對，避免覆蓋他人同時間的修改
@@ -202,17 +321,19 @@ public sealed partial class ReportCategoryManagementService(
         entity.DisplayOrder = request.DisplayOrder;
         entity.IsActive = request.IsActive;
         entity.Scope = request.Scope;
-        entity.OwnerTenantLabId = ownerLabId;
+        // 主責實驗室：保留原主責（仍在清單內時），否則取第一個
+        entity.OwnerTenantLabId = ownerLabIds.Count == 0 ? null
+            : entity.OwnerTenantLabId is { } primary && ownerLabIds.Contains(primary) ? primary : ownerLabIds[0];
         entity.StorageCategory = TrimToNull(request.StorageCategory);
         entity.StorageFolder = TrimToNull(request.StorageFolder)?.Replace('\\', '/').Trim('/');
         entity.EncryptAtRest = request.EncryptAtRest;
         entity.WatermarkOnDownload = request.WatermarkOnDownload;
         entity.TamperVerification = request.TamperVerification;
 
-        // 實驗室專屬類別：承作實驗室固定為所屬實驗室（同一交易內同步）
+        // 實驗室專屬類別：承作實驗室固定為所屬實驗室（可多個，同一交易內同步）
         if (entity.Scope == ReportCategoryScope.Lab)
         {
-            await SyncLabAssignmentsAsync(entity.Code, [entity.OwnerTenantLabId!.Value], cancellationToken).ConfigureAwait(false);
+            await SyncLabAssignmentsAsync(entity.Code, ownerLabIds, cancellationToken).ConfigureAwait(false);
         }
 
         try
@@ -346,10 +467,10 @@ public sealed partial class ReportCategoryManagementService(
 
         var targetIds = tenantLabIds.Where(id => id != Guid.Empty).Distinct().ToList();
 
-        // 實驗室專屬類別的承作實驗室固定為所屬實驗室
-        if (category.Scope == ReportCategoryScope.Lab && (targetIds.Count != 1 || targetIds[0] != category.OwnerTenantLabId))
+        // 實驗室專屬類別的承作實驗室即所屬實驗室，不可為空
+        if (category.Scope == ReportCategoryScope.Lab && targetIds.Count == 0)
         {
-            return (false, $"「{category.Name}」為實驗室專屬類別，僅能由所屬實驗室承作；如需多個實驗室承作請改為全域類別。");
+            return (false, $"「{category.Name}」為實驗室專屬類別，須至少隸屬一個區域實驗室。");
         }
 
         foreach (var labId in targetIds)
@@ -360,6 +481,14 @@ public sealed partial class ReportCategoryManagementService(
 
         var actorName = CurrentActor().Name;
         await SyncLabAssignmentsAsync(category.Code, targetIds, cancellationToken).ConfigureAwait(false);
+
+        // 實驗室專屬：主責實驗室被移除時改為第一個所屬實驗室
+        if (category.Scope == ReportCategoryScope.Lab && (category.OwnerTenantLabId is not { } primary || !targetIds.Contains(primary)))
+        {
+            var tracked = await dbContext.Set<ReportCategory>().FirstAsync(c => c.Id == category.Id, cancellationToken).ConfigureAwait(false);
+            tracked.OwnerTenantLabId = targetIds[0];
+        }
+
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await cache.RemoveByTagAsync(ReportAccessCacheTags.All, token: cancellationToken).ConfigureAwait(false);
 
@@ -781,10 +910,12 @@ public sealed partial class ReportCategoryManagementService(
         if (category is null) return ("找不到指定的報告類別。", string.Empty, null);
         if (!category.IsActive) return ($"報告類別「{category.Name}」已停用。", string.Empty, null);
 
-        // 實驗室專屬類別的授權只能限定於所屬實驗室（不限實驗室時亦僅在所屬實驗室生效）
-        if (category.Scope == ReportCategoryScope.Lab && request.TenantLabId.HasValue && request.TenantLabId != category.OwnerTenantLabId)
+        // 實驗室專屬類別的授權只能限定於所屬實驗室之一（不限實驗室時亦僅在所屬實驗室生效）
+        if (category.Scope == ReportCategoryScope.Lab && request.TenantLabId is { } restrictLab &&
+            !await dbContext.Set<ReportCategoryLabAssignment>().AsNoTracking()
+                .AnyAsync(a => a.CategoryCode == category.Code && a.TenantLabId == restrictLab, cancellationToken).ConfigureAwait(false))
         {
-            return ($"「{category.Name}」為實驗室專屬類別，授權只能限定於所屬實驗室。", string.Empty, null);
+            return ($"「{category.Name}」為實驗室專屬類別，授權只能限定於其所屬實驗室。", string.Empty, null);
         }
 
         string labText = "不限實驗室";

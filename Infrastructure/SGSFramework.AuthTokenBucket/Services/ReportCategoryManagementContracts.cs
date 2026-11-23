@@ -15,6 +15,7 @@ public sealed record ReportCategoryDto(
     IReadOnlyList<Guid> TenantLabIds,
     string RowVersion,
     ReportCategoryScope Scope,
+    /// <summary>主責實驗室（建立時第一個所屬實驗室）；實驗室專屬類別的完整所屬實驗室為 TenantLabIds</summary>
     Guid? OwnerTenantLabId,
     string? StorageCategory,
     string? StorageFolder,
@@ -27,7 +28,7 @@ public sealed record ReportCategoryDto(
 
 /// <summary>
 /// 新增（Id 為 null）或更新報告類別；類別代碼建立後不可變更。
-/// 實驗室專屬類別須指定 OwnerTenantLabId，承作實驗室固定為所屬實驗室。
+/// 實驗室專屬類別須指定所屬實驗室（OwnerTenantLabIds，可多個；舊呼叫端可只給 OwnerTenantLabId），承作實驗室固定為所屬實驗室。
 /// </summary>
 public sealed record SaveReportCategoryRequest(
     Guid? Id,
@@ -45,7 +46,42 @@ public sealed record SaveReportCategoryRequest(
     string? StorageFolder = null,
     bool EncryptAtRest = true,
     bool WatermarkOnDownload = false,
-    bool TamperVerification = true);
+    bool TamperVerification = true,
+    IReadOnlyList<Guid>? OwnerTenantLabIds = null);
+
+/// <summary>
+/// 報告類別分頁查詢（POST report-categories/search）。PageIndex 由 1 起算；
+/// FocusCode 有值時改回傳該類別所在的頁（存檔後定位新資料列用），找不到時 FocusFound = false 並回傳 PageIndex 指定的頁。
+/// </summary>
+public sealed class ReportCategorySearchRequest
+{
+    public int PageIndex { get; init; } = 1;
+    public int PageSize { get; init; } = 20;
+    public string? Code { get; init; }
+    public string? Name { get; init; }
+
+    /// <summary>關鍵字：說明、法規標籤、儲存分類、儲存資料夾</summary>
+    public string? Keyword { get; init; }
+
+    public ReportCategoryScope? Scope { get; init; }
+    public bool? IsActive { get; init; }
+
+    /// <summary>排序欄位：code / name / scope / status；空白為排序值 + 代碼</summary>
+    public string? SortBy { get; init; }
+
+    public bool SortDescending { get; init; }
+    public string? FocusCode { get; init; }
+}
+
+/// <summary>報告類別分頁結果（另附全體類別數與啟用數供工具列摘要）</summary>
+public sealed record ReportCategorySearchResult(
+    IReadOnlyList<ReportCategoryDto> Items,
+    int TotalCount,
+    int PageIndex,
+    int PageSize,
+    int AllCount,
+    int ActiveCount,
+    bool FocusFound);
 
 /// <summary>報告類別儲存與資安設定的預設值（RPT 模組與管理介面共用）</summary>
 public static class ReportCategoryStorageDefaults
