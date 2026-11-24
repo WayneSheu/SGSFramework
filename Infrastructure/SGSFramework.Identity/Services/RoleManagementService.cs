@@ -803,7 +803,7 @@ namespace SGSFramework.Identity.Services
                 {
                     entry.Property("Code").CurrentValue = string.IsNullOrWhiteSpace(request.Code) ? null : request.Code.Trim().ToUpperInvariant();
                 }
-                entry.Property("Description").CurrentValue = request.Description;
+                entry.Property("Description").CurrentValue = request.Description?.Trim() ?? string.Empty;
                 entry.Property("ScopeType").CurrentValue = targetScope;
                 entry.Property("HierarchyLevel").CurrentValue = targetLevel;
                 entry.Property("TenantLabId").CurrentValue = targetLabId;
@@ -818,7 +818,7 @@ namespace SGSFramework.Identity.Services
                     await SaveRoleLabScopesAsync(RoleGuid(role), targetLabIds, cancellationToken).ConfigureAwait(false);
                     var changes = new List<string>();
                     if (!string.Equals(oldName, role.Name, StringComparison.Ordinal)) changes.Add($"名稱「{oldName}」→「{role.Name}」");
-                    if (!string.Equals(oldDescription, request.Description ?? string.Empty, StringComparison.Ordinal)) changes.Add("描述已更新");
+                    if (!string.Equals(oldDescription, request.Description?.Trim() ?? string.Empty, StringComparison.Ordinal)) changes.Add("描述已更新");
                     if (oldScope != targetScope) changes.Add($"範圍「{oldScope.GetDisplayName()}」→「{targetScope.GetDisplayName()}」");
                     if (!oldLabIds.ToHashSet().SetEquals(targetLabIds)) changes.Add($"適用實驗室 {oldLabIds.Count} → {targetLabIds.Count} 個");
                     if (request.RequiresAuditAssignment.HasValue && request.RequiresAuditAssignment.Value != oldAudit)

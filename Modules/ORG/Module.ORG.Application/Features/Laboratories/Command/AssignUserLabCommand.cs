@@ -20,7 +20,7 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Command
         Guid UserId,
         int LabId,
         Guid TenantLabId,
-        bool IsPrimary,
+        LabAssignmentType AssignmentType,
         string? JobTitle = null,
         DateTime? EffectiveDate = null,
         DateTime? ExpiryDate = null,
@@ -89,8 +89,32 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Command
                     : null;
 
                 // 4. 判斷是否需要自動設為主要實驗室
+                bool isSupport = request.AssignmentType == LabAssignmentType.Support;
+
+                // 支援期間的「迄日（含）」涵蓋整天：失效時間設為迄日當天結束（其他類別維持原行為）
+                if (isSupport && resolvedExpiryDate.HasValue)
+                {
+                    resolvedExpiryDate = resolvedExpiryDate.Value.AddDays(1).AddTicks(-1);
+                }
+
+                if (isSupport && !resolvedExpiryDate.HasValue)
+                {
+                    return Result.Failure<bool>(
+                        Error.Validation("USERLAB_SUPPORT_EXPIRY_REQUIRED", "支援類別必須設定生效結束日。"));
+                }
+
+                if (isSupport && targetMapping is { IsActive: true, IsPrimary: true })
+                {
+                    return Result.Failure<bool>(
+                        Error.Validation("USERLAB_SUPPORT_CANNOT_BE_PRIMARY", "該實驗室為使用者目前的主要實驗室，不可改為支援。請先指定其他主要實驗室。"));
+                }
+
                 bool hasAnyActivePrimary = existingMappings.Any(x => x.IsActive && x.IsPrimary);
-                bool shouldBePrimary = request.IsPrimary || !existingMappings.Any() || !hasAnyActivePrimary;
+                bool shouldBePrimary = !isSupport
+                    && (request.AssignmentType == LabAssignmentType.Primary || !hasAnyActivePrimary);
+                var resolvedType = isSupport
+                    ? LabAssignmentType.Support
+                    : shouldBePrimary ? LabAssignmentType.Primary : LabAssignmentType.Secondary;
 
                 // 5. 若指定或自動判定為主要實驗室，需將既有其他主要實驗室降級為次要
                 if (shouldBePrimary)
@@ -106,7 +130,7 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Command
                         userId: request.UserId,
                         labId: request.LabId,
                         tenantLabId: request.TenantLabId,
-                        isPrimary: shouldBePrimary,
+                        assignmentType: resolvedType,
                         jobTitle: request.JobTitle,
                         effectiveDate: resolvedEffectiveDate,
                         expiryDate: resolvedExpiryDate,
@@ -119,7 +143,7 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Command
                 {
                     targetMapping.UpdateDetails(
                         tenantLabId: request.TenantLabId,
-                        isPrimary: shouldBePrimary,
+                        assignmentType: resolvedType,
                         jobTitle: request.JobTitle,
                         effectiveDate: resolvedEffectiveDate,
                         expiryDate: resolvedExpiryDate,

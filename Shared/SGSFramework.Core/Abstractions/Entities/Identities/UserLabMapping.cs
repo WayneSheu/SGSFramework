@@ -32,9 +32,23 @@ public class UserLabMapping : IAuditable
     [Comment("區域實驗室識別鍵")]
     public Guid TenantLabId { get; private set; }
     
+    [DisplayName("歸屬類別")]
+    [Comment("歸屬類別：0=主要、1=兼任、2=支援")]
+    public LabAssignmentType AssignmentType { get; private set; }
+
+    /// <summary>
+    /// 是否為主要實驗室。由 AssignmentType 衍生（資料庫為計算欄位，唯讀），
+    /// 變更請透過 AssignmentType / 領域方法。
+    /// </summary>
     [DisplayName("是否為主要實驗室")]
-    [Comment("是否為主要實驗室")]
+    [Comment("是否為主要實驗室（由 AssignmentType 計算，唯讀）")]
     public bool IsPrimary { get; private set; }
+
+    private void SetType(LabAssignmentType type)
+    {
+        AssignmentType = type;
+        IsPrimary = type == LabAssignmentType.Primary;
+    }
     
     [DisplayName("職位標題")]
     [Comment("職位標題")]
@@ -85,6 +99,22 @@ public class UserLabMapping : IAuditable
         DateTimeOffset? effectiveDate = null,
         DateTimeOffset? expiryDate = null,
         string? operatorId = null)
+        => Create(userId, labId, tenantLabId,
+            isPrimary ? LabAssignmentType.Primary : LabAssignmentType.Secondary,
+            jobTitle, effectiveDate, expiryDate, operatorId);
+
+    /// <summary>
+    /// 以歸屬類別建立（支援類別須設定失效日）
+    /// </summary>
+    public static UserLabMapping Create(
+        Guid userId,
+        int labId,
+        Guid tenantLabId,
+        LabAssignmentType assignmentType,
+        string? jobTitle = null,
+        DateTimeOffset? effectiveDate = null,
+        DateTimeOffset? expiryDate = null,
+        string? operatorId = null)
     {
         var resolvedEffectiveDate = effectiveDate.HasValue
             ? TimeZoneInfo.ConvertTime(effectiveDate.Value, TaiwanTimeZone)
@@ -95,14 +125,14 @@ public class UserLabMapping : IAuditable
             : null;
 
         ValidateInputs(userId, labId, tenantLabId, resolvedEffectiveDate, resolvedExpiryDate);
+        ValidateSupportPeriod(assignmentType, resolvedExpiryDate);
 
         var nowUtc = DateTimeOffset.UtcNow;
-        return new UserLabMapping
+        var created = new UserLabMapping
         {
             UserId = userId,
             LabId = labId,
             TenantLabId = tenantLabId,
-            IsPrimary = isPrimary,
             JobTitle = jobTitle?.Trim(),
             EffectiveDate = resolvedEffectiveDate,
             ExpiryDate = resolvedExpiryDate,
@@ -110,7 +140,22 @@ public class UserLabMapping : IAuditable
             CreatedAtUtc = nowUtc,
             CreatedBy = operatorId
         };
+        created.SetType(assignmentType);
+        return created;
     }
+
+    /// <summary>
+    /// 創建支援用戶實驗室關聯（須有失效日）
+    /// </summary>
+    public static UserLabMapping CreateSupport(
+        Guid userId,
+        int labId,
+        Guid tenantLabId,
+        DateTimeOffset expiryDate,
+        string? jobTitle = null,
+        DateTimeOffset? effectiveDate = null,
+        string? operatorId = null)
+        => Create(userId, labId, tenantLabId, LabAssignmentType.Support, jobTitle, effectiveDate, expiryDate, operatorId);
 
     /// <summary>
     /// 創建主要用戶實驗室關聯
@@ -152,6 +197,17 @@ public class UserLabMapping : IAuditable
         DateTimeOffset effectiveDate,
         DateTimeOffset? expiryDate,
         string? operatorId = null)
+        => UpdateDetails(tenantLabId,
+            isPrimary ? LabAssignmentType.Primary : LabAssignmentType.Secondary,
+            jobTitle, effectiveDate, expiryDate, operatorId);
+
+    public void UpdateDetails(
+        Guid tenantLabId,
+        LabAssignmentType assignmentType,
+        string? jobTitle,
+        DateTimeOffset effectiveDate,
+        DateTimeOffset? expiryDate,
+        string? operatorId = null)
     {
         if (tenantLabId == Guid.Empty) throw new ArgumentException("TenantLabId 不能為 Empty Guid。", nameof(tenantLabId));
 
@@ -162,9 +218,10 @@ public class UserLabMapping : IAuditable
 
         if (resolvedExpiryDate.HasValue && resolvedEffectiveDate > resolvedExpiryDate.Value)
             throw new ArgumentException("生效起始日不得大於生效結束日。");
+        ValidateSupportPeriod(assignmentType, resolvedExpiryDate);
 
         TenantLabId = tenantLabId;
-        IsPrimary = isPrimary;
+        SetType(assignmentType);
         JobTitle = jobTitle?.Trim();
         EffectiveDate = resolvedEffectiveDate;
         ExpiryDate = resolvedExpiryDate;
@@ -175,13 +232,13 @@ public class UserLabMapping : IAuditable
 
     public void DemoteToSecondary(string? operatorId = null)
     {
-        IsPrimary = false;
+        SetType(LabAssignmentType.Secondary);
         SetUpdated(operatorId);
     }
 
     public void PromoteToPrimary(string? operatorId = null)
     {
-        IsPrimary = true;
+        SetType(LabAssignmentType.Primary);
         SetUpdated(operatorId);
     }
 
@@ -195,6 +252,12 @@ public class UserLabMapping : IAuditable
     {
         UpdatedAtUtc = DateTimeOffset.UtcNow;
         UpdatedBy = operatorId;
+    }
+
+    private static void ValidateSupportPeriod(LabAssignmentType type, DateTimeOffset? expiryDate)
+    {
+        if (type == LabAssignmentType.Support && !expiryDate.HasValue)
+            throw new ArgumentException("支援類別必須設定生效結束日。");
     }
 
     private static void ValidateInputs(Guid userId, int labId, Guid tenantLabId, DateTimeOffset effectiveDate, DateTimeOffset? expiryDate)
@@ -246,9 +309,14 @@ public class UserLabMappingConfiguration : IEntityTypeConfiguration<UserLabMappi
         builder.Property(x => x.TenantLabId)
             .IsRequired();
 
+        builder.Property(x => x.AssignmentType)
+            .HasConversion<int>()
+            .IsRequired();
+
+        // IsPrimary 改為由 AssignmentType 計算的唯讀欄位，保留給既有 LINQ 查詢與視圖使用
         builder.Property(x => x.IsPrimary)
-            .IsRequired()
-            .HasDefaultValue(false);
+            .HasComputedColumnSql("CASE WHEN [AssignmentType] = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END")
+            .ValueGeneratedOnAddOrUpdate();
 
         builder.Property(x => x.JobTitle)
             .HasMaxLength(50)
@@ -296,7 +364,7 @@ public class UserLabMappingConfiguration : IEntityTypeConfiguration<UserLabMappi
         // MSSQL 2025 唯一性過濾索引：強制單一使用者在啟用狀態下僅能有一個 IsPrimary = 1 的主要實驗室
         builder.HasIndex(x => x.UserId)
             .IsUnique()
-            .HasFilter("[IsPrimary] = 1 AND [IsActive] = 1")
+            .HasFilter("[AssignmentType] = 0 AND [IsActive] = 1")
             .HasDatabaseName("UX_UserLabMappings_OnePrimaryPerUser");
 
         // 多租戶（TenantLabId）快速查詢與資料隔離檢索索引
@@ -308,7 +376,7 @@ public class UserLabMappingConfiguration : IEntityTypeConfiguration<UserLabMappi
             .HasDatabaseName("IX_UserLabMappings_EffectiveRange");
 
         // 新增優化索引：加速前端列表依使用者狀態與主實驗室排序的檢索效能
-        builder.HasIndex(x => new { x.UserId, x.IsActive, x.IsPrimary })
+        builder.HasIndex(x => new { x.UserId, x.IsActive, x.AssignmentType })
             .HasDatabaseName("IX_UserLabMappings_User_Active_Primary");
     }
 }

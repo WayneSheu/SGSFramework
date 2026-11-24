@@ -84,7 +84,8 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Command
                 // 4. 處理刪除：既有資料不在輸入清單中，且目前為啟用狀態者進行停用/刪除處理
                 foreach (var existing in existingMappings)
                 {
-                    if (!inputLabIds.Contains(existing.LabId))
+                    // 支援類別由「實驗室支援」專頁維護，批次同步不得刪除
+                    if (existing.AssignmentType != LabAssignmentType.Support && !inputLabIds.Contains(existing.LabId))
                     {
                         _context.Set<UserLabMapping>().Remove(existing);
                     }
@@ -94,6 +95,9 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Command
                 foreach (var dto in assignments)
                 {
                     var existing = existingMappings.FirstOrDefault(x => x.LabId == dto.LabId);
+
+                    // 支援類別不經此批次流程覆寫
+                    if (existing is { AssignmentType: LabAssignmentType.Support }) continue;
 
                     if (existing is null)
                     {

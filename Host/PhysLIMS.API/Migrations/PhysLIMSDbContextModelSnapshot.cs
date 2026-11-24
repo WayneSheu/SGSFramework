@@ -1202,6 +1202,20 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasComment("受稽核的區域實驗室（ORG Organization.TenantLabId）");
 
+                    b.Property<string>("UpdateNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasComment("最後一次修改的異動摘要（例：期間、稽核員、實驗室變更前後）");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("最後修改時間（未曾修改為 null）");
+
+                    b.Property<string>("UpdatedByName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("最後修改人員名稱");
+
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier")
                         .HasComment("使用者識別鍵");
@@ -1215,6 +1229,52 @@ namespace PhysLIMS.API.Migrations
                     b.ToTable("LabAuditAssignments", "core", t =>
                         {
                             t.HasComment("實驗室稽核指派：指定使用者於起訖期間內對某區域實驗室執行稽核職責。有效期間內，使用者所持有的稽核角色（ApplicationRole.RequiresAuditAssignment）權限於該實驗室生效，且該實驗室會出現在使用者可切換的實驗室清單中；期間外或撤銷後自動失效。紀錄不刪除，保留完整稽核軌跡。");
+                        });
+                });
+
+            modelBuilder.Entity("SGSFramework.Core.Abstractions.Entities.Identities.LabAuditAssignmentHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("識別主鍵");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasComment("事件類型：created / updated / revoked");
+
+                    b.Property<Guid?>("ActorId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("操作人員識別鍵");
+
+                    b.Property<string>("ActorName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasComment("操作人員名稱");
+
+                    b.Property<Guid>("AssignmentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasComment("稽核指派識別鍵（LabAuditAssignment.Id）");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasComment("發生時間");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(1500)
+                        .HasColumnType("nvarchar(1500)")
+                        .HasComment("異動摘要（建立：稽核員 / 實驗室 / 期間 / 原因；修改：變更前後；撤銷：撤銷原因）");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignmentId", "OccurredAt");
+
+                    b.ToTable("LabAuditAssignmentHistories", "core", t =>
+                        {
+                            t.HasComment("實驗室稽核指派異動歷程：每次建立、修改、撤銷各留一筆不可變更的事件，保留完整稽核軌跡（LabAuditAssignment 本身只保留最新狀態）。");
                         });
                 });
 
@@ -1384,6 +1444,10 @@ namespace PhysLIMS.API.Migrations
                         .HasColumnType("int")
                         .HasComment("實驗室識別鍵");
 
+                    b.Property<int>("AssignmentType")
+                        .HasColumnType("int")
+                        .HasComment("歸屬類別：0=主要、1=兼任、2=支援");
+
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetimeoffset(7)")
@@ -1410,10 +1474,10 @@ namespace PhysLIMS.API.Migrations
                         .HasComment("是否啟用");
 
                     b.Property<bool>("IsPrimary")
-                        .ValueGeneratedOnAdd()
+                        .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("bit")
-                        .HasDefaultValue(false)
-                        .HasComment("是否為主要實驗室");
+                        .HasComputedColumnSql("CASE WHEN [AssignmentType] = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END")
+                        .HasComment("是否為主要實驗室（由 AssignmentType 計算，唯讀）");
 
                     b.Property<string>("JobTitle")
                         .HasMaxLength(50)
@@ -1438,12 +1502,12 @@ namespace PhysLIMS.API.Migrations
                     b.HasIndex("UserId")
                         .IsUnique()
                         .HasDatabaseName("UX_UserLabMappings_OnePrimaryPerUser")
-                        .HasFilter("[IsPrimary] = 1 AND [IsActive] = 1");
+                        .HasFilter("[AssignmentType] = 0 AND [IsActive] = 1");
 
                     b.HasIndex("TenantLabId", "UserId", "IsActive")
                         .HasDatabaseName("IX_UserLabMappings_TenantLabId_UserId");
 
-                    b.HasIndex("UserId", "IsActive", "IsPrimary")
+                    b.HasIndex("UserId", "IsActive", "AssignmentType")
                         .HasDatabaseName("IX_UserLabMappings_User_Active_Primary");
 
                     b.HasIndex("UserId", "IsActive", "EffectiveDate", "ExpiryDate")

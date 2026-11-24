@@ -59,17 +59,22 @@ whisper.cpp server（`--inference-path /v1/audio/transcriptions`）、faster-whi
 音檔整檔讀入記憶體（不落地）後送出，上限 `MaxAudioBytes`（預設 100 MB，須 ≤ FMS 分類 `meeting-audio` 的上限）。環境變數：`Meeting__Whisper__Enabled=true`、`Meeting__Whisper__BaseUrl=http://主機:8080`。
 **繁體中文輸出**：實測 Whisper 沒有提示詞時整段輸出簡體；任何繁體提示詞都能讓輸出改為繁體。所以中文（`Language` 為 zh 或自動偵測）轉錄一律帶一句「以下是繁體中文的會議記錄。」，再附加術語表的術語；術語表是空的也一樣。語言設為非中文時不帶此句。輸出的用字仍是模型的選擇（例如「周會」而非「週會」），可在術語表加誤聽詞（`周會` → `週會`）統一。辨識錯字（例如把「遷移」聽成「簽」）同樣用術語表的誤聽詞修正；術語本身進提示詞後也會提高辨識正確率。
 
+**實測效能（GPU，2026-11-24）**：改用自行編譯的 whisper.cpp **Vulkan 版**（Intel Arc B390）後，7 個測試音檔共 415 秒音訊由 CPU 的 291 秒降到 20.8 秒（快 14 倍；84 秒的會議音檔 3–5 秒、一句 5 秒的話約 0.6 秒），文字品質沒有退化。見下方「GPU 版」。以下為**純 CPU** 的歷史數據：
+
 **實測效能**（本機純 CPU、large-v3-turbo q5_0、8 執行緒）：17.8 秒的音檔約 25～37 秒完成，約為音檔長度的 1.4～2 倍。一小時的會議需要約 1.5～2 小時，所以 `TimeoutMinutes` 預設 180；音檔更長或想加快，請改用較小的模型（small q5_1 約 190 MB）或有 GPU／OpenVINO 的主機。
 
-### 本機安裝 whisper-server（Windows）
+### GPU 版 whisper-server（Intel Arc／Vulkan，建議）
+官方 whisper.cpp 發行版沒有 Intel GPU 版本，需自行編譯 Vulkan 版（Visual Studio＋CMake＋LunarG Vulkan SDK 的 `glslc`）。本機已建置於 `C:\Users\user\whisper-cpp\bin-vulkan`，建置步驟見 `C:\Users\user\whisper-cpp-vulkan\README.txt`。啟動 `start-whisper-server.ps1`（預設 GPU，`-Cpu` 退回 CPU 版）。執行時只需要系統 `vulkan-1.dll` 與 VC++ 執行階段。完整比較與注意事項見雲端硬碟《部署安裝手冊》§3.1。
+
+### 本機安裝 whisper-server（Windows，CPU 版）
 1. 下載 whisper.cpp 發行檔 `whisper-bin-x64.zip`（github.com/ggml-org/whisper.cpp releases，CPU 版，內含 `whisper-server.exe`）與模型 `ggml-large-v3-turbo-q5_0.bin`（huggingface.co/ggerganov/whisper.cpp）。
 2. 以 PowerShell 啟動：`whisper-server.exe -m <模型> --host 127.0.0.1 --port 8081 --inference-path /v1/audio/transcriptions -t 8 -l zh`。
 3. **在 Git Bash 啟動要加 `MSYS_NO_PATHCONV=1`**，且模型路徑用 Windows 格式；否則 `--inference-path` 會被轉成 `C:/Program Files/Git/...` 導致 404。
 4. 設定 `Meeting__Whisper__Enabled=true`、`Meeting__Whisper__BaseUrl=http://localhost:8081`。
-5. wav 以外的格式（mp3、m4a…）要加 `--convert` 並在伺服器安裝 ffmpeg；否則請先轉成 16 kHz 單聲道 wav。
+5. wav 以外的格式（mp3、m4a、mp4…）要加 `--convert` 並在伺服器安裝 ffmpeg；否則請先轉成 16 kHz 單聲道 wav。
 
 ### FMS 音訊支援
-FMS 的簽章檢查已擴充 wav、mp3、m4a、ogg、flac、webm（只驗證容器檔頭，不解碼）。須在 FMS 分類明確開放，`appsettings.json` 已加入分類 `meeting-audio`（加密、非通用 API、100 MB）。
+FMS 的簽章檢查已擴充 wav、mp3、m4a、mp4、ogg、flac、webm（只驗證容器檔頭，不解碼）。須在 FMS 分類明確開放，`appsettings.json` 已加入分類 `meeting-audio`（加密、非通用 API、100 MB）。
 
 ## 待辦事項與 PMS 專案（M5）
 - **抽取**：紀要產生完成後，`MinutesWorker` 自動抽取一次（失敗只記錄，不影響紀要）；也可手動重新抽取。先解析紀要中標題含「待辦」的表格（依表頭辨識欄位）；沒有表格（客戶訪談、架構評審、週會場景）才請模型輸出 JSON。「下週五」「11/30」「12月4日前」等期限會依**會議當天（台灣時間）**換算成日期，「第三周」「盡快」這類無法確定的只保留原文，不猜。

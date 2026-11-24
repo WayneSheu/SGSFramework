@@ -68,6 +68,20 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
         [Comment("撤銷原因")]   
         public string? RevokeReason { get; set; }
 
+        /// <summary>最後修改時間（未曾修改為 null）</summary>
+        [DisplayName("最後修改時間")]
+        [Comment("最後修改時間（未曾修改為 null）")]
+        public DateTimeOffset? UpdatedAt { get; set; }
+
+        [DisplayName("最後修改人員名稱")]
+        [Comment("最後修改人員名稱")]
+        public string? UpdatedByName { get; set; }
+
+        /// <summary>最後一次修改的異動摘要（例：期間、稽核員、實驗室變更前後）</summary>
+        [DisplayName("最後修改異動摘要")]
+        [Comment("最後一次修改的異動摘要（例：期間、稽核員、實驗室變更前後）")]
+        public string? UpdateNote { get; set; }
+
         /// <summary>指定時間點是否有效（未撤銷且於起訖期間內）</summary>
         [DisplayName("指定時間點是否有效（未撤銷且於起訖期間內）")]
         public bool IsActiveAt(DateTimeOffset now) => RevokedAt is null && EffectiveFrom <= now && now <= EffectiveTo;
@@ -86,6 +100,8 @@ namespace SGSFramework.Core.Abstractions.Entities.Identities
             builder.Property(x => x.AssignedByName).HasMaxLength(256);
             builder.Property(x => x.RevokedByName).HasMaxLength(256);
             builder.Property(x => x.RevokeReason).HasMaxLength(500);
+            builder.Property(x => x.UpdatedByName).HasMaxLength(256);
+            builder.Property(x => x.UpdateNote).HasMaxLength(1000);
             builder.HasIndex(x => new { x.UserId, x.TenantLabId });
             builder.HasIndex(x => x.TenantLabId);
         }

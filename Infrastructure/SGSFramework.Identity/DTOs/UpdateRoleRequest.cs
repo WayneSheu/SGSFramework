@@ -39,6 +39,8 @@ namespace SGSFramework.Identity.DTOs
 
 
 
-        public string Description { get; set; } = string.Empty;
+        /// <summary>角色描述（選填）；宣告為可空，避免 MVC 對不可為 null 的參照型別隱含 [Required]，造成沒有描述的角色（例如系統內建角色）無法編輯</summary>
+        [StringLength(512, ErrorMessage = "角色描述長度不能超過 512 個字元")]
+        public string? Description { get; set; } = string.Empty;
     }
 }

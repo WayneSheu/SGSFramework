@@ -47,6 +47,12 @@ namespace SGSFramework.Identity.Options
         public bool AssignAll { get; set; } = false;
 
         /// <summary>
+        /// 是否為稽核角色（權限僅於有效稽核指派的實驗室生效）。設為 true 時，啟動同步會確保角色旗標為 true；
+        /// 未設定或 false 時不變更既有旗標，保留管理者於角色管理的調整。
+        /// </summary>
+        public bool RequiresAuditAssignment { get; set; } = false;
+
+        /// <summary>
         /// 包含的權限 Key 或萬用字元前綴 (例如: "ORG.*", "SYSTEM.USERMANAGEMENT.READ")
         /// </summary>
         public List<string> IncludeKeys { get; set; } = new();

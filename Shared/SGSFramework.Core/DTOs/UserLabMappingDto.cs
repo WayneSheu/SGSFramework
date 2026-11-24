@@ -47,6 +47,11 @@ namespace SGSFramework.Core.DTOs
         public bool IsPrimary { get; init; }
 
         /// <summary>
+        /// 歸屬類別（主要 / 兼任 / 支援）
+        /// </summary>
+        public SGSFramework.Core.Abstractions.Entities.Identities.LabAssignmentType AssignmentType { get; init; }
+
+        /// <summary>
         /// 職位標題
         /// </summary>
         public string? JobTitle { get; init; }

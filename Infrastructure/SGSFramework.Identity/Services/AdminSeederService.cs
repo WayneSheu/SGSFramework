@@ -118,7 +118,8 @@ namespace SGSFramework.Identity.Services
                             IsSystemRole = true,
                             ScopeType = inferredScope,
                             HierarchyLevel = inferredLevel,
-                            TenantLabId = null
+                            TenantLabId = null,
+                            RequiresAuditAssignment = rule.RequiresAuditAssignment
                         };
 
                         var createRoleResult = await _roleManager.CreateAsync(role).ConfigureAwait(false);
@@ -144,6 +145,9 @@ namespace SGSFramework.Identity.Services
                         // 同步檢查 Scope 與 Level 是否需要修正
                         if (role.ScopeType != inferredScope) { role.ScopeType = inferredScope; needsUpdate = true; }
                         if (role.HierarchyLevel != inferredLevel) { role.HierarchyLevel = inferredLevel; needsUpdate = true; }
+
+                        // 稽核角色旗標：設定檔指定為 true 時確保啟用（migration 當時角色尚未建立會漏設）
+                        if (rule.RequiresAuditAssignment && !role.RequiresAuditAssignment) { role.RequiresAuditAssignment = true; needsUpdate = true; }
 
                         if (needsUpdate)
                         {

@@ -30,7 +30,7 @@ public interface IFileSignatureInspector
 /// 輕量檔案簽章檢查（不引入第三方套件）：嚴禁只信任檔名副檔名或 HTTP Content-Type。
 /// <list type="bullet">
 /// <item>點陣圖 / PDF：比對檔頭簽章。</item>
-/// <item>音訊（wav / mp3 / m4a / ogg / flac / webm）：比對容器檔頭簽章；只驗證格式，不解碼內容。須由分類的 AllowedExtensions 明確開放。</item>
+/// <item>音訊（wav / mp3 / m4a / mp4 / ogg / flac / webm）：比對容器檔頭簽章；只驗證格式，不解碼內容。須由分類的 AllowedExtensions 明確開放。</item>
 /// <item>OOXML（docx / xlsx / pptx）：ZIP 簽章 + 內容結構（[Content_Types].xml 與 word/、xl/、ppt/ 目錄），並拒絕含巨集（vbaProject.bin）的檔案。</item>
 /// <item>舊版 Office（doc / xls / ppt）：OLE2 複合文件簽章（無法再細分，副檔名限三者之一）。</item>
 /// <item>純文字（txt / csv）：無簽章，改驗證為合法 UTF-8 且不含 NUL 位元組，並拒絕 HTML / Script 開頭。</item>
@@ -67,7 +67,8 @@ public sealed class FileSignatureInspector : IFileSignatureInspector
     {
         ["JPEG"] = [".jpg", ".jpeg"],
         ["TIFF"] = [".tif", ".tiff"],
-        ["OGG"] = [".ogg", ".oga"]
+        ["OGG"] = [".ogg", ".oga"],
+        ["M4A"] = [".m4a", ".mp4"] // MP4 與 M4A 同為 ISO 基礎媒體容器（錄影檔的聲音軌）
     };
 
     private static readonly Dictionary<string, DetectedFileFormat> Ole2Formats = new(StringComparer.Ordinal)
@@ -188,7 +189,7 @@ public sealed class FileSignatureInspector : IFileSignatureInspector
     /// <summary>ISO 基礎媒體檔（MP4 家族）的 ftyp 品牌：僅接受常見的 M4A／MP4 音訊品牌。</summary>
     private static bool IsMp4AudioBrand(ReadOnlySpan<byte> brand) =>
         brand.SequenceEqual("M4A "u8) || brand.SequenceEqual("M4B "u8) || brand.SequenceEqual("mp42"u8) ||
-        brand.SequenceEqual("isom"u8) || brand.SequenceEqual("iso2"u8) || brand.SequenceEqual("mp41"u8);
+        brand.SequenceEqual("isom"u8) || brand.SequenceEqual("iso2"u8) || brand.SequenceEqual("mp41"u8) || brand.SequenceEqual("avc1"u8);
 
     /// <summary>OOXML 結構檢查：須有 [Content_Types].xml，依主要目錄判定 docx / xlsx / pptx，含巨集者拒絕</summary>
     private static (DetectedFileFormat? Format, string? Error) InspectZip(Stream content)

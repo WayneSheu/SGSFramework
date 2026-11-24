@@ -72,6 +72,7 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Queries
                     LabName = lab?.Name ?? string.Empty,
                     LabCode = lab?.Code ?? string.Empty,
                     IsPrimary = m.IsPrimary,
+                    AssignmentType = m.AssignmentType,
                     JobTitle = m.JobTitle,
                     EffectiveDate = m.EffectiveDate,
                     ExpiryDate = m.ExpiryDate,

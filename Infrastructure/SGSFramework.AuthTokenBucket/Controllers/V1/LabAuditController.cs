@@ -64,6 +64,47 @@ public sealed class LabAuditController(ILabAuditService labAuditService) : Contr
         return ok ? Ok(new { Succeeded = true, Message = message, Assignment = assignment }) : Problem400("新增稽核指派失敗", message);
     }
 
+    /// <summary>
+    /// 批次新增稽核指派（多稽核員 × 多實驗室，各自起訖期間）。全有全無；dryRun=true 僅驗證並回傳逐筆錯誤與警告。
+    /// 驗證不通過時回 400，內容仍為逐筆結果，供前端標示。
+    /// </summary>
+    [HttpPost("batch")]
+    [Function("BatchCreateLabAudit", "批次新增稽核指派", Icon = "fa-solid fa-layer-group", Order = 7, Description = "一次指派多位稽核員於多間實驗室，各自設定起訖期間")]
+    [RequiresPermission("ORG.LABAUDIT.MANAGE", "管理稽核指派")]
+    [ProducesResponseType(typeof(BatchCreateLabAuditResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(BatchCreateLabAuditResult), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> BatchCreate([FromBody] BatchCreateLabAuditRequest request, [FromQuery] bool dryRun = false, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var result = await _service.BatchCreateAsync(request, dryRun, cancellationToken).ConfigureAwait(false);
+        return result.Succeeded ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>修改稽核指派（稽核員、實驗室、期間、原因；已撤銷或已到期者不可修改）</summary>
+    [HttpPut("{id:guid}")]
+    [Function("UpdateLabAudit", "修改稽核指派", Icon = "fa-solid fa-pen-to-square", Order = 5, Description = "修改稽核指派的稽核員、實驗室、期間與原因，並保留異動摘要")]
+    [RequiresPermission("ORG.LABAUDIT.MANAGE", "管理稽核指派")]
+    [ProducesResponseType(typeof(LabAuditAssignmentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] UpdateLabAuditRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var (ok, message, assignment) = await _service.UpdateAsync(id, request, cancellationToken).ConfigureAwait(false);
+        return ok ? Ok(new { Succeeded = true, Message = message, Assignment = assignment }) : Problem400("修改稽核指派失敗", message);
+    }
+
+    /// <summary>稽核指派完整異動歷程（建立、修改、撤銷，由舊到新）</summary>
+    [HttpGet("{id:guid}/history")]
+    [Function("GetLabAuditHistory", "檢視稽核指派異動歷程", Icon = "fa-solid fa-clock-rotate-left", Order = 6, Description = "查詢單一稽核指派的完整異動歷程")]
+    [RequiresPermission("ORG.LABAUDIT.READ", "檢視稽核指派")]
+    [ProducesResponseType(typeof(IReadOnlyList<LabAuditHistoryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> History([FromRoute] Guid id, CancellationToken cancellationToken = default)
+    {
+        var history = await _service.GetHistoryAsync(id, cancellationToken).ConfigureAwait(false);
+        return history is null ? NotFound() : Ok(history);
+    }
+
     /// <summary>撤銷稽核指派（立即失效，保留紀錄）</summary>
     [HttpPost("{id:guid}/revoke")]
     [Function("RevokeLabAudit", "撤銷稽核指派", Icon = "fa-solid fa-ban", Order = 4, Description = "撤銷稽核指派，稽核權限立即失效")]
