@@ -186,10 +186,15 @@ public sealed class FileSignatureInspector : IFileSignatureInspector
     private static bool IsMpegAudioFrame(ReadOnlySpan<byte> header) =>
         header.Length >= 2 && header[0] == 0xFF && (header[1] & 0xE0) == 0xE0 && ((header[1] >> 3) & 0x03) != 0x01 && ((header[1] >> 1) & 0x03) != 0x00;
 
-    /// <summary>ISO 基礎媒體檔（MP4 家族）的 ftyp 品牌：僅接受常見的 M4A／MP4 音訊品牌。</summary>
+    /// <summary>
+    /// ISO 基礎媒體檔（MP4 家族）的 ftyp 品牌：錄影／錄音軟體（Teams、Meet、手機、OBS…）使用的品牌五花八門
+    /// （isom、iso5、mp42、avc1、dash、M4V、qt…），所以改為「排除法」——只排除 HEIF／AVIF 等圖片品牌，其餘一律視為 MP4 音視訊容器。
+    /// 內容仍須由 FMS 分類的 AllowedExtensions 明確開放，且只驗證容器檔頭，不解碼。
+    /// </summary>
     private static bool IsMp4AudioBrand(ReadOnlySpan<byte> brand) =>
-        brand.SequenceEqual("M4A "u8) || brand.SequenceEqual("M4B "u8) || brand.SequenceEqual("mp42"u8) ||
-        brand.SequenceEqual("isom"u8) || brand.SequenceEqual("iso2"u8) || brand.SequenceEqual("mp41"u8) || brand.SequenceEqual("avc1"u8);
+        !(brand.SequenceEqual("heic"u8) || brand.SequenceEqual("heix"u8) || brand.SequenceEqual("hevc"u8) || brand.SequenceEqual("hevx"u8) ||
+          brand.SequenceEqual("heim"u8) || brand.SequenceEqual("heis"u8) || brand.SequenceEqual("mif1"u8) || brand.SequenceEqual("msf1"u8) ||
+          brand.SequenceEqual("avif"u8) || brand.SequenceEqual("avis"u8));
 
     /// <summary>OOXML 結構檢查：須有 [Content_Types].xml，依主要目錄判定 docx / xlsx / pptx，含巨集者拒絕</summary>
     private static (DetectedFileFormat? Format, string? Error) InspectZip(Stream content)

@@ -15,6 +15,7 @@ public class FileSignatureInspectorAudioTests
     private static byte[] Mp3WithId3() => [.. "ID3"u8, 0x04, 0x00, 0x00, 0x00, 0x00, 0x0F, 0x76, 0x54, 0x49];
     private static byte[] Mp3Frame() => [0xFF, 0xFB, 0x90, 0x64, 0x00, 0x00, 0x00, 0x00];
     private static byte[] Mp4Video() => [0x00, 0x00, 0x00, 0x20, .. "ftypmp42"u8, 0, 0, 0, 0, .. "mp42isom"u8];
+    private static byte[] Mp4Brand(string brand) => [0x00, 0x00, 0x00, 0x18, .. "ftyp"u8, .. System.Text.Encoding.ASCII.GetBytes(brand), 0, 0, 0, 0, .. "isom"u8];
     private static byte[] M4a() => [0x00, 0x00, 0x00, 0x20, .. "ftypM4A "u8, 0, 0, 0, 0, .. "isomiso2"u8];
     private static byte[] Ogg() => [.. "OggS"u8, 0x00, 0x02, 0, 0, 0, 0, 0, 0, 0, 0];
     private static byte[] Flac() => [.. "fLaC"u8, 0x00, 0x00, 0x00, 0x22, 0x10, 0x00];
@@ -30,6 +31,8 @@ public class FileSignatureInspectorAudioTests
         [Mp3Frame(), "meeting.mp3", "audio/mpeg"],
         [M4a(), "meeting.m4a", "audio/mp4"],
         [Mp4Video(), "meeting.mp4", "audio/mp4"],
+        [Mp4Brand("iso5"), "teams.mp4", "audio/mp4"],
+        [Mp4Brand("dash"), "meet.mp4", "audio/mp4"],
         [Ogg(), "meeting.ogg", "audio/ogg"],
         [Ogg(), "meeting.oga", "audio/ogg"],
         [Flac(), "meeting.flac", "audio/flac"],
