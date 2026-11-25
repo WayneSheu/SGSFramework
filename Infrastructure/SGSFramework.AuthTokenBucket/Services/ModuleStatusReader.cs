@@ -51,7 +51,10 @@ public sealed class ModuleStatusReader(ITokenDbContext dbContext) : IModuleStatu
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return names.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // 已卸載的模組（記憶體標記）視同停用：其 API 被攔截、選單隱藏、權限不可再指派
+        var set = names.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var removed in FunctionStatusRules.GetRemovedModuleNames()) set.Add(removed);
+        return set;
     }
 
     public async Task<Dictionary<string, string>> GetDisabledPermissionKeysAsync(IReadOnlySet<string> inactiveModules, CancellationToken cancellationToken = default)

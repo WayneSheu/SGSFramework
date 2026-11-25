@@ -141,6 +141,25 @@ namespace SGSFramework.ModulePlugin.Systems.Module.Repositories
                 if (module != null)
                 {
                     _dbSet.Remove(module);
+                }
+
+                // 軟停用：該模組的功能資料列 (ControllerMetadata) 標示為不啟用，不刪除。
+                // 選單 (MenuItems) 刻意不改：使用者選單查詢會排除「功能不啟用」的頁面，空的區段 / 群組容器自動修剪；
+                // 不改選單列可避免與管理者手動隱藏的設定混淆，且啟動同步 (SeedAndSyncMenusAsync) 不會恢復已隱藏的既有節點。
+                // 保留 Id、自訂名稱 / 圖示 / 排序、手動停用旗標、使用者個別授權與權限綁定；
+                // 重新部署時 DynamicControllerRepository.RegisterAsync 會先全部設為不啟用，再將仍存在於程式碼的功能重新啟用 (保留手動停用決策)。
+                // 與模組資料列於同一次 SaveChanges（同一交易）完成，避免只刪一半。
+                var controllers = await _dbContext.Set<ControllerMetadata>()
+                    .Where(c => c.ModuleName == moduleName && c.IsActive)
+                    .ToListAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                foreach (var controller in controllers)
+                {
+                    controller.IsActive = false;
+                }
+
+                if (module != null || controllers.Count > 0)
+                {
                     await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                 }
 

@@ -72,10 +72,14 @@ public class GetUserMenuTreeQueryHandler : IRequestHandler<GetUserMenuTreeQuery,
                 return Result.Success(new List<MenuItemDto>());
             }
 
-            // 2.1 排除對應功能已於「系統功能管理」手動停用的頁面 (其 API 亦會被 FunctionStatusAuthorizationFilter 拒絕)
+            // 2.1 排除對應功能已於「系統功能管理」手動停用，或功能不啟用 (IsActive = false) 的頁面
+            //     (手動停用的 API 會被 FunctionStatusAuthorizationFilter 拒絕)。
+            //     IsActive = false 代表程式碼已不存在該功能（模組已卸載 / 檔案已移除 / 模組停用）：
+            //     模組重新註冊時 DynamicControllerRepository.RegisterAsync 會恢復仍存在的功能，故此訊號可自動復原。
+            //     區段 / 群組容器於下方裁切時，若已無可見頁面會自動隱藏。
             var disabledControllerIds = await _dbContext.Set<ControllerMetadata>()
                 .AsNoTracking()
-                .Where(c => c.IsManuallyDisabled)
+                .Where(c => c.IsManuallyDisabled || !c.IsActive)
                 .Select(c => c.Id)
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
@@ -87,6 +91,9 @@ public class GetUserMenuTreeQueryHandler : IRequestHandler<GetUserMenuTreeQuery,
                 .Select(m => m.ModuleName)
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
+
+            // 已卸載的模組（模組管理 > 卸載）亦隱藏其選單
+            inactiveModuleNames.AddRange(FunctionStatusRules.GetRemovedModuleNames());
 
             if (inactiveModuleNames.Count > 0)
             {

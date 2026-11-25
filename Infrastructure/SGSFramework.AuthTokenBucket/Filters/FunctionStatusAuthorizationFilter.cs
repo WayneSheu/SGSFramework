@@ -11,6 +11,7 @@ using SGSFramework.Core.Abstractions.Entities.Modules;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace SGSFramework.AuthTokenBucket.Filters
@@ -25,6 +26,9 @@ namespace SGSFramework.AuthTokenBucket.Filters
         ILogger<FunctionStatusAuthorizationFilter> logger) : IAsyncAuthorizationFilter
     {
         private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(10);
+
+        // 已卸載模組集合版本：變動時（卸載 / 重新上傳）使快取失效，下次請求重建攔截清單
+        private static long _seenRemovedModulesVersion;
 
         private readonly ITokenDbContext _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         private readonly IMemoryCache _cache = cache ?? throw new ArgumentNullException(nameof(cache));
@@ -49,6 +53,12 @@ namespace SGSFramework.AuthTokenBucket.Filters
 
             try
             {
+                var removedVersion = FunctionStatusRules.RemovedModulesVersion;
+                if (Interlocked.Exchange(ref _seenRemovedModulesVersion, removedVersion) != removedVersion)
+                {
+                    _cache.Remove(FunctionStatusRules.DisabledFunctionsCacheKey);
+                }
+
                 var disabled = await _cache.GetOrCreateAsync(FunctionStatusRules.DisabledFunctionsCacheKey, async entry =>
                 {
                     entry.AbsoluteExpirationRelativeToNow = CacheDuration;
@@ -87,6 +97,22 @@ namespace SGSFramework.AuthTokenBucket.Filters
                         {
                             var title = titles.TryGetValue(r.ModuleName, out var t) && !string.IsNullOrWhiteSpace(t) ? t : r.ModuleName;
                             map.TryAdd(FunctionStatusRules.BuildKey(r.ControllerName, r.ActionName), $"「{title}」模組已由系統管理員停用，暫時無法使用。");
+                        }
+                    }
+
+                    // 已卸載模組：資料列已移除，但控制器可能仍在記憶體 / 主程式中，同樣攔截其所有 API
+                    var removedModules = FunctionStatusRules.GetRemovedModuleNames().ToList();
+                    if (removedModules.Count > 0)
+                    {
+                        var removedRows = await _dbContext.Set<ControllerMetadata>()
+                            .AsNoTracking()
+                            .Where(c => removedModules.Contains(c.ModuleName))
+                            .Select(c => new { c.ModuleName, c.ControllerName, c.ActionName })
+                            .ToListAsync(httpContext.RequestAborted);
+
+                        foreach (var r in removedRows.Where(r => !FunctionStatusRules.IsProtected(r.ControllerName)))
+                        {
+                            map.TryAdd(FunctionStatusRules.BuildKey(r.ControllerName, r.ActionName), $"「{r.ModuleName}」模組已卸載，暫時無法使用。");
                         }
                     }
 

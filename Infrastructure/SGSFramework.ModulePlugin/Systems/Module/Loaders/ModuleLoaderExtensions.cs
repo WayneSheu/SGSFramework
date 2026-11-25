@@ -303,6 +303,9 @@ public static class ModuleLoaderExtensions
         ArgumentException.ThrowIfNullOrEmpty(moduleName);
         ArgumentNullException.ThrowIfNull(serviceProvider);
 
+        // 模組（重新）註冊即視為已部署：解除「模組管理 > 卸載」的記憶體標記
+        SGSFramework.Core.Abstractions.Entities.Controller.FunctionStatusRules.UnmarkModuleRemoved(moduleName);
+
         var assemblyList = assemblies.Where(a => a != null).ToList();
         if (assemblyList.Count == 0)
         {

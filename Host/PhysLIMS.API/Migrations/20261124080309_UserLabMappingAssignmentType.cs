@@ -31,7 +31,7 @@ namespace PhysLIMS.API.Migrations
 
             // 1) 以舊 IsPrimary 回填：主要=0、其餘(兼任)=1
             migrationBuilder.Sql(
-                "UPDATE [core].[UserLabMappings] SET [AssignmentType] = CASE WHEN [IsPrimary] = 1 THEN 0 ELSE 1 END;");
+                "EXEC(N'UPDATE [core].[UserLabMappings] SET [AssignmentType] = CASE WHEN [IsPrimary] = 1 THEN 0 ELSE 1 END;')");
 
             // 2) 移除暫時預設值（Primary=0 為 CLR 預設，不可由 DB 預設值覆蓋）
             migrationBuilder.AlterColumn<int>(
@@ -105,7 +105,7 @@ namespace PhysLIMS.API.Migrations
                 comment: "是否為主要實驗室");
 
             migrationBuilder.Sql(
-                "UPDATE [core].[UserLabMappings] SET [IsPrimary] = CASE WHEN [AssignmentType] = 0 THEN 1 ELSE 0 END;");
+                "EXEC(N'UPDATE [core].[UserLabMappings] SET [IsPrimary] = CASE WHEN [AssignmentType] = 0 THEN 1 ELSE 0 END;')");
 
             migrationBuilder.DropColumn(
                 name: "AssignmentType",

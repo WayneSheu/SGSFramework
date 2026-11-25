@@ -21,6 +21,7 @@ using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.ModulePlugin.Configurations;
 using SGSFramework.ModulePlugin.Abstractions;
 using SGSFramework.ModulePlugin.DTOs;
+using SGSFramework.ModulePlugin.Systems.Module.Contexts;
 using SGSFramework.ModulePlugin.Systems.Module.Loaders;
 
 namespace SGSFramework.ModulePlugin.Services;
@@ -157,10 +158,13 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
 
             if (File.Exists(mainDllFullPath))
             {
-                var assembly = Assembly.LoadFrom(mainDllFullPath);
-                using var scope = _serviceProvider.CreateScope();
-                await ModuleLoaderExtensions.RegisterModuleToDbAsync(assembly, detectedModuleName, mainDllFullPath, scope.ServiceProvider).ConfigureAwait(false);
+                await RegisterModuleMetadataInIsolationAsync(detectedModuleName, mainDllFullPath, cancellationToken).ConfigureAwait(false);
             }
+
+            // 重新上傳即視為恢復：解除「已卸載」標記（註冊時亦會解除），清除攔截快取並通知線上使用者重載選單
+            FunctionStatusRules.UnmarkModuleRemoved(detectedModuleName);
+            _cache.Remove(FunctionStatusRules.DisabledFunctionsCacheKey);
+            await _permissionChangeNotifier.BroadcastAsync("module-status-changed", cancellationToken).ConfigureAwait(false);
 
             // 外掛的 DI 註冊與資料庫遷移（含獨立資料庫建置）只在啟動時執行：排定重新啟動，新模組才會實際生效
             var restart = _options.Value.RestartAfterUpload;
@@ -195,6 +199,115 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
                 {
                     _logger.LogWarning(ex, "清理上傳暫存檔 [{TempPath}] 失敗。", mainDllTempPath);
                 }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 自 plugins 目錄移除模組檔案：{主組件}.dll / .pdb / .deps.json 與其 .Application / .Infrastructure 分層組件。
+    /// 安全限制：僅處理「位於 plugins 目錄」的檔案（編譯進主程式資料夾的模組不屬於 plugins，不可刪除）；
+    /// 不移除可能被其他模組共用的 *.Contracts.dll 與第三方相依套件。
+    /// 檔案若被佔用無法刪除，改名為 *.removed（載入器只掃描 *.dll，不會再載入），並記錄警告。
+    /// </summary>
+    private void RemoveModuleFilesFromPlugins(string moduleName, string? assemblyPath)
+    {
+        var pluginsDirectory = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "plugins"));
+        var baseName = !string.IsNullOrWhiteSpace(assemblyPath)
+            ? Path.GetFileNameWithoutExtension(assemblyPath)
+            : moduleName;
+
+        // 防止路徑穿越：基底名稱不可含目錄成分
+        if (string.IsNullOrWhiteSpace(baseName) || !string.Equals(Path.GetFileName(baseName), baseName, StringComparison.Ordinal))
+        {
+            _logger.LogWarning("模組 [{ModuleName}] 的檔案名稱無效，略過自 plugins 移除檔案。", moduleName);
+            return;
+        }
+
+        var mainPath = Path.GetFullPath(Path.Combine(pluginsDirectory, baseName + ".dll"));
+        if (!string.Equals(Path.GetDirectoryName(mainPath), pluginsDirectory, StringComparison.OrdinalIgnoreCase) || !File.Exists(mainPath))
+        {
+            _logger.LogInformation("模組 [{ModuleName}] 在 plugins 目錄內沒有對應檔案（可能編譯於主程式內），略過移除檔案。", moduleName);
+            return;
+        }
+
+        string[] suffixes =
+        [
+            ".dll", ".pdb", ".deps.json",
+            ".Application.dll", ".Application.pdb",
+            ".Infrastructure.dll", ".Infrastructure.pdb"
+        ];
+
+        foreach (var suffix in suffixes)
+        {
+            var path = Path.Combine(pluginsDirectory, baseName + suffix);
+            if (!File.Exists(path)) continue;
+
+            try
+            {
+                File.Delete(path);
+                _logger.LogInformation("已自 plugins 移除模組檔案：{File}", Path.GetFileName(path));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                try
+                {
+                    File.Move(path, path + ".removed", overwrite: true);
+                    _logger.LogWarning(ex, "模組檔案被佔用無法刪除，已改名為 {File}.removed（重新啟動後可自行清除）。", Path.GetFileName(path));
+                }
+                catch (Exception moveEx)
+                {
+                    _logger.LogError(moveEx, "無法移除或改名模組檔案 {File}，下次啟動可能仍會載入此模組，請手動刪除。", path);
+                }
+            }
+        }
+
+        if (File.Exists(Path.Combine(pluginsDirectory, baseName + ".Contracts.dll")))
+        {
+            _logger.LogInformation("模組 [{ModuleName}] 的共用組件 {File}.Contracts.dll 未移除（可能被其他模組使用）。", moduleName, baseName);
+        }
+    }
+
+    /// <summary>
+    /// 於可卸載的隔離載入環境 (ModuleAssemblyLoadContext) 讀取新上傳的主組件，並同步模組 / 控制器中繼資料至資料庫。
+    /// 不可使用 Assembly.LoadFrom：它會載入預設載入環境，而主程式若已參考同名組件（例如 SGS.Modules.ORG），
+    /// 遞增版本號後同名不同版本無法並存，會拋出 0x80131040（manifest definition does not match the assembly reference）。
+    /// 載入作法與啟動時載入器一致（記憶體串流，不鎖檔），完成後立即卸載；模組實際生效仍依賴重新啟動。
+    /// </summary>
+    private async Task RegisterModuleMetadataInIsolationAsync(string moduleName, string mainDllPath, CancellationToken cancellationToken)
+    {
+        var alc = new ModuleAssemblyLoadContext(mainDllPath);
+        try
+        {
+            var directory = Path.GetDirectoryName(mainDllPath)!;
+            var baseModuleName = Path.GetFileNameWithoutExtension(mainDllPath);
+
+            // 先載入分層組件至同一隔離環境，主組件型別才能完整解析
+            foreach (var suffix in new[] { ".Application.dll", ".Infrastructure.dll" })
+            {
+                var sidecarPath = Path.Combine(directory, baseModuleName + suffix);
+                if (!File.Exists(sidecarPath)) continue;
+
+                var sidecarBytes = await File.ReadAllBytesAsync(sidecarPath, cancellationToken).ConfigureAwait(false);
+                using var sidecarStream = new MemoryStream(sidecarBytes);
+                alc.LoadFromStream(sidecarStream);
+            }
+
+            var mainBytes = await File.ReadAllBytesAsync(mainDllPath, cancellationToken).ConfigureAwait(false);
+            using var mainStream = new MemoryStream(mainBytes);
+            var assembly = alc.LoadFromStream(mainStream);
+
+            using var scope = _serviceProvider.CreateScope();
+            await ModuleLoaderExtensions.RegisterModuleToDbAsync(assembly, moduleName, mainDllPath, scope.ServiceProvider).ConfigureAwait(false);
+        }
+        finally
+        {
+            try
+            {
+                alc.Unload();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "卸載暫時性的模組載入環境失敗（不影響部署結果）。模組: {ModuleName}", moduleName);
             }
         }
     }
@@ -286,6 +399,14 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(moduleName);
 
+        if (FunctionStatusRules.IsProtectedModule(moduleName))
+        {
+            throw new NotSupportedException($"核心模組 [{moduleName}] 涵蓋模組管理與系統管理功能，不可卸載。");
+        }
+
+        // 移除資料列前先取得其組件路徑，供後續自 plugins 移除檔案
+        var existing = await _moduleRepo.GetModuleByNameAsync(moduleName, cancellationToken).ConfigureAwait(false);
+
         try
         {
             _moduleRegistry.UnloadModule(moduleName);
@@ -296,5 +417,15 @@ public class ModuleManagementApplicationService : IModuleManagementApplicationSe
         }
 
         await _moduleRepo.RemoveModuleAsync(moduleName, cancellationToken).ConfigureAwait(false);
+
+        // 自 plugins 目錄移除模組檔案，避免下次啟動又被載入器重新載入
+        RemoveModuleFilesFromPlugins(moduleName, existing?.AssemblyPath);
+
+        // 卸載後選單與 API 必須立即停用：直接編譯進主程式的模組（如 ORG）控制器不會隨之消失，
+        // 故以記憶體標記讓 FunctionStatusAuthorizationFilter / 選單視同停用，並通知線上使用者重載選單。
+        FunctionStatusRules.MarkModuleRemoved(moduleName);
+        _cache.Remove(FunctionStatusRules.DisabledFunctionsCacheKey);
+        await _permissionChangeNotifier.BroadcastAsync("module-status-changed", cancellationToken).ConfigureAwait(false);
+        _logger.LogWarning("模組 [{ModuleName}] 已卸載：模組資料列已移除、檔案已自 plugins 移除，其選單與功能資料列已軟停用，API 立即攔截（重新部署後恢復）。", moduleName);
     }
 }

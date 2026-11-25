@@ -28,7 +28,8 @@ namespace SGSFramework.ModulePlugin.Abstractions
         Task ToggleModuleStatusAsync(string moduleName, bool isActive, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// 移除指定模組紀錄
+        /// 移除指定模組紀錄，並於同一交易內將該模組的功能 (ControllerMetadata) 資料列軟停用
+        /// (IsActive = false，不刪除；使用者選單據此隱藏頁面，重新部署後由 RegisterAsync 恢復)
         /// </summary>
         Task RemoveModuleAsync(string moduleName, CancellationToken cancellationToken = default);
     }

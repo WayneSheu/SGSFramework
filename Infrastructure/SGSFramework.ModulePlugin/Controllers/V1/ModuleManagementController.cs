@@ -226,7 +226,7 @@ public class ModuleManagementController(
     }
 
     /// <summary>
-    /// 線上動態卸載並同步清除指定模組與其對應的控制器元資料
+    /// 線上動態卸載指定模組：移除模組資料列、自 plugins 目錄移除模組檔案，並立即停用其 API 與選單
     /// </summary>
     /// <param name="moduleName">欲卸載的模組名稱</param>
     /// <param name="cancellationToken">異步取消權牌</param>
@@ -253,6 +253,17 @@ public class ModuleManagementController(
         {
             await _moduleAppService.RemoveModuleAsync(moduleName, cancellationToken);
             return NoContent();
+        }
+        catch (NotSupportedException ex)
+        {
+            _logger.LogWarning(ex, "拒絕卸載受保護的核心模組 [{ModuleName}]。", moduleName);
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "不允許的操作",
+                Detail = ex.Message,
+                Instance = HttpContext.Request.Path
+            });
         }
         catch (Exception ex)
         {
