@@ -35,7 +35,8 @@ public sealed record LabAuditAssignmentDto(
     string? RevokeReason,
     DateTimeOffset? UpdatedAt = null,
     string? UpdatedByName = null,
-    string? UpdateNote = null);
+    string? UpdateNote = null,
+    bool AuditRoleMissing = false);
 
 /// <summary>可被指派稽核的使用者（持有啟用中的稽核角色）</summary>
 public sealed record AuditorCandidateDto(string UserId, string UserName, string FullName, string? Email, IReadOnlyList<string> AuditRoles);
@@ -521,7 +522,31 @@ public sealed class LabAuditService(
             .Select(a => new { a.TenantLabId, a.EffectiveTo })
             .ToListAsync(cancellationToken).ConfigureAwait(false);
 
+        if (active.Count == 0) return new Dictionary<Guid, DateTimeOffset>();
+
+        // 稽核權限 = 稽核角色 ＋ 稽核指派：失去稽核角色時指派暫停生效（不得憑指派進入實驗室），
+        // 角色重新授予後自動恢復，不需重建指派
+        if (!(await GetAuditRoleHolderIdsAsync([userId], cancellationToken).ConfigureAwait(false)).Contains(userId))
+        {
+            return new Dictionary<Guid, DateTimeOffset>();
+        }
+
         return active.GroupBy(a => a.TenantLabId).ToDictionary(g => g.Key, g => g.Max(a => a.EffectiveTo));
+    }
+
+    /// <summary>目前持有啟用中稽核角色（RequiresAuditAssignment、未刪除、未停用）的使用者；與稽核員候選清單採相同角色條件</summary>
+    private async Task<HashSet<Guid>> GetAuditRoleHolderIdsAsync(IReadOnlyCollection<Guid> userIds, CancellationToken cancellationToken)
+    {
+        if (userIds.Count == 0) return [];
+
+        var holders = await (
+                from ur in dbContext.Set<IdentityUserRole<Guid>>().AsNoTracking()
+                join r in dbContext.Set<ApplicationRole>().AsNoTracking() on ur.RoleId equals r.Id
+                where userIds.Contains(ur.UserId) && r.RequiresAuditAssignment && !r.IsDeleted && r.Status != RoleStatus.Disabled
+                select ur.UserId)
+            .Distinct()
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        return holders.ToHashSet();
     }
 
     private async Task<List<LabAuditAssignmentDto>> ToDtosAsync(IReadOnlyCollection<LabAuditAssignment> items, CancellationToken cancellationToken)
@@ -532,6 +557,9 @@ public sealed class LabAuditService(
             .Where(u => userIds.Contains(u.Id))
             .Select(u => new { u.Id, u.UserName, u.FullName })
             .ToDictionaryAsync(u => u.Id, cancellationToken).ConfigureAwait(false);
+
+        // 稽核員目前是否仍持有稽核角色：失去角色的指派「暫停生效」（保留紀錄，角色恢復後自動恢復）
+        var roleHolders = await GetAuditRoleHolderIdsAsync(userIds, cancellationToken).ConfigureAwait(false);
 
         var labNames = new Dictionary<Guid, string>();
         foreach (var labId in items.Select(i => i.TenantLabId).Distinct())
@@ -551,7 +579,7 @@ public sealed class LabAuditService(
                 a.Id, a.UserId.ToString(), u?.UserName ?? string.Empty, u?.FullName ?? string.Empty,
                 a.TenantLabId, labNames[a.TenantLabId], a.EffectiveFrom, a.EffectiveTo, a.Reason, status,
                 a.AssignedByName, a.CreatedAt, a.RevokedAt, a.RevokedByName, a.RevokeReason,
-                a.UpdatedAt, a.UpdatedByName, a.UpdateNote);
+                a.UpdatedAt, a.UpdatedByName, a.UpdateNote, !roleHolders.Contains(a.UserId));
         }).ToList();
     }
 
