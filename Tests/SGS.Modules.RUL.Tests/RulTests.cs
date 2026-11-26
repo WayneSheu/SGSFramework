@@ -68,9 +68,20 @@ public class RuleSeederTests
         await RuleSeeder.SeedAsync(db, TimeProvider.System);
         await RuleSeeder.SeedAsync(db, TimeProvider.System);
 
-        var rule = await db.Rules.SingleAsync();
+        (await db.Rules.CountAsync()).Should().Be(4);
+        (await db.Versions.CountAsync()).Should().Be(4);
+        var rule = await db.Rules.SingleAsync(r => r.Name == RuleSeeder.MoMembersOnlyName);
         rule.RoleName.Should().Be("全區實驗室管理員");
-        (await db.Versions.CountAsync()).Should().Be(1);
+
+        // 授與上限規則：條件（含 !user.IsAdmin）須通過白名單
+        var ceiling = await db.Rules.SingleAsync(r => r.Name == RuleSeeder.GrantCeilingName);
+        new RuleExpressionValidator(new RuleTargetCatalog().Register(typeof(SGSFramework.Core.Abstractions.Entities.Identities.ApplicationUser)))
+            .Validate("ApplicationUser", ceiling.Kind, ceiling.ConditionExpr).IsValid.Should().BeTrue();
+
+        // 不得指派自己的規則：條件須通過白名單
+        var selfRule = await db.Rules.SingleAsync(r => r.Name == RuleSeeder.NoSelfRolesName);
+        var cat = new RuleTargetCatalog().Register(typeof(SGSFramework.Core.Abstractions.Entities.Identities.ApplicationUser));
+        new RuleExpressionValidator(cat).Validate("ApplicationUser", selfRule.Kind, selfRule.ConditionExpr).IsValid.Should().BeTrue();
 
         var catalog = new RuleTargetCatalog().Register(typeof(SGSFramework.Core.Abstractions.Entities.Identities.ApplicationUser));
         new RuleExpressionValidator(catalog).Validate("ApplicationUser", rule.Kind, rule.ConditionExpr).IsValid.Should().BeTrue();

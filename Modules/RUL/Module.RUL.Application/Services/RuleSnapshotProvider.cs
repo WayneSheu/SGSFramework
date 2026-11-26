@@ -37,6 +37,7 @@ public sealed class RuleSnapshotProvider(IServiceScopeFactory scopes, IMemoryCac
     public static RuleSnapshot ToSnapshot(RuleDefinition r) => new()
     {
         Id = r.Id,
+        Name = r.Name,
         Version = r.Version,
         Domain = r.Domain,
         Kind = r.Kind,

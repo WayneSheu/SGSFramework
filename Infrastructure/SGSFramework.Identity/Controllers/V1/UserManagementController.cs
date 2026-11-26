@@ -1,4 +1,5 @@
 using SGSFramework.Core.Abstractions.Identities;
+using SGSFramework.AuthTokenBucket.Filters;
 // ==========================================
 // 檔案路徑: src/Presentation/SGSFramework.Identity/Controllers/v1/UserManagementController.cs
 // 架構層級: Presentation / API Controller Layer (Thin Controller with ResetPassword delegated to Service)
@@ -608,6 +609,8 @@ public sealed class UserManagementController(
     /// </summary>
     [HttpPut("{userId:guid}/roles")]
     [RequiresMemberScope]
+    [DenyRuleWrite("Roles")]
+    [EnforceGrantCeiling(GrantKind.Roles)]
     [Function("AssignUserRoles", "指派使用者角色", Icon = "fa-solid fa-user-tag", Order = 12, Description = "更新指定使用者的系統角色授權歸屬")]
     [RequiresPermission("SYSTEM.USERMANAGEMENT.UPDATE", "編輯使用者")]
     [EndpointSummary("指派使用者角色")]

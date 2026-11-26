@@ -31,6 +31,14 @@ public sealed class DynamicRuleEngine(IRuleSnapshotProvider provider) : IRuleEng
         RuleCombiner.CombineWrite(Candidates<TTarget>(user, RuleKind.Column, fieldName)
             .Where(r => Matches(r, user, target)).Select(r => r.WriteAccess));
 
+    public RuleDenial? FindWriteDenial<TTarget>(RuleUserContext user, TTarget target, string fieldName)
+    {
+        var hit = Candidates<TTarget>(user, RuleKind.Column, fieldName)
+            .Where(r => r.WriteAccess == FieldAccessLevel.ForceDeny && Matches(r, user, target))
+            .OrderByDescending(r => r.Priority).FirstOrDefault();
+        return hit is null ? null : new RuleDenial(hit.Id, hit.Name, Str(Payload(hit), "errorMessage"));
+    }
+
     public bool HasRowRules<TTarget>(RuleUserContext user) => Candidates<TTarget>(user, RuleKind.Row).Any();
 
     public IQueryable<TTarget> ApplyRowSecurity<TTarget>(IQueryable<TTarget> query, RuleUserContext user)

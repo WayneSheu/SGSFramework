@@ -30,6 +30,19 @@ public sealed class UserMemberScopeService(
         return engine.ApplyRowSecurity(query, ctx);
     }
 
+    public async Task<string?> GetWriteDenialAsync(Guid targetUserId, string fieldName, CancellationToken cancellationToken = default)
+    {
+        var engine = services.GetService(typeof(IRuleEngine)) as IRuleEngine;
+        if (engine is null || !currentUser.IsAuthenticated) return null;
+
+        var target = await userManager.FindByIdAsync(targetUserId.ToString()).ConfigureAwait(false);
+        if (target is null) return null; // 目標不存在交由端點本身回應
+
+        var ctx = new RuleUserContext { UserId = currentUser.UserId ?? string.Empty, Roles = currentUser.Roles, IsAdmin = currentUser.IsAdmin };
+        var denial = engine.FindWriteDenial(ctx, target, fieldName);
+        return denial is null ? null : denial.Message ?? string.Empty;
+    }
+
     public async Task<bool> CanAccessUserAsync(Guid targetUserId, CancellationToken cancellationToken = default)
     {
         var scoped = await ApplyAsync(userManager.Users, cancellationToken).ConfigureAwait(false);

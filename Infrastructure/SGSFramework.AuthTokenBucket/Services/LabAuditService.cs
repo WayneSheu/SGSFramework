@@ -40,6 +40,10 @@ public static class LabAuditStatuses
 /// <param name="UpdatedByName">最後修改人員名稱；未曾修改為 null</param>
 /// <param name="UpdateNote">最後一次修改的異動摘要；完整歷程請見異動歷程（GET {id}/history）</param>
 /// <param name="AuditRoleMissing">稽核員目前未持有啟用中的稽核角色：指派保留但暫停生效，角色恢復後自動恢復</param>
+/// <param name="EmployeeNo">稽核員員工編號；未設定為 null 或空字串</param>
+/// <param name="LabCode">受稽核區域實驗室代碼；查無組織時為 null</param>
+/// <param name="CategoryCode">區域實驗室所屬實驗室別（上層類別）代碼；查無時為 null</param>
+/// <param name="CategoryName">區域實驗室所屬實驗室別（上層類別）名稱；查無時為 null</param>
 public sealed record LabAuditAssignmentDto(
     Guid Id,
     string UserId,
@@ -59,7 +63,11 @@ public sealed record LabAuditAssignmentDto(
     DateTimeOffset? UpdatedAt = null,
     string? UpdatedByName = null,
     string? UpdateNote = null,
-    bool AuditRoleMissing = false);
+    bool AuditRoleMissing = false,
+    string? EmployeeNo = null,
+    string? LabCode = null,
+    string? CategoryCode = null,
+    string? CategoryName = null);
 
 /// <summary>可被指派稽核的使用者（持有啟用中的稽核角色，且使用者未刪除）</summary>
 /// <param name="UserId">使用者識別鍵（GUID 字串）</param>
@@ -598,17 +606,18 @@ public sealed class LabAuditService(
         var userIds = items.Select(i => i.UserId).Distinct().ToList();
         var users = await dbContext.Set<ApplicationUser>().AsNoTracking()
             .Where(u => userIds.Contains(u.Id))
-            .Select(u => new { u.Id, u.UserName, u.FullName })
+            .Select(u => new { u.Id, u.UserName, u.FullName, u.EmployeeNo })
             .ToDictionaryAsync(u => u.Id, cancellationToken).ConfigureAwait(false);
 
         // 稽核員目前是否仍持有稽核角色：失去角色的指派「暫停生效」（保留紀錄，角色恢復後自動恢復）
         var roleHolders = await GetAuditRoleHolderIdsAsync(userIds, cancellationToken).ConfigureAwait(false);
 
-        var labNames = new Dictionary<Guid, string>();
+        // 實驗室名稱 / 代碼 / 所屬實驗室別（上層類別）：供清單顯示與篩選
+        var labs = new Dictionary<Guid, (string Name, string? Code, string? CategoryCode, string? CategoryName)>();
         foreach (var labId in items.Select(i => i.TenantLabId).Distinct())
         {
             var org = await orgIntegrationService.GetOrganizationByIdAsync(labId, cancellationToken).ConfigureAwait(false);
-            labNames[labId] = org?.Name ?? labId.ToString()[..8];
+            labs[labId] = (org?.Name ?? labId.ToString()[..8], org?.Code, org?.ParentLabCode, org?.ParentLabName);
         }
 
         return items.Select(a =>
@@ -618,11 +627,13 @@ public sealed class LabAuditService(
                 : a.EffectiveTo < now ? LabAuditStatuses.Expired
                 : a.EffectiveFrom > now ? LabAuditStatuses.Upcoming
                 : LabAuditStatuses.Active;
+            var lab = labs[a.TenantLabId];
             return new LabAuditAssignmentDto(
                 a.Id, a.UserId.ToString(), u?.UserName ?? string.Empty, u?.FullName ?? string.Empty,
-                a.TenantLabId, labNames[a.TenantLabId], a.EffectiveFrom, a.EffectiveTo, a.Reason, status,
+                a.TenantLabId, lab.Name, a.EffectiveFrom, a.EffectiveTo, a.Reason, status,
                 a.AssignedByName, a.CreatedAt, a.RevokedAt, a.RevokedByName, a.RevokeReason,
-                a.UpdatedAt, a.UpdatedByName, a.UpdateNote, !roleHolders.Contains(a.UserId));
+                a.UpdatedAt, a.UpdatedByName, a.UpdateNote, !roleHolders.Contains(a.UserId),
+                u?.EmployeeNo, lab.Code, lab.CategoryCode, lab.CategoryName);
         }).ToList();
     }
 

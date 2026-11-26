@@ -1,4 +1,5 @@
 using SGSFramework.Core.Abstractions.Identities;
+using SGSFramework.AuthTokenBucket.Filters;
 // ==========================================
 // 檔案路徑: Presentation/SGSFramework.AuthTokenBucket/Controllers/v1/PermissionController.cs
 // 架構層級: Presentation Layer (Controller Implementation)
@@ -563,6 +564,8 @@ public sealed class PermissionController : ApiControllerBase
     /// </summary>
     [HttpPut("user/{userId:guid}/permissions")]
     [RequiresMemberScope]
+    [DenyRuleWrite("DirectPermissions")]
+    [EnforceGrantCeiling(GrantKind.DirectPermissions)]
     [Function("AssignUserPermissions", "指派使用者權限", Icon = "fa-solid fa-key", Order = 6, Description = "更新指定使用者的直接 API 權限", IsMenu = false)]
     [RequiresPermission("SYSTEM.PERMISSION.ASSIGN_USER", "使用者直接權限")]
     [EndpointSummary("指派使用者權限")]
@@ -674,6 +677,8 @@ public sealed class PermissionController : ApiControllerBase
     /// </summary>
     [HttpPut("user/{userId:guid}/lab-permissions")]
     [RequiresMemberScope]
+    [DenyRuleWrite("DirectPermissions")]
+    [EnforceGrantCeiling(GrantKind.LabPermission)]
     [Function("UserAssignLablorityPermission", "指派使用者實驗室權限", Icon = "fa-solid fa-flask-vial", Order = 8, Description = "更新指定使用者在特定實驗室中的模組專屬 Bitmask 權限", IsMenu = false)]
     [RequiresPermission("SYSTEM.PERMISSION.ASSIGN_USER", "實驗室專屬權限")]
     [EndpointSummary("指派使用者實驗室權限")]

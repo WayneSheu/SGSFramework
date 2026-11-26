@@ -2,6 +2,7 @@
 
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using SGS.Modules.ORG.Infrastructure.Dbcontexts;
 using SGSFramework.Core.Abstractions.Entities.Identities;
 using SGSFramework.Core.Errors;
 using SGSFramework.Core.Results;
@@ -34,14 +35,16 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Command
     public sealed class AssignUserLabCommandHandler : IRequestHandler<AssignUserLabCommand, Result<bool>>
     {
         private readonly DbContext _context;
+        private readonly ORGDbContext _orgContext;
 
         // 台灣時區定義（相容跨平台 Windows / Linux）
         private static readonly TimeZoneInfo TaiwanTimeZone = TimeZoneInfo.FindSystemTimeZoneById(
             OperatingSystem.IsWindows() ? "Taipei Standard Time" : "Asia/Taipei");
 
-        public AssignUserLabCommandHandler(DbContext context)
+        public AssignUserLabCommandHandler(DbContext context, ORGDbContext orgContext)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
+            _orgContext = orgContext ?? throw new ArgumentNullException(nameof(orgContext));
         }
 
         public async Task<Result<bool>> Handle(AssignUserLabCommand request, CancellationToken cancellationToken)
@@ -65,6 +68,13 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Command
             {
                 return Result.Failure<bool>(
                     Error.Validation("USERLAB_INVALID_TENANT_LABID", "租戶實驗室識別碼不能為 Empty Guid。"));
+            }
+
+            // 支援類別：人員主要實驗室與支援實驗室須屬同一實驗室別（區域實驗室的上層）
+            if (request.AssignmentType == LabAssignmentType.Support)
+            {
+                var categoryCheck = await ValidateSupportCategoryAsync(request, cancellationToken);
+                if (categoryCheck is not null) return categoryCheck;
             }
 
             using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
@@ -168,6 +178,33 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Command
                 return Result.Failure<bool>(
                     Error.Unexpected("USERLAB_ASSIGN_ERROR", $"執行指派使用者實驗室時發生未預期錯誤：{ex.Message}"));
             }
+        }
+
+        /// <summary>
+        /// 支援實驗室檢核：人員須有啟用中的主要實驗室，且其所屬實驗室別需與支援實驗室所屬的實驗室別相同。
+        /// 此規則於後端強制執行（不論由「實驗室支援」或「使用者管理」指派），前端的人員過濾僅為輔助。
+        /// </summary>
+        private async Task<Result<bool>?> ValidateSupportCategoryAsync(AssignUserLabCommand request, CancellationToken cancellationToken)
+        {
+            var homeLabId = await _context.Set<UserLabMapping>()
+                .AsNoTracking()
+                .Where(x => x.UserId == request.UserId && x.IsActive && x.AssignmentType == LabAssignmentType.Primary)
+                .Select(x => (int?)x.LabId)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            var ids = new List<int> { request.LabId };
+            if (homeLabId.HasValue) ids.Add(homeLabId.Value);
+
+            var organizations = await _orgContext.Organizations
+                .AsNoTracking()
+                .Include(o => o.Parent)
+                .Where(o => ids.Contains(o.Id))
+                .ToDictionaryAsync(o => o.Id, cancellationToken);
+
+            // 與批次指派共用同一份規則 (LabSupportRules)
+            return LabSupportRules.CheckCategory(homeLabId, request.LabId, organizations) is { } failure
+                ? Result.Failure<bool>(Error.Validation(failure.Code, failure.Message))
+                : null;
         }
 
         /// <summary>

@@ -41,3 +41,17 @@ ORG 的「使用者→主管」關係與主管維護成員、`[SensitiveField]` 
 - Core 新增 `IUserMemberScope` 與 `[RequiresMemberScope]`（以路由參數 `userId`／`id` 檢查目標是否為可維護成員，否則 404）。已標於：使用者管理的編輯、重設密碼、刪除、狀態、角色讀寫；權限管理的使用者權限總覽、直接權限、實驗室專屬權限；ORG 使用者實驗室歸屬的讀、設主要、移除。
 - MO 預設種子新增 `SYSTEM.PERMISSION.READ`、`SYSTEM.PERMISSION.ASSIGN_USER`（appsettings 的 SystemRolePermissionSeed；啟動時對既有角色只增不減）。因 IncludeKeys 與 Categories 為 AND，若這兩個權限的類別不在 Operational／Administrative／Basic，需在角色管理手動授與。
 - 注意：MO 指派角色／直接權限時是否能授與超過自己的權限，仍依既有治理機制，M2 未新增上限檢查。
+
+## M2-c：不得指派自己的角色與直接權限（職責分離）
+- 兩條預設 Column 規則（目標 `ApplicationUser`，欄位 `Roles`／`DirectPermissions`，GlobalPolicy，條件 `target.Id == user.UserGuid`，寫入 ForceDeny），啟動時只在不存在時建立。
+- `[DenyRuleWrite("Roles"|"DirectPermissions")]` 標於：使用者角色指派（PUT users/{id}/roles）、使用者直接權限、實驗室專屬權限；命中時回 403。不依賴角色權限 Maker-Checker 是否啟用，系統管理員也適用。
+- 例外需求由管理者經規則審批停用該規則。RUL 未安裝時此限制不生效。
+- 範圍只含上述端點：不涵蓋角色本身的權限編輯（角色管理）與報告類別權限。
+
+## 設定說明
+系統頁面：動態規則頁的「說明」頁籤（含設定欄位、運算式、合併策略、三張流程圖、預設規則）。歸檔文件：`G:\我的雲端硬碟\專案\PhysLIMS\動態規則引擎\規格文件�6-11-26_規格_動態規則引擎設定說明.md`。
+
+## M2-d：授權上限（不可授與超過自己的權限）
+- 預設規則「不得授與超過自己的權限」（Column，欄位 `GrantBeyondOwn`，條件 `!user.IsAdmin`，寫入 ForceDeny＝啟用檢查；停用即不檢查）。
+- `[EnforceGrantCeiling]`（AuthTokenBucket）標於：使用者角色指派、直接權限、實驗室專屬權限。只比對本次新增項目（角色以其 Permission claims 比對）；超出回 403 並列出項目；系統管理員不受限。
+- 限制：以指派者登入權杖的 permission claims 為準；實驗室專屬權限保守檢查請求的所有位元。

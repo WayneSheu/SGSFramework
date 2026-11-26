@@ -164,6 +164,39 @@ public class DynamicRuleEngineTests
     }
 
     [Fact]
+    public void ForceDeny_Write_Blocks_Self_Only()
+    {
+        var self = Guid.NewGuid();
+        var rule = new RuleSnapshot
+        {
+            Kind = RuleKind.Column, TargetEntity = nameof(Person), FieldName = "Roles", RoleName = "GlobalPolicy",
+            ConditionExpr = "target.Id == user.UserGuid", WriteAccess = FieldAccessLevel.ForceDeny,
+            OutputPayload = "{\"errorMessage\":\"不可指派給自己\"}"
+        };
+        var engine = new DynamicRuleEngine(new FakeProvider(rule));
+        var me = new RuleUserContext { UserId = self.ToString(), Roles = ["MO"] };
+
+        engine.FindWriteDenial(me, new Person { Id = self }, "Roles")!.Message.Should().Be("不可指派給自己");
+        engine.FindWriteDenial(me, new Person { Id = Guid.NewGuid() }, "Roles").Should().BeNull();
+        engine.FindWriteDenial(me, new Person { Id = self }, "DirectPermissions").Should().BeNull();
+    }
+
+    [Fact]
+    public void GrantCeiling_Rule_Applies_To_NonAdmin_Only()
+    {
+        var rule = new RuleSnapshot
+        {
+            Kind = RuleKind.Column, TargetEntity = nameof(Person), FieldName = "GrantBeyondOwn", RoleName = "GlobalPolicy",
+            ConditionExpr = "!user.IsAdmin", WriteAccess = FieldAccessLevel.ForceDeny
+        };
+        var engine = new DynamicRuleEngine(new FakeProvider(rule));
+        var target = new Person { Id = Guid.NewGuid() };
+
+        engine.FindWriteDenial(new RuleUserContext { IsAdmin = false }, target, "GrantBeyondOwn").Should().NotBeNull();
+        engine.FindWriteDenial(new RuleUserContext { IsAdmin = true }, target, "GrantBeyondOwn").Should().BeNull();
+    }
+
+    [Fact]
     public void Sensitive_Members_Cannot_Be_Referenced() =>
         new RuleExpressionValidator().Validate(typeof(Microsoft.AspNetCore.Identity.IdentityUser<Guid>), RuleKind.Row, "row.PasswordHash.StartsWith(\"a\")").IsValid.Should().BeFalse();
 

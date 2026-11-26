@@ -61,6 +61,10 @@ public enum PricingMergeStrategy
 public sealed class RuleUserContext
 {
     public string UserId { get; init; } = string.Empty;
+    /// <summary>UserId 解析後的 Guid（無法解析為 Guid.Empty），供與實體 Id 比較（例：target.Id == user.UserGuid）。</summary>
+    /// <summary>是否為系統管理員（供規則例外，例：!user.IsAdmin）。</summary>
+    public bool IsAdmin { get; init; }
+    public Guid UserGuid => Guid.TryParse(UserId, out var g) ? g : Guid.Empty;
     public string DepartmentPath { get; init; } = string.Empty;
     public int Level { get; init; }
     public IReadOnlyList<string> Roles { get; init; } = [];
@@ -72,6 +76,7 @@ public sealed class RuleUserContext
 public sealed record RuleSnapshot
 {
     public long Id { get; init; }
+    public string? Name { get; init; }
     public int Version { get; init; }
     public RuleDomain Domain { get; init; }
     public RuleKind Kind { get; init; }
@@ -110,6 +115,9 @@ public sealed record RuleValidationResult(bool IsValid, string? Error)
 
 /// <summary>動態表單單一欄位的 UI 狀態。</summary>
 public sealed record FormFieldState(string Field, bool Visible, bool Required, IReadOnlyList<string> Messages);
+
+/// <summary>寫入被規則明確禁止的資訊；Message 取自規則酬載 errorMessage（可為 null）。</summary>
+public sealed record RuleDenial(long RuleId, string? RuleName, string? Message);
 
 /// <summary>風控評估結果。</summary>
 public sealed record RiskVerdict(RiskDecision Decision, IReadOnlyList<string> Reasons);
@@ -150,6 +158,11 @@ public interface IRuleEngine
 {
     FieldAccessLevel EvaluateRead<TTarget>(RuleUserContext user, TTarget target, string fieldName);
     bool EvaluateWrite<TTarget>(RuleUserContext user, TTarget target, string fieldName);
+    /// <summary>
+    /// 是否有命中的 Column 規則將該欄位的寫入設為 ForceDeny（只看明確禁止，不要求有 Allow 規則）。
+    /// 命中時回傳禁止資訊（訊息取自規則酬載 errorMessage，未設定時為 null）；未命中回傳 null。
+    /// </summary>
+    RuleDenial? FindWriteDenial<TTarget>(RuleUserContext user, TTarget target, string fieldName);
     IQueryable<TTarget> ApplyRowSecurity<TTarget>(IQueryable<TTarget> query, RuleUserContext user);
     /// <summary>此使用者（依其角色）對該實體是否有任何 Row 規則；沒有代表不受 Row 限制。</summary>
     bool HasRowRules<TTarget>(RuleUserContext user);
@@ -163,6 +176,7 @@ public sealed class NullRuleEngine : IRuleEngine
 {
     public FieldAccessLevel EvaluateRead<TTarget>(RuleUserContext user, TTarget target, string fieldName) => FieldAccessLevel.Deny;
     public bool EvaluateWrite<TTarget>(RuleUserContext user, TTarget target, string fieldName) => false;
+    public RuleDenial? FindWriteDenial<TTarget>(RuleUserContext user, TTarget target, string fieldName) => null;
     public IQueryable<TTarget> ApplyRowSecurity<TTarget>(IQueryable<TTarget> query, RuleUserContext user) => query.Where(_ => false);
     public bool HasRowRules<TTarget>(RuleUserContext user) => false;
     public IReadOnlyList<FormFieldState> EvaluateForm<TTarget>(RuleUserContext user, TTarget target) => [];

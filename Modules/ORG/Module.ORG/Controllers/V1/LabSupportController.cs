@@ -53,10 +53,11 @@ public class LabSupportController : ApiControllerBase
     [Function("SearchLabSupportCandidates", "查詢可支援人員", Icon = "fa-solid fa-user-magnifying-glass", Order = 4, Description = "以姓名或員工編號搜尋可指派支援的人員")]
     [RequiresPermission("ORG.LABSUPPORT.READ", "查詢實驗室支援")]
     [EndpointSummary("查詢可支援人員")]
+    [EndpointDescription("labCategoryId：限定人員主要實驗室所屬的實驗室別（支援實驗室所屬的實驗室別），儲存時後端亦檢核同一規則。")]
     [ProducesResponseType(typeof(Result<List<LabSupportCandidateDto>>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> Candidates([FromQuery] string? keyword, CancellationToken cancellationToken)
+    public async Task<IActionResult> Candidates([FromQuery] string? keyword, [FromQuery] int? labCategoryId, [FromQuery] int take = 50, CancellationToken cancellationToken = default)
     {
-        var result = await _mediator.Send(new SearchLabSupportCandidatesQuery(keyword), cancellationToken);
+        var result = await _mediator.Send(new SearchLabSupportCandidatesQuery(keyword, labCategoryId, take), cancellationToken);
         return HandleResult(result);
     }
 
@@ -84,6 +85,30 @@ public class LabSupportController : ApiControllerBase
         return HandleResult(result);
     }
 
+    /// <summary>
+    /// 批次新增 / 更新實驗室支援：一次指派多位人員，逐筆檢查（主要實驗室、同實驗室別、既有歸屬衝突）。
+    /// dryRun=true 只檢查不寫入；否則全有全無（任一筆不合格即整批不建立，回傳 400 與逐筆結果）。
+    /// </summary>
+    [HttpPost("batch")]
+    [Function("BatchSaveLabSupport", "批次新增實驗室支援", Icon = "fa-solid fa-layer-group", Order = 5, Description = "一次指派多位人員支援同一間實驗室，各自檢核後全有全無建立")]
+    [RequiresPermission("ORG.LABSUPPORT.MANAGE", "維護實驗室支援")]
+    [EndpointSummary("批次新增實驗室支援")]
+    [ProducesResponseType(typeof(LabSupportBatchResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(LabSupportBatchResult), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Batch([FromBody] BatchSaveLabSupportRequest request, [FromQuery] bool dryRun = false, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var operatorId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var items = (request.Items ?? [])
+            .Select(i => new BatchLabSupportItem(i.UserId, i.LabId, i.TenantLabId, i.JobTitle, i.EffectiveDate, i.ExpiryDate))
+            .ToList();
+
+        var result = await _mediator.Send(new BatchAssignLabSupportCommand(items, dryRun, operatorId), cancellationToken);
+        if (!result.Succeeded && !dryRun) _logger.LogWarning("批次新增實驗室支援未建立：{Message}", result.Message);
+        return result.Succeeded ? Ok(result) : BadRequest(result);
+    }
+
     /// <summary>撤銷（停用）實驗室支援</summary>
     [HttpDelete("users/{userId:guid}/labs/{labId:int}")]
     [Function("RevokeLabSupport", "撤銷實驗室支援", Icon = "fa-solid fa-user-slash", Order = 3, Description = "停用使用者對指定實驗室之支援")]
@@ -101,6 +126,12 @@ public class LabSupportController : ApiControllerBase
         var result = await _mediator.Send(new DeactivateUserLabCommand(userId, labId, operatorId), cancellationToken);
         return HandleResult(result);
     }
+}
+
+/// <summary>批次新增實驗室支援請求</summary>
+public sealed record BatchSaveLabSupportRequest
+{
+    public List<SaveLabSupportRequest>? Items { get; init; }
 }
 
 /// <summary>新增/更新實驗室支援請求</summary>
