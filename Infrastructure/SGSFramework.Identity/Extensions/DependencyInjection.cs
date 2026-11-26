@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Identity;
+using SGSFramework.Core.Abstractions.Identities;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SGSFramework.AuthTokenBucket.Abstractions;
@@ -66,6 +67,8 @@ namespace SGSFramework.Identity.Extensions
             // 定期權限覆核
             services.AddScoped<IAccessReviewService, AccessReviewService>();
             services.AddScoped<ILabDirectoryService, LabDirectoryService>();
+            // 使用者維護範圍（由 RUL Row 規則決定可見成員）
+            services.AddScoped<IUserMemberScope, UserMemberScopeService>();
 
             // 支援泛型與具體 UserManagementService 註冊
             services.AddScoped(typeof(IUserManagementService<,,>), typeof(UserManagementService<,,>));

@@ -1,4 +1,5 @@
-﻿// ==========================================
+using SGSFramework.Core.Abstractions.Identities;
+// ==========================================
 // 檔案路徑: src/Presentation/SGSFramework.Identity/Controllers/v1/UserManagementController.cs
 // 架構層級: Presentation / API Controller Layer (Thin Controller with ResetPassword delegated to Service)
 // ==========================================
@@ -318,6 +319,7 @@ public sealed class UserManagementController(
     /// 更新使用者基本資料與角色配置
     /// </summary>
     [HttpPut("{id:guid}")]
+    [RequiresMemberScope]
     [Function("UpdateUser", "更新使用者", Icon = "fa-solid fa-user-pen", Order = 4, Description = "更新指定使用者的基本屬性及角色授權配置")]
     [RequiresPermission("SYSTEM.USERMANAGEMENT.UPDATE", "編輯使用者")]
     [EndpointSummary("更新使用者")]
@@ -366,6 +368,7 @@ public sealed class UserManagementController(
     /// 管理者強制重設使用者密碼
     /// </summary>
     [HttpPost("{id:guid}/reset-password")]
+    [RequiresMemberScope]
     [Function("ResetPassword", "重設密碼", Icon = "fa-solid fa-key", Order = 5, Description = "管理員主動重設指定使用者的密碼並重置憑證")]
     [RequiresPermission("SYSTEM.USERMANAGEMENT.RESETPASSWORD", "重設密碼")]
     [EndpointSummary("重設密碼")]
@@ -414,6 +417,7 @@ public sealed class UserManagementController(
     /// 刪除指定使用者
     /// </summary>
     [HttpDelete("{id:guid}")]
+    [RequiresMemberScope]
     [Function("DeleteUser", "刪除使用者", Icon = "fa-solid fa-user-slash", Order = 7, Description = "刪除指定使用者帳號並清理相關關聯與權限")]
     [RequiresPermission("SYSTEM.USERMANAGEMENT.DELETE", "刪除使用者")]
     [EndpointSummary("刪除使用者")]
@@ -458,6 +462,7 @@ public sealed class UserManagementController(
     /// 取得指定使用者的完整角色指派狀態 (包含未繫結角色)
     /// </summary>
     [HttpGet("{userId:guid}/roles")]
+    [RequiresMemberScope]
     [Function("GetUserRoleAssignment", "查詢使用者角色設定", Icon = "fa-solid fa-user-tag", Order = 10, Description = "取得特定使用者包含已指派與未指派的全系統角色")]
     [RequiresPermission("SYSTEM.USERMANAGEMENT.READ")]
     [EndpointSummary("查詢使用者角色設定")]
@@ -602,6 +607,7 @@ public sealed class UserManagementController(
     /// 指派或更新指定使用者的角色清單
     /// </summary>
     [HttpPut("{userId:guid}/roles")]
+    [RequiresMemberScope]
     [Function("AssignUserRoles", "指派使用者角色", Icon = "fa-solid fa-user-tag", Order = 12, Description = "更新指定使用者的系統角色授權歸屬")]
     [RequiresPermission("SYSTEM.USERMANAGEMENT.UPDATE", "編輯使用者")]
     [EndpointSummary("指派使用者角色")]
@@ -657,6 +663,7 @@ public sealed class UserManagementController(
     /// 變更使用者帳號狀態 (支援企業級 UserStatus 列舉與稽核原因)
     /// </summary>
     [HttpPatch("{id:guid}/status")]
+    [RequiresMemberScope]
     [Function("ChangeUserStatus", "變更使用者狀態", Icon = "fa-solid fa-user-lock", Order = 6, Description = "精確變更指定使用者的系統存取狀態（如啟用、停用、鎖定等）")]
     [RequiresPermission("SYSTEM.USERMANAGEMENT.UPDATE", "編輯使用者")]
     [EndpointSummary("變更使用者狀態")]

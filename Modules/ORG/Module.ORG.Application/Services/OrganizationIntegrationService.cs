@@ -1,4 +1,4 @@
-﻿namespace SGS.Modules.ORG.Infrastructure.Services;
+namespace SGS.Modules.ORG.Infrastructure.Services;
 
 using System;
 using System.Collections.Generic;
@@ -134,6 +134,32 @@ public class OrganizationIntegrationService(ORGDbContext orgDbContext) : IOrgani
             })
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    public async Task<List<Guid>> GetMemberUserIdsAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        if (!Guid.TryParse(userId, out var self)) return [];
+
+        var labIds = await _orgDbContext.UserAccessibleLabReadModels
+            .AsNoTracking()
+            .Where(x => x.UserId == self)
+            .Select(x => x.LabId)
+            .Distinct()
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var members = labIds.Count == 0
+            ? []
+            : await _orgDbContext.UserAccessibleLabReadModels
+                .AsNoTracking()
+                .Where(x => labIds.Contains(x.LabId))
+                .Select(x => x.UserId)
+                .Distinct()
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+        if (!members.Contains(self)) members.Add(self);
+        return members;
     }
 
     public async Task<List<Guid>> GetFilteredUserIdsAsync(

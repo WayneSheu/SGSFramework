@@ -1,4 +1,5 @@
-﻿using MediatR;
+using SGSFramework.Core.Abstractions.Identities;
+using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -39,6 +40,7 @@ public class UserLabMappingController : ApiControllerBase
     /// 取得指定使用者的所有實驗室歸屬清單
     /// </summary>
     [HttpGet("users/{userId:guid}")]
+    [RequiresMemberScope]
     [Function("GetUserLabMappings", "取得用戶歸屬實驗室", Icon = "fa-solid fa-id-card", Order = 1, Description = "查詢特定使用者之主要與兼任實驗室清單")]
     [RequiresPermission("ORG.USERLABMAPPING.READ")]
     [EndpointSummary("取得用戶歸屬實驗室")]
@@ -102,6 +104,7 @@ public class UserLabMappingController : ApiControllerBase
     /// 切換/設定使用者之主要實驗室 (Primary Lab)
     /// </summary>
     [HttpPut("users/{userId:guid}/primary/{labId:int}")]
+    [RequiresMemberScope]
     [Function("SetPrimaryLab", "設定主要實驗室", Icon = "fa-solid fa-star", Order = 3, Description = "將指定實驗室升級為主要歸屬，並自動將舊主要實驗室降級")]
     [RequiresPermission("ORG.USERLABMAPPING.ASSIGN", "指派使用者歸屬實驗室")]
     [EndpointSummary("設定主要實驗室")]
@@ -135,6 +138,7 @@ public class UserLabMappingController : ApiControllerBase
     /// 停用使用者與實驗室之對應關係
     /// </summary>
     [HttpDelete("users/{userId:guid}/labs/{labId:int}")]
+    [RequiresMemberScope]
     [Function("DeactivateUserLab", "停用使用者實驗室", Icon = "fa-solid fa-user-slash", Order = 4, Description = "停用使用者於指定實驗室之存取權限")]
     [RequiresPermission("ORG.USERLABMAPPING.DEACTIVATE", "停用使用者實驗室")]
     [EndpointSummary("停用使用者實驗室")]

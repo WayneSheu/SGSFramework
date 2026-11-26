@@ -1,5 +1,6 @@
-﻿namespace SGSFramework.ApiInfrastructure.DependencyInjection;
+namespace SGSFramework.ApiInfrastructure.DependencyInjection;
 
+using SGSFramework.RuleEngine;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -55,6 +56,9 @@ public static class ServiceCollectionExtensions
 
         // 系統配置管理：設定服務 + Identity 規則執行期套用 (啟動時自資料庫載入)
         services.AddScoped<ISystemSettingsService, SystemSettingsService>();
+        // 動態規則引擎（引擎本體由 Host 載入；規則來源由 RUL 外掛覆寫）
+        services.AddDynamicRuleEngine();
+        services.AddRuleTarget<SGSFramework.Core.Abstractions.Entities.Identities.ApplicationUser>("使用者（使用者管理的成員範圍）");
         services.AddSingleton<IdentityPolicyRuntime>();
         services.AddHostedService<IdentityPolicyStartupLoader>();
         services.TryAddSingleton(TimeProvider.System);

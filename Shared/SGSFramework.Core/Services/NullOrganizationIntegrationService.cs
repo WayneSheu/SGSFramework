@@ -1,4 +1,4 @@
-﻿// ==========================================
+// ==========================================
 // 檔案路徑: src/Core/SGSFramework.Core/Services/NullOrganizationIntegrationService.cs
 // 架構層級: Core / Services (Fallback / Null Object)
 // ==========================================
@@ -80,6 +80,13 @@ public sealed class NullOrganizationIntegrationService : IOrganizationIntegratio
         LogWarning(nameof(GetFilteredUserIdsAsync));
         // Fallback 策略：未載入組織模組時回傳空清單
         return Task.FromResult(new List<Guid>());
+    }
+
+    /// <summary>未載入組織模組時，成員只有自己。</summary>
+    public Task<List<Guid>> GetMemberUserIdsAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        LogWarning(nameof(GetMemberUserIdsAsync));
+        return Task.FromResult(Guid.TryParse(userId, out var id) ? new List<Guid> { id } : new List<Guid>());
     }
 
     private void LogWarning(string methodName)

@@ -1,4 +1,4 @@
-﻿// ==========================================
+// ==========================================
 // 檔案路徑: src/Infrastructure/SGSFramework.Identity/Services/UserManagementService.cs
 // 架構層級: Infrastructure / Service Implementation Layer
 // ==========================================
@@ -23,6 +23,7 @@ using SGSFramework.Core.Results;
 using SGSFramework.Identity.Abstractions;
 using SGSFramework.Identity.DTOs;
 using SGSFramework.Identity.DTOs.Users;
+using SGSFramework.Core.Abstractions.Identities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -46,6 +47,7 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
     private readonly IUnitOfWork _unitOfWork;
     private readonly IRoleAuditService _roleAuditService;
     private readonly IPermissionChangeNotifier _permissionChangeNotifier;
+    private readonly IUserMemberScope _memberScope;
 
     public UserManagementService(
         UserManager<TUser> userManager,
@@ -56,8 +58,10 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
         ISecurityLogger securityLogger,
         IUnitOfWork unitOfWork,
         IRoleAuditService roleAuditService,
-        IPermissionChangeNotifier permissionChangeNotifier)
+        IPermissionChangeNotifier permissionChangeNotifier,
+        IUserMemberScope memberScope)
     {
+        _memberScope = memberScope ?? throw new ArgumentNullException(nameof(memberScope));
         _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
         _roleManager = roleManager ?? throw new ArgumentNullException(nameof(roleManager));
         _orgIntegrationService = orgIntegrationService ?? throw new ArgumentNullException(nameof(orgIntegrationService));
@@ -177,6 +181,9 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
         {
             var query = _userManager.Users.Where(u => !u.IsDeleted).AsNoTracking();
 
+            // 0. 動態規則（RUL）限縮：例如「全區實驗室管理員」只能看到自己的成員
+            query = await _memberScope.ApplyAsync(query, cancellationToken).ConfigureAwait(false);
+
             // 1. 全域關鍵字搜尋
             if (!string.IsNullOrWhiteSpace(queryParameters.SearchTerm))
             {
@@ -280,8 +287,9 @@ public class UserManagementService<TUser, TRole, TKey> : IUserManagementService<
         {
             string userIdStr = userId?.ToString() ?? string.Empty;
             var user = await _userManager.FindByIdAsync(userIdStr).ConfigureAwait(false);
-            if (user == null || user.IsDeleted)
+            if (user == null || user.IsDeleted || !await _memberScope.CanAccessUserAsync(user.Id is Guid scopedId ? scopedId : Guid.Empty, cancellationToken).ConfigureAwait(false))
             {
+                // 不在可維護範圍一律視為不存在，避免洩漏資源是否存在
                 return Result.Failure<UserResponse>(Error.NotFound("User.NotFound", $"找不到識別碼為 {userId} 的使用者。"));
             }
 
@@ -1086,8 +1094,9 @@ public sealed class UserManagementService : UserManagementService<ApplicationUse
         ISecurityLogger securityLogger,
         IUnitOfWork unitOfWork,
         IRoleAuditService roleAuditService,
-        IPermissionChangeNotifier permissionChangeNotifier)
-        : base(userManager, roleManager, orgIntegrationService, logger, tokenEngine, securityLogger, unitOfWork, roleAuditService, permissionChangeNotifier)
+        IPermissionChangeNotifier permissionChangeNotifier,
+        IUserMemberScope memberScope)
+        : base(userManager, roleManager, orgIntegrationService, logger, tokenEngine, securityLogger, unitOfWork, roleAuditService, permissionChangeNotifier, memberScope)
     {
     }
 }

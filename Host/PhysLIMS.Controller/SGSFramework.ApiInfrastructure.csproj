@@ -45,6 +45,7 @@
 	  <ProjectReference Include="..\..\Infrastructure\SGSFramework.ModulePlugin\SGSFramework.ModulePlugin.csproj" />
 	  <ProjectReference Include="..\..\Infrastructure\SGSFramework.Persistent\SGSFramework.Persistent.csproj" />
 	  <ProjectReference Include="..\..\Infrastructure\SGSFramework.SPAModulePlugin\SGSFramework.SPAModulePlugin.csproj" />
+	  <ProjectReference Include="..\..\Infrastructure\SGSFramework.RuleEngine\SGSFramework.RuleEngine.csproj" />
 	  <ProjectReference Include="..\..\Infrastructure\SGSFramework.SystemLog\SGSFramework.SystemLog.csproj" />
 	  <ProjectReference Include="..\..\Infrastructure\SGSFramework.VerifyLedger\SGSFramework.VerifyLedger.csproj" />
 	  <ProjectReference Include="..\..\Shared\SGSFramework.Core\SGSFramework.Core.csproj" />

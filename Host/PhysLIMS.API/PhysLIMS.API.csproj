@@ -57,6 +57,7 @@
     <ProjectReference Include="..\..\Modules\QTN\Module.QTN\SGS.Modules.QTN.csproj" />
     <ProjectReference Include="..\..\Modules\SCH\Module.SCH\SGS.Modules.SCH.csproj" />
     <ProjectReference Include="..\..\Modules\LOG\Module.LOG\SGS.Modules.LOG.csproj" />
+    <ProjectReference Include="..\..\Modules\RUL\Module.RUL\SGS.Modules.RUL.csproj" />
     <ProjectReference Include="..\..\SGSFramework.ReportEngine\SGSFramework.ReportEngine.csproj" />
     <ProjectReference Include="..\..\Shared\SGSFramework.Core\SGSFramework.Core.csproj" />
     <ProjectReference Include="..\PhysLIMS.Controller\SGSFramework.ApiInfrastructure.csproj" />

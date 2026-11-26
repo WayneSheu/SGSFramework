@@ -17,6 +17,29 @@ public static class LabAuditStatuses
     public const string Revoked = "revoked";
 }
 
+/// <summary>
+/// 稽核指派：指定使用者於起訖期間內對某區域實驗室執行稽核職責。
+/// 稽核權限 = 稽核角色（全域權限）＋ 稽核指派；指派本身不授予權限，權限來自稽核角色。
+/// </summary>
+/// <param name="Id">稽核指派識別鍵</param>
+/// <param name="UserId">稽核員使用者識別鍵（GUID 字串）</param>
+/// <param name="UserName">稽核員登入帳號</param>
+/// <param name="FullName">稽核員姓名；可能為空</param>
+/// <param name="TenantLabId">受稽核的區域實驗室識別鍵</param>
+/// <param name="LabName">受稽核的區域實驗室名稱（查無組織時為識別鍵前 8 碼）</param>
+/// <param name="EffectiveFrom">生效起始時間（含）</param>
+/// <param name="EffectiveTo">生效迄止時間（含）</param>
+/// <param name="Reason">稽核原因 / 稽核案號</param>
+/// <param name="Status">狀態：upcoming / active / expired / revoked（見 <see cref="LabAuditStatuses"/>），僅依時間與撤銷狀態計算，不含暫停生效</param>
+/// <param name="AssignedByName">指派人員名稱</param>
+/// <param name="CreatedAt">指派（建立）時間</param>
+/// <param name="RevokedAt">撤銷時間；未撤銷為 null</param>
+/// <param name="RevokedByName">撤銷人員名稱；未撤銷為 null</param>
+/// <param name="RevokeReason">撤銷原因；未撤銷為 null</param>
+/// <param name="UpdatedAt">最後修改時間；未曾修改為 null</param>
+/// <param name="UpdatedByName">最後修改人員名稱；未曾修改為 null</param>
+/// <param name="UpdateNote">最後一次修改的異動摘要；完整歷程請見異動歷程（GET {id}/history）</param>
+/// <param name="AuditRoleMissing">稽核員目前未持有啟用中的稽核角色：指派保留但暫停生效，角色恢復後自動恢復</param>
 public sealed record LabAuditAssignmentDto(
     Guid Id,
     string UserId,
@@ -38,18 +61,38 @@ public sealed record LabAuditAssignmentDto(
     string? UpdateNote = null,
     bool AuditRoleMissing = false);
 
-/// <summary>可被指派稽核的使用者（持有啟用中的稽核角色）</summary>
+/// <summary>可被指派稽核的使用者（持有啟用中的稽核角色，且使用者未刪除）</summary>
+/// <param name="UserId">使用者識別鍵（GUID 字串）</param>
+/// <param name="UserName">登入帳號</param>
+/// <param name="FullName">姓名；可能為空</param>
+/// <param name="Email">電子郵件；可能為空</param>
+/// <param name="AuditRoles">使用者目前持有的稽核角色名稱（可能不只一個）</param>
 public sealed record AuditorCandidateDto(string UserId, string UserName, string FullName, string? Email, IReadOnlyList<string> AuditRoles);
 
+/// <summary>新增稽核指派（單筆；同時是批次新增的單筆明細）</summary>
+/// <param name="UserId">稽核員使用者識別鍵；須持有稽核角色</param>
+/// <param name="TenantLabId">受稽核的區域實驗室識別鍵；須為存在且啟用中的實驗室</param>
+/// <param name="EffectiveFrom">生效起始時間（含）</param>
+/// <param name="EffectiveTo">生效迄止時間（含）；須晚於起始、尚未過期，且期間不超過一年</param>
+/// <param name="Reason">稽核原因 / 稽核案號；必填</param>
 public sealed record CreateLabAuditRequest(Guid UserId, Guid TenantLabId, DateTimeOffset EffectiveFrom, DateTimeOffset EffectiveTo, string Reason);
 
 /// <summary>批次新增稽核指派：每筆明細各有稽核員、實驗室、起訖期間與原因</summary>
+/// <param name="Items">明細清單；至少 1 筆、最多 100 筆。同稽核員同實驗室期間重疊（含批次內互相重疊）會被擋下</param>
 public sealed record BatchCreateLabAuditRequest(IReadOnlyList<CreateLabAuditRequest> Items);
 
 /// <summary>批次明細驗證結果（Index 為 0 起算的序號）；Error 非 null 表示此筆不合格，Warnings 為不阻擋的提醒</summary>
+/// <param name="Index">對應送出明細的序號（0 起算，依送出順序）</param>
+/// <param name="Succeeded">此筆是否通過驗證（無錯誤）</param>
+/// <param name="Error">不合格原因；通過時為 null</param>
+/// <param name="Warnings">不阻擋建立的提醒，例如同一稽核員在不同實驗室同期已有指派</param>
 public sealed record BatchLabAuditItemResult(int Index, bool Succeeded, string? Error, IReadOnlyList<string> Warnings);
 
 /// <summary>批次新增結果；全有全無：任一筆不合格則整批不寫入（Created = 0）</summary>
+/// <param name="Succeeded">整批是否成功：dryRun 代表全部通過；建立模式代表已全部寫入</param>
+/// <param name="Message">可直接顯示的結果訊息</param>
+/// <param name="Created">實際建立的筆數；dryRun 或失敗時為 0</param>
+/// <param name="Items">逐筆驗證結果；整批層級錯誤（例如筆數超過上限）時為空</param>
 public sealed record BatchCreateLabAuditResult(bool Succeeded, string Message, int Created, IReadOnlyList<BatchLabAuditItemResult> Items);
 
 /// <summary>稽核指派異動歷程事件（Action：created / updated / revoked）</summary>

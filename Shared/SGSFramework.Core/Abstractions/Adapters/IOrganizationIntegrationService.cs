@@ -1,4 +1,4 @@
-﻿using SGSFramework.Core.DTOs;
+using SGSFramework.Core.DTOs;
 
 namespace SGSFramework.Core.Abstractions.Adapters;
 
@@ -71,6 +71,11 @@ public interface IOrganizationIntegrationService
     /// <param name="cancellationToken"></param>
     /// <returns></returns>
     Task<List<Guid>> GetFilteredUserIdsAsync(string? laboratoryParent, string? regionalLaboratoryCode, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 取得「我的成員」：與該使用者共同歸屬任一實驗室（含其可存取的實驗室樹）的所有使用者 Id，永遠包含自己。
+    /// </summary>
+    Task<List<Guid>> GetMemberUserIdsAsync(string userId, CancellationToken cancellationToken = default);
 
     
 
