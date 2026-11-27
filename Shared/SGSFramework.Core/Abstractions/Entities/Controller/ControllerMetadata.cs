@@ -32,6 +32,23 @@ public class ControllerMetadata : IControllerMetadata
     [Comment("取自AssemblyInfo Attribute 的ModulTitle。")]
     public string ModuleTitle { get; set; } = string.Empty;
 
+    // === 模組層級之選單資訊 (取自 [assembly: Module]，供選單種子建立「領域類別 → 模組」兩層) ===
+    [DisplayName("領域類別")]
+    [Comment("取自AssemblyInfo Module Attribute 的Domain；選單最上層標題。")]
+    public string? ModuleDomain { get; set; }
+
+    [DisplayName("領域類別排序")]
+    [Comment("取自AssemblyInfo Module Attribute 的DomainOrder。")]
+    public int ModuleDomainOrder { get; set; } = 0;
+
+    [DisplayName("模組圖示")]
+    [Comment("取自AssemblyInfo Module Attribute 的Icon；選單模組(Section)圖示。")]
+    public string? ModuleIcon { get; set; }
+
+    [DisplayName("模組排序")]
+    [Comment("取自AssemblyInfo Module Attribute 的Order；選單模組(Section)排序。")]
+    public int ModuleOrder { get; set; } = 0;
+
     // === Controller 層級之中繼資料 ===
     [DisplayName("控制器標題")]
     [Comment("取自ControllerTitle Atteribute 的ControllerTitle。")]
@@ -200,6 +217,8 @@ public class ControllerMetadataConfig : IEntityTypeConfiguration<ControllerMetad
 
         builder.Property(x => x.ModuleName).IsRequired().HasMaxLength(50);
         builder.Property(x => x.ModuleTitle).IsRequired().HasMaxLength(100);
+        builder.Property(x => x.ModuleDomain).HasMaxLength(100);
+        builder.Property(x => x.ModuleIcon).HasMaxLength(100);
         builder.Property(x => x.ControllerTitle).IsRequired().HasMaxLength(100);
         builder.Property(x => x.ControllerName).IsRequired().HasMaxLength(100);
         builder.Property(x => x.ControllerIcon).HasMaxLength(100);

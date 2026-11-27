@@ -41,6 +41,17 @@ public class ModuleAttribute : Attribute
     /// </summary>
     public int Order { get; set; } = 0;
 
+    /// <summary>
+    /// 領域類別 (選單最上層標題，例如: "資訊系統領域類"、"實驗室領域類")。
+    /// 相同 Domain 的模組會歸在同一個領域類別之下；未設定時歸入預設領域類別。
+    /// </summary>
+    public string? Domain { get; set; }
+
+    /// <summary>
+    /// 領域類別的顯示排序 (越小越靠前)；同一個 Domain 的多個模組宣告以最小值為準
+    /// </summary>
+    public int DomainOrder { get; set; } = 0;
+
     public ModuleAttribute(string moduleCode, string moduleName, string? title = null)
     {
         if (string.IsNullOrWhiteSpace(moduleCode))

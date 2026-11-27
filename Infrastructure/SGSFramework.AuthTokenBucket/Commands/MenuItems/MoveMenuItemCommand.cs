@@ -1,7 +1,9 @@
 ﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using SGSFramework.Core.Abstractions.DbContexts;
+using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Errors;
 using SGSFramework.Core.Results;
 using System;
@@ -29,13 +31,16 @@ namespace SGSFramework.AuthTokenBucket.Commands.MenuItems
     {
         private readonly ITokenDbContext _dbContext;
         private readonly ILogger<MoveMenuItemCommandHandler> _logger;
+        private readonly IMemoryCache _cache;
 
         public MoveMenuItemCommandHandler(
             ITokenDbContext dbContext,
-            ILogger<MoveMenuItemCommandHandler> logger)
+            ILogger<MoveMenuItemCommandHandler> logger,
+            IMemoryCache cache)
         {
             _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         }
 
         public async Task<Result<bool>> Handle(MoveMenuItemCommand request, CancellationToken cancellationToken)
@@ -64,19 +69,34 @@ namespace SGSFramework.AuthTokenBucket.Commands.MenuItems
                         Error.Validation("INVALID_PARENT_ID", "不可將選單項目的父級設定為自身。"));
                 }
 
+                // 2.1 移至頂層：須符合階層規則（群組不可位於頂層）
+                if (!request.TargetParentId.HasValue && !MenuHierarchyRules.IsAllowedParent(targetItem.Type, null))
+                {
+                    return Result.Failure<bool>(
+                        Error.Validation("INVALID_PARENT_TYPE", MenuHierarchyRules.Describe(targetItem.Type)));
+                }
+
                 // 3. 若有指定 TargetParentId，驗證目標父級選單是否存在
                 if (request.TargetParentId.HasValue)
                 {
-                    bool isParentExists = await _dbContext.MenuItems
+                    var parentType = await _dbContext.MenuItems
                         .AsNoTracking()
-                        .AnyAsync(m => m.Id == request.TargetParentId.Value, cancellationToken)
+                        .Where(m => m.Id == request.TargetParentId.Value)
+                        .Select(m => (MenuType?)m.Type)
+                        .FirstOrDefaultAsync(cancellationToken)
                         .ConfigureAwait(false);
 
-                    if (!isParentExists)
+                    if (parentType is null)
                     {
                         _logger.LogWarning("移動選單失敗，找不到指定的目標父級選單 Id: {ParentId}", request.TargetParentId.Value);
                         return Result.Failure<bool>(
                             Error.NotFound("TARGET_PARENT_NOT_FOUND", $"找不到識別碼為 '{request.TargetParentId.Value}' 的目標父級選單。"));
+                    }
+
+                    if (!MenuHierarchyRules.IsAllowedParent(targetItem.Type, parentType))
+                    {
+                        return Result.Failure<bool>(
+                            Error.Validation("INVALID_PARENT_TYPE", MenuHierarchyRules.Describe(targetItem.Type)));
                     }
 
                     // 4. 防止樹狀結構循環參照 (Tree Cycle Detection)：檢查 TargetParentId 是否為當前節點之子孫節點
@@ -110,6 +130,8 @@ namespace SGSFramework.AuthTokenBucket.Commands.MenuItems
 
                 // 6. 持久化異動至資料庫
                 await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                // 權限樹的模組 / 功能排序與標題取自選單，選單異動後需重建
+                _cache.Remove(SGSFramework.Core.Abstractions.Entities.Controller.FunctionStatusRules.PermissionTreeCacheKey);
 
                 _logger.LogInformation("成功移動選單項目，Id: {MenuItemId}, 新 ParentId: {ParentId}, 新排序: {Order}",
                     targetItem.Id, targetItem.ParentId, targetItem.DisplayOrder);

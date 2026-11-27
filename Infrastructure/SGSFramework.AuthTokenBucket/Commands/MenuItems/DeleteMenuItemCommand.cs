@@ -1,5 +1,6 @@
 ﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Errors;
@@ -24,13 +25,16 @@ namespace SGSFramework.AuthTokenBucket.Commands.MenuItems
     {
         private readonly ITokenDbContext _dbContext;
         private readonly ILogger<DeleteMenuItemCommandHandler> _logger;
+        private readonly IMemoryCache _cache;
 
         public DeleteMenuItemCommandHandler(
             ITokenDbContext dbContext,
-            ILogger<DeleteMenuItemCommandHandler> logger)
+            ILogger<DeleteMenuItemCommandHandler> logger,
+            IMemoryCache cache)
         {
             _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         }
 
         public async Task<Result<bool>> Handle(DeleteMenuItemCommand request, CancellationToken cancellationToken)
@@ -67,6 +71,8 @@ namespace SGSFramework.AuthTokenBucket.Commands.MenuItems
                 // 3. 移除 Entity 並持久化異動
                 _dbContext.MenuItems.Remove(menuItem);
                 await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                // 權限樹的模組 / 功能排序與標題取自選單，選單異動後需重建
+                _cache.Remove(SGSFramework.Core.Abstractions.Entities.Controller.FunctionStatusRules.PermissionTreeCacheKey);
 
                 _logger.LogInformation("成功刪除選單項目，Id: {MenuItemId}, Key: {Key}", menuItem.Id, menuItem.Key);
 

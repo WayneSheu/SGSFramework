@@ -29,6 +29,7 @@ public sealed class RulesController(RuleAdminService rules, RuleTestService test
 
     /// <summary>取得單一規則</summary>
     [HttpGet("{id:long}")]
+    [Function("GetRule", "取得單一規則", Order = 10, Description = "依 Id 取得規則內容")]
     [RequiresPermission("RUL.RULE.READ", "檢視動態規則")]
     [ProducesResponseType(typeof(RuleDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<RuleDto>> Get(long id, CancellationToken ct = default) =>
@@ -36,6 +37,7 @@ public sealed class RulesController(RuleAdminService rules, RuleTestService test
 
     /// <summary>可被規則引用的目標實體與欄位（白名單）</summary>
     [HttpGet("targets")]
+    [Function("GetRuleTargets", "可引用的目標實體", Order = 11, Description = "取得可被規則引用的目標實體與欄位（白名單）")]
     [RequiresPermission("RUL.RULE.READ", "檢視動態規則")]
     [ProducesResponseType(typeof(IReadOnlyList<RuleTargetDto>), StatusCodes.Status200OK)]
     public ActionResult<IReadOnlyList<RuleTargetDto>> Targets() => Ok(rules.GetTargets());
@@ -58,6 +60,7 @@ public sealed class RulesController(RuleAdminService rules, RuleTestService test
 
     /// <summary>規則版本歷史</summary>
     [HttpGet("{id:long}/versions")]
+    [Function("GetRuleVersions", "規則版本歷史", Order = 12, Description = "查詢規則核准後的版本快照")]
     [RequiresPermission("RUL.RULE.READ", "檢視動態規則")]
     [ProducesResponseType(typeof(IReadOnlyList<RuleVersionDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<RuleVersionDto>>> Versions(long id, CancellationToken ct = default) =>
@@ -65,6 +68,7 @@ public sealed class RulesController(RuleAdminService rules, RuleTestService test
 
     /// <summary>規則的測試案例</summary>
     [HttpGet("{id:long}/tests")]
+    [Function("GetRuleTestCases", "規則測試案例清單", Order = 13, Description = "查詢規則的測試案例")]
     [RequiresPermission("RUL.RULE.READ", "檢視動態規則")]
     [ProducesResponseType(typeof(IReadOnlyList<TestCaseDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<TestCaseDto>>> Tests(long id, CancellationToken ct = default) =>
@@ -88,6 +92,7 @@ public sealed class RulesController(RuleAdminService rules, RuleTestService test
 
     /// <summary>執行規則的全部測試案例</summary>
     [HttpPost("{id:long}/tests/run")]
+    [Function("RunRuleTestCases", "執行規則測試案例", Order = 14, Description = "以規則目前內容執行全部測試案例")]
     [RequiresPermission("RUL.RULE.READ", "檢視動態規則")]
     [ProducesResponseType(typeof(IReadOnlyList<TestCaseRunDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<TestCaseRunDto>>> RunTests(long id, CancellationToken ct = default) =>

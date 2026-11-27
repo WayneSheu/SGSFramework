@@ -33,6 +33,19 @@ public class DynamicControllerRepository<T>(
 
     private static readonly ConcurrentDictionary<string, Type?> TypeCache = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// 讀取 Controller 所屬組件的 [assembly: Module]，寫入選單種子需要的模組層資訊
+    /// (領域類別 / 領域類別排序 / 模組圖示 / 模組排序)。永遠以程式碼 Attribute 為準。
+    /// </summary>
+    private static void ApplyModuleMenuInfo(ControllerMetadata meta, Type controllerType)
+    {
+        var moduleAttr = controllerType.Assembly.GetCustomAttribute<ModuleAttribute>();
+        meta.ModuleDomain = string.IsNullOrWhiteSpace(moduleAttr?.Domain) ? null : moduleAttr.Domain.Trim();
+        meta.ModuleDomainOrder = moduleAttr?.DomainOrder ?? 0;
+        meta.ModuleIcon = string.IsNullOrWhiteSpace(moduleAttr?.Icon) ? null : moduleAttr.Icon;
+        meta.ModuleOrder = moduleAttr?.Order ?? 0;
+    }
+
     public async Task RegisterAsync(string moduleName, IEnumerable<T> controllers)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(moduleName);
@@ -126,6 +139,7 @@ public class DynamicControllerRepository<T>(
                         if (controllerType != null && targetEntity is ControllerMetadata metadataEntity)
                         {
                             metadataEntity.SyncFromAttribute(controllerType);
+                            ApplyModuleMenuInfo(metadataEntity, controllerType);
 
                             // 選單入口設定以程式碼 [Function] / [ControllerTitle] 為準 (與新增分支相同由反射取得，不依賴呼叫端是否帶入)，
                             // 讓既有紀錄也能反映 IsMenu / Path 異動，供 MenuSeedService 新增或隱藏頁面節點
@@ -179,6 +193,7 @@ public class DynamicControllerRepository<T>(
                         if (controllerType != null && controller is ControllerMetadata metaNewAdd)
                         {
                             metaNewAdd.SyncFromAttribute(controllerType);
+                            ApplyModuleMenuInfo(metaNewAdd, controllerType);
 
                             var controllerTitleAttr = controllerType.GetCustomAttribute<ControllerTitleAttribute>();
                             var methodInfo = controllerType.GetMethod(metaNewAdd.ActionName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase | BindingFlags.FlattenHierarchy);

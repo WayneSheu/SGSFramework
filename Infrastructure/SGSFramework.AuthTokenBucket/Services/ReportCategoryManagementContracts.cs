@@ -55,25 +55,45 @@ public sealed record SaveReportCategoryRequest(
 /// </summary>
 public sealed class ReportCategorySearchRequest
 {
+    /// <summary>頁碼（由 1 起算）</summary>
     public int PageIndex { get; init; } = 1;
+
+    /// <summary>每頁筆數（1～200，預設 20）</summary>
     public int PageSize { get; init; } = 20;
+
+    /// <summary>類別代碼（包含比對）</summary>
     public string? Code { get; init; }
+
+    /// <summary>類別名稱（包含比對）</summary>
     public string? Name { get; init; }
 
     /// <summary>關鍵字：說明、法規標籤、儲存分類、儲存資料夾</summary>
     public string? Keyword { get; init; }
 
+    /// <summary>適用範圍：0 = 全域、1 = 實驗室專屬；不指定為全部</summary>
     public ReportCategoryScope? Scope { get; init; }
+
+    /// <summary>啟用狀態：true = 啟用中、false = 已停用；不指定為全部</summary>
     public bool? IsActive { get; init; }
 
-    /// <summary>排序欄位：code / name / scope / status；空白為排序值 + 代碼</summary>
+    /// <summary>排序欄位：code（代碼）/ name（名稱）/ scope（範圍）/ status（狀態）；空白為「排序值 + 代碼」</summary>
     public string? SortBy { get; init; }
 
+    /// <summary>是否遞減排序</summary>
     public bool SortDescending { get; init; }
+
+    /// <summary>定位用類別代碼：有值時改回傳該類別所在的頁（存檔後顯示新資料列）</summary>
     public string? FocusCode { get; init; }
 }
 
 /// <summary>報告類別分頁結果（另附全體類別數與啟用數供工具列摘要）</summary>
+/// <param name="Items">本頁的報告類別</param>
+/// <param name="TotalCount">符合篩選條件的總筆數</param>
+/// <param name="PageIndex">實際回傳的頁碼（由 1 起算；超出範圍時修正為最後一頁，定位時為目標所在頁）</param>
+/// <param name="PageSize">每頁筆數</param>
+/// <param name="AllCount">全部報告類別數（不受篩選影響）</param>
+/// <param name="ActiveCount">啟用中的報告類別數（不受篩選影響）</param>
+/// <param name="FocusFound">定位的類別是否位於目前篩選結果中</param>
 public sealed record ReportCategorySearchResult(
     IReadOnlyList<ReportCategoryDto> Items,
     int TotalCount,

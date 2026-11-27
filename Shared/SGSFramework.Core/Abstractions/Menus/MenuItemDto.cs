@@ -80,6 +80,12 @@ public record MenuItemDto
     public bool IsModuleActive { get; init; } = true;
 
     /// <summary>
+    /// 權限數：此節點（含子孫頁面）所涵蓋的可指派權限數（讀取 + 動作，去除重複、排除停用），
+    /// 與「指派權限」對話框各層的權限數同口徑；頁面節點為其所屬功能的權限數
+    /// </summary>
+    public int PermissionCount { get; set; }
+
+    /// <summary>
     /// 子選單節點集合 (僅 Type 為 Section 或 Group 時包含子節點)
     /// </summary>
     public List<MenuItemDto> Children { get; set; } = [];

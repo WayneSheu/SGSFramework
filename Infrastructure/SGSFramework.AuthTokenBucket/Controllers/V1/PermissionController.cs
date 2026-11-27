@@ -145,22 +145,25 @@ public sealed class PermissionController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     [RequiresPermission("SYSTEM.PERMISSION.READ")]
     [EndpointSummary("系統權限清單")]
-    [EndpointDescription("取得完整系統與動態模組權限清單 (階層式：Module -> Function -> Actions)")]
-    public async Task<IActionResult> GetPermissionTree(CancellationToken cancellationToken = default)
+    [EndpointDescription("取得完整系統與動態模組權限清單 (階層式：Section(領域類) -> Module(選單群組) -> Function(選單頁面，附子群組 GroupTitle) -> Actions；排序與標題與側邊選單一致)")]
+    public async Task<IActionResult> GetPermissionTree([FromQuery] string? view = null, CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
 
         try
         {
-            var tree = await _memoryCache.GetOrCreateAsync(PermissionTreeCacheKey, async entry =>
+            // 兩種分組檢視共用同一個快取項目：控制器 / 選單異動時只需清除一個 Key
+            var treeSet = await _memoryCache.GetOrCreateAsync(PermissionTreeCacheKey, async entry =>
             {
                 entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10);
                 entry.Priority = CacheItemPriority.High;
 
                 _logger.LogInformation("[PermissionController] 重新載入系統權限樹狀結構至記憶體快取。");
-                var data = await _permissionService.GetPermissionTreeAsync(cancellationToken).ConfigureAwait(false);
-                return data ?? new List<PermissionModuleDto>();
+                return await _permissionService.GetPermissionTreeSetAsync(cancellationToken).ConfigureAwait(false);
             }).ConfigureAwait(false);
+
+            // view=menu：依選單群組分組（與側邊選單同結構）；預設依程式模組分組
+            var tree = string.Equals(view, "menu", StringComparison.OrdinalIgnoreCase) ? treeSet?.Menu : treeSet?.Legacy;
 
             // 模組 / 功能停用狀態於讀取時套用 (快取內容不含此狀態)，停用 / 啟用後立即反映；以複製避免改動共用快取物件
             var inactiveModules = await _moduleStatusReader.GetInactiveModuleNamesAsync(cancellationToken).ConfigureAwait(false);
@@ -168,20 +171,30 @@ public sealed class PermissionController : ApiControllerBase
             var response = (tree ?? new List<PermissionModuleDto>())
                 .Select(m =>
                 {
-                    var moduleActive = !inactiveModules.Contains(m.ModuleName);
+                    // 選單檢視的節點可含多個模組的功能：停用狀態逐功能以其實際模組判斷；節點僅在全部功能的模組都停用時視為停用
+                    bool FunctionActive(PermissionFunctionDto f) =>
+                        !inactiveModules.Contains(string.IsNullOrEmpty(f.ModuleName) ? m.ModuleName : f.ModuleName);
+                    var moduleActive = m.Functions.Count == 0
+                        ? !inactiveModules.Contains(m.ModuleName)
+                        : m.Functions.Any(FunctionActive);
                     return new PermissionModuleDto
                     {
                         ModuleName = m.ModuleName,
                         ModuleTitle = m.ModuleTitle,
+                        SectionTitle = m.SectionTitle,
+                        MenuItemCount = m.MenuItemCount,
                         Description = m.Description,
                         IsModuleActive = moduleActive,
                         Functions = m.Functions.Select(f => new PermissionFunctionDto
                         {
+                            ModuleName = f.ModuleName,
                             FunctionName = f.FunctionName,
                             FunctionTitle = f.FunctionTitle,
+                            GroupTitle = f.GroupTitle,
+                            GroupItemCount = f.GroupItemCount,
                             Description = f.Description,
-                            ReadPermission = f.ReadPermission is null ? null : WithStatus(f.ReadPermission, moduleActive, disabledKeys),
-                            ActionPermissions = f.ActionPermissions.Select(a => WithStatus(a, moduleActive, disabledKeys)).ToList()
+                            ReadPermission = f.ReadPermission is null ? null : WithStatus(f.ReadPermission, FunctionActive(f), disabledKeys),
+                            ActionPermissions = f.ActionPermissions.Select(a => WithStatus(a, FunctionActive(f), disabledKeys)).ToList()
                         }).ToList()
                     };
                 })

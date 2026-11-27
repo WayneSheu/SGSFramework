@@ -18,7 +18,7 @@ namespace SGS.Modules.RPT.Controllers.V1;
 [Authorize]
 [ApiVersion("1")]
 [Route("api/v{version:apiVersion}/reports")]
-[ControllerTitle("檢驗報告", Icon = "fa-solid fa-file-contract", Order = 1,Description = "檢驗報告建立、數據登錄、審核、簽署發行、作廢重發與下載")]
+[ControllerTitle("檢驗報告管理", Icon = "fa-solid fa-file-contract", Order = 1,Description = "檢驗報告建立、數據登錄、審核、簽署發行、作廢重發與下載")]
 [Produces(MediaTypeNames.Application.Json)]
 public sealed class ReportController(IReportService reportService) : ControllerBase
 {
@@ -120,7 +120,7 @@ public sealed class ReportController(IReportService reportService) : ControllerB
 
     /// <summary>目前實驗室中可建立報告的類別</summary>
     [HttpGet("creatable-categories")]
-    [Function("GetCreatableReportCategories", "建立報告類別", Icon = "fa-solid fa-list", Order = 3, IsMenu =true,Description = "查詢目前實驗室中您有權建立的檢驗報告類別")]
+    [Function("GetCreatableReportCategories", "建立報告類別", Icon = "fa-solid fa-list", Order = 3,Description = "查詢目前實驗室中您有權建立的檢驗報告類別")]
     [RequiresPermission("RPT.REPORT.CREATE", "建立報告類別")]
     [ProducesResponseType(typeof(IReadOnlyList<ReportCategoryOptionDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> CreatableCategories(CancellationToken cancellationToken = default) =>
@@ -128,7 +128,7 @@ public sealed class ReportController(IReportService reportService) : ControllerB
 
     /// <summary>搜尋可指派的使用者</summary>
     [HttpGet("assignable-users")]
-    [Function("GetReports", "可指派使用者", Icon = "fa-solid fa-eye", Order = 1, IsMenu = true, Description = "查詢目前實驗室中您有權指派的使用者清單")]
+    [Function("GetReports", "可指派使用者", Icon = "fa-solid fa-eye", Order = 1, Description = "查詢目前實驗室中您有權指派的使用者清單")]
     [RequiresPermission("RPT.REPORT.ASSIGN", "指派報告")]
     [ProducesResponseType(typeof(IReadOnlyList<ReportUserOptionDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> AssignableUsers([FromQuery] string? keyword, CancellationToken cancellationToken = default) =>

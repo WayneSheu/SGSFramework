@@ -385,11 +385,29 @@ namespace PhysLIMS.API.Migrations
                         .HasDefaultValue(false)
                         .HasComment("是否為選單 (由 [Function] Attribute 之 IsMenu 標記)。");
 
+                    b.Property<string>("ModuleDomain")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("取自AssemblyInfo Module Attribute 的Domain；選單最上層標題。");
+
+                    b.Property<int>("ModuleDomainOrder")
+                        .HasColumnType("int")
+                        .HasComment("取自AssemblyInfo Module Attribute 的DomainOrder。");
+
+                    b.Property<string>("ModuleIcon")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasComment("取自AssemblyInfo Module Attribute 的Icon；選單模組(Section)圖示。");
+
                     b.Property<string>("ModuleName")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
                         .HasComment("取自AssemblyInfo Attribute 的ModuleName 屬性。");
+
+                    b.Property<int>("ModuleOrder")
+                        .HasColumnType("int")
+                        .HasComment("取自AssemblyInfo Module Attribute 的Order；選單模組(Section)排序。");
 
                     b.Property<string>("ModuleTitle")
                         .IsRequired()

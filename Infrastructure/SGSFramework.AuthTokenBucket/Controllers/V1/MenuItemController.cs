@@ -36,12 +36,15 @@ public class MenuItemController : ApiControllerBase
     private readonly ILogger<MenuItemController> _logger;
     private readonly IMediator _mediator;
     private readonly IMenuSeedService _menuSeedService;
+    private readonly Microsoft.Extensions.Caching.Memory.IMemoryCache _memoryCache;
 
     public MenuItemController(
         ILogger<MenuItemController> logger,
         IMediator mediator,
-        IMenuSeedService menuSeedService)
+        IMenuSeedService menuSeedService,
+        Microsoft.Extensions.Caching.Memory.IMemoryCache memoryCache)
     {
+        _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
         _menuSeedService = menuSeedService ?? throw new ArgumentNullException(nameof(menuSeedService));
@@ -300,6 +303,46 @@ public class MenuItemController : ApiControllerBase
         {
             _logger.LogError(ex, "執行手動選單種子同步時發生例外。");
             return StatusCode(StatusCodes.Status500InternalServerError, "內部伺服器發生錯誤。");
+        }
+    }
+
+    /// <summary>
+    /// 【破壞性】清空重建選單：備份後刪除全部選單節點，並依 Attribute 重新種子 (領域類別 → 模組 → 區塊 → 頁面)
+    /// </summary>
+    [HttpPost("rebuild")]
+    [Function("RebuildMenu", "重建選單", Icon = "fa-solid fa-arrows-rotate", Order = 9, Description = "【破壞性】備份後清空全部選單節點，並依 Attribute 重新建立選單；管理者的選單調整會消失。")]
+    [RequiresPermission("SYSTEM.MENU.REBUILD", "重建選單")]
+    [EndpointSummary("重建選單")]
+    [EndpointDescription("備份現有選單 (JSON) 後清空全部選單節點，並依 [Module] Domain、[ControllerTitle]、[Function] 重新種子。必須帶 confirm=true。")]
+    [ProducesResponseType(typeof(Result<string>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> RebuildMenu([FromQuery] bool confirm = false, CancellationToken cancellationToken = default)
+    {
+        if (!confirm)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "需要確認",
+                Detail = "此操作會刪除全部選單節點並重新建立（管理者在選單維護的調整會消失，現有選單會先備份成 JSON）。請加上 confirm=true 後再送出。",
+                Instance = HttpContext.Request.Path
+            });
+        }
+
+        try
+        {
+            _logger.LogWarning("收到清空重建選單請求（已確認）。");
+            var backupPath = await _menuSeedService.RebuildMenusAsync(cancellationToken);
+
+            // 權限樹的模組 / 功能排序與標題取自選單，重建後需重算
+            _memoryCache.Remove(SGSFramework.Core.Abstractions.Entities.Controller.FunctionStatusRules.PermissionTreeCacheKey);
+
+            return Ok(Result.Success(backupPath ?? string.Empty));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "清空重建選單時發生例外，交易已回復，現有選單未被刪除。");
+            return StatusCode(StatusCodes.Status500InternalServerError, "重建選單失敗，現有選單未被變更。");
         }
     }
 }

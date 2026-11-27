@@ -52,6 +52,15 @@ public class DynamicPermissionRegistry : IPermissionRegistry
             string assemblyName = assembly.GetName().Name ?? string.Empty;
             string moduleName = string.IsNullOrEmpty(assemblyName) ? "SGSFramework.System" : assemblyName;
 
+            // 模組顯示標題：[Module] 宣告的 Title → [AssemblyTitle]（與組件名稱不同才採用）→ 組件名稱
+            // 僅影響顯示標題，ModuleName（權限遮罩 / 授權資料的識別）維持組件名稱不變
+            string moduleTitle = assembly.GetCustomAttribute<ModuleAttribute>()?.Title is { Length: > 0 } declaredTitle
+                ? declaredTitle
+                : (assembly.GetCustomAttribute<AssemblyTitleAttribute>()?.Title is { Length: > 0 } asmTitle
+                   && !string.Equals(asmTitle, assemblyName, StringComparison.OrdinalIgnoreCase)
+                    ? asmTitle
+                    : moduleName);
+
             Type[] types;
             try
             {
@@ -83,7 +92,7 @@ public class DynamicPermissionRegistry : IPermissionRegistry
                         actionName: string.Empty,
                         description: string.IsNullOrEmpty(ctrlDesc) ? ctrlPermAttr.PermissionKey : ctrlDesc,
                         controllerTitle: ctrlTitle,
-                        moduleTitle: moduleName,
+                        moduleTitle: moduleTitle,
                         actionTitle: ctrlTitle,
                         permissionTitle: ctrlPermAttr.PermissionTitle
                     );
@@ -111,7 +120,7 @@ public class DynamicPermissionRegistry : IPermissionRegistry
                             actionName: method.Name,
                             description: actionDesc,
                             controllerTitle: ctrlTitle,
-                            moduleTitle: moduleName,
+                            moduleTitle: moduleTitle,
                             actionTitle: actionTitle,
                             permissionTitle: actionPermAttr.PermissionTitle
                         );

@@ -22,6 +22,11 @@ namespace SGSFramework.Core.Abstractions.Entities.Controller
         /// <summary>
         /// 實體可點擊頁面 (如：實驗室清單)
         /// </summary>
-        Page = 2
+        Page = 2,
+
+        /// <summary>
+        /// 導覽列分隔標題 (如：功能選單)；其下可放區塊、群組或頁面，不需路由
+        /// </summary>
+        Label = 3
     }
 }

@@ -16,7 +16,7 @@ namespace SGS.Modules.RPT.Controllers.V1;
 [Authorize]
 [ApiVersion("1")]
 [Route("api/v{version:apiVersion}/report-categories")]
-[ControllerTitle("報告類別管理", Icon = "fa-solid fa-file-shield", Order = 3, Description = "報告類別（檢驗領域）、適用範圍、承作實驗室、儲存位置與資安管控")]
+[ControllerTitle("報告類別管理", Icon = "fa-solid fa-file-shield", Order = 0, Description = "報告類別（檢驗領域）、適用範圍、承作實驗室、儲存位置與資安管控")]
 [Produces(MediaTypeNames.Application.Json)]
 public sealed class ReportCategoryController(IReportCategoryManagementService managementService) : ControllerBase
 {
@@ -37,6 +37,7 @@ public sealed class ReportCategoryController(IReportCategoryManagementService ma
 
     /// <summary>報告類別分頁查詢（篩選、排序、定位指定類別所在頁）</summary>
     [HttpPost("search")]
+    [Function("SearchReportCategories", "分頁查詢報告類別", Icon = "fa-solid fa-table-list", Order = 1, Description = "報告類別分頁查詢：依代碼、名稱、關鍵字、適用範圍與狀態篩選，可排序並定位指定類別所在頁")]
     [RequiresPermission("RPT.REPORTCATEGORY.READ", "檢視報告類別權限")]
     [ProducesResponseType(typeof(ReportCategorySearchResult), StatusCodes.Status200OK)]
     public async Task<IActionResult> Search([FromBody] ReportCategorySearchRequest request, CancellationToken cancellationToken = default) =>

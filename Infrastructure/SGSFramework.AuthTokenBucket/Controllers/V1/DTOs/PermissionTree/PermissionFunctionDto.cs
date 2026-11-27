@@ -21,6 +21,24 @@ public sealed class PermissionFunctionDto
     public string? FunctionTitle { get; set; }
 
     /// <summary>
+    /// 功能實際所屬的程式模組名稱（選單檢視中，一個節點可能含多個模組的功能；停用狀態以此判斷）
+    /// </summary>
+    [JsonPropertyName("sourceModuleName")]
+    public string? ModuleName { get; set; }
+
+    /// <summary>
+    /// 選單群組標題 (例如: 權限管理)；功能直接掛在選單區段下、或不在選單中時為 null
+    /// </summary>
+    [JsonPropertyName("groupTitle")]
+    public string? GroupTitle { get; set; }
+
+    /// <summary>
+    /// 選單項目數：該選單群組（子群組；無子群組時為區段下第一層群組）的直接子項目數；不在選單中時為 null
+    /// </summary>
+    [JsonPropertyName("groupItemCount")]
+    public int? GroupItemCount { get; set; }
+
+    /// <summary>
     /// 功能詳細描述說明
     /// </summary>
     [JsonPropertyName("description")]

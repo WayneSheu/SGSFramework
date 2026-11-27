@@ -1,5 +1,6 @@
 ﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using SGSFramework.AuthTokenBucket.Services;
 using SGSFramework.Core.Abstractions.DbContexts;
@@ -53,15 +54,18 @@ namespace SGSFramework.AuthTokenBucket.Commands.MenuItems
         private readonly ITokenDbContext _dbContext;
         private readonly IModuleStatusReader _moduleStatusReader;
         private readonly ILogger<UpdateMenuItemCommandHandler> _logger;
+        private readonly IMemoryCache _cache;
 
         public UpdateMenuItemCommandHandler(
             ITokenDbContext dbContext,
             IModuleStatusReader moduleStatusReader,
-            ILogger<UpdateMenuItemCommandHandler> logger)
+            ILogger<UpdateMenuItemCommandHandler> logger,
+            IMemoryCache cache)
         {
             _moduleStatusReader = moduleStatusReader ?? throw new ArgumentNullException(nameof(moduleStatusReader));
             _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         }
 
         public async Task<Result<bool>> Handle(UpdateMenuItemCommand request, CancellationToken cancellationToken)
@@ -116,16 +120,48 @@ namespace SGSFramework.AuthTokenBucket.Commands.MenuItems
                 // 4. 若有指定父級 ParentId，驗證該父級選單是否存在
                 if (request.ParentId.HasValue)
                 {
-                    bool isParentExists = await _dbContext.MenuItems
+                    var parentType = await _dbContext.MenuItems
                         .AsNoTracking()
-                        .AnyAsync(m => m.Id == request.ParentId.Value, cancellationToken)
+                        .Where(m => m.Id == request.ParentId.Value)
+                        .Select(m => (MenuType?)m.Type)
+                        .FirstOrDefaultAsync(cancellationToken)
                         .ConfigureAwait(false);
 
-                    if (!isParentExists)
+                    if (parentType is null)
                     {
                         _logger.LogWarning("更新選單失敗，找不到指定的父級選單 Id: {ParentId}", request.ParentId.Value);
                         return Result.Failure<bool>(
                             Error.NotFound("PARENT_MENU_NOT_FOUND", $"找不到識別碼為 '{request.ParentId.Value}' 的父級選單。"));
+                    }
+
+                    if (!MenuHierarchyRules.IsAllowedParent(request.Type, parentType))
+                    {
+                        return Result.Failure<bool>(
+                            Error.Validation("INVALID_PARENT_TYPE", MenuHierarchyRules.Describe(request.Type)));
+                    }
+                }
+                else if (!MenuHierarchyRules.IsAllowedParent(request.Type, null))
+                {
+                    return Result.Failure<bool>(
+                        Error.Validation("INVALID_PARENT_TYPE", MenuHierarchyRules.Describe(request.Type)));
+                }
+
+                // 變更類型後，既有子節點仍須符合階層規則（例如標題下有區塊時不可改為群組）
+                if (request.Type != menuItem.Type)
+                {
+                    var childTypes = await _dbContext.MenuItems
+                        .AsNoTracking()
+                        .Where(m => m.ParentId == request.Id)
+                        .Select(m => m.Type)
+                        .Distinct()
+                        .ToListAsync(cancellationToken)
+                        .ConfigureAwait(false);
+
+                    var invalidChild = childTypes.Where(t => !MenuHierarchyRules.IsAllowedParent(t, request.Type)).Select(t => (MenuType?)t).FirstOrDefault();
+                    if (invalidChild is { } childType)
+                    {
+                        return Result.Failure<bool>(
+                            Error.Validation("INVALID_CHILD_TYPE", $"此節點下仍有子節點不可位於新類型之下：{MenuHierarchyRules.Describe(childType)}請先移出或刪除這些子節點。"));
                     }
                 }
 
@@ -146,6 +182,8 @@ namespace SGSFramework.AuthTokenBucket.Commands.MenuItems
 
                 // 6. 持久化異動至資料庫
                 await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                // 權限樹的模組 / 功能排序與標題取自選單，選單異動後需重建
+                _cache.Remove(SGSFramework.Core.Abstractions.Entities.Controller.FunctionStatusRules.PermissionTreeCacheKey);
 
                 _logger.LogInformation("成功更新選單項目，Id: {MenuItemId}, Key: {Key}", menuItem.Id, menuItem.Key);
 

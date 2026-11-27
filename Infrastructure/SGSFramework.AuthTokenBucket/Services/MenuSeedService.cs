@@ -6,27 +6,120 @@ using SGSFramework.Core.Abstractions.Entities.Controller;
 using SGSFramework.Core.Abstractions.Permissions.Entities;
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 
 namespace SGSFramework.AuthTokenBucket.Services;
 
 /// <summary>
 /// 動態選單自動掃描與資料庫種子同步服務
-/// 專注於將包含 IsMenu=true 標記之 API 自動轉換為選單階層結構 (Section -> Group -> Page)
+/// 專注於將包含 IsMenu=true 標記之 API 自動轉換為選單階層結構：
+/// Label(領域類別，取自 [assembly: Module] 的 Domain) -> Section(模組，[Module] 的 Title / Icon / Order)
+/// -> Group(區塊，[ControllerTitle]) -> Page(頁面，[Function] IsMenu = true)。
+/// IsMenu = false 的 [Function] 為頁面下的「操作」權限，不產生選單節點。
 /// </summary>
 /// <typeparam name="TDbContext">資料庫上下文型別，需實作 ITokenDbContext</typeparam>
 public class MenuSeedService<TDbContext> : IMenuSeedService
     where TDbContext : DbContext, ITokenDbContext
 {
+    /// <summary>未宣告 Domain 的模組所歸屬的預設領域類別</summary>
+    private const string DefaultDomain = "其他領域類";
+    private const int DefaultDomainOrder = 99;
+
     private readonly TDbContext _dbContext;
     private readonly ILogger<MenuSeedService<TDbContext>> _logger;
+    private readonly TimeProvider _timeProvider;
 
     public MenuSeedService(
         TDbContext dbContext,
-        ILogger<MenuSeedService<TDbContext>> logger)
+        ILogger<MenuSeedService<TDbContext>> logger,
+        TimeProvider? timeProvider = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
+
+    /// <summary>
+    /// 確保「領域類別」標題節點存在（Key = LBL_{領域類別名稱}，位於最上層）。
+    /// 既有節點不覆寫，保留管理者在選單維護的調整。
+    /// </summary>
+    private MenuItem EnsureLabel(List<MenuItem> items, string? domain, int domainOrder, ref bool isModified)
+    {
+        string title = string.IsNullOrWhiteSpace(domain) ? DefaultDomain : domain.Trim();
+        int order = string.IsNullOrWhiteSpace(domain) ? DefaultDomainOrder : domainOrder;
+        string key = $"LBL_{title}";
+
+        var label = items.FirstOrDefault(m => m.Key == key);
+        if (label != null) return label;
+
+        label = new MenuItem
+        {
+            Id = Guid.NewGuid(),
+            Key = key,
+            DisplayName = title,
+            Icon = "fa-solid fa-folder",
+            DisplayOrder = order,
+            Type = MenuType.Label,
+            ModuleName = "System",
+            IsActive = true,
+            IsVisible = true
+        };
+        _dbContext.Set<MenuItem>().Add(label);
+        items.Add(label);
+        isModified = true;
+        return label;
+    }
+
+    /// <summary>
+    /// 確保模組 Section 節點存在並掛在領域類別之下。
+    /// 新建時圖示 / 排序取自 [Module]；既有節點不覆寫名稱與排序，僅在尚未有父節點（舊結構的頂層區塊）時補掛到領域類別。
+    /// </summary>
+    private MenuItem EnsureModuleSection(
+        List<MenuItem> items,
+        string moduleName,
+        string? moduleTitle,
+        string? domain,
+        int domainOrder,
+        string? moduleIcon,
+        int moduleOrder,
+        ref bool isModified)
+    {
+        string sectionKey = $"SEC_{moduleName.ToUpperInvariant()}";
+        var section = items.FirstOrDefault(m => m.Key == sectionKey);
+
+        if (section == null)
+        {
+            var label = EnsureLabel(items, domain, domainOrder, ref isModified);
+            section = new MenuItem
+            {
+                Id = Guid.NewGuid(),
+                ParentId = label.Id,
+                Key = sectionKey,
+                DisplayName = string.IsNullOrWhiteSpace(moduleTitle) ? moduleName : moduleTitle,
+                Icon = string.IsNullOrWhiteSpace(moduleIcon) ? "fa-solid fa-folder" : moduleIcon,
+                DisplayOrder = moduleOrder,
+                Type = MenuType.Section,
+                ModuleName = moduleName,
+                IsActive = true,
+                IsVisible = true
+            };
+            _dbContext.Set<MenuItem>().Add(section);
+            items.Add(section);
+            isModified = true;
+        }
+        else if (section.ParentId == null)
+        {
+            var label = EnsureLabel(items, domain, domainOrder, ref isModified);
+            section.ParentId = label.Id;
+            isModified = true;
+            _logger.LogInformation("選單區塊 [{Key}] 已補掛到領域類別 [{Label}]。", section.Key, label.DisplayName);
+        }
+
+        return section;
     }
 
     /// <inheritdoc />
@@ -76,27 +169,10 @@ public class MenuSeedService<TDbContext> : IMenuSeedService
 
             if (meta.IsMenu)
             {
-                // 1. Section
-                string sectionKey = $"SEC_{moduleName.ToUpperInvariant()}";
-                var sectionNode = menuItems.FirstOrDefault(m => m.Key == sectionKey);
-                if (sectionNode == null)
-                {
-                    sectionNode = new MenuItem
-                    {
-                        Id = Guid.NewGuid(),
-                        Key = sectionKey,
-                        DisplayName = string.IsNullOrWhiteSpace(meta.ModuleTitle) ? moduleName : meta.ModuleTitle,
-                        Icon = "fa-solid fa-folder",
-                        DisplayOrder = 10,
-                        Type = MenuType.Section,
-                        ModuleName = moduleName,
-                        IsActive = true,
-                        IsVisible = true
-                    };
-                    _dbContext.Set<MenuItem>().Add(sectionNode);
-                    menuItems.Add(sectionNode);
-                    isModified = true;
-                }
+                // 1. Label(領域類別) → Section(模組)
+                var sectionNode = EnsureModuleSection(
+                    menuItems, moduleName, meta.ModuleTitle, meta.ModuleDomain, meta.ModuleDomainOrder,
+                    meta.ModuleIcon, meta.ModuleOrder, ref isModified);
 
                 // 2. Group
                 string groupKey = $"GRP_{moduleName.ToUpperInvariant()}_{controllerName.ToUpperInvariant()}";
@@ -251,35 +327,31 @@ public class MenuSeedService<TDbContext> : IMenuSeedService
             // 頁面對應的功能仍為選單入口時，其父級視為管理者於「選單管理」手動調整的結果，不再自動搬回預設群組
             var menuControllerIds = menuTargets.Select(m => m.Id).ToHashSet();
 
-            // Group By 模組 (Module) 以建立第一層 Section
+            // 領域類別排序：同一領域類別由多個模組宣告時，取最小值
+            var domainOrders = menuTargets
+                .Where(m => !string.IsNullOrWhiteSpace(m.ModuleDomain))
+                .GroupBy(m => m.ModuleDomain!.Trim())
+                .ToDictionary(g => g.Key, g => g.Min(m => m.ModuleDomainOrder));
+
+            // Group By 模組 (Module) 以建立 Section（掛在領域類別 Label 之下）
             var moduleGroups = menuTargets.GroupBy(m => string.IsNullOrWhiteSpace(m.ModuleName) ? "System" : m.ModuleName);
 
             foreach (var moduleGroup in moduleGroups)
             {
                 string moduleName = moduleGroup.Key;
-                string sectionKey = $"SEC_{moduleName.ToUpperInvariant()}";
 
-                // 1.1 確保第一層：Section (區塊節點)
-                var sectionNode = existingMenuItems.FirstOrDefault(m => m.Key == sectionKey);
-                if (sectionNode == null)
-                {
-                    string moduleTitle = moduleGroup.FirstOrDefault()?.ModuleTitle ?? moduleName;
-                    sectionNode = new MenuItem
-                    {
-                        Id = Guid.NewGuid(),
-                        Key = sectionKey,
-                        DisplayName = moduleTitle,
-                        Icon = "fa-solid fa-folder",
-                        DisplayOrder = 10,
-                        Type = MenuType.Section,
-                        ModuleName = moduleName,
-                        IsActive = true,
-                        IsVisible = true
-                    };
-                    _dbContext.Set<MenuItem>().Add(sectionNode);
-                    existingMenuItems.Add(sectionNode);
-                    isModified = true;
-                }
+                // 1.1 確保 Label(領域類別) → Section(模組)
+                string? domain = moduleGroup.Select(m => m.ModuleDomain).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d))?.Trim();
+                int domainOrder = domain != null && domainOrders.TryGetValue(domain, out var dOrder) ? dOrder : 0;
+                var sectionNode = EnsureModuleSection(
+                    existingMenuItems,
+                    moduleName,
+                    moduleGroup.Select(m => m.ModuleTitle).FirstOrDefault(t => !string.IsNullOrWhiteSpace(t)),
+                    domain,
+                    domainOrder,
+                    moduleGroup.Select(m => m.ModuleIcon).FirstOrDefault(i => !string.IsNullOrWhiteSpace(i)),
+                    moduleGroup.Min(m => m.ModuleOrder),
+                    ref isModified);
 
                 // Group By 控制器 (Controller) 以建立第二層 Group
                 var controllerGroups = moduleGroup.GroupBy(m => m.ControllerName);
@@ -410,7 +482,7 @@ public class MenuSeedService<TDbContext> : IMenuSeedService
             if (isModified)
             {
                 await _dbContext.SaveChangesAsync(cancellationToken);
-                _logger.LogInformation("動態選單樹狀結構 (Section -> Group -> Page) 種子同步完成。");
+                _logger.LogInformation("動態選單樹狀結構 (Label -> Section -> Group -> Page) 種子同步完成。");
             }
 
             // 管理者在「系統功能管理」自訂為選單入口的功能：上面的整批同步以權限鍵為節點 Key，
@@ -426,5 +498,77 @@ public class MenuSeedService<TDbContext> : IMenuSeedService
             throw;
         }
     }
-}
 
+    /// <inheritdoc />
+    public async Task<string?> RebuildMenusAsync(CancellationToken cancellationToken = default)
+    {
+        string? backupPath = null;
+
+        var strategy = _dbContext.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+            var existing = await _dbContext.Set<MenuItem>().ToListAsync(cancellationToken);
+            if (existing.Count > 0)
+            {
+                // 先備份；備份失敗就中止，不刪除任何資料
+                backupPath = await WriteBackupAsync(existing, cancellationToken);
+                _logger.LogWarning("選單重建：已備份 {Count} 個選單節點至 {Path}，即將刪除全部節點。", existing.Count, backupPath);
+            }
+
+            // 由葉往根逐層刪除（Key 自我參照、刪除行為為 Restrict）
+            var remaining = existing.ToList();
+            while (remaining.Count > 0)
+            {
+                var parentIds = remaining.Where(m => m.ParentId.HasValue).Select(m => m.ParentId!.Value).ToHashSet();
+                var leaves = remaining.Where(m => !parentIds.Contains(m.Id)).ToList();
+                if (leaves.Count == 0) leaves = remaining.ToList(); // 循環參照防呆
+                _dbContext.Set<MenuItem>().RemoveRange(leaves);
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                remaining = remaining.Except(leaves).ToList();
+            }
+
+            await SeedAndSyncMenusAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        });
+
+        return backupPath;
+    }
+
+    private async Task<string> WriteBackupAsync(List<MenuItem> items, CancellationToken cancellationToken)
+    {
+        string directory = Path.Combine(AppContext.BaseDirectory, "MenuBackups");
+        Directory.CreateDirectory(directory);
+        string file = Path.Combine(directory, $"menuitems-{_timeProvider.GetUtcNow():yyyyMMddHHmmss}.json");
+
+        var rows = items
+            .OrderBy(m => m.ParentId.HasValue ? 1 : 0)
+            .ThenBy(m => m.DisplayOrder)
+            .Select(m => new
+            {
+                m.Id,
+                m.ParentId,
+                m.ControllerId,
+                m.Key,
+                m.DisplayName,
+                m.Icon,
+                m.Route,
+                m.Component,
+                m.DisplayOrder,
+                Type = m.Type.ToString(),
+                m.ModuleName,
+                m.PermissionKey,
+                m.IsActive,
+                m.IsVisible
+            });
+
+        var options = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+        await File.WriteAllTextAsync(file, JsonSerializer.Serialize(rows, options), new UTF8Encoding(false), cancellationToken);
+        return file;
+    }
+}

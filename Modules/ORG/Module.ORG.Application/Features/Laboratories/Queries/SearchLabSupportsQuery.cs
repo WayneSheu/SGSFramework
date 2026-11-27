@@ -30,9 +30,9 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Queries
         public string? Laboratory { get; init; }
         /// <summary>人員主要實驗室所屬區域（上層組織名稱關鍵字）</summary>
         public string? Region { get; init; }
-        /// <summary>區域實驗室代碼（完全比對，不分大小寫）；比對人員主要實驗室的代碼。null/空白＝全部</summary>
+        /// <summary>支援（區域）實驗室代碼（完全比對，不分大小寫）；比對清單的「支援實驗室」代碼。null/空白＝全部</summary>
         public string? RegionalLabCode { get; init; }
-        /// <summary>實驗室別（區域實驗室的上層組織 Id，即 Level 1 類別）；null＝全部。比對人員主要實驗室所屬的實驗室別</summary>
+        /// <summary>支援實驗室別（區域實驗室的上層組織 Id，即 Level 1 類別）；null＝全部。比對清單「支援實驗室」所屬的實驗室別</summary>
         public int? LabCategoryId { get; init; }
         /// <summary>歸屬類別；null＝全部</summary>
         public LabAssignmentType? AssignmentType { get; init; }
@@ -66,6 +66,8 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Queries
         public int? HomeCategoryId { get; init; }
         /// <summary>目標實驗室（支援類別即支援實驗室）</summary>
         public int SupportLabId { get; init; }
+        /// <summary>支援實驗室所屬實驗室別（上層組織）Id</summary>
+        public int? SupportCategoryId { get; init; }
         public Guid SupportTenantLabId { get; init; }
         public string SupportLabCode { get; init; } = string.Empty;
         public string SupportLabName { get; init; } = string.Empty;
@@ -197,6 +199,7 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Queries
                     HomeLabCode = homeLab?.Code ?? string.Empty,
                     HomeCategoryId = homeLab?.ParentId,
                     SupportLabId = r.LabId,
+                    SupportCategoryId = targetLab?.ParentId,
                     SupportTenantLabId = r.TenantLabId,
                     SupportLabCode = targetLab?.Code ?? string.Empty,
                     SupportLabName = targetLab?.Name ?? string.Empty,
@@ -217,12 +220,12 @@ namespace SGS.Modules.ORG.Application.Features.Laboratories.Queries
             if (!string.IsNullOrWhiteSpace(req.RegionalLabCode))
             {
                 var code = req.RegionalLabCode.Trim();
-                items = items.Where(i => string.Equals(i.HomeLabCode, code, StringComparison.OrdinalIgnoreCase));
+                items = items.Where(i => string.Equals(i.SupportLabCode, code, StringComparison.OrdinalIgnoreCase));
             }
             if (req.LabCategoryId.HasValue)
             {
                 var categoryId = req.LabCategoryId.Value;
-                items = items.Where(i => i.HomeCategoryId == categoryId);
+                items = items.Where(i => i.SupportCategoryId == categoryId);
             }
             if (!string.IsNullOrWhiteSpace(req.Region))
             {

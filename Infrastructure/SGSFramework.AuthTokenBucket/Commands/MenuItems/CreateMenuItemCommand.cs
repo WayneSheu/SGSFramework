@@ -1,5 +1,6 @@
 ﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using SGSFramework.Core.Abstractions.DbContexts;
 using SGSFramework.Core.Abstractions.Entities.Controller;
@@ -49,13 +50,16 @@ namespace SGSFramework.AuthTokenBucket.Commands.MenuItems
     {
         private readonly ITokenDbContext _dbContext;
         private readonly ILogger<CreateMenuItemCommandHandler> _logger;
+        private readonly IMemoryCache _cache;
 
         public CreateMenuItemCommandHandler(
             ITokenDbContext dbContext,
-            ILogger<CreateMenuItemCommandHandler> logger)
+            ILogger<CreateMenuItemCommandHandler> logger,
+            IMemoryCache cache)
         {
             _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         }
 
         public async Task<Result<Guid>> Handle(CreateMenuItemCommand request, CancellationToken cancellationToken)
@@ -80,17 +84,30 @@ namespace SGSFramework.AuthTokenBucket.Commands.MenuItems
                 // 2. 若指定父級 ParentId，驗證父級選單是否存在
                 if (request.ParentId.HasValue)
                 {
-                    bool isParentExists = await _dbContext.MenuItems
+                    var parentType = await _dbContext.MenuItems
                         .AsNoTracking()
-                        .AnyAsync(m => m.Id == request.ParentId.Value, cancellationToken)
+                        .Where(m => m.Id == request.ParentId.Value)
+                        .Select(m => (MenuType?)m.Type)
+                        .FirstOrDefaultAsync(cancellationToken)
                         .ConfigureAwait(false);
 
-                    if (!isParentExists)
+                    if (parentType is null)
                     {
                         _logger.LogWarning("建立選單失敗，找不到指定的父級選單 Id: {ParentId}", request.ParentId.Value);
                         return Result.Failure<Guid>(
                             Error.NotFound("PARENT_MENU_NOT_FOUND", $"找不到識別碼為 '{request.ParentId.Value}' 的父級選單。"));
                     }
+
+                    if (!MenuHierarchyRules.IsAllowedParent(request.Type, parentType))
+                    {
+                        return Result.Failure<Guid>(
+                            Error.Validation("INVALID_PARENT_TYPE", MenuHierarchyRules.Describe(request.Type)));
+                    }
+                }
+                else if (!MenuHierarchyRules.IsAllowedParent(request.Type, null))
+                {
+                    return Result.Failure<Guid>(
+                        Error.Validation("INVALID_PARENT_TYPE", MenuHierarchyRules.Describe(request.Type)));
                 }
 
                 // 3. 建構 Entity 物件
@@ -115,6 +132,8 @@ namespace SGSFramework.AuthTokenBucket.Commands.MenuItems
                 // 4. 寫入資料庫並持久化
                 _dbContext.MenuItems.Add(newMenuItem);
                 await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                // 權限樹的模組 / 功能排序與標題取自選單，選單異動後需重建
+                _cache.Remove(SGSFramework.Core.Abstractions.Entities.Controller.FunctionStatusRules.PermissionTreeCacheKey);
 
                 _logger.LogInformation("成功建立選單項目，Id: {MenuItemId}, Key: {Key}", newMenuItem.Id, newMenuItem.Key);
 

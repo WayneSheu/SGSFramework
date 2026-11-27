@@ -132,6 +132,17 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
 
     /// <inheritdoc />
     public async Task<List<PermissionModuleDto>> GetPermissionTreeAsync(CancellationToken cancellationToken = default)
+        => (await BuildPermissionTreesAsync(cancellationToken).ConfigureAwait(false)).Legacy;
+
+    /// <inheritdoc />
+    public async Task<List<PermissionModuleDto>> GetPermissionMenuTreeAsync(CancellationToken cancellationToken = default)
+        => (await BuildPermissionTreesAsync(cancellationToken).ConfigureAwait(false)).Menu;
+
+    /// <inheritdoc />
+    public Task<PermissionTreeSet> GetPermissionTreeSetAsync(CancellationToken cancellationToken = default)
+        => BuildPermissionTreesAsync(cancellationToken);
+
+    private async Task<PermissionTreeSet> BuildPermissionTreesAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -145,7 +156,7 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
 
             if (metadataList.Count == 0)
             {
-                return new List<PermissionModuleDto>();
+                return new PermissionTreeSet(new List<PermissionModuleDto>(), new List<PermissionModuleDto>());
             }
 
             var controllerMetadatas = await _dbContext.Set<ControllerMetadata>()
@@ -159,6 +170,8 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                 .ConfigureAwait(false);
 
             var resolver = new FunctionGroupResolver(controllerMetadatas, overrides);
+            // 與側邊選單同源：模組 = 選單區段、功能 = 選單頁面，排序與標題依選單樹
+            var menu = await BuildMenuLookupAsync(cancellationToken).ConfigureAwait(false);
             var actionLookup = controllerMetadatas
                 .GroupBy(c => FunctionStatusRules.BuildKey(c.ControllerName, c.ActionName), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
@@ -190,26 +203,52 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
             }
 
             var result = new List<PermissionModuleDto>();
+            // 選單檢視用：功能的實際模組與選單位置、各模組的主要選單群組
+            var functionInfo = new Dictionary<PermissionFunctionDto, (string Module, MenuPlacement? Place)>();
+            var moduleHomes = new Dictionary<string, MenuPlacement?>(StringComparer.OrdinalIgnoreCase);
             var moduleGroups = metadataList
                 .GroupBy(m => m.ModuleName ?? string.Empty)
-                .OrderBy(g => resolver.ModuleOrder(g.Key) ?? int.MaxValue)
-                .ThenBy(g => ModuleTitleOf(g.First()), StringComparer.CurrentCulture);
+                .Select(g => new
+                {
+                    Group = g,
+                    // 模組所在的選單群組：取功能最多者（同數量取選單排序最前）；模組內其他選單群組的功能以 GroupTitle 標示
+                    Section = g.Select(m => menu.Find(g.Key, m.ControllerName ?? string.Empty))
+                        .Where(pl => pl is not null)
+                        .GroupBy(pl => pl!.TopKey)
+                        .OrderByDescending(x => x.Count())
+                        .ThenBy(x => x.First()!.SectionOrder)
+                        .ThenBy(x => x.First()!.GroupOrder)
+                        .Select(x => x.First())
+                        .FirstOrDefault()
+                })
+                .OrderBy(x => x.Section?.SectionOrder ?? resolver.ModuleOrder(x.Group.Key) ?? int.MaxValue)
+                .ThenBy(x => x.Section?.GroupOrder ?? int.MaxValue)
+                .ThenBy(x => x.Section?.GroupTitle ?? ModuleTitleOf(x.Group.First()), StringComparer.CurrentCulture)
+                .ToList();
 
-            foreach (var moduleGroup in moduleGroups)
+            foreach (var moduleEntry in moduleGroups)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                var moduleGroup = moduleEntry.Group;
+                moduleHomes[moduleGroup.Key] = moduleEntry.Section;
 
                 var moduleDto = new PermissionModuleDto
                 {
                     ModuleName = moduleGroup.Key,
-                    ModuleTitle = ModuleTitleOf(moduleGroup.First()),
+                    // 模組標題 = 選單群組名稱（區段下第一層，例如 系統管理）；領域類另存 SectionTitle
+                    ModuleTitle = moduleEntry.Section?.GroupTitle ?? moduleEntry.Section?.SectionTitle ?? ModuleTitleOf(moduleGroup.First()),
+                    SectionTitle = moduleEntry.Section?.SectionTitle,
+                    MenuItemCount = moduleEntry.Section?.TopChildCount,
                     Description = moduleGroup.FirstOrDefault()?.Description,
                     Functions = new List<PermissionFunctionDto>()
                 };
 
+                // 功能排序：選單「群組/頁面」順序 → 頁面順序；不在選單中的功能排最後（依功能自訂順序）
                 var controllerGroups = moduleGroup
                     .GroupBy(c => c.ControllerName ?? string.Empty)
-                    .OrderBy(g => resolver.EffectiveControllerOrder(moduleGroup.Key, g.Key))
+                    .OrderBy(g => menu.Find(moduleGroup.Key, g.Key)?.GroupOrder ?? int.MaxValue)
+                    .ThenBy(g => menu.Find(moduleGroup.Key, g.Key)?.PageOrder ?? int.MaxValue)
+                    .ThenBy(g => resolver.EffectiveControllerOrder(moduleGroup.Key, g.Key))
                     .ThenBy(g => ControllerTitleOf(g.First()), StringComparer.CurrentCulture);
 
                 foreach (var controllerGroup in controllerGroups)
@@ -220,6 +259,9 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                     {
                         FunctionName = controllerGroup.Key,
                         FunctionTitle = controllerTitle,
+                        ModuleName = moduleGroup.Key,
+                        GroupTitle = FunctionGroupTitle(menu.Find(moduleGroup.Key, controllerGroup.Key), moduleEntry.Section),
+                        GroupItemCount = FunctionGroupItemCount(menu.Find(moduleGroup.Key, controllerGroup.Key), moduleEntry.Section),
                         Description = first.Description,
                         ActionPermissions = new List<PermissionActionDto>()
                     };
@@ -244,13 +286,23 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                         functionDto.ActionPermissions.Add(ToAction(actionEntity, isRead: false, controllerTitle));
                     }
 
+                    functionInfo[functionDto] = (moduleGroup.Key, menu.Find(moduleGroup.Key, controllerGroup.Key));
                     moduleDto.Functions.Add(functionDto);
                 }
 
                 result.Add(moduleDto);
             }
 
-            return result;
+            // 選單頁面：IsMenu = true 的功能（每個頁面一列）；同一權限鍵的多個入口只算一頁
+            var pagesByController = controllerMetadatas
+                .Where(c => c.IsMenu && !string.IsNullOrWhiteSpace(c.PermissionKey))
+                .GroupBy(c => c.ControllerName, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.OrderBy(c => c.DisplayOrder).ThenBy(c => c.ActionName, StringComparer.Ordinal).ToList(),
+                    StringComparer.OrdinalIgnoreCase);
+
+            return new PermissionTreeSet(result, BuildMenuView(result, functionInfo, moduleHomes, pagesByController));
         }
         catch (Exception ex)
         {
@@ -766,14 +818,31 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
     /// 依據 PermissionKey 查表/對照 Registry 補全 Title 與 Description 資訊
     /// </summary>
     /// <summary>選單位置：功能（Module + Controller）對應到實際選單樹的區段 / 群組</summary>
-    private sealed record MenuPlacement(string SectionTitle, int SectionOrder, string GroupTitle, int GroupOrder);
+    /// <param name="SectionTitle">選單頂層區段名稱（與側邊選單一致）</param>
+    /// <param name="SectionOrder">區段排序</param>
+    /// <param name="GroupTitle">選單群組名稱；頁面直接掛在區段下時為 null</param>
+    /// <param name="GroupOrder">頁面所屬「區段下第一層節點」的排序（群組或頁面本身），決定功能在區段內的先後</param>
+    /// <param name="PageOrder">頁面在其父節點內的排序</param>
+    /// <param name="SubGroupTitle">頁面與「區段下第一層節點」之間的子群組名稱（例如 系統管理 > 權限管理 > 頁面 的「權限管理」）；無則為 null</param>
+    /// <param name="TopKey">區段下第一層節點的唯一識別（區段 + 群組），用來判斷兩個功能是否在同一個選單群組</param>
+    private sealed record MenuPlacement(string SectionTitle, int SectionOrder, string? GroupTitle, int GroupOrder, int PageOrder, string? SubGroupTitle, string TopKey, int TopChildCount, int SubGroupChildCount, int ChildOrder);
 
     /// <summary>選單頁面入口</summary>
     private sealed record MenuEntry(string Title, string? Route);
 
     private sealed record MenuLookup(
         Dictionary<string, MenuPlacement> ByController,
-        Dictionary<string, MenuEntry> EntriesByKey);
+        Dictionary<string, MenuPlacement> ByControllerName,
+        Dictionary<string, MenuPlacement> ByModule,
+        Dictionary<string, MenuEntry> EntriesByKey,
+        FunctionGroupResolver ModuleResolver)
+    {
+        /// <summary>依 (模組, Controller) 找選單位置；找不到時以 Controller 名稱比對（權限註冊表與資料庫的模組名稱可能不同）</summary>
+        public MenuPlacement? Find(string moduleName, string controllerName) =>
+            ByController.TryGetValue(ControllerKey(moduleName, controllerName), out var exact) ? exact
+            : ByControllerName.TryGetValue(controllerName, out var byName) ? byName
+            : null;
+    }
 
     private static string ControllerKey(string module, string controller) => $"{module}|{controller}".ToUpperInvariant();
 
@@ -783,12 +852,29 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
     /// </summary>
     private async Task<MenuLookup> BuildMenuLookupAsync(CancellationToken cancellationToken)
     {
+        // 查詢條件與排序須與側邊選單（GetUserMenuTreeQuery）完全相同：
+        // 同 DisplayOrder 的項目先後由資料庫決定，這裡以「查詢結果名次」作為排序依據，才能與選單的實際顯示順序一致
         var items = await _dbContext.MenuItems.AsNoTracking()
             .Where(m => m.IsActive && m.IsVisible)
+            .OrderBy(m => m.DisplayOrder)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
         var byId = items.ToDictionary(m => m.Id);
+        // 各節點的直接子項目數（與側邊選單徽章同算法：可見且啟用的直接子節點）
+        var childCount = items.Where(m => m.ParentId.HasValue).GroupBy(m => m.ParentId!.Value).ToDictionary(g => g.Key, g => g.Count());
+        int ChildCountOf(MenuItem? node) => node is not null && childCount.TryGetValue(node.Id, out var c) ? c : 0;
+        var rank = new Dictionary<Guid, int>(items.Count);
+        for (var i = 0; i < items.Count; i++) rank[items[i].Id] = i;
+
+        // 模組中文名稱：與「指派權限」樹狀圖一致，經 FunctionGroupResolver 解析（含功能管理的改名/改掛）
+        var controllerMetadatas = await _dbContext.Set<ControllerMetadata>().AsNoTracking()
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        var overrides = await _dbContext.Set<FunctionGroupOverride>().AsNoTracking()
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        var moduleResolver = new FunctionGroupResolver(controllerMetadatas, overrides);
 
         var byController = new Dictionary<string, MenuPlacement>(StringComparer.OrdinalIgnoreCase);
+        var byControllerName = new Dictionary<string, MenuPlacement>(StringComparer.OrdinalIgnoreCase);
+        var byModule = new Dictionary<string, MenuPlacement>(StringComparer.OrdinalIgnoreCase);
         var entries = new Dictionary<string, MenuEntry>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var page in items.Where(m => m.Type == MenuType.Page).OrderBy(m => m.DisplayOrder))
@@ -803,20 +889,206 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                 .ToList();
             if (metas.Count == 0) continue;
 
-            MenuItem? group = null;
-            if (page.ParentId is { } groupId && byId.TryGetValue(groupId, out var groupNode)) group = groupNode;
-            var section = group?.ParentId is { } sectionId && byId.TryGetValue(sectionId, out var s) ? s : null;
-            if (group is null) continue;
+            // 自頁面往上走到頂層區段：區段 → (群組) → 頁面
+            // top = 區段下第一層節點（群組，或直接掛在區段下的頁面本身）
+            var top = page;
+            var root = page;
+            var topChild = page; // 區段下第一層節點（top）之下、包含此頁面的子節點（子群組或頁面本身）
+            while (root.ParentId is { } parentId && byId.TryGetValue(parentId, out var parentNode))
+            {
+                topChild = top;
+                top = root;
+                root = parentNode;
+            }
+
+            if (ReferenceEquals(root, page)) continue;
+            var groupNode = !ReferenceEquals(top, page) ? top : null;
+            // 子群組：頁面的直接父節點，且不是區段本身或區段下第一層節點
+            var directParent = page.ParentId is { } directParentId && byId.TryGetValue(directParentId, out var dp) ? dp : null;
+            var subGroup = directParent is not null && !ReferenceEquals(directParent, root) && !ReferenceEquals(directParent, top) ? directParent : null;
 
             foreach (var meta in metas)
             {
-                byController.TryAdd(ControllerKey(meta.ModuleName, meta.ControllerName), new MenuPlacement(
-                    section?.DisplayName ?? meta.ModuleTitle ?? meta.ModuleName, section?.DisplayOrder ?? int.MaxValue,
-                    group.DisplayName, group.DisplayOrder));
+                var placement = new MenuPlacement(root.DisplayName, rank[root.Id], groupNode?.DisplayName, rank[top.Id], rank[page.Id], subGroup?.DisplayName, top.Key, ChildCountOf(top), ChildCountOf(subGroup), rank[topChild.Id]);
+                byController.TryAdd(ControllerKey(meta.ModuleName, meta.ControllerName), placement);
+                byControllerName.TryAdd(meta.ControllerName, placement);
+                if (!byModule.TryGetValue(meta.ModuleName, out var existingModulePlacement) || placement.SectionOrder < existingModulePlacement.SectionOrder)
+                {
+                    byModule[meta.ModuleName] = placement;
+                }
             }
         }
 
-        return new MenuLookup(byController, entries);
+        return new MenuLookup(byController, byControllerName, byModule, entries, moduleResolver);
+    }
+
+    /// <summary>
+    /// 功能在權限樹中的群組標題：與模組同一個選單群組 → 只顯示子群組；位於其他選單群組 → 「群組 › 子群組」
+    /// </summary>
+    private static string? FunctionGroupTitle(MenuPlacement? function, MenuPlacement? moduleHome)
+    {
+        if (function is null) return null;
+        var sameTop = moduleHome is not null && string.Equals(function.TopKey, moduleHome.TopKey, StringComparison.Ordinal);
+        if (sameTop) return function.SubGroupTitle;
+        return string.IsNullOrWhiteSpace(function.SubGroupTitle)
+            ? function.GroupTitle
+            : (string.IsNullOrWhiteSpace(function.GroupTitle) ? function.SubGroupTitle : $"{function.GroupTitle} › {function.SubGroupTitle}");
+    }
+
+    /// <summary>
+    /// 選單檢視：節點 = 選單群組（區段下第一層），依選單順序排列；
+    /// 不在選單中的功能併入其所屬模組的主要選單群組（排在最後），模組完全不在選單時以模組自成一個節點（排在所有選單群組之後）。
+    /// ModuleName 為選單節點 Key（唯一），實際模組名稱記於各功能的 ModuleName。
+    /// </summary>
+    private static List<PermissionModuleDto> BuildMenuView(
+        List<PermissionModuleDto> legacy,
+        Dictionary<PermissionFunctionDto, (string Module, MenuPlacement? Place)> functionInfo,
+        Dictionary<string, MenuPlacement?> moduleHomes,
+        Dictionary<string, List<ControllerMetadata>> pagesByController)
+    {
+        var buckets = new Dictionary<string, (MenuPlacement? Home, PermissionModuleDto Dto, List<(PermissionFunctionDto Fn, MenuPlacement? Place)> Items)>(StringComparer.Ordinal);
+
+        foreach (var module in legacy)
+        {
+            foreach (var function in module.Functions)
+            {
+                var (moduleName, place) = functionInfo[function];
+                var home = place ?? (moduleHomes.TryGetValue(moduleName, out var h) ? h : null);
+                var key = home is null ? $"M|{moduleName}" : home.TopKey;
+
+                if (!buckets.TryGetValue(key, out var bucket))
+                {
+                    bucket = (home, new PermissionModuleDto
+                    {
+                        ModuleName = key,
+                        ModuleTitle = home is null ? module.ModuleTitle : (home.GroupTitle ?? home.SectionTitle),
+                        SectionTitle = home?.SectionTitle,
+                        MenuItemCount = home?.TopChildCount,
+                        Description = module.Description
+                    }, new List<(PermissionFunctionDto, MenuPlacement?)>());
+                    buckets[key] = bucket;
+                }
+
+                bucket.Items.Add((function, place));
+            }
+        }
+
+        var result = new List<PermissionModuleDto>();
+        foreach (var bucket in buckets.Values
+                     .OrderBy(b => b.Home is null ? 1 : 0)
+                     .ThenBy(b => b.Home?.SectionOrder ?? int.MaxValue)
+                     .ThenBy(b => b.Home?.GroupOrder ?? int.MaxValue)
+                     .ThenBy(b => b.Dto.ModuleTitle, StringComparer.CurrentCulture))
+        {
+            foreach (var (function, place) in bucket.Items
+                         .OrderBy(i => i.Place?.ChildOrder ?? int.MaxValue)
+                         .ThenBy(i => i.Place?.PageOrder ?? int.MaxValue))
+            {
+                // 功能（Controller）展開為選單頁面；快取內的物件由兩種檢視共用，一律複製後再改
+                pagesByController.TryGetValue(function.FunctionName, out var pages);
+                foreach (var pageRow in SplitIntoPages(function, place, pages))
+                {
+                    bucket.Dto.Functions.Add(pageRow);
+                }
+            }
+
+            result.Add(bucket.Dto);
+        }
+
+        return result;
+    }
+
+    private static PermissionActionDto CloneAction(PermissionActionDto source, string? permissionTitle) => new()
+    {
+        PermissionKey = source.PermissionKey,
+        PermissionTitle = permissionTitle,
+        ActionName = source.ActionName,
+        ActionTitle = source.ActionTitle,
+        Description = source.Description,
+        BitPosition = source.BitPosition,
+        IsCustomized = source.IsCustomized,
+        IsDisabled = source.IsDisabled,
+        DisabledReason = source.DisabledReason
+    };
+
+    /// <summary>
+    /// 選單檢視的「頁面」層：Controller 內每個 IsMenu = true 的功能（以權限鍵去重）成為一列，
+    /// 頁面標題取自 [Function] 標題，其權限為該頁的讀取權限；該 Controller 的其餘操作權限（IsMenu = false）
+    /// 掛在排序最前的頁面下，其餘頁面只含自己的讀取權限。Controller 沒有選單頁面時維持單一功能列。
+    /// 子群組（區塊 = [ControllerTitle]）以 GroupTitle 標示。
+    /// </summary>
+    private static List<PermissionFunctionDto> SplitIntoPages(PermissionFunctionDto function, MenuPlacement? place, List<ControllerMetadata>? pages)
+    {
+        string? blockTitle = string.IsNullOrWhiteSpace(place?.SubGroupTitle) ? null : place!.SubGroupTitle;
+        int? blockCount = blockTitle is null ? null : place!.SubGroupChildCount;
+
+        var allPermissions = new List<PermissionActionDto>();
+        if (function.ReadPermission is not null) allPermissions.Add(function.ReadPermission);
+        allPermissions.AddRange(function.ActionPermissions);
+
+        var pageRows = (pages ?? new List<ControllerMetadata>())
+            .GroupBy(p => p.PermissionKey.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .Where(p => allPermissions.Any(a => string.Equals(a.PermissionKey, p.PermissionKey.Trim(), StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        if (pageRows.Count == 0)
+        {
+            return new List<PermissionFunctionDto>
+            {
+                new()
+                {
+                    ModuleName = function.ModuleName,
+                    FunctionName = function.FunctionName,
+                    FunctionTitle = function.FunctionTitle,
+                    GroupTitle = blockTitle,
+                    GroupItemCount = blockCount,
+                    Description = function.Description,
+                    ReadPermission = function.ReadPermission,
+                    ActionPermissions = function.ActionPermissions
+                }
+            };
+        }
+
+        var pageKeys = pageRows.Select(p => p.PermissionKey.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var operations = allPermissions
+            .Where(a => !pageKeys.Contains(a.PermissionKey))
+            .DistinctBy(a => a.PermissionKey, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var result = new List<PermissionFunctionDto>();
+        for (var i = 0; i < pageRows.Count; i++)
+        {
+            var page = pageRows[i];
+            var read = allPermissions.First(a => string.Equals(a.PermissionKey, page.PermissionKey.Trim(), StringComparison.OrdinalIgnoreCase));
+            var pageTitle = string.IsNullOrWhiteSpace(page.DisplayName) ? function.FunctionTitle : page.DisplayName;
+
+            result.Add(new PermissionFunctionDto
+            {
+                ModuleName = function.ModuleName,
+                FunctionName = $"{function.FunctionName}.{page.ActionName}",
+                FunctionTitle = pageTitle,
+                GroupTitle = blockTitle,
+                GroupItemCount = blockCount,
+                Description = string.IsNullOrWhiteSpace(page.Description) ? function.Description : page.Description,
+                // 未自訂名稱的讀取權限，名稱跟隨頁面標題
+                ReadPermission = CloneAction(read, read.IsCustomized ? read.PermissionTitle : pageTitle),
+                ActionPermissions = i == 0
+                    ? operations.Select(a => CloneAction(a, a.PermissionTitle)).ToList()
+                    : new List<PermissionActionDto>()
+            });
+        }
+
+        return result;
+    }
+
+    /// <summary>與 <see cref="FunctionGroupTitle"/> 對應的選單項目數</summary>
+    private static int? FunctionGroupItemCount(MenuPlacement? function, MenuPlacement? moduleHome)
+    {
+        if (function is null) return null;
+        var sameTop = moduleHome is not null && string.Equals(function.TopKey, moduleHome.TopKey, StringComparison.Ordinal);
+        if (!string.IsNullOrWhiteSpace(function.SubGroupTitle)) return function.SubGroupChildCount;
+        return sameTop ? null : function.TopChildCount;
     }
 
     private List<PermissionAuditInfoItemDto> EnrichPermissionDetails(IEnumerable<string> permissionKeys, MenuLookup? menu = null)
@@ -830,10 +1102,23 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                 : (!string.IsNullOrWhiteSpace(meta?.ActionTitle) ? meta.ActionTitle : key);
 
             var functionTitle = !string.IsNullOrWhiteSpace(meta?.ControllerTitle) ? meta!.ControllerTitle! : meta?.ControllerName ?? "其他";
-            MenuPlacement? placement = null;
-            if (meta is not null) menu?.ByController.TryGetValue(ControllerKey(meta.ModuleName, meta.ControllerName), out placement);
+            MenuPlacement? placement = meta is not null ? menu?.Find(meta.ModuleName, meta.ControllerName) : null;
+            // 無選單入口的功能：歸入同模組其他功能所在的選單區段
+            MenuPlacement? modulePlacement = null;
+            if (placement is null && meta is not null) menu?.ByModule.TryGetValue(meta.ModuleName, out modulePlacement);
             MenuEntry? entry = null;
             menu?.EntriesByKey.TryGetValue(key, out entry);
+
+            var sectionTitle = placement?.SectionTitle
+                ?? modulePlacement?.SectionTitle
+                ?? (meta is not null ? menu?.ModuleResolver.FindModuleTitle(meta.ModuleName) : null)
+                ?? meta?.ModuleTitle ?? meta?.ModuleName ?? "其他";
+            int? sectionOrder = placement?.SectionOrder ?? modulePlacement?.SectionOrder;
+            if (sectionOrder is null && menu is not null)
+            {
+                var sameTitle = menu.ByController.Values.FirstOrDefault(v => string.Equals(v.SectionTitle, sectionTitle, StringComparison.Ordinal));
+                if (sameTitle is not null) sectionOrder = sameTitle.SectionOrder;
+            }
 
             return new PermissionAuditInfoItemDto
             {
@@ -841,8 +1126,8 @@ public class PermissionManagementService<TDbContext> : IPermissionManagementServ
                 Title = title,
                 Description = meta?.Description,
                 // 無選單入口的功能：以模組 / 功能標題作為分組（排序置後）
-                SectionTitle = placement?.SectionTitle ?? meta?.ModuleTitle ?? meta?.ModuleName ?? "其他",
-                SectionOrder = placement?.SectionOrder ?? int.MaxValue,
+                SectionTitle = sectionTitle,
+                SectionOrder = sectionOrder ?? int.MaxValue,
                 GroupTitle = placement?.GroupTitle ?? functionTitle,
                 GroupOrder = placement?.GroupOrder ?? int.MaxValue,
                 FunctionTitle = functionTitle,

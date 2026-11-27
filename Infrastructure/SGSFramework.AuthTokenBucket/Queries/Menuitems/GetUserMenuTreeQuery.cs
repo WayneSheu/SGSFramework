@@ -3,6 +3,8 @@
 using MediatR;
 using Microsoft.AspNetCore.Http;
 using SGSFramework.AuthTokenBucket.Abstractions;
+using SGSFramework.AuthTokenBucket.Services;
+using SGSFramework.Core.Abstractions.Permissions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SGSFramework.Core.Abstractions.DbContexts;
@@ -33,14 +35,20 @@ public class GetUserMenuTreeQueryHandler : IRequestHandler<GetUserMenuTreeQuery,
     private readonly ILogger<GetUserMenuTreeQueryHandler> _logger;
     private readonly IUserRuntimeScopeService _runtimeScopeService;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IPermissionRegistry _permissionRegistry;
+    private readonly IModuleStatusReader _moduleStatusReader;
 
     public GetUserMenuTreeQueryHandler(
         ITokenDbContext dbContext,
         ICurrentUserService currentUserService,
         IUserRuntimeScopeService runtimeScopeService,
         IHttpContextAccessor httpContextAccessor,
+        IPermissionRegistry permissionRegistry,
+        IModuleStatusReader moduleStatusReader,
         ILogger<GetUserMenuTreeQueryHandler> logger)
     {
+        _permissionRegistry = permissionRegistry ?? throw new ArgumentNullException(nameof(permissionRegistry));
+        _moduleStatusReader = moduleStatusReader ?? throw new ArgumentNullException(nameof(moduleStatusReader));
         _runtimeScopeService = runtimeScopeService ?? throw new ArgumentNullException(nameof(runtimeScopeService));
         _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
@@ -178,8 +186,8 @@ public class GetUserMenuTreeQueryHandler : IRequestHandler<GetUserMenuTreeQuery,
                     bool isNodeDirectlyAuthorized = authorizedItemIds.Contains(node.Id);
 
                     // 保留條件：本身具備權限，或其下包含任一合法存取之子節點
-                    // 區段 / 群組僅為容器：必須至少有一個可見的頁面才顯示（未設權限的容器本身會被視為公開，不能單獨保留）
-                    bool isContainer = node.Type is MenuType.Section or MenuType.Group;
+                    // 標題 / 區段 / 群組僅為容器：必須至少有一個可見的頁面才顯示（未設權限的容器本身會被視為公開，不能單獨保留）
+                    bool isContainer = node.Type is MenuType.Section or MenuType.Group or MenuType.Label;
                     if (hasAuthorizedChild || (isNodeDirectlyAuthorized && !isContainer))
                     {
                         node.Children = node.Children.OrderBy(c => c.Order).ToList();
@@ -194,6 +202,9 @@ public class GetUserMenuTreeQueryHandler : IRequestHandler<GetUserMenuTreeQuery,
             var rawRoots = menuDtoDict.Values.Where(m => !m.ParentId.HasValue);
             var finalMenuTree = FilterAndSortTree(rawRoots);
 
+            // 8. 各節點權限數（與「指派權限」對話框同口徑）
+            await AssignPermissionCountsAsync(finalMenuTree, allMenuItems, inactiveModuleNames, cancellationToken).ConfigureAwait(false);
+
             _logger.LogInformation("成功為使用者 {UserId} 計算選單樹，最終回傳 {Count} 個頂層選單容器。",
                 _currentUserService.UserId, finalMenuTree.Count);
 
@@ -205,6 +216,76 @@ public class GetUserMenuTreeQueryHandler : IRequestHandler<GetUserMenuTreeQuery,
             return Result.Failure<List<MenuItemDto>>(
                 Error.Failure("MENU_TREE_BUILD_ERROR", "建立使用者動態選單樹時發生內部系統錯誤。"));
         }
+    }
+
+    /// <summary>
+    /// 計算每個選單節點的權限數：頁面 = 其功能（Controller）的讀取 + 動作權限；區段 / 群組 = 子孫頁面的聯集（去除重複）。
+    /// 已停用的權限不計入（與對話框「可選取權限」一致）。
+    /// </summary>
+    private async Task AssignPermissionCountsAsync(
+        List<MenuItemDto> tree,
+        List<MenuItem> sourceItems,
+        IEnumerable<string> inactiveModuleNames,
+        CancellationToken cancellationToken)
+    {
+        var inactive = inactiveModuleNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var disabledKeys = await _moduleStatusReader.GetDisabledPermissionKeysAsync(inactive, cancellationToken).ConfigureAwait(false);
+
+        var registry = _permissionRegistry.GetAllPermissions()
+            .Where(p => !string.IsNullOrWhiteSpace(p.PermissionKey))
+            .ToList();
+        var keysByController = registry
+            .Where(p => !string.IsNullOrWhiteSpace(p.ControllerName))
+            .GroupBy(p => p.ControllerName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Select(p => p.PermissionKey).ToList(), StringComparer.OrdinalIgnoreCase);
+        var controllersByKey = registry
+            .Where(p => !string.IsNullOrWhiteSpace(p.ControllerName))
+            .GroupBy(p => p.PermissionKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Select(p => p.ControllerName).Distinct(StringComparer.OrdinalIgnoreCase).ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var controllerIds = sourceItems.Where(m => m.ControllerId.HasValue).Select(m => m.ControllerId!.Value).Distinct().ToList();
+        var controllerNameById = controllerIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : (await _dbContext.Set<ControllerMetadata>().AsNoTracking()
+                .Where(c => controllerIds.Contains(c.Id))
+                .Select(c => new { c.Id, c.ControllerName })
+                .ToListAsync(cancellationToken).ConfigureAwait(false))
+                .ToDictionary(c => c.Id, c => c.ControllerName);
+        var sourceById = sourceItems.ToDictionary(m => m.Id);
+
+        HashSet<string> PageKeys(MenuItemDto page)
+        {
+            var controllers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (sourceById.TryGetValue(page.Id, out var src) && src.ControllerId is { } cid && controllerNameById.TryGetValue(cid, out var name))
+            {
+                controllers.Add(name);
+            }
+            var pageKey = !string.IsNullOrWhiteSpace(page.PermissionKey) ? page.PermissionKey! : page.Key;
+            if (controllersByKey.TryGetValue(pageKey, out var viaKey))
+            {
+                controllers.UnionWith(viaKey);
+            }
+
+            var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var controller in controllers)
+            {
+                if (keysByController.TryGetValue(controller, out var list)) keys.UnionWith(list);
+            }
+            keys.RemoveWhere(k => disabledKeys.ContainsKey(k));
+            return keys;
+        }
+
+        HashSet<string> Assign(MenuItemDto node)
+        {
+            var keys = node.Type == MenuType.Page
+                ? PageKeys(node)
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var child in node.Children) keys.UnionWith(Assign(child));
+            node.PermissionCount = keys.Count;
+            return keys;
+        }
+
+        foreach (var root in tree) Assign(root);
     }
 
     /// <summary>

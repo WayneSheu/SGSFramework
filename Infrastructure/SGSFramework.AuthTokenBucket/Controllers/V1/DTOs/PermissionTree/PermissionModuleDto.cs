@@ -21,10 +21,22 @@ public sealed class PermissionModuleDto
     public string? ModuleTitle { get; set; }
 
     /// <summary>
+    /// 所屬選單區段（領域類，例如: 資訊系統領域類）；模組不在選單中時為 null
+    /// </summary>
+    [JsonPropertyName("sectionTitle")]
+    public string? SectionTitle { get; set; }
+
+    /// <summary>
     /// 模組詳細描述說明
     /// </summary>
     [JsonPropertyName("description")]
     public string? Description { get; set; }
+
+    /// <summary>
+    /// 選單項目數：模組所在選單群組的直接子項目數（與側邊選單徽章同算法）；不在選單中時為 null
+    /// </summary>
+    [JsonPropertyName("menuItemCount")]
+    public int? MenuItemCount { get; set; }
 
     /// <summary>
     /// 模組是否啟用 (於「模組管理」停用時為 false，其下權限視同停用；讀取時計算，不寫入快取)
